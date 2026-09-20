@@ -19,3 +19,11 @@ Each experimental note should record:
 
 Sensitive raw artifacts live outside the repository and are referred to only by a
 non-sensitive experiment identifier.
+
+## Current documents
+
+- `prior-art.md` surveys public protocol and bridge work.
+- `client-inventory.md` records sanitized client baselines.
+- `reversing-strategy.md` selects the primary target and defines the first analysis
+  work packages.
+- `CLEANROOM.md` defines provenance and contamination controls.
