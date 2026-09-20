@@ -21,6 +21,9 @@ reproducible research before bridge features.
   than opening GitHub issues unless the maintainer asks for issues.
 - Make small, reviewable commits. Pull requests use squash merges and require
   passing CI before merge.
+- The maintainer authorizes agents to merge their own pull requests once all
+  required CI checks pass and GitHub reports the PR as mergeable. Always use a
+  squash merge; never merge with pending or failing required checks.
 
 ## Research safety
 
