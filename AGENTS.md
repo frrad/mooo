@@ -15,7 +15,7 @@ reproducible research before bridge features.
   and decisions whose mistakes could expose credentials or accounts.
 - Keep work autonomous and goal-oriented. Record durable plans in `PLAN.md` rather
   than opening GitHub issues unless the maintainer asks for issues.
-- Make small, reviewable commits. The repository uses merge commits and requires
+- Make small, reviewable commits. Pull requests use squash merges and require
   passing CI before merge.
 
 ## Research safety
