@@ -25,7 +25,7 @@ authenticate with KakaoTalk or bridge messages.
 
 ## Development
 
-Requires Go 1.26 or later.
+Requires Go 1.27 or later.
 
 ```sh
 go test ./...

@@ -1,3 +1,3 @@
 module github.com/frrad/mooo
 
-go 1.26
+go 1.27
