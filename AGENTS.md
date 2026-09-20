@@ -8,6 +8,10 @@ reproducible research before bridge features.
 
 ## Working style
 
+- At the start of a local research session, read `.lab/STATE.md` if it exists.
+  It is the gitignored handoff log for account-independent operational details,
+  private lab paths, and resumable state. Keep public facts in `research/`; never
+  copy secrets or identifying lab values from `.lab/` into tracked files.
 - Prefer `gpt-5.6-luna` subagents for bounded execution tasks where speed and cost
   matter, including searches, inventories, routine implementation, mechanical
   refactors, and test runs.
