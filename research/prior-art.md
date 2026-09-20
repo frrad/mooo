@@ -37,6 +37,19 @@ registration behavior.
 Treat unpublished implementation claims as leads until reproduced against a
 versioned client.
 
+The article calls its Go port of `node-kakao` **암소** (`amso`) and reports that it
+was updated until a current Mac-agent session could log in and exchange messages.
+No public source repository or standalone specification for 암소 was found during
+this survey. It is therefore evidence that the approach worked for the author, not
+an implementation dependency available to this project.
+
+The article's historical protocol reference is Cai/0x90's 2012 Korean series,
+[KakaoTalk LOCO protocol analysis](https://web.archive.org/web/20240325014628/https://www.bpak.org/blog/2012/12/kakaotalk-loco-%ED%94%84%EB%A1%9C%ED%86%A0%EC%BD%9C-%EB%B6%84%EC%84%9D-1/).
+It explains the original move from HTTPS messaging to a custom TCP protocol and
+the reverse-engineering approach used against an early Windows Phone client. Its
+architecture is useful historical context; endpoints, authentication, crypto, and
+field-level claims are too old to reuse without independent confirmation.
+
 ### OpenKakao
 
 OpenKakao publishes recent static observations for Android 26.7.1 and Mac 26.7.0.
@@ -88,6 +101,11 @@ recipes.
    implementation.
 6. Revalidate every field and endpoint against current clients. Historical
    `node-kakao` behavior is a hypothesis generator, not a specification.
+
+The current macOS 26.8.0 analysis has independently reproduced two durable pieces
+of this prior-art lineage: the fixed 22-byte packet envelope and BSON command
+bodies. Modern secondary-device registration, secure-session details, and current
+bootstrap field semantics remain the material delta.
 
 ## Highest-value next experiment
 

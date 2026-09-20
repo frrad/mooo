@@ -26,4 +26,8 @@ non-sensitive experiment identifier.
 - `client-inventory.md` records sanitized client baselines.
 - `reversing-strategy.md` selects the primary target and defines the first analysis
   work packages.
+- `protocol-bootstrap.md` records the initial packet, serialization, and secure
+  transport observations.
+- `device-registration.md` specifies the recovered passcode and QR registration
+  state machines.
 - `CLEANROOM.md` defines provenance and contamination controls.
