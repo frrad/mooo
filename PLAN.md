@@ -13,10 +13,12 @@ sanitized, reproducible evidence.
 
 ## Phase 1 — controlled lab
 
-- [ ] Sign the emulator into Google Play, install official KakaoTalk, and create a
-      disposable test account (requires interactive Google/phone verification).
-- [ ] Record emulator, Android, KakaoTalk Android, and macOS client versions.
-- [ ] Define an external, ignored location for sensitive captures and notes.
+- [x] Sign the emulator into a lab Google account, install a signature-verified
+      official KakaoTalk package, and create a disposable test account.
+- [x] Record emulator, Android, KakaoTalk Android, and macOS client versions.
+- [x] Define external and ignored locations for sensitive captures and notes.
+- [ ] Let the disposable account's automated user-protection restriction age out
+      before another secondary-device login attempt; avoid repeated retries.
 - [ ] Establish repeatable experiments for login, device registration, reconnect,
       logout, and revocation.
 - [ ] Determine which observations are possible through logs, metadata, static
