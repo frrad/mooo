@@ -1,0 +1,32 @@
+# Build outputs
+/bin/
+/dist/
+*.test
+*.out
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local lab material (never commit)
+.lab/
+captures/
+artifacts/
+secrets/
+*.pcap
+*.pcapng
+*.har
+*.apk
+*.ipa
+*.dmg
+*.sqlite
+*.sqlite3
+*.db
+*.key
+*.pem
+*.p12
+*.mobileprovision
+.env
+.env.*
+!.env.example
