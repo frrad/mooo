@@ -27,6 +27,7 @@ Do not copy emulator userdata into Git.
 - JADX 1.5.6
 - Wireshark CLI 4.6.8
 - mitmproxy 12.2.3
+- Frida 17.18.0 / frida-tools 14.10.4
 
 Packet-capture privileges and interception certificates have deliberately not been
 installed. Add them only as part of a documented experiment with an explicit trust
