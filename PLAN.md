@@ -6,15 +6,16 @@ sanitized, reproducible evidence.
 ## Phase 0 — foundation
 
 - [x] Choose Go, a public MIT-licensed repository, and a modular architecture.
-- [ ] Create `frrad/mooo` and protect the default branch with required CI.
-- [ ] Establish Android emulator and macOS analysis tooling.
-- [ ] Inventory installed KakaoTalk clients without logging in.
-- [ ] Complete public prior-art survey and clean-room workflow decision.
+- [x] Create `frrad/mooo` and protect the default branch with required CI.
+- [x] Establish an Android 15 emulator and baseline macOS analysis tooling.
+- [x] Inventory the installed KakaoTalk client without logging in.
+- [x] Complete the initial public prior-art survey and clean-room workflow decision.
 
 ## Phase 1 — controlled lab
 
-- [ ] Create a disposable KakaoTalk test account in an Android emulator.
-- [ ] Record emulator, Android, KakaoTalk, and macOS client versions.
+- [ ] Sign the emulator into Google Play, install official KakaoTalk, and create a
+      disposable test account (requires interactive Google/phone verification).
+- [ ] Record emulator, Android, KakaoTalk Android, and macOS client versions.
 - [ ] Define an external, ignored location for sensitive captures and notes.
 - [ ] Establish repeatable experiments for login, device registration, reconnect,
       logout, and revocation.
