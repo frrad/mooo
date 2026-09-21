@@ -33,6 +33,10 @@ Out of scope:
 - `PLAN.md` is the detailed work breakdown and set of decision gates.
 - `EVIDENCE.md` is the append-only public evidence and hypothesis ledger.
 - `experiments/TEMPLATE.md` defines the required format for sanitized experiments.
+- `experiments/CS-EXP-001-secure-preference-graph.md` establishes the secure
+  wrapper's transform boundary and failure behavior.
+- `experiments/CS-EXP-002-auth-value-routing.md` identifies the active candidate's
+  device-UUID-bound read/write flow and excludes a cleanup-only legacy candidate.
 
 Raw Ghidra output, offsets, decompiler text, local paths, preference values, and
 runtime traces belong in the ignored `.lab/credential-storage/` companion folder.
@@ -45,9 +49,19 @@ lookup, PBKDF2 helpers, and CommonCrypto calls described for macOS 26.4.1 remain
 the inventoried 26.8.0 binary. This makes the investigation a bounded data-flow and
 crypto-parameter recovery task rather than an open-ended search.
 
-However, generic AES key/IV helper names cited by prior work are owned by backup and
+Static tracing has established both the generic secure-setting transform boundary
+and the active authentication-value path. The latter reads a base64 string from the
+ordinary defaults store, decrypts the decoded bytes using the local device UUID,
+and converts the result to hexadecimal text for automatic login; its write path is
+the inverse. A second historical candidate is cleanup-only in version 26.8.0 and is
+not assigned the active candidate's recipe.
+
+The device-UUID byte transformation, KDF, cipher, stored envelope, and decoded data
+category are not yet established.
+
+Generic AES key/IV helper names cited by prior work are owned by backup and
 session-transport components in the current runtime metadata. Their relevance to
-preference encryption is unproven. The investigation must trace the actual
+preference encryption remains unproven. The investigation follows the actual
 preference read/write path instead of joining nearby crypto clues by name.
 
 Background:
