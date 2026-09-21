@@ -22,6 +22,8 @@ supersede them with a new entry and link the earlier ID.
 
 ## Transfer reviews
 
-CS-5 currently withholds the exact recipe and any general recovery implementation;
-see `PUBLICATION.md`. High-level behavioral findings may be published, while exact
-parameters and vectors remain private pending a future need-based review.
+CS-5 authorizes an exact specification, synthetic vectors, and guarded
+operator-owned recovery/import implementation; see `PUBLICATION.md`. Transfer must
+remove proprietary expression and live identifiers, require explicit inputs, use
+version guards, and avoid logging or transmitting recovered material outside an
+explicitly configured Kakao authentication flow.

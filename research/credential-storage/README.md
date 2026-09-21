@@ -32,15 +32,15 @@ Out of scope:
 
 - `PLAN.md` is the detailed work breakdown and set of decision gates.
 - `EVIDENCE.md` is the append-only public evidence and hypothesis ledger.
-- `PUBLICATION.md` records the current CS-5 decision to withhold a turnkey recovery
-  recipe while continuing synthetic and protocol research.
+- `PUBLICATION.md` records the CS-5 approval and safeguards for an exact public
+  recipe and guarded implementation.
 - `experiments/TEMPLATE.md` defines the required format for sanitized experiments.
 - `experiments/CS-EXP-001-secure-preference-graph.md` establishes the secure
   wrapper's transform boundary and failure behavior.
 - `experiments/CS-EXP-002-auth-value-routing.md` identifies the active candidate's
   device-UUID-bound read/write flow and excludes a cleanup-only legacy candidate.
 - `experiments/CS-EXP-003-static-crypto-shape.md` falsifies the PBKDF2 and
-  authenticated-envelope hypotheses without publishing the complete recipe.
+  authenticated-envelope hypotheses before clean-room recipe transfer.
 - `experiments/CS-EXP-004-independent-round-trip.md` records agreement between Go
   and OpenSSL on an invented-only private vector.
 
@@ -64,9 +64,10 @@ not assigned the active candidate's recipe.
 
 The static cryptographic trace is now complete. It falsifies the prior PBKDF2 and
 authenticated-envelope hypotheses: the active path uses direct digest-derived key
-material and an unauthenticated IV-plus-AES-CBC-ciphertext envelope. Exact recipe
-parameters remain private under the publication gate. The decoded data category is
-not yet established by disposable-profile validation.
+material and an unauthenticated IV-plus-AES-CBC-ciphertext envelope. CS-5 now
+authorizes clean-room transfer of the exact recipe, synthetic vectors, and a
+guarded implementation. The decoded data category is not yet established by
+disposable-profile validation.
 
 An invented-data Go implementation now agrees byte-for-byte with OpenSSL and
 round-trips with strict padding checks. A safely isolated invocation of the actual
