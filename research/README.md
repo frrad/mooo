@@ -30,4 +30,6 @@ non-sensitive experiment identifier.
   transport observations.
 - `device-registration.md` specifies the recovered passcode and QR registration
   state machines.
+- `credential-storage/` determines how candidate macOS preference values are
+  transformed and, if applicable, specifies a versioned local recovery recipe.
 - `CLEANROOM.md` defines provenance and contamination controls.
