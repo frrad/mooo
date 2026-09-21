@@ -2,6 +2,25 @@
 
 Status: approved work plan, 2026-09-20.
 
+## Progress
+
+- **CS-0: passed.** The authorized artifacts, versions, hashes, tools, and private
+  output locations are pinned.
+- **CS-1: passed for the active candidate.** Its defaults-store, base64,
+  device-UUID-bound encrypt/decrypt, automatic-login, and cleanup routes are
+  accounted for in both directions. The second historical candidate has no current
+  producer or cryptographic path and branches out as cleanup-only.
+- **CS-2/CS-3: static trace complete; exit gates pending CS-4.** The inherited
+  PBKDF2 and authenticated-envelope hypotheses are falsified. Exact device input,
+  derivation, cipher, padding, IV, envelope, and failure behavior are recorded
+  privately for invented-data confirmation.
+- **CS-4: partial pass.** A private invented-only vector agrees between Go and
+  OpenSSL and passes a strict round trip. An isolated client-helper comparison
+  remains before the full synthetic gate passes.
+- **CS-5: hold.** The value feeds automatic login and is credential-adjacent. The
+  exact recipe and general recovery code do not transfer into the public
+  implementation without a demonstrated bridge need and a narrower-design review.
+
 ## Target outcome
 
 Determine whether and how the selected macOS preference values are transformed,
