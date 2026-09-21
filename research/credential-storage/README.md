@@ -1,0 +1,56 @@
+# macOS credential-storage investigation
+
+This directory tracks the effort to determine how selected preference values are
+transformed by recent KakaoTalk for macOS builds and what those values represent.
+If they are encrypted, device-derived session material, a contingent outcome is a
+versioned, implementation-neutral recipe that can be tested with synthetic data.
+Reading a live value is a later validation step, not the analysis method.
+
+## Scope
+
+In scope:
+
+- determine whether the candidate values use encryption, obfuscation, or another
+  transform and whether device-derived input participates;
+- if applicable, identify the key derivation, cipher mode, padding, IV/nonce,
+  integrity mechanism, and stored envelope layout;
+- document read, write, failure, and version-mismatch behavior;
+- if the CS-5 publication gate passes, build synthetic test vectors and a guarded
+  Go implementation;
+- validate locally against a disposable, authorized profile when one is available.
+
+Out of scope:
+
+- extracting credentials from accounts or machines not owned by the operator;
+- publishing live tokens, platform identifiers, ciphertexts, database contents, or
+  other account-specific artifacts;
+- contacting Kakao servers with an extracted credential during this investigation;
+- recovering the SQLCipher message-database key, which is a separate problem;
+- weakening SIP or other host-wide security controls for convenience.
+
+## Documents
+
+- `PLAN.md` is the detailed work breakdown and set of decision gates.
+- `EVIDENCE.md` is the append-only public evidence and hypothesis ledger.
+- `experiments/TEMPLATE.md` defines the required format for sanitized experiments.
+
+Raw Ghidra output, offsets, decompiler text, local paths, preference values, and
+runtime traces belong in the ignored `.lab/credential-storage/` companion folder.
+Only reviewed behavioral conclusions move here under `../CLEANROOM.md`.
+
+## Current status
+
+The named preference strings, secure preference-access surface, platform-identifier
+lookup, PBKDF2 helpers, and CommonCrypto calls described for macOS 26.4.1 remain in
+the inventoried 26.8.0 binary. This makes the investigation a bounded data-flow and
+crypto-parameter recovery task rather than an open-ended search.
+
+However, generic AES key/IV helper names cited by prior work are owned by backup and
+session-transport components in the current runtime metadata. Their relevance to
+preference encryption is unproven. The investigation must trace the actual
+preference read/write path instead of joining nearby crypto clues by name.
+
+Background:
+
+- [OpenKakao credential-storage note, pinned revision](https://github.com/JungHoonGhae/openkakao-cli/blob/87743a438fa2eebf101f6df701790e9721fd6619/docs/research/credential-storage.md)
+- [OpenKakao local-database investigation](https://github.com/JungHoonGhae/openkakao-cli/issues/38)

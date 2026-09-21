@@ -29,6 +29,9 @@ sanitized, reproducible evidence.
 - [ ] Map secondary-device authentication and approval states.
 - [ ] Identify endpoints, framing, serialization, cryptographic boundaries, and
       session lifecycle without publishing live secrets.
+- [ ] Determine how candidate macOS preference values are transformed and, if
+      applicable, specify a versioned local recovery recipe; see
+      `research/credential-storage/PLAN.md`.
 - [ ] Specify chat/contact synchronization and message send/receive behavior.
 - [ ] Create synthetic fixtures and a conformance-oriented protocol model.
 
