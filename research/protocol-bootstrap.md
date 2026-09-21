@@ -98,8 +98,9 @@ Static control flow establishes three distinct agent roles:
 The client maintains separate agents and address pools for these roles. The booking
 stage has a concurrent-attempt guard and retries up to three times using jittered
 backoff capped at eight seconds. Ticket attempts advance through an address pool
-with jittered backoff capped at 32 seconds. Exact retry formulas, terminal errors,
-and cached-endpoint rules are not yet specified.
+with jittered backoff capped at 32 seconds. Cached-endpoint eligibility, expiry, and
+matching-failure invalidation are specified in `session-login/PROTOCOL.md`; exact
+retry formulas and the complete terminal-error taxonomy remain open.
 
 Configuration input includes the user identifier, mobile-country/network metadata,
 and operating-system identifier. Its response groups settings for cellular and
@@ -109,20 +110,21 @@ Check-in input additionally carries network type, application version, country,
 language, and secondary-device status. Its response supplies IPv4/IPv6 carriage
 hosts, port, cache lifetime, and separate secure-service host/port candidates.
 
-The final carriage-login request schema and the precise transition from registered
-device credentials into that request remain unresolved.
+The final carriage-login command is `LOGINLIST`. Its 17-field BSON request schema,
+current access-token placement, response properties, status predicates, endpoint
+cache, and recovery gates are now specified in `session-login/PROTOCOL.md`.
 
 Registration handoff analysis now establishes that transient QR identifiers and
 device-authorization codes are cleared before the common LOCO-login coordinator.
 The downstream path consumes at least numeric user identity, an access token, and
-foreground/background state. This narrows the handoff but does not yet establish
-the final carriage `LOGIN` fields, token transformation, or device attributes; see
-`device-registration/PROTOCOL.md`.
+foreground/background state. The current builder passes that prepared access-token
+string unchanged as `oauthToken` and leaves `sKey` unset; see
+`session-login/PROTOCOL.md` and `device-registration/PROTOCOL.md`.
 
 ## Next verification work
 
 - recover body-type meanings and malformed-packet rejection rules;
 - determine secure-layer type negotiation and fallback behavior;
 - specify configuration and check-in responses;
-- recover the carriage-login request schema and token/device fields;
-- connect the bootstrap sequence to the secondary-device credential lifecycle.
+- confirm unset-object BSON encoding and remaining response wire-key mappings;
+- complete exact reconnect delays, kickout reasons, and cursor gap semantics.
