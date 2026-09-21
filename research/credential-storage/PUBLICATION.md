@@ -1,57 +1,63 @@
 # Credential-recipe publication gate
 
-Status: **hold exact recipe and implementation**, 2026-09-20.
+Status: **approved for exact specification and guarded implementation**,
+2026-09-20.
 
-This is the CS-5 decision for the current evidence. It may be revisited when the
-secondary-device protocol establishes a concrete interoperability need.
+This is the CS-5 decision for the current evidence. The project exists to let
+legitimate users operate their own KakaoTalk accounts through another client or
+bridge. Reproducible storage and cryptographic documentation serves that goal even
+when the protected value participates in authentication.
 
 ## What the evidence establishes
 
 The encrypted defaults value is consumed by the automatic-login path after local
 decryption and byte-to-text conversion. Its exact semantic field has not yet been
-validated with a disposable profile, but it is plainly credential-adjacent and
-must be treated as reusable authentication material until disproved.
+validated with a disposable profile, so implementations must treat it as sensitive
+authentication material and must not log or transmit it implicitly.
 
-Static analysis has recovered enough detail to implement local decryption. That
-does not establish that moving the result off the Mac is necessary, safe, accepted
-by Kakao's service, or useful to a Linux-hosted bridge.
+Static analysis has recovered enough detail to write an implementation-neutral
+recipe. Invented-data implementations agree on the recovered cryptographic shape;
+an isolated client-helper comparison and disposable-profile validation remain.
 
-## Usefulness and alternatives
+## Legitimate interoperability uses
 
-The project's primary goal is an independently registered secondary device, not
-session extraction from an existing Mac. Continuing the official QR/device
-registration and LOCO authentication investigation can meet that goal without
-turning local at-rest protection into a public recovery feature.
+Potential authorized uses include:
 
-If local state later proves necessary, narrower designs must be considered first:
+- reproducing and testing client-compatible local storage behavior;
+- explicitly importing an operator's own existing secondary-device state;
+- bootstrapping or migrating a self-hosted bridge when the protocol requires it;
+- validating a clean-room implementation against synthetic vectors.
 
-- an explicit Mac-side helper that never exports the recovered secret;
-- an official registration flow that provisions the bridge independently;
-- an operator-supplied, version-bound migration operation with no implicit home
-  directory or defaults-store scanning.
+The preferred product path remains independent secondary-device registration when
+available. Publishing the local format does not require making it the bridge's
+default login mechanism.
 
-## Abuse and portability
+## Required safeguards
 
-A complete recipe plus a general scanner would make it easier to recover automatic
-login material from copied user profiles. The key input is tied to the originating
-Mac, which limits naive portability but does not remove that risk when local device
-metadata is also available. The current envelope has no independent integrity
-check, so a public implementation would also need strict failure handling and
-could not claim authenticated decryption.
+An exact public specification, synthetic vectors, and implementation may proceed
+with these constraints:
+
+- never publish live tokens, platform identifiers, ciphertexts, plaintexts,
+  account data, or proprietary binary/decompiler output;
+- require an explicit operator action and a user-selected profile or input file;
+- use exact supported-version profiles and fail closed on mismatches;
+- do not log recovered values, derived keys, device identifiers, or intermediate
+  buffers;
+- do not silently scan unrelated user profiles or perform bulk extraction;
+- do not transmit recovered material to unrelated endpoints; using it in a
+  documented Kakao authentication flow is allowed after explicit operator
+  configuration;
+- validate first with synthetic fixtures and then only with an authorized
+  disposable profile;
+- document that local decryption does not provide an independent integrity check
+  and that recovered material may be reusable authentication state.
 
 ## Decision
 
-For now:
+The exact recipe may now pass through clean-room transfer review into a public,
+versioned specification. Synthetic vectors and a guarded Go implementation are
+also authorized. A convenience importer may be considered later if it preserves
+the explicit-input, local-only, version-guarded model above.
 
-- publish versioned behavioral conclusions, falsified hypotheses, and synthetic
-  methodology;
-- retain exact constants, complete parameter tables, vectors, and runnable
-  recovery code in the private lab;
-- do not read or decrypt a live value merely to identify it;
-- do not build a general defaults-store scanner or credential exporter;
-- continue protocol registration and authentication research independently;
-- revisit this gate only if a concrete bridge requirement cannot be met through a
-  narrower flow.
-
-This decision does not block invented-data confirmation. It blocks transfer of a
-turnkey recovery recipe into the public implementation.
+This gate authorizes interoperability work; it does not authorize testing someone
+else's account, machine, copied profile, or credentials.

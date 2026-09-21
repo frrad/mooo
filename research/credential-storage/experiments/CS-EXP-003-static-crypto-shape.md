@@ -21,9 +21,8 @@ client, read a stored value or real device identifier, access an account, contac
 server, or reproduce proprietary code.
 
 Because the transformed value feeds automatic login, exact recipe parameters and
-a runnable decryptor remain private under the CS-5 publication decision. This
-experiment records enough behavior to make the prior hypothesis falsifiable
-without publishing a turnkey credential-recovery procedure.
+a runnable decryptor require the safeguards in the CS-5 publication decision. This
+experiment records the static evidence that precedes clean-room transfer.
 
 ## Hypothesis
 
@@ -73,5 +72,5 @@ created. Raw static-analysis output remains in the private, ignored lab director
 
 ## Follow-up
 
-Complete the remaining CS-4 client-helper comparison if it can be isolated safely.
-Maintain the CS-5 hold on any exact public recipe or general recovery implementation.
+Complete the remaining CS-4 client-helper comparison if it can be isolated safely,
+then conduct the clean-room transfer authorized by CS-5.

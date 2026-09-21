@@ -17,7 +17,8 @@ is applied to entirely invented inputs?
 The experiment used an obviously invented platform identifier, plaintext, and
 deterministic IV. It did not launch KakaoTalk, read any preference domain or device
 identifier, access an account, contact a server, or modify an official application
-file. The exact vector remains private under the current CS-5 decision.
+file. The exact vector remains in the private evidence set until clean-room transfer
+under the safeguards approved by CS-5.
 
 ## Hypothesis
 

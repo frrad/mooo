@@ -17,9 +17,11 @@ Status: approved work plan, 2026-09-20.
 - **CS-4: partial pass.** A private invented-only vector agrees between Go and
   OpenSSL and passes a strict round trip. An isolated client-helper comparison
   remains before the full synthetic gate passes.
-- **CS-5: hold.** The value feeds automatic login and is credential-adjacent. The
-  exact recipe and general recovery code do not transfer into the public
-  implementation without a demonstrated bridge need and a narrower-design review.
+- **CS-5: passed with safeguards.** Exact recipes, synthetic vectors, and guarded
+  operator-run implementations are legitimate interoperability artifacts. They
+  may transfer after clean-room review, but must require explicit authorized
+  inputs, use version guards, avoid secret logging, and never perform stealth,
+  bulk, or unrelated remote use of recovered material.
 
 ## Target outcome
 

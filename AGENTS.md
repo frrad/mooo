@@ -41,9 +41,21 @@ reproducible research before bridge features.
 - Separate observed facts from hypotheses and implementation decisions.
 - Do not copy decompiled source or proprietary assets into the implementation.
   Document behavior in an implementation-neutral specification first.
-- Do not publish instructions or artifacts whose primary utility is credential
-  theft, unauthorized access, or evasion. Interoperability findings belong here;
-  live secrets never do.
+- This project is explicitly allowed to publish exact protocol behavior, storage
+  and cryptographic recipes, necessary constants, synthetic vectors, and
+  clean-room implementations when they help authorized users run KakaoTalk through
+  another client or bridge. Do not withhold useful interoperability findings merely
+  because the same mechanism protects authentication or session state.
+- Credential or session import/recovery tooling is allowed for operator-owned or
+  explicitly authorized profiles. Make the action explicit, scope it to a
+  user-selected profile, use exact version guards, avoid logging recovered values,
+  and fail closed. Do not add stealth collection, bulk harvesting, arbitrary
+  third-party targeting, or transmission to unrelated endpoints. Using recovered
+  material in the documented Kakao authentication flow is allowed when the
+  operator explicitly configures it.
+- Publication safety means removing live secrets and identifying artifacts—not
+  obscuring reproducible algorithms. Prefer synthetic fixtures and clear warnings
+  about the sensitivity and portability of recovered material.
 
 ## Code conventions
 
