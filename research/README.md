@@ -28,8 +28,10 @@ non-sensitive experiment identifier.
   work packages.
 - `protocol-bootstrap.md` records the initial packet, serialization, and secure
   transport observations.
-- `device-registration.md` specifies the recovered passcode and QR registration
-  state machines.
+- `session-login/` tracks the vertical slice from completed registration through
+  LOCO authentication and reconnect.
+- `device-registration/` specifies secondary-device registration, including the
+  recovered passcode and QR state machines, evidence, and open experiments.
 - `credential-storage/` determines how candidate macOS preference values are
   transformed and, if applicable, specifies a versioned local recovery recipe.
 - `CLEANROOM.md` defines provenance and contamination controls.

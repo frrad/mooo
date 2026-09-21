@@ -26,9 +26,11 @@ sanitized, reproducible evidence.
 
 ## Phase 2 — protocol specification
 
-- [ ] Map secondary-device authentication and approval states.
+- [ ] Map secondary-device authentication and approval states; see
+      `research/device-registration/PLAN.md`.
 - [ ] Identify endpoints, framing, serialization, cryptographic boundaries, and
-      session lifecycle without publishing live secrets.
+      session lifecycle without publishing live secrets; see
+      `research/session-login/PLAN.md`.
 - [ ] Determine how candidate macOS preference values are transformed and, if
       applicable, specify a versioned local recovery recipe; see
       `research/credential-storage/PLAN.md`.
