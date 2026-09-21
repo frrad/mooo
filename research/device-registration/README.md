@@ -1,11 +1,27 @@
-# Secondary-device registration state machine
+# Secondary-device registration
 
-Status: preliminary binary-analysis specification, 2026-09-20.
+Status: active binary-analysis specification, 2026-09-20.
 
 This note describes control flow recovered from an authorized macOS 26.8.0
 client. The analysis was static and logged out: it did not submit a login, inspect
 an account, or capture traffic. Raw decompiler output and binary-specific anchors
 remain outside the repository under `CLEANROOM.md`.
+
+## Documents
+
+- `PLAN.md` defines the end-to-end research work packages and exit gates.
+- `PROTOCOL.md` is the reviewed implementation-neutral protocol and state-machine
+  specification.
+- `EVIDENCE.md` is the append-only evidence and hypothesis ledger.
+- `experiments/DR-EXP-001-static-registration-control-flow.md` records the current
+  static-analysis pass.
+- `experiments/DR-EXP-002-wire-schemas-and-timing.md` records request shapes, QR
+  result codes, payload handling, and timer policy.
+- `experiments/DR-EXP-003-session-handoff.md` records restore, persistence, LOCO
+  handoff, logout, and current-device unregister behavior.
+
+The remainder of this file is an overview. Where it differs from `PROTOCOL.md`,
+the latter is authoritative for implementation.
 
 ## Common lifecycle
 
@@ -84,8 +100,8 @@ The QR response decoder and UI distinguish at least:
 - unknown failure;
 - success, with permanent or temporary semantics.
 
-These are semantic states, not numeric wire codes. Their exact response schema and
-status-code mapping remain to be recovered.
+The QR numeric mapping and relevant error-response fields are now specified in
+`PROTOCOL.md`. Passcode numeric statuses and complete success schemas remain open.
 
 ## Network operations
 
@@ -95,15 +111,32 @@ The client has distinct operations for:
 - generating, polling/logging in with, and cancelling a QR challenge;
 - checking a password during the QR/device-registration path.
 
-They share a common HTTP request and asynchronous response-decoding layer. This
-analysis establishes operation boundaries and callback behavior, but not request
-field names, signatures, or cryptographic construction.
+They share a common HTTP request and asynchronous response-decoding layer. Request
+field and nested device shapes are established, but HTTP method/encoding, common
+headers, base URL, cookies, and signing remain unresolved.
+
+The current macOS client contains this seven-operation route family:
+
+```text
+/mac/account/passcodeLogin/generate
+/mac/account/passcodeLogin/registerDevice
+/mac/account/passcodeLogin/cancel
+/mac/account/qrCodeLogin/generate
+/mac/account/qrCodeLogin/cancel
+/mac/account/qrCodeLogin/login
+/mac/account/qrCodeLogin/passwordCheck
+```
+
+Each route is directly associated with its request fields and device-object shape
+in `PROTOCOL.md`. That does not yet provide enough shared HTTP-layer detail to send
+requests safely.
 
 ## Next verification work
 
-- recover encoder and decoder schemas for each operation;
-- map semantic results to numeric status values;
-- determine the QR payload encoding;
+- recover HTTP verb/encoding, shared headers, base URL, cookies, and signing;
+- recover passcode numeric results and complete success schemas;
+- determine the QR URL grammar and check-key validation recipe;
 - explain the password-check operation's role in the permanent-login path;
-- trace device identity and request-signing inputs;
-- follow permanent success into Keychain/database persistence and LOCO login.
+- recover the auto-login persistence flag truth table and final LOCO `LOGIN` schema;
+- recover the current-device unregister body and failure cleanup ordering;
+- identify list/selected-device revocation APIs and map kickout reasons.

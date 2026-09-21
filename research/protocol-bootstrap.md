@@ -112,6 +112,13 @@ hosts, port, cache lifetime, and separate secure-service host/port candidates.
 The final carriage-login request schema and the precise transition from registered
 device credentials into that request remain unresolved.
 
+Registration handoff analysis now establishes that transient QR identifiers and
+device-authorization codes are cleared before the common LOCO-login coordinator.
+The downstream path consumes at least numeric user identity, an access token, and
+foreground/background state. This narrows the handoff but does not yet establish
+the final carriage `LOGIN` fields, token transformation, or device attributes; see
+`device-registration/PROTOCOL.md`.
+
 ## Next verification work
 
 - recover body-type meanings and malformed-packet rejection rules;
