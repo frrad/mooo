@@ -32,11 +32,17 @@ Out of scope:
 
 - `PLAN.md` is the detailed work breakdown and set of decision gates.
 - `EVIDENCE.md` is the append-only public evidence and hypothesis ledger.
+- `PUBLICATION.md` records the current CS-5 decision to withhold a turnkey recovery
+  recipe while continuing synthetic and protocol research.
 - `experiments/TEMPLATE.md` defines the required format for sanitized experiments.
 - `experiments/CS-EXP-001-secure-preference-graph.md` establishes the secure
   wrapper's transform boundary and failure behavior.
 - `experiments/CS-EXP-002-auth-value-routing.md` identifies the active candidate's
   device-UUID-bound read/write flow and excludes a cleanup-only legacy candidate.
+- `experiments/CS-EXP-003-static-crypto-shape.md` falsifies the PBKDF2 and
+  authenticated-envelope hypotheses without publishing the complete recipe.
+- `experiments/CS-EXP-004-independent-round-trip.md` records agreement between Go
+  and OpenSSL on an invented-only private vector.
 
 Raw Ghidra output, offsets, decompiler text, local paths, preference values, and
 runtime traces belong in the ignored `.lab/credential-storage/` companion folder.
@@ -56,8 +62,15 @@ and converts the result to hexadecimal text for automatic login; its write path 
 the inverse. A second historical candidate is cleanup-only in version 26.8.0 and is
 not assigned the active candidate's recipe.
 
-The device-UUID byte transformation, KDF, cipher, stored envelope, and decoded data
-category are not yet established.
+The static cryptographic trace is now complete. It falsifies the prior PBKDF2 and
+authenticated-envelope hypotheses: the active path uses direct digest-derived key
+material and an unauthenticated IV-plus-AES-CBC-ciphertext envelope. Exact recipe
+parameters remain private under the publication gate. The decoded data category is
+not yet established by disposable-profile validation.
+
+An invented-data Go implementation now agrees byte-for-byte with OpenSSL and
+round-trips with strict padding checks. A safely isolated invocation of the actual
+client helper remains the final CS-4 comparison.
 
 Generic AES key/IV helper names cited by prior work are owned by backup and
 session-transport components in the current runtime metadata. Their relevance to
