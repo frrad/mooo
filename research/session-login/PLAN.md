@@ -26,8 +26,11 @@ Status: active work plan, 2026-09-20.
   status classification, endpoint-cache rules, registration HTTP metadata, and a
   recovery reducer have synthetic tests. Network transmission remains deferred
   until serializer tests close the remaining byte-level gaps.
-- **SL-7: blocked by the deliberate account-protection cooldown.** No live retry is
-  authorized in this phase.
+- **SL-7: no longer cooldown-blocked, but the baseline remains incomplete.** One
+  controlled official Mac QR approval cleared `-997` on 2026-09-23, then the Mac
+  session failed its server connection and did not remain registered. Live
+  reversed-client validation remains limited to preplanned, single attempts after
+  the synthetic gates pass.
 
 ## Target outcome
 
@@ -46,8 +49,9 @@ approved registration
 ```
 
 No work package may fill a gap from historical implementations without independent
-current-client evidence. The disposable account remains unused while its protection
-measure is active.
+current-client evidence. The disposable account has a working Android primary,
+but no durable official Mac registration; preserve the primary while building the
+smallest login vertical slice.
 
 ## Evidence levels
 
@@ -150,10 +154,10 @@ pass; fixtures contain invented values only.
 
 ### SL-7 — Controlled disposable validation
 
-Wait for the account protection measure to plausibly age out. First confirm one
-official Mac login and registered-device persistence. Then perform at most one
-preplanned validation of each already-specified boundary, with cleanup and private
-artifact handling defined in advance.
+Confirm registered-device persistence, then perform at most one preplanned
+validation of each already-specified boundary, with cleanup and private artifact
+handling defined in advance. Follow the staged login and messaging gates in
+`../client-through-messaging-plan.md`.
 
 Exit gate: observed results either validate the specification or produce a bounded
 revision; no speculative repeated login attempts occur.
