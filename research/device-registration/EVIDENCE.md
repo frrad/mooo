@@ -34,6 +34,7 @@ them into facts.
 | DR-MAC-019 | 2026-09-23 | macOS 26.8.0 | Observed/static | The shared error boundary decodes top-level JSON dictionaries, recognizes `reason`, `detailCode`, and `status`, distinguishes HTTP/transport/serializer/cancellation failures, reports absent HTTP response as numeric code 500, and exposes a common -950 branch without proving registration retry. | High for decoder and failure distinctions; medium for retry taxonomy | No registration-specific transport retry loop was directly evidenced; controller polling is separate |
 | DR-MAC-020 | 2026-09-23 | macOS 26.8.0 | Observed/static | The QR-generate decoder requires HTTP 200 and `{status:Int,url:String,remainingSeconds:Double}`; the QR-login/poll decoder requires HTTP 200 and integer `status == 0`, then normalizes nested `user.userId` (Objective-C number object), `accessToken`, `refreshToken`, `tokenType`, `autoLoginAccountId`, `displayAccountId`, and `permanent` into the QR success handoff. | High for route-specific keys, types, and HTTP/status gates; medium for final callback/persistence mapping | Mac URL grammar/check-key, optionality, error-domain construction, and final login persistence remain unresolved |
 | DR-MAC-021 | 2026-09-24 | macOS 26.8.0 | Observed/static | In the route-specific QR-generate parser, `status` is cast to `Int` and passed onward but is not compared against zero (or another literal) on the success path; the parser directly looks up only the typed generation fields and has no `checkKey`/`qrLoginCheckKey` dictionary lookup. The separate `qrLoginCheckKey` getter exposes a binary/data-like property, but its setter/caller association with the generation callback was not recovered. | High for parser predicate and field absence; medium for the separate-property boundary | The indirect callback/controller edge, response/query field feeding the gate, and exact check-key algorithm remain unresolved |
+| DR-SYN-001 | 2026-09-24 | Go offline model | Observed/synthetic | The QR wire service composes the reviewed form builder, injected single-attempt HTTP executor, and bounded QR response codecs; generation refuses to return a challenge unless a caller-supplied presentation validator accepts it, while polling preserves an explicit success-versus-server-error result. | High for local behavior | No default client, network/CLI path, check-key implementation, retry, credential installation, or live response was used |
 
 ## Transfer review
 
@@ -83,3 +84,7 @@ DR-MAC-021 passed transfer review on 2026-09-24 as a narrow parser-boundary
 finding. It may inform the distinction between typed QR-generation decoding and
 the later local check-key gate. It does not establish the gate's input field,
 URL grammar, cryptographic recipe, or callback association.
+
+DR-SYN-001 is a local implementation/conformance observation only. It documents
+the fail-closed composition boundary and does not add any server behavior,
+authentication material, check-key recipe, retry policy, or live-network claim.

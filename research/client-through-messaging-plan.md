@@ -37,11 +37,14 @@ an authentication input to the reversed client.
   an injected single-attempt executor reads and closes bounded response bodies
   without providing a default client, retry loop, cookies, or CLI network path.
   Bounded response codecs cover QR generation, QR-login success-field presence,
-  and the shared server-error envelope. Static evidence found no app-added
-  registration auth header, cookie, signature, body transform, interceptor, or
-  automatic retry. An executing HTTP client, platform-default header/cookie
-  compatibility, check-key validation, and final credential/LOCO mapping remain
-  unresolved.
+  and the shared server-error envelope. The offline QR wire service composes
+  those pieces, requires an injected presentation/check-key validator before
+  returning a challenge, and returns polling as an explicit success-versus-
+  server-error result. Static evidence found no app-added registration auth
+  header, cookie, signature, body transform, interceptor, or automatic retry.
+  No default HTTP client, live network/CLI path, check-key implementation, or
+  final credential/LOCO mapping is included; platform-default header/cookie
+  compatibility remains unresolved.
 
 ## Safety and evidence rules
 
