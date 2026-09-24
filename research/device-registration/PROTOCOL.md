@@ -1,6 +1,7 @@
 # Secondary-device registration protocol
 
-Status: reviewed clean-room partial specification, 2026-09-20.
+Status: reviewed clean-room partial specification, with Android comparison
+addendum, 2026-09-23.
 
 This document describes behavior established from logged-out static analysis of
 an authorized KakaoTalk for macOS 26.8.0 client. It contains no binary addresses,
@@ -148,10 +149,21 @@ Static request builders directly associate these fields with the seven operation
 | QR login/poll | `id`, `device` | `uuid` |
 | QR password check | `password` | none |
 
-`permanent` is Boolean. The meaning and accepted forms of `email`, empty-field
-behavior, HTTP verb, parameter placement/encoding, common headers, base URL,
-cookies, and request signing are unresolved. This is therefore not yet a complete
-network contract.
+`permanent` is Boolean. All seven operations are HTTPS `POST` requests to the
+reviewed `https://katalk.kakao.com` registration service. Their parameter
+dictionaries are encoded into the HTTP body with Alamofire `URLEncoding.httpBody`:
+the body content type is `application/x-www-form-urlencoded; charset=utf-8`,
+nested device keys use bracket notation such as `device[uuid]`, spaces use `%20`,
+and Boolean values use `1` or `0`. Top-level keys are sorted by Alamofire; nested
+dictionary order is not a protocol semantic, so the Go codec may canonicalize all
+pairs for deterministic fixtures.
+
+These encoding semantics combine direct current-client evidence of the
+`URLEncoding.httpBody` call with Alamofire's published implementation contract:
+<https://github.com/Alamofire/Alamofire/blob/master/Source/Core/ParameterEncoding.swift>.
+The meaning and accepted forms of `email`, empty-field omission behavior, common
+headers, cookies, and any request signing remain unresolved. This is therefore not
+yet a complete live network contract.
 
 Password checking is a distinct QR-family operation. Evidence does not yet prove
 whether it gates device authorization, permanent enrollment, or another transition,
@@ -186,6 +198,67 @@ next delay, four-character passcode, and remaining lifetime to enter device
 authorization. Result `29` with nested `response.status == -404` and an existing
 QR identifier has a special recovery/presentation branch whose protocol meaning
 is not yet established; it remains an explicit unknown special case.
+
+### Shared Mac authentication-response boundary
+
+Static inspection of the macOS 26.8.0 shared account-login response handler
+directly identifies these dictionary keys:
+
+```text
+userId, countryIso, accountId,
+access_token, refresh_token, token_type, server_time,
+autoLoginAccountId, displayAccountId
+```
+
+This is a shared/general authentication decoder inventory, not direct proof that
+the QR `/login` response carries every key. The handler gates its success
+callback on object presence/validity, but the required-versus-optional matrix
+and wire scalar types remain unresolved. The QR controller still only has direct
+evidence for consuming a complete server URL string, extracting its `id`, and
+using a server-supplied expiry duration. Do not infer Android's `nonce` field or
+token casing on the Mac path from this inventory.
+
+## Android comparison (not Mac wire proof)
+
+Static inspection of the current Android 26.8.2 client provides an
+implementation-neutral comparison for the same QR family. It must not be read
+as direct evidence of Mac 26.8.0 serialization or host selection.
+
+The Android QR-generate model is:
+
+```text
+request:  { device: { name, uuid, model, osVersion }, previousId? }
+response: { status, url, remainingSeconds }
+```
+
+The Android QR-login/poll success model adds these fields to `status`:
+
+```text
+nextRequestIntervalInSeconds?, passcode?, remainingSeconds?,
+user?: { userId, countryIso, accountId?, displayAccountId? },
+accessToken?, refreshToken?, tokenType?, nonce?
+```
+
+The Android scanner recognizes the path
+`/talk/account/qrCodeLogin/info.json?id=...`, extracts the raw identifier
+suffix, and calls its account-side `qrCodeLogin/info` operation. The Android
+primary client then authorizes the identifier by decoding its challenge payload,
+computing an HMAC-SHA256 response with its authenticated account secret, and
+posting `{id, macResponse, forceLogin}` to its account-side
+`qrCodeLogin/authorize` operation. This establishes that QR authorization is
+performed by the authenticated primary device; it does not establish the Mac
+client's local check-key validator or the full URL host.
+
+For an unregistered PC, the Android primary-side confirmation model is
+`{id, passcode, forced?, permanent?}` sent to `qrCodeLogin/confirm`, with a
+status-only response. This is complementary to, and does not replace, the Mac
+polling client's own `qrCodeLogin/passwordCheck` operation.
+
+The Android comparison narrows the expected success handoff fields, but the Mac
+mapping of `userId`, `accessToken`, `refreshToken`, `tokenType`, and `nonce` into
+its ordinary login and persistence state remains unconfirmed. Until that Mac
+mapping is recovered, clients must treat all values as opaque and fail closed
+on incomplete success objects.
 
 ## Polling policy
 
@@ -240,10 +313,11 @@ Required synthetic cases:
 ## Open protocol work
 
 - passcode numeric result mapping and complete success schemas;
-- QR URL grammar and check-key validation recipe;
+- Mac QR URL grammar and check-key validation recipe (the Android path
+  comparison above is not sufficient);
 - request signing, shared headers, cookies, and authentication state;
 - password-check ownership and result schema;
-- exact auto-login persistence flag behavior;
+- exact auto-login persistence flag behavior and Mac mapping of QR token fields;
 - final LOCO `LOGIN` schema and transformations;
 - current-device unregister body/response and cleanup ordering;
 - device listing, selected-device revocation, and kickout reason mapping.

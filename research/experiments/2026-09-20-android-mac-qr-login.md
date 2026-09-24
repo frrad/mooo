@@ -68,8 +68,15 @@ Sources: [KakaoTalk automated detection and user-protection measures](https://ta
 
 ## Next step
 
-Leave the account idle and avoid repeated authentication attempts. Recheck once
-after a conservative cooling-off period, then perform one controlled QR login
-while collecting only sanitized connection metadata. If the restriction
-persists, use Kakao's support/appeal path or change the lab's phone/device
-provenance rather than trying to bypass the protection.
+On 2026-09-23 at 21:00 UTC, one controlled retry used the same official clients,
+owned lab account, and QR-via-Album method. Android accepted the final approval
+and reported successful login. The Mac client reached its authenticated Friends
+screen briefly, then reported a server-connection failure and returned to its
+login screen. Android showed no registered-device row afterward. This establishes
+that the observed `-997` protection state had cleared by the retry, roughly three
+days after it was first observed; it does not establish durable registration, the
+exact release time, or a general minimum cooldown.
+
+All short-lived QR captures from the retry were removed from the host, emulator,
+and Android media index. Future failed live retries will follow the lab's
+exponential-backoff policy rather than repeated speculative attempts.

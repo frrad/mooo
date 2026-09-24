@@ -17,14 +17,19 @@ sanitized, reproducible evidence.
       official KakaoTalk package, and create a disposable test account.
 - [x] Record emulator, Android, KakaoTalk Android, and macOS client versions.
 - [x] Define external and ignored locations for sensitive captures and notes.
-- [ ] Let the disposable account's automated user-protection restriction age out
-      before another secondary-device login attempt; avoid repeated retries.
+- [x] Let the disposable account's automated user-protection restriction age out;
+      a single controlled retry on 2026-09-23 cleared the `-997` approval block,
+      although the Mac session then failed its server connection and did not
+      remain registered.
 - [ ] Establish repeatable experiments for login, device registration, reconnect,
       logout, and revocation.
 - [ ] Determine which observations are possible through logs, metadata, static
       analysis, and authorized traffic inspection.
 
 ## Phase 2 — protocol specification
+
+Execution through first text send/receive follows
+[`research/client-through-messaging-plan.md`](research/client-through-messaging-plan.md).
 
 - [ ] Map secondary-device authentication and approval states; see
       `research/device-registration/PLAN.md`.
@@ -39,6 +44,17 @@ sanitized, reproducible evidence.
 
 ## Phase 3 — Go protocol client
 
+- [ ] Generate a new client-owned device identity and complete QR-based secondary-
+      device authorization without importing official Mac state.
+- [ ] Persist only authentication state returned to that new identity, with
+      redacted diagnostics and secure local storage boundaries.
+- [ ] Implement and synthetically verify LOCO framing, BSON, and secure transport.
+- [ ] Implement `GETCONF` -> `CHECKIN` -> `LOGINLIST` and complete one bounded
+      disposable-account login.
+- [ ] Specify and validate read-only inbound text delivery, acknowledgements,
+      cursors, deduplication, and reconnect behavior.
+- [ ] Specify and validate one explicit outbound text send with safe idempotency
+      and no automatic retry after ambiguous delivery.
 - [ ] Implement transport, framing, and serialization packages.
 - [ ] Implement credential/session storage interfaces with secure defaults.
 - [ ] Implement device login and reconnect state machines.
