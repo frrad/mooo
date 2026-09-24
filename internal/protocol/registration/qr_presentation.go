@@ -26,6 +26,12 @@ type QRPresentation struct {
 	ID      string
 }
 
+func (p QRPresentation) String() string {
+	return "QRPresentation{payload=<redacted>, id=<redacted>}"
+}
+
+func (p QRPresentation) GoString() string { return p.String() }
+
 // ParseQRPresentation parses normal URL components and extracts exactly one
 // non-empty id query value. It performs no scheme/host allowlisting and does
 // not validate an unresolved QR check key.

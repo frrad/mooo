@@ -39,6 +39,12 @@ const DeviceAuthPollFallback time.Duration = DefaultPollDelay
 // outcomes. Every unrecognized code, including negative values, fails closed
 // as OutcomeUnknownFailure.
 func DecodeQROutcome(code int) Outcome {
+	return DecodeQROutcome64(int64(code))
+}
+
+// DecodeQROutcome64 is the width-stable form used by JSON decoders before any
+// platform-sized integer conversion. Unknown values fail closed.
+func DecodeQROutcome64(code int64) Outcome {
 	switch code {
 	case 1:
 		return OutcomeUnregisteredDevice
