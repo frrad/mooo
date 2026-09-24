@@ -313,7 +313,7 @@ func read(path string) (State, error) {
 	if err != nil {
 		return State{}, ErrCorrupt
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var state State
 	decoder := json.NewDecoder(io.LimitReader(f, 2<<20))
 	decoder.DisallowUnknownFields()
@@ -457,7 +457,7 @@ func syncDirectory(dir string) error {
 	if err != nil {
 		return ErrCorrupt
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := f.Sync(); err != nil {
 		return ErrCorrupt
 	}

@@ -213,12 +213,7 @@ func (c *Coordinator) DispatchTransport(ctx context.Context, effect Effect) (Dis
 		if response.Generation != effect.Generation {
 			return DispatchResult{}, ErrTransportGeneration
 		}
-		effects, err := c.Apply(PollResult{
-			Generation:      response.Generation,
-			Outcome:         response.Outcome,
-			DeviceAuthCode:  response.DeviceAuthCode,
-			DeviceAuthUntil: response.DeviceAuthUntil,
-		})
+		effects, err := c.Apply(PollResult(response))
 		if err != nil {
 			return DispatchResult{}, err
 		}

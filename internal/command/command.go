@@ -28,7 +28,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		stderr = io.Discard
 	}
 	if len(args) == 0 {
-		fmt.Fprintf(stdout, "mooo-lab %s\n", buildinfo.Version)
+		_, _ = fmt.Fprintf(stdout, "mooo-lab %s\n", buildinfo.Version)
 		return 0
 	}
 	if args[0] == "--help" || args[0] == "-h" {
