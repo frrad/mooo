@@ -75,6 +75,14 @@ type FormRequest struct {
 	Body        []byte
 }
 
+func (r FormRequest) String() string {
+	return "FormRequest{route=" + string(r.Profile.Route) +
+		", method=" + string(r.Profile.Method) +
+		", contentType=" + r.ContentType + ", body=<redacted>}"
+}
+
+func (r FormRequest) GoString() string { return r.String() }
+
 // BuildQRGenerateRequest validates and encodes one QR generation request.
 // Encoding follows the reviewed Alamofire URLEncoding.httpBody behavior:
 // sorted keys, nested bracket keys, and RFC3986 percent escaping.

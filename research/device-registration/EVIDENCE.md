@@ -29,6 +29,11 @@ them into facts.
 | DR-AND-004 | 2026-09-23 | Android 26.8.2 | Observed/static comparison | The authenticated Android primary computes an HMAC-SHA256 response over the QR challenge and posts `{id, macResponse, forceLogin}` to account-side QR authorization. | High | Authorization operation shape confirmed; account-secret identity and Mac validator remain unresolved |
 | DR-AND-005 | 2026-09-23 | Android 26.8.2 | Observed/static comparison | Android primary-side unregistered-PC confirmation posts `{id, passcode, forced?, permanent?}` to `qrCodeLogin/confirm` and receives a status-only result. | High | Complementary Android flow; Mac password-check ownership remains separate |
 | DR-MAC-016 | 2026-09-23 | macOS 26.8.0 | Observed/static | The shared Mac account-login response handler directly reads `userId`, `countryIso`, `accountId`, `access_token`, `refresh_token`, `token_type`, `server_time`, `autoLoginAccountId`, and `displayAccountId`. | High for key names; medium for QR association | General decoder inventory; direct QR `/login` carriage, optionality, wire types, and persistence mapping remain unresolved |
+| DR-MAC-017 | 2026-09-23 | macOS 26.8.0 | Observed/static | The shared registration HTTP session starts from Alamofire's default `NSURLSessionConfiguration`, applies 300-second request and 7200-second resource timeout values, and constructs its `Session` without a custom trust manager, redirect handler, cached-response handler, or request interceptor. | High for session construction and values; medium for stripped setter identity | Supports platform-default TLS trust and session-wide timeout policy; complete platform TLS behavior remains outside static proof |
+| DR-MAC-018 | 2026-09-23 | macOS 26.8.0 | Observed/static | Registration requests construct empty explicit header collections and submit with nil per-request interceptor/modifier; no registration-specific auth header, cookie value, signature, nonce, digest, or body transform was found. | High | Platform-default headers/cookie-store behavior and two unidentified session configuration setters remain unresolved |
+| DR-MAC-019 | 2026-09-23 | macOS 26.8.0 | Observed/static | The shared error boundary decodes top-level JSON dictionaries, recognizes `reason`, `detailCode`, and `status`, distinguishes HTTP/transport/serializer/cancellation failures, reports absent HTTP response as numeric code 500, and exposes a common -950 branch without proving registration retry. | High for decoder and failure distinctions; medium for retry taxonomy | No registration-specific transport retry loop was directly evidenced; controller polling is separate |
+| DR-MAC-020 | 2026-09-23 | macOS 26.8.0 | Observed/static | The QR-generate decoder requires HTTP 200 and `{status:Int,url:String,remainingSeconds:Double}`; the QR-login/poll decoder requires HTTP 200 and integer `status == 0`, then normalizes nested `user.userId` (Objective-C number object), `accessToken`, `refreshToken`, `tokenType`, `autoLoginAccountId`, `displayAccountId`, and `permanent` into the QR success handoff. | High for route-specific keys, types, and HTTP/status gates; medium for final callback/persistence mapping | Mac URL grammar/check-key, optionality, error-domain construction, and final login persistence remain unresolved |
+| DR-MAC-021 | 2026-09-24 | macOS 26.8.0 | Observed/static | In the route-specific QR-generate parser, `status` is cast to `Int` and passed onward but is not compared against zero (or another literal) on the success path; the parser directly looks up only the typed generation fields and has no `checkKey`/`qrLoginCheckKey` dictionary lookup. The separate `qrLoginCheckKey` getter exposes a binary/data-like property, but its setter/caller association with the generation callback was not recovered. | High for parser predicate and field absence; medium for the separate-property boundary | The indirect callback/controller edge, response/query field feeding the gate, and exact check-key algorithm remain unresolved |
 
 ## Transfer review
 
@@ -63,3 +68,18 @@ DR-MAC-016 passed transfer review on 2026-09-23 as a version-labeled Mac shared
 decoder inventory. It may inform the response model's candidate field set, but
 it must not be treated as direct QR wire proof or as evidence of required fields,
 wire types, QR URL validation, or final persistence/LOCO `LOGIN` mapping.
+
+DR-MAC-017 through DR-MAC-019 passed transfer review on 2026-09-23. They may
+inform an offline transport profile and timeout/error model. They do not authorize
+hard-coded platform-default headers or cookies, do not establish a custom TLS
+policy, and do not establish automatic registration retries.
+
+DR-MAC-020 passed transfer review on 2026-09-23 as direct Mac QR response
+evidence. It may inform typed decoder fixtures and the QR success handoff model;
+it does not establish URL validation, field optionality, the NSError domain, or
+the final persistence/LOCO `LOGIN` mapping.
+
+DR-MAC-021 passed transfer review on 2026-09-24 as a narrow parser-boundary
+finding. It may inform the distinction between typed QR-generation decoding and
+the later local check-key gate. It does not establish the gate's input field,
+URL grammar, cryptographic recipe, or callback association.

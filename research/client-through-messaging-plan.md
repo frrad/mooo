@@ -33,8 +33,13 @@ an authentication input to the reversed client.
   builders using the reviewed Alamofire form encoding. The complete server QR
   value is preserved while a fail-closed parser derives its single transient
   `id`; scheme, host, and check-key validation remain deliberately unresolved.
-  Response decoding, common headers/cookies/signing, and success handoff remain
-  blocked on evidence.
+  A pure HTTP request constructor adds only the evidenced content type, and
+  bounded response codecs cover QR generation, QR-login success-field presence,
+  and the shared server-error envelope. Static evidence found no app-added
+  registration auth header, cookie, signature, body transform, interceptor, or
+  automatic retry. An executing HTTP client, platform-default header/cookie
+  compatibility, check-key validation, and final credential/LOCO mapping remain
+  unresolved.
 
 ## Safety and evidence rules
 
@@ -98,7 +103,6 @@ Complete the seven-operation registration codec using the current Mac profile:
 
 Resolve before live use:
 
-- the complete QR-generate success schema;
 - the QR URL grammar and check-key validation algorithm;
 - password-check ownership and when it participates in unregistered-device
   authorization;

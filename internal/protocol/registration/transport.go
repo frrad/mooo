@@ -3,6 +3,7 @@ package registration
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 	"unicode/utf8"
 )
@@ -64,6 +65,13 @@ type GenerateResponse struct {
 	DisplayUntil time.Time
 }
 
+func (r GenerateResponse) String() string {
+	return "GenerateResponse{generation=" + strconv.FormatUint(r.Generation, 10) +
+		", passcode=<redacted>, qrPayload=<redacted>}"
+}
+
+func (r GenerateResponse) GoString() string { return r.String() }
+
 // PollRequest identifies one approval poll. ChallengeID is transient and must
 // not be treated as a credential.
 type PollRequest struct {
@@ -80,6 +88,14 @@ type PollResponse struct {
 	DeviceAuthCode  string
 	DeviceAuthUntil time.Time
 }
+
+func (r PollResponse) String() string {
+	return "PollResponse{generation=" + strconv.FormatUint(r.Generation, 10) +
+		", outcome=" + strconv.FormatUint(uint64(r.Outcome), 10) +
+		", deviceAuthCode=<redacted>}"
+}
+
+func (r PollResponse) GoString() string { return r.String() }
 
 // CancelRequest identifies an explicit abandonment of an in-progress
 // challenge. Cancellation is distinct from established-session logout or
