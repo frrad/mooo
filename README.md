@@ -32,6 +32,25 @@ go test ./...
 go vet ./...
 ```
 
+The lab CLI can create and inspect an offline, client-owned secondary-device
+identity. It never discovers or imports an official KakaoTalk profile:
+
+```sh
+go run ./cmd/mooo-lab auth init \
+  --state /absolute/private/path/authstate.json \
+  --device-name "Mooo Lab Mac" \
+  --app-version 26.8.0 \
+  --os-version "macOS 26" \
+  --model MacBookAir
+
+go run ./cmd/mooo-lab auth inspect \
+  --state /absolute/private/path/authstate.json
+```
+
+The state path must be absolute. Its directory and file are restricted to the
+current user, and inspection output reports presence only; identity and credential
+values stay redacted. These commands do not make network requests.
+
 See [PLAN.md](PLAN.md) for the current research sequence.
 
 ## Status

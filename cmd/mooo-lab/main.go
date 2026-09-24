@@ -3,11 +3,14 @@
 package main
 
 import (
-	"fmt"
+	"os"
 
-	"github.com/frrad/mooo/internal/buildinfo"
+	"github.com/frrad/mooo/internal/command"
 )
 
 func main() {
-	fmt.Printf("mooo-lab %s\n", buildinfo.Version)
+	code := command.Run(os.Args[1:], os.Stdout, os.Stderr)
+	if code != 0 {
+		os.Exit(code)
+	}
 }
