@@ -161,9 +161,35 @@ pairs for deterministic fixtures.
 These encoding semantics combine direct current-client evidence of the
 `URLEncoding.httpBody` call with Alamofire's published implementation contract:
 <https://github.com/Alamofire/Alamofire/blob/master/Source/Core/ParameterEncoding.swift>.
-The meaning and accepted forms of `email`, empty-field omission behavior, common
-headers, cookies, and any request signing remain unresolved. This is therefore not
-yet a complete live network contract.
+
+### Shared HTTP session profile
+
+The seven operations share the app's Alamofire session. Static construction starts
+from Alamofire's default `NSURLSessionConfiguration` and applies session-wide
+timeouts of 300 seconds per request and 7200 seconds per resource. The session
+initializer passes no custom server-trust manager, redirect handler,
+cached-response handler, or request interceptor, so TLS trust remains the platform
+default and no registration-specific transport hook is evidenced.
+
+Each registration request begins with an empty explicit header collection and the
+submission call passes nil for both the request interceptor and request modifier.
+No registration-specific authorization header, cookie value, signature, nonce,
+digest, or body transform is present in the traced path. The effective platform
+default headers and cookie-store behavior are not part of this clean-room contract;
+the identities of two additional stripped configuration setters remain unresolved.
+
+No registration-specific HTTP retry loop or Alamofire retry interceptor was
+identified. QR/passcode polling delays are controller-level behavior and are
+specified separately above. The shared failure path recognizes a common server
+status `-950`, but this does not establish automatic retry for registration.
+
+Malformed request construction fails before submission. The shared response failure
+hook decodes JSON with a top-level dictionary and recognizes `reason`, `detailCode`,
+and `status`; absent HTTP responses are surfaced to the callback as numeric code
+`500`. HTTP status validation, transport failures, serializer failures, and
+explicit cancellation remain distinct. The exact meaning of `email`, empty-field
+omission, platform-default headers/cookies, and the common `-950` retry branch
+remain unresolved, so this is not a complete live network contract.
 
 Password checking is a distinct QR-family operation. Evidence does not yet prove
 whether it gates device authorization, permanent enrollment, or another transition,
@@ -177,6 +203,9 @@ generation result, parses that string as URL components, extracts query paramete
 QR content. It does not assemble the displayed QR from local device fields in the
 observed path. The scheme, host, other query fields, and check-key validation recipe
 remain unresolved; neither the full string nor extracted ID may be logged.
+The Mac generation decoder requires `status` as an integer, but its success path
+passes that value onward without comparing it to zero; the separate check-key gate
+is therefore not established as a `status == 0` predicate.
 
 The QR login/poll error code maps as follows:
 
@@ -217,6 +246,33 @@ and wire scalar types remain unresolved. The QR controller still only has direct
 evidence for consuming a complete server URL string, extracting its `id`, and
 using a server-supplied expiry duration. Do not infer Android's `nonce` field or
 token casing on the Mac path from this inventory.
+
+### Direct Mac QR response evidence
+
+The macOS QR-generate decoder directly requires an HTTP `200` response with:
+
+```text
+{ status: Int, url: String, remainingSeconds: Double }
+```
+
+Missing or mistyped fields fail closed. The QR controller uses the full `url`,
+extracts its query parameter `id`, and uses `remainingSeconds` for expiry. The
+decoder requires `status` to be present and integer-valued, but this controller
+path does not use its value after parsing.
+
+The route-specific QR-login/poll decoder accepts only HTTP `200` plus integer
+`status == 0`. Its success normalizer directly reads nested `user.userId` as an
+Objective-C number object and top-level `accessToken`, `refreshToken`, and
+`tokenType` as strings, emitting the normalized keys `userId`, `access_token`,
+`refresh_token`, and `token_type`. It also looks up `autoLoginAccountId` and
+`displayAccountId` as strings and reads `permanent` as a Boolean. This bounded
+Mac trace did not establish `countryIso`, `accountId`, `server_time`, or
+`nonce` on the QR route, nor the final optionality and persistence mapping.
+
+QR-login failures are carried through an NSError-like object whose `userInfo`
+contains a nested `response` dictionary. The controller extracts a numeric
+result code from that failure and then consumes result-specific response keys;
+the error domain and exact construction remain unresolved.
 
 ## Android comparison (not Mac wire proof)
 
