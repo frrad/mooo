@@ -34,7 +34,9 @@ an authentication input to the reversed client.
   value is preserved while a fail-closed parser derives its single transient
   `id`; scheme, host, and check-key validation remain deliberately unresolved.
   A pure HTTP request constructor adds only the evidenced content type, and
-  bounded response codecs cover QR generation, QR-login success-field presence,
+  an injected single-attempt executor reads and closes bounded response bodies
+  without providing a default client, retry loop, cookies, or CLI network path.
+  Bounded response codecs cover QR generation, QR-login success-field presence,
   and the shared server-error envelope. Static evidence found no app-added
   registration auth header, cookie, signature, body transform, interceptor, or
   automatic retry. An executing HTTP client, platform-default header/cookie
