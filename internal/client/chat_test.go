@@ -15,3 +15,11 @@ func TestCreateChatValidatesBeforeTransport(t *testing.T) {
 		t.Fatalf("CreateChat error = %v, want ErrNoMembers", err)
 	}
 }
+
+func TestSendTextValidatesBeforeTransport(t *testing.T) {
+	var session *Session
+	_, err := session.SendText(context.Background(), 0, "hello")
+	if !errors.Is(err, chat.ErrInvalidChatID) {
+		t.Fatalf("SendText error = %v, want ErrInvalidChatID", err)
+	}
+}

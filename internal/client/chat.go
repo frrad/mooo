@@ -21,3 +21,26 @@ func (s *Session) CreateChat(ctx context.Context, request chat.CreateRequest) (c
 	}
 	return chat.DecodeCreateResponse(reply.Body)
 }
+
+// SendText sends one text message exactly once using the current direct-text
+// WRITE shape.
+func (s *Session) SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error) {
+	request := chat.WriteRequest{
+		ChatID: chatID, Message: message, Type: chat.TextType,
+	}
+	if err := request.Validate(); err != nil {
+		return chat.WriteResponse{}, err
+	}
+	if s == nil {
+		return chat.WriteResponse{}, ErrProtocol
+	}
+	body, err := request.MarshalBSON()
+	if err != nil {
+		return chat.WriteResponse{}, err
+	}
+	reply, err := s.Request(ctx, chat.WriteCommand, body)
+	if err != nil {
+		return chat.WriteResponse{}, err
+	}
+	return chat.DecodeWriteResponse(reply.Body)
+}
