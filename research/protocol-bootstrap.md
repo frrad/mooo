@@ -126,5 +126,5 @@ string unchanged as `oauthToken` and leaves `sKey` unset; see
 - recover body-type meanings and malformed-packet rejection rules;
 - determine secure-layer type negotiation and fallback behavior;
 - specify configuration and check-in responses;
-- confirm unset-object BSON encoding and remaining response wire-key mappings;
+- confirm remaining response wire-key mappings;
 - complete exact reconnect delays, kickout reasons, and cursor gap semantics.

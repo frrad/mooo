@@ -13,9 +13,11 @@ Status: active work plan, 2026-09-20.
 - **SL-2: partial.** Registration-to-auth state boundaries and current access-token
   placement are known. Complete registration success fields and temporary
   persistence flags remain open.
-- **SL-3: static schema passed.** LOGINLIST command, 17 request fields/types,
-  response properties, token placement, and status predicates are mapped. Unset
-  object serialization and some response wire-key mappings await synthetic proof.
+- **SL-3: schema and request serialization passed.** LOGINLIST command, 17 request
+  fields/types, response properties, token placement, and status predicates are
+  mapped. Static serializer tracing proves nil object properties are omitted, and
+  synthetic Go tests pin omission plus the observed BSON integer widths. Some
+  response wire-key mappings remain open.
 - **SL-4: partial.** Booking/ticket bounds, endpoint cache validation/expiry, and
   route invalidation are mapped. Exact retry formulas and all negotiation variants
   remain open.
