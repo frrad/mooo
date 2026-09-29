@@ -137,6 +137,16 @@ func (c *Client) CreateChat(ctx context.Context, request chat.CreateRequest) (ch
 	return session.CreateChat(ctx, request)
 }
 
+// SendText lazily connects once, then sends one text message without retrying
+// an ambiguous transport result.
+func (c *Client) SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error) {
+	session, err := c.ensureSession(ctx)
+	if err != nil {
+		return chat.WriteResponse{}, err
+	}
+	return session.SendText(ctx, chatID, message)
+}
+
 // AddFriendByPhone performs the authenticated HTTP mutation without changing
 // the LOCO session lifecycle.
 func (c *Client) AddFriendByPhone(ctx context.Context, request friends.AddByPhoneRequest) (friends.Friend, error) {
