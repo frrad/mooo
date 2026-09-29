@@ -33,7 +33,11 @@ func (s *Session) SendImage(ctx context.Context, chatID int64, data []byte) (med
 		return media.SendResult{}, err
 	}
 
-	upload, err := dialSecure(ctx, ship.Host, ship.Port)
+	dial := s.mediaDial
+	if dial == nil {
+		dial = dialSecure
+	}
+	upload, err := dial(ctx, ship.Host, ship.Port)
 	if err != nil {
 		return media.SendResult{}, fmt.Errorf("client: media connect: %w", err)
 	}
