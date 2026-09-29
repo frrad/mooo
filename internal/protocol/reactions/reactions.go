@@ -192,41 +192,47 @@ func Send(ctx context.Context, doer Doer, profile ClientProfile, reaction Reques
 type MembersResponse struct {
 	Revision int64
 	Members  map[Type][]int64
+	// Fields preserves the complete response dictionary. The current Mac client
+	// forwards this dictionary to its caller and only interprets revision and
+	// legacy member buckets itself, so unknown server additions must survive.
+	Fields map[string]json.RawMessage
 }
 
 func DecodeMembersResponse(body []byte) (MembersResponse, error) {
 	var fields map[string]json.RawMessage
 	decoder := json.NewDecoder(bytes.NewReader(body))
-	if err := decoder.Decode(&fields); err != nil || requireJSONEOF(decoder) != nil {
+	if err := decoder.Decode(&fields); err != nil || fields == nil || requireJSONEOF(decoder) != nil {
 		return MembersResponse{}, ErrInvalidResponse
 	}
-	response := MembersResponse{Members: make(map[Type][]int64)}
+	response := MembersResponse{
+		Members: make(map[Type][]int64),
+		Fields:  make(map[string]json.RawMessage, len(fields)),
+	}
 	for key, raw := range fields {
-		if key == "revision" {
-			if err := json.Unmarshal(raw, &response.Revision); err != nil || response.Revision <= 0 {
-				return MembersResponse{}, ErrInvalidResponse
-			}
+		response.Fields[key] = append(json.RawMessage(nil), raw...)
+	}
+	if raw, ok := fields["revision"]; ok {
+		_ = json.Unmarshal(raw, &response.Revision)
+	}
+	for reactionType := Heart; reactionType <= Sad; reactionType++ {
+		raw, ok := fields[strconv.FormatInt(int64(reactionType), 10)]
+		if !ok {
 			continue
-		}
-		parsed, err := strconv.ParseInt(key, 10, 32)
-		if err != nil || Type(parsed) < Heart || Type(parsed) > Sad {
-			return MembersResponse{}, ErrInvalidResponse
 		}
 		var members []int64
 		if err := json.Unmarshal(raw, &members); err != nil || members == nil {
-			return MembersResponse{}, ErrInvalidResponse
+			continue
 		}
-		for _, userID := range members {
-			if userID <= 0 {
-				return MembersResponse{}, ErrInvalidResponse
-			}
-		}
-		response.Members[Type(parsed)] = members
-	}
-	if response.Revision <= 0 {
-		return MembersResponse{}, ErrInvalidResponse
+		response.Members[reactionType] = members
 	}
 	return response, nil
+}
+
+// NeedsMetaSync reports the cache decision made by the current Mac client after
+// a members response: only a positive revision newer than the stored reaction
+// metadata revision triggers synchronization.
+func (r MembersResponse) NeedsMetaSync(storedRevision int64) bool {
+	return r.Revision > 0 && r.Revision > storedRevision
 }
 
 // FetchMembers resolves the user IDs behind each current reaction type.

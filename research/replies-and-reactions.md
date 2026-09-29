@@ -86,16 +86,45 @@ Actor attribution is a separate authenticated read:
 GET https://talk-pilsner.kakao.com/messaging/chats/{chatId}/bubble/reactions/{logId}/members
 ```
 
-Its JSON object maps string selection values (`"1"` through `"6"`) to arrays of
-user IDs and includes a positive `revision`. The aggregate item's `o` identifier
-is therefore not interchangeable with the outbound selection value or member-map
-key.
+Its JSON object maps legacy string selection values (`"1"` through `"6"`) to
+arrays of user IDs and may include a `revision`. The official client forwards
+the complete response dictionary to its caller. It interprets only valid arrays
+under keys 1 through 6 for the legacy reaction detail UI, ignores malformed or
+unknown buckets, and uses a revision only when it is positive and newer than the
+locally stored reaction-metadata revision. The clean-room decoder therefore
+exposes both the typed legacy buckets and every raw top-level field, including
+unknown additions. The aggregate item's `o` identifier is not interchangeable
+with the outbound selection value or member-map key.
 
 An official Android heart produced a type-2 `CHGLOGMETA` with count one. The
 production Go client then sent a synthetic message, added its own heart, fetched
 members through the public client method, and received one heart member matching
 the authenticated disposable account with a positive revision. Confidence: high
-for the observed direct-chat heart path and response shape.
+for the observed direct-chat heart path and response shape. Static confidence is
+high for the Mac client's forwarding and revision behavior.
+
+## Mini/custom reaction attribution
+
+The Mac reaction-detail UI can concurrently fetch a second, feature-gated data
+source. This is not part of the `/members` response:
+
+```text
+POST https://kage.talk.kakao.com/emoticon/chat/rx/log-details
+```
+
+The recovered request supplies `chatId`, `logId`, and an optional positive
+`linkId`. Its response has a top-level `details` collection. Each detail carries
+kind `k`, reaction identifier `o`, and user IDs `u` encoded as decimal strings;
+kind 2 may also carry item metadata. The UI merges kind-1 entries with matching
+legacy `/members` entries and deduplicates their user IDs.
+
+Static confidence is high for the path, fields, and merge behavior. Controlled
+requests from the owned disposable profile returned HTTP 404 for the tested
+account, consistent with the official client's feature gating but insufficient
+to validate the live request encoding. Production support remains deliberately
+unimplemented until that method and availability contract can be validated; the
+public `/members` implementation does not pretend custom reactions are legacy
+buckets.
 
 ## Implementation boundaries
 
@@ -106,6 +135,8 @@ for the observed direct-chat heart path and response shape.
 - `internal/client` integrates both paths with the persisted profile and the
   existing single-session lifecycle.
 
-Automated tests use synthetic identifiers and content. The remaining work is to
-observe all selection types, reply-to-media variants, open-chat `linkId` behavior,
-and any reaction revision conflict semantics.
+Automated tests use synthetic identifiers and content, including forward-
+compatibility cases for unknown and malformed `/members` fields. The remaining
+work is to observe all selection types, reply-to-media variants, open-chat
+`linkId` behavior, live revision-conflict behavior, and an account for which the
+feature-gated mini/custom reaction detail API is available.
