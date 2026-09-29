@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestBuildQRGenerateRequestAlamofireGolden(t *testing.T) {
+func TestBuildQRGenerateRequestJSONGolden(t *testing.T) {
 	previousID := "prev value/?&=+"
 	request, err := BuildQRGenerateRequest(QRGenerateRequest{
 		PreviousID: &previousID,
@@ -26,12 +26,9 @@ func TestBuildQRGenerateRequestAlamofireGolden(t *testing.T) {
 	if request.ContentType != RegistrationFormContentType {
 		t.Fatalf("content type = %q", request.ContentType)
 	}
-	want := "device%5Bmodel%5D=MacBook%20Air%20%5BM%5D&device%5Bname%5D=Mooo%20Lab%20%26%20/?&device%5BosVersion%5D=mac%20OS/26?x&device%5Buuid%5D=u%2Bid%3D1&previousId=prev%20value/?%26%3D%2B"
+	want := `{"device":{"model":"MacBook Air [M]","name":"Mooo Lab & /?","osVersion":"mac OS/26?x","uuid":"u+id=1"},"previousId":"prev value/?&=+"}`
 	if got := string(request.Body); got != want {
 		t.Fatalf("body = %q, want %q", got, want)
-	}
-	if strings.Contains(string(request.Body), "+") {
-		t.Fatalf("body uses '+' instead of percent escaping: %q", request.Body)
 	}
 }
 
@@ -41,7 +38,7 @@ func TestBuildQRGenerateRequestOptionalPreviousID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(without.Body); got != "device%5Bmodel%5D=model&device%5Bname%5D=name&device%5BosVersion%5D=os&device%5Buuid%5D=uuid" {
+	if got := string(without.Body); got != `{"device":{"model":"model","name":"name","osVersion":"os","uuid":"uuid"}}` {
 		t.Fatalf("without previousId = %q", got)
 	}
 	empty := ""
@@ -49,12 +46,12 @@ func TestBuildQRGenerateRequestOptionalPreviousID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(withEmpty.Body); got != "device%5Bmodel%5D=model&device%5Bname%5D=name&device%5BosVersion%5D=os&device%5Buuid%5D=uuid&previousId=" {
+	if got := string(withEmpty.Body); got != `{"device":{"model":"model","name":"name","osVersion":"os","uuid":"uuid"},"previousId":""}` {
 		t.Fatalf("explicit empty previousId = %q", got)
 	}
 }
 
-func TestBuildPasscodeGenerateRequestBooleanAndEscaping(t *testing.T) {
+func TestBuildPasscodeGenerateRequestBooleanAndJSONEscaping(t *testing.T) {
 	request, err := BuildPasscodeGenerateRequest(PasscodeGenerateRequest{
 		Email:     "e mail+&",
 		Password:  "p/word?&",
@@ -69,7 +66,7 @@ func TestBuildPasscodeGenerateRequestBooleanAndEscaping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "device%5Bmodel%5D=model&device%5Bname%5D=name&device%5BosVersion%5D=os&device%5Buuid%5D=uuid&email=e%20mail%2B%26&password=p/word?%26&permanent=0"
+	want := `{"device":{"model":"model","name":"name","osVersion":"os","uuid":"uuid"},"email":"e mail+&","password":"p/word?&","permanent":false}`
 	if got := string(request.Body); got != want {
 		t.Fatalf("body = %q, want %q", got, want)
 	}
@@ -80,7 +77,7 @@ func TestBuildPasscodeGenerateRequestBooleanAndEscaping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(string(request.Body), "permanent=1") {
+	if !strings.HasSuffix(string(request.Body), `"permanent":true}`) {
 		t.Fatalf("true permanent encoding = %q", request.Body)
 	}
 }
@@ -99,7 +96,7 @@ func TestBuildRemainingRegistrationForms(t *testing.T) {
 				return BuildPasscodeRegisterRequest(PasscodeRegisterRequest{Email: "email", Password: "password", Device: uuidDevice})
 			},
 			route: RoutePasscodeRegister,
-			body:  "device%5Buuid%5D=uuid&email=email&password=password",
+			body:  `{"device":{"uuid":"uuid"},"email":"email","password":"password"}`,
 		},
 		{
 			name: "passcode cancel",
@@ -107,7 +104,7 @@ func TestBuildRemainingRegistrationForms(t *testing.T) {
 				return BuildPasscodeCancelRequest(PasscodeCancelRequest{Email: "email", Password: "password", Device: uuidDevice})
 			},
 			route: RoutePasscodeCancel,
-			body:  "device%5Buuid%5D=uuid&email=email&password=password",
+			body:  `{"device":{"uuid":"uuid"},"email":"email","password":"password"}`,
 		},
 		{
 			name: "QR cancel",
@@ -115,7 +112,7 @@ func TestBuildRemainingRegistrationForms(t *testing.T) {
 				return BuildQRCancelRequest(QRCancelRequest{ID: "qr-id", Device: uuidDevice})
 			},
 			route: RouteQRCancel,
-			body:  "device%5Buuid%5D=uuid&id=qr-id",
+			body:  `{"device":{"uuid":"uuid"},"id":"qr-id"}`,
 		},
 		{
 			name: "QR login",
@@ -123,7 +120,7 @@ func TestBuildRemainingRegistrationForms(t *testing.T) {
 				return BuildQRLoginRequest(QRLoginRequest{ID: "qr-id", Device: uuidDevice})
 			},
 			route: RouteQRLogin,
-			body:  "device%5Buuid%5D=uuid&id=qr-id",
+			body:  `{"device":{"uuid":"uuid"},"id":"qr-id"}`,
 		},
 		{
 			name: "QR password check",
@@ -131,7 +128,7 @@ func TestBuildRemainingRegistrationForms(t *testing.T) {
 				return BuildQRPasswordCheckRequest(QRPasswordCheckRequest{Password: "password"})
 			},
 			route: RouteQRPasswordCheck,
-			body:  "password=password",
+			body:  `{"password":"password"}`,
 		},
 	}
 	for _, test := range tests {

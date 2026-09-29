@@ -6,8 +6,9 @@ Status: active work plan, 2026-09-20.
 
 - **DR-0: passed.** The versioned artifact, private output locations, and clean-room
   boundary are recorded.
-- **DR-1: partial.** Seven passcode/QR routes, their builders, and their controller
-  lifecycles are inventoried. Current-device unregister is attributed; established-
+- **DR-1: partial.** Seven passcode/QR routes, their JSON builders, exact current
+  logged-out Mac header profile, derived UUID recipe, and controller lifecycles are
+  inventoried. Current-device unregister is attributed; established-
   device listing and selected-device revocation remain unknown.
 - **DR-2: static model passed.** Challenge, polling, display-expiry, device-auth,
   refresh, cancellation, and stale-callback behavior are modeled. Poll scheduling

@@ -7,6 +7,9 @@ package authstate
 
 import (
 	"crypto/rand"
+	"crypto/sha1" // The reviewed Mac device-identifier profile requires SHA-1.
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -67,6 +70,22 @@ type Identity struct {
 	DeviceUUID string      `json:"device_uuid"`
 	DeviceName string      `json:"device_name"`
 	Metadata   MacMetadata `json:"metadata"`
+}
+
+// WireDeviceUUID derives the identifier sent by the reviewed Mac profile from
+// the client-owned UUID seed. The seed remains the durable local identity;
+// callers must use this derived value consistently for registration and LOCO.
+func (i Identity) WireDeviceUUID() (string, error) {
+	if !validUUID(i.DeviceUUID) {
+		return "", ErrCorrupt
+	}
+	input := []byte(i.DeviceUUID)
+	sha1Sum := sha1.Sum(input)
+	sha256Sum := sha256.Sum256(input)
+	combined := make([]byte, 0, len(sha1Sum)+len(sha256Sum))
+	combined = append(combined, sha1Sum[:]...)
+	combined = append(combined, sha256Sum[:]...)
+	return base64.StdEncoding.EncodeToString(combined), nil
 }
 
 // String never exposes the device UUID, name, or metadata. Identity values

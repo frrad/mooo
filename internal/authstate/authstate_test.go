@@ -238,3 +238,15 @@ func TestFormattingAndErrorsDoNotRevealSecrets(t *testing.T) {
 		t.Fatalf("path error revealed input: %v", err)
 	}
 }
+
+func TestWireDeviceUUIDSyntheticVector(t *testing.T) {
+	identity := Identity{DeviceUUID: "00112233-4455-4677-8899-aabbccddeeff"}
+	got, err := identity.WireDeviceUUID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "qRwKCxYJX7oPVcRBsLzlO9zRvhYYqe8arn41VFrdvs5cxrBh4qisTCmekxEjW+85Kt3BJA=="
+	if got != want {
+		t.Fatalf("wire UUID mismatch: %q", got)
+	}
+}

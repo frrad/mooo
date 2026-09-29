@@ -9,7 +9,7 @@ import (
 )
 
 // The transport boundary is intentionally semantic. It carries the values
-// known by the reducer, but does not prescribe URL-form field names, nested
+// known by the reducer, but does not prescribe JSON field names, nested
 // dictionary encoding, cookies, headers, QR validation, or credentials. Those
 // details remain in the reviewed HTTP profile and are not complete enough for
 // an implementation here.
