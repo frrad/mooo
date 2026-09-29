@@ -38,6 +38,10 @@ reproducible research before bridge features.
   account unless the maintainer explicitly requests it.
 - Keep an evidence trail: client version, platform, experiment date, method,
   sanitized observation, confidence, and source/provenance.
+- Reverse the authorized official clients and perform controlled owned-account
+  observations before consulting public prior art. Use prior art only afterward
+  to confirm, challenge, or contextualize independently derived findings; never
+  use it as the starting point for a protocol implementation.
 - Separate observed facts from hypotheses and implementation decisions.
 - Do not copy decompiled source or proprietary assets into the implementation.
   Document behavior in an implementation-neutral specification first.
