@@ -75,6 +75,9 @@ Execution through first text send/receive follows
       text, photo upload, and ambiguous-disconnect/no-retry behavior.
 - [x] Add a single-consumer typed event stream for inbound text, photos,
       unsupported message types, unknown methods, and non-fatal decode errors.
+- [x] Implement and live-validate direct-message replies, reaction mutation,
+      aggregate reaction events, and reaction-member attribution using the
+      persisted session profile.
 - [ ] Add a private versioned continuity checkpoint and make the long-running
       Matrix/Beeper bridge the exclusive per-profile session owner. On bridge
       restart, perform one cursor-based resumed login rather than QR
