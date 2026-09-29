@@ -10,6 +10,7 @@ import (
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/protocol/chat"
+	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/friends"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/media"
@@ -17,6 +18,16 @@ import (
 )
 
 var ErrClientClosed = errors.New("client: client closed")
+
+var ErrPushConsumerSelected = errors.New("client: push consumer already selected")
+
+type pushConsumerMode uint8
+
+const (
+	pushConsumerNone pushConsumerMode = iota
+	pushConsumerRaw
+	pushConsumerTyped
+)
 
 // Client owns authenticated state and one long-lived LOCO session within the
 // process that holds the profile's global owner lease. Operations establish
@@ -35,6 +46,8 @@ type Client struct {
 	renewalAttempted bool
 	dial             func(context.Context, authstate.State) (*Session, error)
 	lease            *profileLease
+	pushConsumer     pushConsumerMode
+	eventStream      chan events.Result
 }
 
 // Open acquires the profile's process-wide owner lease and creates a reusable
@@ -137,7 +150,56 @@ func (c *Client) Pushes(ctx context.Context) (<-chan loco.Packet, error) {
 	if err != nil {
 		return nil, err
 	}
-	return session.Pushes(), nil
+	raw := session.Pushes()
+	if raw == nil {
+		return nil, ErrProtocol
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.pushConsumer == pushConsumerTyped {
+		return nil, ErrPushConsumerSelected
+	}
+	c.pushConsumer = pushConsumerRaw
+	return raw, nil
+}
+
+// Events returns one reusable typed event stream for this client. Packet decode
+// failures are emitted as Result errors without terminating the stream. Raw
+// Pushes and typed Events are mutually exclusive because each session has one
+// ordered unsolicited-packet consumer.
+func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
+	session, err := c.ensureSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	raw := session.Pushes()
+	if raw == nil {
+		return nil, ErrProtocol
+	}
+	c.mu.Lock()
+	if c.pushConsumer == pushConsumerRaw {
+		c.mu.Unlock()
+		return nil, ErrPushConsumerSelected
+	}
+	if c.eventStream != nil {
+		stream := c.eventStream
+		c.mu.Unlock()
+		return stream, nil
+	}
+	stream := make(chan events.Result, requestLimit)
+	c.pushConsumer = pushConsumerTyped
+	c.eventStream = stream
+	c.mu.Unlock()
+	go decodeEventStream(raw, stream)
+	return stream, nil
+}
+
+func decodeEventStream(raw <-chan loco.Packet, output chan<- events.Result) {
+	defer close(output)
+	for packet := range raw {
+		event, err := events.Decode(packet)
+		output <- events.Result{Event: event, Err: err}
+	}
 }
 
 // CreateChat uses the client's existing session, or lazily establishes its
