@@ -21,6 +21,9 @@ sanitized, reproducible evidence.
       a single controlled retry on 2026-09-23 cleared the `-997` approval block,
       although the Mac session then failed its server connection and did not
       remain registered.
+- [x] Complete a clean-room QR authorization, persist the returned client-owned
+      state, reconnect from fresh processes, and receive one synthetic self-chat
+      message on 2026-09-28.
 - [ ] Establish repeatable experiments for login, device registration, reconnect,
       logout, and revocation.
 - [ ] Determine which observations are possible through logs, metadata, static
@@ -44,13 +47,13 @@ Execution through first text send/receive follows
 
 ## Phase 3 — Go protocol client
 
-- [ ] Generate a new client-owned device identity and complete QR-based secondary-
+- [x] Generate a new client-owned device identity and complete QR-based secondary-
       device authorization without importing official Mac state.
-- [ ] Persist only authentication state returned to that new identity, with
+- [x] Persist only authentication state returned to that new identity, with
       redacted diagnostics and secure local storage boundaries.
-- [ ] Implement and synthetically verify LOCO framing, BSON, and secure transport.
-- [ ] Implement `GETCONF` -> `CHECKIN` -> `LOGINLIST` and complete one bounded
-      disposable-account login.
+- [x] Implement and synthetically verify LOCO framing, BSON, and secure transport.
+- [x] Implement `GETCONF` -> `CHECKIN` -> `LOGINLIST` in the bounded lab probe and
+      complete one bounded disposable-account login.
 - [ ] Specify and validate read-only inbound text delivery, acknowledgements,
       cursors, deduplication, and reconnect behavior.
 - [ ] Specify and validate one explicit outbound text send with safe idempotency
