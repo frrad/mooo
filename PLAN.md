@@ -73,6 +73,8 @@ Execution through first text send/receive follows
 - [x] Add a deterministic scripted Kakao backend harness that exercises the real
       client across booking, check-in, paginated login, renewal, idle pushes,
       text, photo upload, and ambiguous-disconnect/no-retry behavior.
+- [x] Add a single-consumer typed event stream for inbound text, photos,
+      unsupported message types, unknown methods, and non-fatal decode errors.
 - [ ] Add a private versioned continuity checkpoint and make the long-running
       Matrix/Beeper bridge the exclusive per-profile session owner. On bridge
       restart, perform one cursor-based resumed login rather than QR

@@ -18,6 +18,7 @@ import (
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/protocol/chat"
+	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -282,7 +283,7 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 		}, statusDocument(
 			bson.E{Key: "chatDatas", Value: bson.A{bson.Raw(secondChat)}}, bson.E{Key: "eof", Value: true},
 		)),
-		pushAfter(pushTrigger, "MSG", bson.D{{Key: "chatId", Value: chatID}, {Key: "chatLog", Value: bson.D{{Key: "type", Value: int32(1)}, {Key: "msg", Value: "synthetic inbound"}}}}),
+		pushAfter(pushTrigger, "MSG", bson.D{{Key: "chatId", Value: chatID}, {Key: "chatLog", Value: bson.D{{Key: "logId", Value: int64(100)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "synthetic inbound"}}}}),
 		expectRequest("WRITE", func(raw bson.Raw) error {
 			if err := requireExactKeys(raw, "chatId", "msg", "type", "noSeen"); err != nil {
 				return err
@@ -395,15 +396,23 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	if err != nil || len(chats) != 2 {
 		t.Fatalf("initial chats = %d, err=%v", len(chats), err)
 	}
-	pushes, err := api.Pushes(ctx)
+	eventStream, err := api.Events(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
+	secondEventStream, err := api.Events(ctx)
+	if err != nil || secondEventStream != eventStream {
+		t.Fatal("Events did not return the reusable typed stream")
+	}
+	if _, err := api.Pushes(ctx); !errors.Is(err, ErrPushConsumerSelected) {
+		t.Fatalf("Pushes after Events error = %v", err)
+	}
 	close(pushTrigger)
 	select {
-	case push := <-pushes:
-		if push.Header.Method != "MSG" {
-			t.Fatalf("push method = %q", push.Header.Method)
+	case result := <-eventStream:
+		message, ok := result.Event.(events.TextMessage)
+		if result.Err != nil || !ok || message.Message != "synthetic inbound" || message.LogID != 100 {
+			t.Fatalf("typed event = %T %#v, err=%v", result.Event, result.Event, result.Err)
 		}
 	case <-ctx.Done():
 		t.Fatal("idle MSG push was not delivered")
