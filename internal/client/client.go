@@ -18,17 +18,21 @@ var ErrClientClosed = errors.New("client: client closed")
 
 // Client owns authenticated state and one long-lived LOCO session within the
 // process that holds the profile's global owner lease. Operations establish
-// that session once and reuse it. Client never reconnects automatically: after
-// a disconnect, a caller must make an explicit lifecycle decision so an
-// ambiguous mutation is not repeated.
+// that session once and reuse it. Initial establishment may perform one reviewed
+// credential renewal followed by one fresh login when LOGINLIST returns -950.
+// Client never reconnects automatically after a session disconnect: a caller
+// must make an explicit lifecycle decision so an ambiguous mutation is not
+// repeated.
 type Client struct {
-	mu      sync.Mutex
-	state   authstate.State
-	http    friends.Doer
-	session *Session
-	closed  bool
-	dial    func(context.Context, authstate.State) (*Session, error)
-	lease   *profileLease
+	mu               sync.Mutex
+	state            authstate.State
+	store            *authstate.Store
+	http             friends.Doer
+	session          *Session
+	closed           bool
+	renewalAttempted bool
+	dial             func(context.Context, authstate.State) (*Session, error)
+	lease            *profileLease
 }
 
 // Open acquires the profile's process-wide owner lease and creates a reusable
@@ -54,6 +58,7 @@ func Open(statePath string, doer friends.Doer) (*Client, error) {
 		return nil, err
 	}
 	client.lease = lease
+	client.store = store
 	return client, nil
 }
 
@@ -72,8 +77,8 @@ func newClient(state authstate.State, doer friends.Doer) (*Client, error) {
 	return &Client{state: state, http: doer, dial: connectSession}, nil
 }
 
-// Connect establishes the client's session if needed. Repeated calls on the
-// same Client are idempotent and reuse the existing session.
+// Connect establishes the client's session if needed. Repeated calls after
+// success are idempotent and reuse the existing session.
 func (c *Client) Connect(ctx context.Context) error {
 	_, err := c.ensureSession(ctx)
 	return err
@@ -92,6 +97,19 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 		return c.session, nil
 	}
 	session, err := c.dial(ctx, c.state)
+	if err == nil {
+		c.session = session
+		return session, nil
+	}
+	var status StatusError
+	if c.store == nil || c.renewalAttempted || !errors.As(err, &status) || status.Status != -950 {
+		return nil, err
+	}
+	c.renewalAttempted = true
+	if renewErr := c.renewCredentials(ctx); renewErr != nil {
+		return nil, errors.Join(ErrCredentialRenewal, renewErr)
+	}
+	session, err = c.dial(ctx, c.state)
 	if err != nil {
 		return nil, err
 	}

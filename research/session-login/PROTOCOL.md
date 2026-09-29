@@ -12,6 +12,7 @@ binary addresses, internal names, or proprietary implementation text.
 ```text
 registration HTTP succeeds
   -> install user identity and access-token state
+  -> renew all token fields once when the access token is rejected as expired
   -> GETCONF when routing is absent/stale
   -> CHECKIN against a ticket endpoint
   -> connect secure carriage transport
@@ -69,6 +70,34 @@ The QR coordinator owns the password-only request. It returns success only when:
 4. `status == 0`.
 
 Every other shape or status fails closed.
+
+## Access-token renewal
+
+The authenticated Mac HTTP client renews an expired access token with:
+
+- base URL `https://katalk.kakao.com`;
+- route `/mac/account/renew_token.json`;
+- HTTP `POST` with an `application/x-www-form-urlencoded` body;
+- `grant_type=refresh_token` and `refresh_token=<current refresh token>`;
+- the ordinary Mac `A`, `Accept-Language`, and `User-Agent` headers;
+- `Authorization: <current access token>-<wire device UUID>`.
+
+The Authorization value is the existing, possibly expired access token joined to
+the registered wire UUID. The refresh token is sent only in the form body. No
+additional signature, nonce, digest, or token transform occurs in this path.
+
+A successful JSON dictionary provides three strings named `access_token`,
+`refresh_token`, and `token_type`. All three must be present and nonempty before
+any state changes. They replace the prior token triple atomically; user identity
+and unrelated auto-login metadata are preserved. A malformed, incomplete,
+non-successful, cancelled, or transport-failed renewal leaves the old credential
+snapshot untouched.
+
+Renewal is a credential transition, not a generic request retry. One admitted
+connection attempt may renew once and then make one fresh LOGINLIST attempt. It
+must not recursively renew, retry an ambiguous mutation, or loop on rejection.
+The profile owner lease covers reading the old generation, renewal, atomic state
+replacement, and the subsequent login.
 
 ### QR validation and results
 
@@ -199,9 +228,13 @@ Special events are distinct:
 - an upper-layer disconnect that survives/exhausts manager recovery logs out
   without database reset.
 
-Expired authentication is terminal: rejected credentials must not be retried in a
-tight loop. The current numeric association for the expired-token presentation is
-not yet proven.
+Expired authentication must not be retried in a tight loop. Shared current-client
+HTTP infrastructure recognizes `-950` as an expired-token condition, and a bounded
+owned-account observation returned `-950` from LOGINLIST after the same persisted
+token began receiving HTTP 401. This numeric association is high-confidence but
+combines static and controlled-live evidence rather than a direct LOGINLIST switch
+trace. A client may admit one renewal transition for `-950`, then fail closed if
+renewal or the following LOGINLIST fails.
 
 ## Current blockers
 

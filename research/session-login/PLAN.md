@@ -33,6 +33,11 @@ Status: active work plan, 2026-09-20.
   them from fresh processes to complete `GETCONF -> CHECKIN -> secure-v3 carriage
   -> LOGINLIST` with status 0 without another approval. A connected session also
   decoded an exact synthetic self-chat sentence from an unsolicited `MSG`.
+- **SL-8: passed.** The current
+  client route, form fields, inherited authenticated headers, three-field success
+  result, and atomic replacement behavior are mapped and synthetically tested. A
+  single bounded renewal rotated persisted credentials without QR; the following
+  LOGINLIST reached the independent `-328` secondary-device limit and stopped.
 
 ## Target outcome
 

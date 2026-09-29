@@ -54,6 +54,8 @@ Execution through first text send/receive follows
 - [x] Implement and synthetically verify LOCO framing, BSON, and secure transport.
 - [x] Implement `GETCONF` -> `CHECKIN` -> `LOGINLIST` in the bounded lab probe and
       complete one bounded disposable-account login.
+- [x] Implement and validate one-shot refresh-token rotation under the profile
+      lease, followed by exactly one fresh LOGINLIST attempt.
 - [ ] Specify and validate read-only inbound text delivery, acknowledgements,
       cursors, deduplication, and reconnect behavior.
 - [ ] Specify and validate one explicit outbound text send with safe idempotency

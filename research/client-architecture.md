@@ -26,7 +26,10 @@ can move from `internal/client` to a public package without exposing wire types.
 
 ## Session lifecycle invariants
 
-- Repeated `Client.Connect` calls on the same instance are idempotent.
+- Repeated `Client.Connect` calls after success are idempotent.
+- Initial establishment may admit one access-token renewal under the profile
+  lease, atomically rotate the persisted token triple, and make one fresh
+  LOGINLIST attempt. Renewal never loops and is not a general request retry.
 - Chat operations use the session already owned by `Client`; they do not invoke a
   free-standing login function.
 - `LOGINLIST` is accepted from its BSON `status`, not the LOCO frame header.

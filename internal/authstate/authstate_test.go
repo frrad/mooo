@@ -152,6 +152,41 @@ func TestInstallCredentialsIsCompleteAndAtomic(t *testing.T) {
 	}
 }
 
+func TestCompareAndSwapCredentials(t *testing.T) {
+	path := testPath(t)
+	store, err := Create(path, testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := Credentials{UserID: 42, AccessToken: "old-access", AutoLoginMaterial: []byte(`{"refresh_token":"old-refresh"}`)}
+	if err := store.InstallCredentials(old); err != nil {
+		t.Fatal(err)
+	}
+	replacement := Credentials{UserID: 42, AccessToken: "new-access", AutoLoginMaterial: []byte(`{"refresh_token":"new-refresh"}`)}
+	stale := old.Clone()
+	stale.AccessToken = "stale-access"
+	if err := store.CompareAndSwapCredentials(stale, replacement); !errors.Is(err, ErrCredentialsChanged) {
+		t.Fatalf("stale swap error = %v, want ErrCredentialsChanged", err)
+	}
+	state, err := store.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Credentials.AccessToken != old.AccessToken {
+		t.Fatal("stale swap modified credentials")
+	}
+	if err := store.CompareAndSwapCredentials(old, replacement); err != nil {
+		t.Fatal(err)
+	}
+	state, err = store.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Credentials.AccessToken != replacement.AccessToken || string(state.Credentials.AutoLoginMaterial) != string(replacement.AutoLoginMaterial) {
+		t.Fatalf("replacement not installed: %v", state.Credentials)
+	}
+}
+
 func TestCorruptionAndVersionMismatchFailClosed(t *testing.T) {
 	path := testPath(t)
 	if _, err := Create(path, testConfig()); err != nil {
