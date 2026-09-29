@@ -28,11 +28,11 @@ Status: active work plan, 2026-09-20.
   status classification, endpoint-cache rules, registration HTTP metadata, and a
   recovery reducer have synthetic tests. Network transmission remains deferred
   until serializer tests close the remaining byte-level gaps.
-- **SL-7: no longer cooldown-blocked, but the baseline remains incomplete.** One
-  controlled official Mac QR approval cleared `-997` on 2026-09-23, then the Mac
-  session failed its server connection and did not remain registered. Live
-  reversed-client validation remains limited to preplanned, single attempts after
-  the synthetic gates pass.
+- **SL-7: passed for the vertical slice.** On 2026-09-28 the clean-room client
+  completed QR authorization, persisted the returned credentials, and then used
+  them from fresh processes to complete `GETCONF -> CHECKIN -> secure-v3 carriage
+  -> LOGINLIST` with status 0 without another approval. A connected session also
+  decoded an exact synthetic self-chat sentence from an unsolicited `MSG`.
 
 ## Target outcome
 

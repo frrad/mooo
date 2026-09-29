@@ -222,6 +222,7 @@ The QR login/poll error code maps as follows:
 
 | Code | Semantic result |
 | ---: | --- |
+| `-100` | Unregistered device; device authorization required (controlled live observation) |
 | `1` | Unregistered device; device authorization required |
 | `5` | Suspended user |
 | `13` | Unsupported device version |

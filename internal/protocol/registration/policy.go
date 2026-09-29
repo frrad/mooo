@@ -46,7 +46,7 @@ func DecodeQROutcome(code int) Outcome {
 // platform-sized integer conversion. Unknown values fail closed.
 func DecodeQROutcome64(code int64) Outcome {
 	switch code {
-	case 1:
+	case 1, -100:
 		return OutcomeUnregisteredDevice
 	case 5:
 		return OutcomeSuspended
