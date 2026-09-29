@@ -58,7 +58,7 @@ Execution through first text send/receive follows
       lease, followed by exactly one fresh LOGINLIST attempt.
 - [ ] Specify and validate read-only inbound text delivery, acknowledgements,
       cursors, deduplication, and reconnect behavior.
-- [ ] Specify and validate one explicit outbound text send with safe idempotency
+- [x] Specify and validate one explicit outbound text send with safe idempotency
       and no automatic retry after ambiguous delivery.
 - [ ] Implement transport, framing, and serialization packages.
 - [ ] Implement credential/session storage interfaces with secure defaults.
@@ -67,6 +67,9 @@ Execution through first text send/receive follows
 - [x] Introduce a long-lived client owner that lazily establishes and reuses one
       session, validates response-body login status, completes login paging, and
       never reconnects or retries mutations implicitly.
+- [x] Implement and live-validate single-photo send and idle receive/download
+      between owned disposable accounts, with exact-byte checksum verification,
+      bounded parsing, and no automatic retry of ambiguous upload stages.
 - [ ] Add a private versioned continuity checkpoint and make the long-running
       Matrix/Beeper bridge the exclusive per-profile session owner. On bridge
       restart, perform one cursor-based resumed login rather than QR
