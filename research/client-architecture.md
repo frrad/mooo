@@ -14,12 +14,12 @@ Status: implementation direction; protocol details remain evidence-driven.
    point.
 3. `internal/client/Client` owns loaded client state, authenticated HTTP behavior,
    and one cached `Session`. Operations use the session owned by that client.
-4. A long-running local daemon/bridge is the global owner for each configured
+4. The long-running Matrix/Beeper bridge is the global owner for each configured
    Kakao identity. It holds an exclusive per-profile lease and owns exactly one
-   `Client`. Commands communicate with that owner over local IPC instead of
-   constructing clients and logging in independently. A one-process-per-command
-   CLI cannot provide persistent-session semantics and must not be the primary
-   runtime model.
+   `Client`. Matrix is the application interface; no additional local daemon or
+   IPC layer is required. A one-process-per-command CLI cannot provide
+   persistent-session semantics and is limited to offline research and
+   administration while the bridge is stopped.
 
 Once the API is stable enough for downstream use, the application-facing layer
 can move from `internal/client` to a public package without exposing wire types.
@@ -44,7 +44,7 @@ can move from `internal/client` to a public package without exposing wire types.
 ## Durable continuity state
 
 A live socket is an operating-system resource and cannot be serialized to disk.
-The daemon keeps it open for normal operation. Its private, versioned checkpoint
+The bridge keeps it open for normal operation. Its private, versioned checkpoint
 stores everything needed to resume after an unavoidable process or machine
 restart:
 
@@ -62,9 +62,10 @@ never committed. A restart necessarily opens a new network socket and performs
 one resumed login; it must not redo QR authorization or start an unbounded login
 loop.
 
-The daemon's local IPC should expose operations such as create chat, send, sync,
-and subscribe to events. Short-lived CLI commands become IPC clients and never
-touch Kakao transport directly.
+The bridge exposes chat, send, sync, and event behavior through Matrix/Beeper.
+Separate local IPC is unnecessary unless a concrete operational need appears.
+Research or repair commands must respect the same profile lease and cannot touch
+Kakao transport while the bridge owns the profile.
 
 ## Event direction
 

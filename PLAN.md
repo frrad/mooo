@@ -65,10 +65,10 @@ Execution through first text send/receive follows
 - [x] Introduce a long-lived client owner that lazily establishes and reuses one
       session, validates response-body login status, completes login paging, and
       never reconnects or retries mutations implicitly.
-- [ ] Add a private versioned continuity checkpoint, an exclusive per-profile
-      owner lease, and a long-running local service/IPC boundary so separate
-      commands reuse one global live session. On process restart, perform one
-      cursor-based resumed login rather than QR authorization or a retry loop.
+- [ ] Add a private versioned continuity checkpoint and make the long-running
+      Matrix/Beeper bridge the exclusive per-profile session owner. On bridge
+      restart, perform one cursor-based resumed login rather than QR
+      authorization or a retry loop.
 - [ ] Verify against the disposable account and add regression tests.
 
 ## Phase 4 — Matrix/Beeper bridge
