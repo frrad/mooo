@@ -294,6 +294,38 @@ func (c *Client) ReactionMembers(ctx context.Context, chatID, logID int64) (reac
 	return reactionMembers(ctx, doer, state, chatID, logID)
 }
 
+// MiniReactionDetails returns attribution for the separate mini/custom-
+// reaction data source without opening a LOCO session.
+func (c *Client) MiniReactionDetails(ctx context.Context, chatID, linkID, logID int64) (reactions.DetailsResponse, error) {
+	if c == nil || ctx == nil {
+		return reactions.DetailsResponse{}, ErrProtocol
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return reactions.DetailsResponse{}, ErrClientClosed
+	}
+	state, doer := c.state, c.http
+	c.mu.Unlock()
+	return miniReactionDetails(ctx, doer, state, chatID, linkID, logID)
+}
+
+// ReactionDetails resolves and merges the attribution sources indicated by one
+// aggregate reaction update, matching the current Mac client's detail model.
+func (c *Client) ReactionDetails(ctx context.Context, change events.ReactionChanged) ([]reactions.Detail, error) {
+	if c == nil || ctx == nil {
+		return nil, ErrProtocol
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, ErrClientClosed
+	}
+	state, doer := c.state, c.http
+	c.mu.Unlock()
+	return mergedReactionDetails(ctx, doer, state, change)
+}
+
 // Close permanently closes this Client and its owned session.
 func (c *Client) Close() error {
 	if c == nil {

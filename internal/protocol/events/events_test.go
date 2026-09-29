@@ -98,13 +98,13 @@ func TestDecodeReactionChanged(t *testing.T) {
 	event, err := Decode(packet(t, "CHGLOGMETA", bson.D{
 		{Key: "logId", Value: int64(99)}, {Key: "type", Value: int32(2)}, {Key: "chatId", Value: int64(42)},
 		{Key: "content", Value: `{"rx":[{"a":{"ko":"synthetic label"},"c":2,"k":2,"o":"1200509"}]}`},
-		{Key: "revision", Value: int64(3)}, {Key: "linkId", Value: nil}, {Key: "extra", Value: nil},
+		{Key: "revision", Value: int64(3)}, {Key: "linkId", Value: int64(88)}, {Key: "extra", Value: nil},
 	}))
 	changed, ok := event.(ReactionChanged)
 	if err != nil || !ok {
 		t.Fatalf("event=%T err=%v", event, err)
 	}
-	if changed.ChatID != 42 || changed.LogID != 99 || changed.Revision != 3 || len(changed.Items) != 1 || changed.Items[0].ID != "1200509" || changed.Items[0].Count != 2 || changed.Items[0].Kind != 2 {
+	if changed.ChatID != 42 || changed.LinkID != 88 || changed.LogID != 99 || changed.Revision != 3 || len(changed.Items) != 1 || changed.Items[0].ID != "1200509" || changed.Items[0].Count != 2 || changed.Items[0].Kind != 2 {
 		t.Fatalf("reaction = %#v", changed)
 	}
 	if strings.Contains(fmt.Sprintf("%v %+v %#v", changed, changed, changed), "synthetic label") {

@@ -105,26 +105,30 @@ high for the Mac client's forwarding and revision behavior.
 
 ## Mini/custom reaction attribution
 
-The Mac reaction-detail UI can concurrently fetch a second, feature-gated data
-source. This is not part of the `/members` response:
+The Mac reaction-detail UI can concurrently fetch a second data source when the
+message's synchronized reaction metadata contains mini-reaction items. This is
+not part of the `/members` response:
 
 ```text
-POST https://kage.talk.kakao.com/emoticon/chat/rx/log-details
+POST https://talk-pilsner.kakao.com/emoticon/chat/rx/log-details
 ```
 
-The recovered request supplies `chatId`, `logId`, and an optional positive
-`linkId`. Its response has a top-level `details` collection. Each detail carries
+The request is JSON with `chatId`, `logId`, and an optional positive `linkId`.
+The response has numeric `status` and a `details` collection. Each detail carries
 kind `k`, reaction identifier `o`, and user IDs `u` encoded as decimal strings;
 kind 2 may also carry item metadata. The UI merges kind-1 entries with matching
 legacy `/members` entries and deduplicates their user IDs.
 
-Static confidence is high for the path, fields, and merge behavior. Controlled
-requests from the owned disposable profile returned HTTP 404 for the tested
-account, consistent with the official client's feature gating but insufficient
-to validate the live request encoding. Production support remains deliberately
-unimplemented until that method and availability contract can be validated; the
-public `/members` implementation does not pretend custom reactions are legacy
-buckets.
+Runtime instrumentation of the owned, version-matched Mac logic confirmed the
+Pilsner host, POST method, JSON placement, and current header family using only
+synthetic identifiers. Separately, the owned Android production account loaded a
+searchable custom-reaction picker. Selecting one custom item produced a type-2
+`CHGLOGMETA` whose aggregate entry had kind 2. The production Go client then used
+that exact chat/log pair with the Mac-derived request and received HTTP 200,
+status zero, and one matching custom detail with one user. This establishes that
+the feature is deployed in the production backend for the disposable account,
+not merely dormant client code. Confidence: high for direct-chat custom-reaction
+attribution.
 
 ## Implementation boundaries
 
@@ -133,10 +137,12 @@ buckets.
 - `internal/protocol/events` exposes typed reply and aggregate-reaction events
   without including raw payloads in diagnostic formatting.
 - `internal/client` integrates both paths with the persisted profile and the
-  existing single-session lifecycle.
+  existing single-session lifecycle. `ReactionDetails` selects the legacy and
+  mini sources from an aggregate event, fetches independent sources concurrently,
+  and applies the Mac merge/deduplication behavior.
 
 Automated tests use synthetic identifiers and content, including forward-
 compatibility cases for unknown and malformed `/members` fields. The remaining
-work is to observe all selection types, reply-to-media variants, open-chat
-`linkId` behavior, live revision-conflict behavior, and an account for which the
-feature-gated mini/custom reaction detail API is available.
+work is to observe all legacy selection types, reply-to-media variants,
+open-chat `linkId` behavior, live revision-conflict behavior, custom-reaction
+mutation, and picker/search synchronization.
