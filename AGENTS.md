@@ -73,6 +73,14 @@ reproducible research before bridge features.
 
 - Installing local research tools and inspecting the logged-out KakaoTalk client
   are authorized for this project.
+- Direct ADB control of maintainer-owned Android lab emulators is authorized for
+  this project and does not require separate confirmation for each action. Agents
+  may use ADB for app launch/navigation, taps and text entry, screenshots and UI
+  dumps, file push/pull, QR import, and owned-account approval flows. Use ADB when
+  the native computer-control interface cannot see the emulator. Keep any account,
+  message, QR, verification-code, or device data outside the repository and remove
+  transient captures after the experiment. This standing authorization does not
+  extend to an unlisted physical device or another person's account.
 - Account creation/login may require maintainer interaction for phone verification,
   CAPTCHA, MFA, or accepting service terms. Never record those secrets in project
   files or commentary.
