@@ -136,7 +136,7 @@ func AddByPhone(ctx context.Context, doer Doer, profile ClientProfile, add AddBy
 	if err != nil {
 		return AddByPhoneResponse{}, fmt.Errorf("friends: add-by-phone transport: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse+1))
 	if err != nil || len(body) > maxResponse {
 		return AddByPhoneResponse{}, ErrInvalidResponse
