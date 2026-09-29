@@ -62,6 +62,13 @@ Execution through first text send/receive follows
 - [ ] Implement credential/session storage interfaces with secure defaults.
 - [ ] Implement device login and reconnect state machines.
 - [ ] Add read-only synchronization, then text receive/send.
+- [x] Introduce a long-lived client owner that lazily establishes and reuses one
+      session, validates response-body login status, completes login paging, and
+      never reconnects or retries mutations implicitly.
+- [ ] Add a private versioned continuity checkpoint, an exclusive per-profile
+      owner lease, and a long-running local service/IPC boundary so separate
+      commands reuse one global live session. On process restart, perform one
+      cursor-based resumed login rather than QR authorization or a retry loop.
 - [ ] Verify against the disposable account and add regression tests.
 
 ## Phase 4 — Matrix/Beeper bridge
