@@ -78,6 +78,9 @@ Execution through first text send/receive follows
 - [x] Implement and live-validate direct-message replies, reaction mutation,
       aggregate reaction events, and reaction-member attribution using the
       persisted session profile.
+- [ ] Live-validate the feature-gated mini/custom reaction detail endpoint and
+      add it as a separate data source without conflating it with legacy
+      reaction-member attribution.
 - [ ] Add a private versioned continuity checkpoint and make the long-running
       Matrix/Beeper bridge the exclusive per-profile session owner. On bridge
       restart, perform one cursor-based resumed login rather than QR

@@ -72,13 +72,59 @@ func TestMembersRequestAndResponse(t *testing.T) {
 	if req.Method != http.MethodGet || req.URL.String() != BaseURL+"/messaging/chats/42/bubble/reactions/99/members" || req.Header.Get("Authorization") == "" {
 		t.Fatalf("members request = %s %s headers=%v", req.Method, req.URL, req.Header)
 	}
-	response, err := DecodeMembersResponse([]byte(`{"1":[7,8],"3":[9],"revision":4}`))
-	if err != nil || response.Revision != 4 || len(response.Members[Heart]) != 2 || response.Members[Check][0] != 9 {
+	response, err := DecodeMembersResponse([]byte(`{"1":[7,8],"2":[9],"3":[10],"4":[11],"5":[12],"6":[13],"revision":4,"7":[14],"future":{"shape":true}}`))
+	if err != nil || response.Revision != 4 || len(response.Members[Heart]) != 2 || response.Members[Check][0] != 10 {
 		t.Fatalf("members=%#v err=%v", response, err)
 	}
+	for reactionType := Heart; reactionType <= Sad; reactionType++ {
+		if len(response.Members[reactionType]) == 0 {
+			t.Fatalf("reaction bucket %d was not decoded: %#v", reactionType, response.Members)
+		}
+	}
+	if _, ok := response.Members[Type(7)]; ok {
+		t.Fatalf("unknown reaction bucket was interpreted: %#v", response.Members)
+	}
+	if len(response.Fields) != 9 || string(response.Fields["7"]) != `[14]` || string(response.Fields["future"]) != `{"shape":true}` {
+		t.Fatalf("raw fields = %#v", response.Fields)
+	}
+	if !response.NeedsMetaSync(3) || response.NeedsMetaSync(4) || response.NeedsMetaSync(5) {
+		t.Fatalf("revision sync decision did not match revision %d", response.Revision)
+	}
+}
+
+func TestMembersResponseMatchesMacForwardCompatibility(t *testing.T) {
 	for _, body := range []string{
-		`{"1":[7]}`, `{"0":[7],"revision":4}`, `{"7":[7],"revision":4}`,
-		`{"1":[0],"revision":4}`, `{"1":null,"revision":4}`,
+		`{}`,
+		`{"1":[0,-1],"revision":0}`,
+		`{"1":null,"revision":-1}`,
+		`{"1":"future-shape","revision":"future-shape"}`,
+		`{"0":[7],"7":[8],"future":true}`,
+	} {
+		response, err := DecodeMembersResponse([]byte(body))
+		if err != nil {
+			t.Fatalf("body %s error = %v", body, err)
+		}
+		if response.NeedsMetaSync(-1) {
+			t.Fatalf("body %s unexpectedly requested metadata sync", body)
+		}
+	}
+
+	malformed, err := DecodeMembersResponse([]byte(`{"1":"future-shape","revision":4}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := malformed.Members[Heart]; ok {
+		t.Fatalf("malformed known bucket was interpreted: %#v", malformed.Members)
+	}
+	if string(malformed.Fields["1"]) != `"future-shape"` {
+		t.Fatalf("malformed known bucket was not preserved: %#v", malformed.Fields)
+	}
+	if !malformed.NeedsMetaSync(3) {
+		t.Fatal("newer positive revision should request metadata sync")
+	}
+
+	for _, body := range []string{
+		``, `null`, `[]`, `true`, `{"revision":4}{}`,
 	} {
 		if _, err := DecodeMembersResponse([]byte(body)); !errors.Is(err, ErrInvalidResponse) {
 			t.Fatalf("body %s error = %v", body, err)

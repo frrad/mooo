@@ -46,7 +46,7 @@ func TestClientReactionMembersDoesNotOpenLocoSession(t *testing.T) {
 		if req.Method != http.MethodGet || req.URL.Path != "/messaging/chats/42/bubble/reactions/99/members" {
 			t.Fatalf("request = %s %s", req.Method, req.URL.Path)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"1":[7],"revision":4}`))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"1":[7],"revision":4,"future":{"shape":true}}`))}, nil
 	})
 	api, err := newClient(state, doer)
 	if err != nil {
@@ -60,6 +60,9 @@ func TestClientReactionMembersDoesNotOpenLocoSession(t *testing.T) {
 	members, err := api.ReactionMembers(t.Context(), 42, 99)
 	if err != nil || members.Revision != 4 || members.Members[reactions.Heart][0] != 7 {
 		t.Fatalf("members=%#v err=%v", members, err)
+	}
+	if string(members.Fields["future"]) != `{"shape":true}` {
+		t.Fatalf("raw fields = %#v", members.Fields)
 	}
 	if dials != 0 {
 		t.Fatalf("dials=%d", dials)
