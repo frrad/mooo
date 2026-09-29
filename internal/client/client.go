@@ -11,6 +11,8 @@ import (
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/friends"
+	"github.com/frrad/mooo/internal/protocol/loco"
+	"github.com/frrad/mooo/internal/protocol/media"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -127,6 +129,17 @@ func (c *Client) InitialChatData(ctx context.Context) ([]bson.Raw, error) {
 	return session.InitialChatData(), nil
 }
 
+// Pushes returns the live unsolicited-packet stream, including MSG events,
+// after lazily establishing the one reusable session. The stream closes if the
+// session disconnects; Client never reconnects it implicitly.
+func (c *Client) Pushes(ctx context.Context) (<-chan loco.Packet, error) {
+	session, err := c.ensureSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return session.Pushes(), nil
+}
+
 // CreateChat uses the client's existing session, or lazily establishes its
 // first one. It does not reconnect or retry after any transport failure.
 func (c *Client) CreateChat(ctx context.Context, request chat.CreateRequest) (chat.CreateResponse, error) {
@@ -145,6 +158,16 @@ func (c *Client) SendText(ctx context.Context, chatID int64, message string) (ch
 		return chat.WriteResponse{}, err
 	}
 	return session.SendText(ctx, chatID, message)
+}
+
+// SendImage lazily connects once, then sends one JPEG or PNG without retrying
+// any ambiguous mutation or upload stage.
+func (c *Client) SendImage(ctx context.Context, chatID int64, data []byte) (media.SendResult, error) {
+	session, err := c.ensureSession(ctx)
+	if err != nil {
+		return media.SendResult{}, err
+	}
+	return session.SendImage(ctx, chatID, data)
 }
 
 // AddFriendByPhone performs the authenticated HTTP mutation without changing

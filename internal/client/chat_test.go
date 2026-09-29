@@ -23,3 +23,11 @@ func TestSendTextValidatesBeforeTransport(t *testing.T) {
 		t.Fatalf("SendText error = %v, want ErrInvalidChatID", err)
 	}
 }
+
+func TestSendImageValidatesBeforeTransport(t *testing.T) {
+	var session *Session
+	_, err := session.SendImage(context.Background(), 1, []byte("not an image"))
+	if err == nil {
+		t.Fatal("SendImage unexpectedly accepted invalid image")
+	}
+}

@@ -1,8 +1,12 @@
 package client
 
 import (
+	"context"
 	"errors"
+	"io"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -24,6 +28,71 @@ func TestParseChatPageEOF(t *testing.T) {
 	if err != nil || !eof || token != 0 || chatID != 0 || len(chats) != 1 {
 		t.Fatalf("parseChatPage = (%d, %t, %d, %d, %v)", len(chats), eof, token, chatID, err)
 	}
+}
+
+func TestSessionBackgroundReaderDispatchesIdlePushAndResponse(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	s := &Session{
+		wire: &wireConn{c: clientConn}, nextID: 1,
+		pushes: make(chan loco.Packet, 4), pending: make(map[uint32]chan requestResult),
+	}
+	go s.readLoop()
+	defer func() { _ = s.Close() }()
+
+	pushBody, _ := bson.Marshal(bson.D{{Key: "chatId", Value: int64(7)}})
+	pushRaw, err := (loco.Packet{Header: loco.Header{Method: "MSG", BodyType: loco.BodyTypeBSON}, Body: pushBody}).MarshalBinary(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeErr := make(chan error, 1)
+	go func() {
+		_, err := serverConn.Write(pushRaw)
+		writeErr <- err
+	}()
+	select {
+	case push := <-s.Pushes():
+		if push.Header.Method != "MSG" {
+			t.Fatalf("push method = %q", push.Header.Method)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("idle push was not delivered")
+	}
+	if err := <-writeErr; err != nil {
+		t.Fatal(err)
+	}
+
+	serverDone := make(chan error, 1)
+	go func() {
+		header := make([]byte, loco.HeaderSize)
+		if _, err := io.ReadFull(serverConn, header); err != nil {
+			serverDone <- err
+			return
+		}
+		parsed, err := loco.ParseHeader(header, 0)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if _, err := io.CopyN(io.Discard, serverConn, int64(parsed.BodyLen)); err != nil {
+			serverDone <- err
+			return
+		}
+		body, _ := bson.Marshal(bson.D{{Key: "status", Value: int32(0)}})
+		reply, err := (loco.Packet{Header: loco.Header{PacketID: parsed.PacketID, Method: parsed.Method, BodyType: loco.BodyTypeBSON}, Body: body}).MarshalBinary(0)
+		if err == nil {
+			_, err = serverConn.Write(reply)
+		}
+		serverDone <- err
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := s.Request(ctx, "PING", []byte{5, 0, 0, 0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+	_ = serverConn.Close()
 }
 
 func TestParseChatPageCursor(t *testing.T) {

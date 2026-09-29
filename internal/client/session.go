@@ -39,15 +39,24 @@ type StatusError struct {
 
 func (e StatusError) Error() string { return fmt.Sprintf("client: %s status %d", e.Command, e.Status) }
 
-// Session serializes requests over one authenticated carriage. Unsolicited
-// packets are preserved for the caller while a response is being awaited.
+// Session owns one authenticated carriage. A background reader dispatches
+// correlated responses and preserves unsolicited packets for the caller.
 type Session struct {
 	mu              sync.Mutex
+	writeMu         sync.Mutex
 	wire            *wireConn
 	nextID          uint32
 	closed          bool
 	pushes          chan loco.Packet
+	pending         map[uint32]chan requestResult
 	initialChatData []bson.Raw
+	userID          int64
+	appVersion      string
+}
+
+type requestResult struct {
+	packet loco.Packet
+	err    error
 }
 
 // connectSession performs GETCONF, CHECKIN, secure carriage setup, and
@@ -139,15 +148,24 @@ func connectSession(ctx context.Context, state authstate.State) (*Session, error
 		_ = carriage.close()
 		return nil, ErrLogin
 	}
+	pushBuffer := requestLimit
+	if len(pendingPushes) > pushBuffer {
+		pushBuffer = len(pendingPushes)
+	}
 	session := &Session{
 		wire:            carriage,
 		nextID:          nextID,
-		pushes:          make(chan loco.Packet, requestLimit),
+		pushes:          make(chan loco.Packet, pushBuffer),
+		pending:         make(map[uint32]chan requestResult),
 		initialChatData: chatData,
+		userID:          state.Credentials.UserID,
+		appVersion:      state.Identity.Metadata.AppVersion,
 	}
 	for _, packet := range pendingPushes {
 		session.pushes <- packet
 	}
+	_ = carriage.c.SetDeadline(time.Time{})
+	go session.readLoop()
 	return session, nil
 }
 
@@ -183,27 +201,31 @@ func (s *Session) Request(ctx context.Context, command string, body []byte) (loc
 		return loco.Packet{}, ErrProtocol
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed || s.wire == nil {
+		s.mu.Unlock()
 		return loco.Packet{}, ErrClosed
-	}
-	if deadline, ok := ctx.Deadline(); ok {
-		_ = s.wire.c.SetDeadline(deadline)
-	} else {
-		_ = s.wire.c.SetDeadline(time.Now().Add(15 * time.Second))
 	}
 	id := s.nextID
 	s.nextID++
-	reply, unsolicited, err := s.wire.request(id, command, body)
-	for _, packet := range unsolicited {
-		select {
-		case s.pushes <- packet:
-		default:
-			return loco.Packet{}, ErrProtocol
-		}
-	}
-	if err != nil {
+	result := make(chan requestResult, 1)
+	s.pending[id] = result
+	wire := s.wire
+	s.mu.Unlock()
+
+	if err := s.writeRequest(wire, id, command, body); err != nil {
+		s.removePending(id, result)
 		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, err)
+	}
+	var reply loco.Packet
+	select {
+	case outcome := <-result:
+		if outcome.err != nil {
+			return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, outcome.err)
+		}
+		reply = outcome.packet
+	case <-ctx.Done():
+		s.removePending(id, result)
+		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, ctx.Err())
 	}
 	status, err := responseStatus(reply)
 	if err != nil {
@@ -215,23 +237,93 @@ func (s *Session) Request(ctx context.Context, command string, body []byte) (loc
 	return reply, nil
 }
 
+func (s *Session) writeRequest(wire *wireConn, id uint32, command string, body []byte) error {
+	raw, err := (loco.Packet{Header: loco.Header{PacketID: id, Method: command, BodyType: loco.BodyTypeBSON}, Body: body}).MarshalBinary(0)
+	if err != nil {
+		return err
+	}
+	if wire.secure != nil {
+		raw, err = wire.secure.Encrypt(raw)
+		if err != nil {
+			return err
+		}
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return writeAll(wire.c, raw)
+}
+
+func (s *Session) removePending(id uint32, expected chan requestResult) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pending[id] == expected {
+		delete(s.pending, id)
+	}
+}
+
+func (s *Session) readLoop() {
+	for {
+		packet, err := s.wire.read()
+		if err != nil {
+			s.finishRead(err)
+			return
+		}
+		s.mu.Lock()
+		waiter := s.pending[packet.Header.PacketID]
+		if waiter != nil {
+			delete(s.pending, packet.Header.PacketID)
+		}
+		s.mu.Unlock()
+		if waiter != nil {
+			waiter <- requestResult{packet: packet}
+			continue
+		}
+		select {
+		case s.pushes <- packet:
+		default:
+			s.finishRead(ErrProtocol)
+			_ = s.wire.close()
+			return
+		}
+	}
+}
+
+func (s *Session) finishRead(err error) {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.closed = true
+	pending := s.pending
+	s.pending = nil
+	pushes := s.pushes
+	s.mu.Unlock()
+	for _, waiter := range pending {
+		waiter <- requestResult{err: err}
+	}
+	if pushes != nil {
+		close(pushes)
+	}
+}
+
 func (s *Session) Close() error {
 	if s == nil {
 		return nil
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed {
+		s.mu.Unlock()
 		return nil
 	}
-	s.closed = true
-	if s.pushes != nil {
-		close(s.pushes)
-	}
-	if s.wire == nil {
+	wire := s.wire
+	if wire == nil {
+		s.closed = true
+		s.mu.Unlock()
 		return nil
 	}
-	return s.wire.close()
+	s.mu.Unlock()
+	return wire.close()
 }
 
 type wireConn struct {
