@@ -70,6 +70,9 @@ Execution through first text send/receive follows
 - [x] Implement and live-validate single-photo send and idle receive/download
       between owned disposable accounts, with exact-byte checksum verification,
       bounded parsing, and no automatic retry of ambiguous upload stages.
+- [x] Add a deterministic scripted Kakao backend harness that exercises the real
+      client across booking, check-in, paginated login, renewal, idle pushes,
+      text, photo upload, and ambiguous-disconnect/no-retry behavior.
 - [ ] Add a private versioned continuity checkpoint and make the long-running
       Matrix/Beeper bridge the exclusive per-profile session owner. On bridge
       restart, perform one cursor-based resumed login rather than QR

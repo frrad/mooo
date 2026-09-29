@@ -52,6 +52,7 @@ type Session struct {
 	initialChatData []bson.Raw
 	userID          int64
 	appVersion      string
+	mediaDial       wireDialer
 }
 
 type requestResult struct {
@@ -59,11 +60,29 @@ type requestResult struct {
 	err    error
 }
 
+type wireDialer func(context.Context, string, int) (*wireConn, error)
+
+type sessionDialers struct {
+	tls    wireDialer
+	secure wireDialer
+}
+
+func productionSessionDialers() sessionDialers {
+	return sessionDialers{tls: dialTLS, secure: dialSecure}
+}
+
 // connectSession performs GETCONF, CHECKIN, secure carriage setup, and
 // LOGINLIST from client-owned state. Client owns and reuses the result.
 func connectSession(ctx context.Context, state authstate.State) (*Session, error) {
+	return connectSessionWithDialers(ctx, state, productionSessionDialers())
+}
+
+func connectSessionWithDialers(ctx context.Context, state authstate.State, dialers sessionDialers) (*Session, error) {
 	if ctx == nil || state.Credentials == nil {
 		return nil, ErrCredentialsAbsent
+	}
+	if dialers.tls == nil || dialers.secure == nil {
+		return nil, ErrBootstrap
 	}
 	wireUUID, err := state.Identity.WireDeviceUUID()
 	if err != nil {
@@ -78,7 +97,7 @@ func connectSession(ctx context.Context, state authstate.State) (*Session, error
 	if err != nil {
 		return nil, ErrBootstrap
 	}
-	booking, err := dialTLS(ctx, bookingHost, 443)
+	booking, err := dialers.tls(ctx, bookingHost, 443)
 	if err != nil {
 		return nil, ErrBootstrap
 	}
@@ -106,7 +125,7 @@ func connectSession(ctx context.Context, state authstate.State) (*Session, error
 	if err != nil {
 		return nil, ErrBootstrap
 	}
-	checkinReply, _, err := checkin(ctx, hosts, ports, checkinBody)
+	checkinReply, _, err := checkin(ctx, hosts, ports, checkinBody, dialers)
 	if err != nil {
 		return nil, ErrBootstrap
 	}
@@ -114,7 +133,7 @@ func connectSession(ctx context.Context, state authstate.State) (*Session, error
 	if err != nil {
 		return nil, ErrBootstrap
 	}
-	carriage, err := dialSecure(ctx, carriageHost, carriagePort)
+	carriage, err := dialers.secure(ctx, carriageHost, carriagePort)
 	if err != nil {
 		return nil, ErrBootstrap
 	}
@@ -160,6 +179,7 @@ func connectSession(ctx context.Context, state authstate.State) (*Session, error
 		initialChatData: chatData,
 		userID:          state.Credentials.UserID,
 		appVersion:      state.Identity.Metadata.AppVersion,
+		mediaDial:       dialers.secure,
 	}
 	for _, packet := range pendingPushes {
 		session.pushes <- packet
@@ -184,9 +204,9 @@ func (s *Session) InitialChatData() []bson.Raw {
 	return out
 }
 
-// Pushes exposes unsolicited packets observed while Request waits for its
-// correlated response. Callers should drain it continuously once mutations or
-// subscriptions that can produce events are active.
+// Pushes exposes unsolicited packets from the background reader, including
+// packets received while no request is active. Callers should drain it
+// continuously once mutations or subscriptions can produce events.
 func (s *Session) Pushes() <-chan loco.Packet {
 	if s == nil {
 		return nil
@@ -438,10 +458,10 @@ func (w *wireConn) read() (loco.Packet, error) {
 	return packets[0], nil
 }
 
-func checkin(ctx context.Context, hosts []string, ports []int, body []byte) (loco.Packet, *wireConn, error) {
+func checkin(ctx context.Context, hosts []string, ports []int, body []byte, dialers sessionDialers) (loco.Packet, *wireConn, error) {
 	for _, host := range hosts {
 		for _, port := range append([]int{443}, ports...) {
-			wire, err := dialTLS(ctx, host, port)
+			wire, err := dialers.tls(ctx, host, port)
 			if err != nil {
 				continue
 			}
@@ -453,7 +473,7 @@ func checkin(ctx context.Context, hosts []string, ports []int, body []byte) (loc
 			}
 		}
 		for _, port := range append(append([]int(nil), ports...), 995) {
-			wire, err := dialSecure(ctx, host, port)
+			wire, err := dialers.secure(ctx, host, port)
 			if err != nil {
 				continue
 			}
