@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -293,6 +294,38 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 			}
 			return requireString(raw, "msg", "synthetic outbound")
 		}, statusDocument(bson.E{Key: "chatId", Value: chatID}, bson.E{Key: "logId", Value: int64(101)})),
+		expectRequest("WRITE", func(raw bson.Raw) error {
+			if err := requireExactKeys(raw, "chatId", "msg", "type", "noSeen", "extra"); err != nil {
+				return err
+			}
+			if err := requireInt64(raw, "chatId", chatID); err != nil {
+				return err
+			}
+			if err := requireString(raw, "msg", "synthetic reply"); err != nil {
+				return err
+			}
+			typeValue, err := raw.LookupErr("type")
+			if err != nil || typeValue.Type != bson.TypeInt32 || typeValue.Int32() != chat.ReplyType {
+				return errors.New("reply type is not int32(26)")
+			}
+			extra, err := raw.LookupErr("extra")
+			if err != nil || extra.Type != bson.TypeString {
+				return errors.New("reply extra is not a string")
+			}
+			var attachment struct {
+				LogID   int64  `json:"src_logId"`
+				UserID  int64  `json:"src_userId"`
+				Type    int32  `json:"src_type"`
+				Message string `json:"src_message"`
+			}
+			if err := json.Unmarshal([]byte(extra.StringValue()), &attachment); err != nil {
+				return err
+			}
+			if attachment.LogID != 100 || attachment.UserID != 8 || attachment.Type != chat.TextType || attachment.Message != "synthetic inbound" {
+				return fmt.Errorf("reply attachment = %#v", attachment)
+			}
+			return nil
+		}, statusDocument(bson.E{Key: "chatId", Value: chatID}, bson.E{Key: "logId", Value: int64(102)})),
 		expectRequest("CREATE", func(raw bson.Raw) error {
 			members, err := raw.LookupErr("memberIds")
 			if err != nil || members.Type != bson.TypeArray {
@@ -318,7 +351,7 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	)
 
 	imageData := syntheticClientJPEG(t)
-	completeLog := mustBSON(bson.D{{Key: "type", Value: int32(2)}, {Key: "chatId", Value: chatID}, {Key: "logId", Value: int64(102)}})
+	completeLog := mustBSON(bson.D{{Key: "type", Value: int32(2)}, {Key: "chatId", Value: chatID}, {Key: "logId", Value: int64(103)}})
 	mediaBackend := newScriptedBackend(t, true, func(server *wireConn) error {
 		request, err := server.read()
 		if err != nil {
@@ -421,12 +454,19 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	if err != nil || write.ChatID != chatID || write.LogID != 101 {
 		t.Fatalf("WRITE response = %#v, err=%v", write, err)
 	}
+	reply, err := api.SendReply(ctx, chat.ReplyRequest{
+		ChatID: chatID, Message: "synthetic reply",
+		Target: chat.ReplyTarget{LogID: 100, UserID: 8, Type: chat.TextType, Message: "synthetic inbound"},
+	})
+	if err != nil || reply.ChatID != chatID || reply.LogID != 102 {
+		t.Fatalf("reply WRITE response = %#v, err=%v", reply, err)
+	}
 	created, err := api.CreateChat(ctx, chat.CreateRequest{MemberIDs: []int64{99}})
 	if err != nil || created.ChatID != 44 || created.ChatRoom.Lookup("type").StringValue() != "DirectChat" {
 		t.Fatalf("CREATE response = %#v, err=%v", created, err)
 	}
 	photo, err := api.SendImage(ctx, chatID, imageData)
-	if err != nil || photo.ChatLog.Lookup("logId").Int64() != 102 {
+	if err != nil || photo.ChatLog.Lookup("logId").Int64() != 103 {
 		t.Fatalf("photo result log=%v, err=%v", photo.ChatLog, err)
 	}
 

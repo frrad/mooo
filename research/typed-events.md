@@ -17,13 +17,19 @@ than failures. Their raw BSON is deliberately not exposed by the typed layer.
 ## Initial event types
 
 - `TextMessage`: chat ID, log ID, optional author/time fields, and message text.
+- `ReplyMessage`: reply text plus validated source log, author, type, optional
+  link ID, and bounded source preview.
 - `PhotoMessage`: the validated type-2 photo metadata used by the bounded media
   downloader.
 - `UnsupportedMessage`: chat ID, log ID, and numeric message type.
+- `ReactionChanged`: aggregate reaction items and the server revision from
+  reaction metadata changes.
+- `UnsupportedLogMeta`: chat ID, log ID, and unsupported metadata type.
 - `UnknownPacket`: method name only.
 
-Text and photo formatting redacts message or attachment content so ordinary
-diagnostic formatting does not disclose private payloads.
+Text, reply, photo, and reaction formatting redacts message, attachment, source,
+and localized-label content so ordinary diagnostic formatting does not disclose
+private payloads.
 
 ## Live validation
 
@@ -37,10 +43,12 @@ observation).
 
 ## Still pending
 
-Read receipts, typing, chat/member changes, deletion, reactions, server changes,
-and kickout need protocol-specific decoders before they graduate from unknown
-events. Cursor persistence, acknowledgement, deduplication, gap recovery, and
-offline catch-up remain separate continuity work.
+Read receipts, typing, chat/member changes, deletion, server changes, and
+kickout need protocol-specific decoders before they graduate from unknown
+events. Reaction aggregate changes are typed; reaction actor attribution is an
+explicit HTTP lookup rather than part of the push event. Cursor persistence,
+acknowledgement, deduplication, gap recovery, and offline catch-up remain
+separate continuity work.
 
 All automated fixtures are synthetic. Live message content and identifiers are
 not stored in the repository.

@@ -24,6 +24,14 @@ func TestSendTextValidatesBeforeTransport(t *testing.T) {
 	}
 }
 
+func TestSendReplyValidatesBeforeTransport(t *testing.T) {
+	var session *Session
+	_, err := session.SendReply(context.Background(), chat.ReplyRequest{})
+	if !errors.Is(err, chat.ErrInvalidMessage) {
+		t.Fatalf("SendReply error = %v, want ErrInvalidMessage", err)
+	}
+}
+
 func TestSendImageValidatesBeforeTransport(t *testing.T) {
 	var session *Session
 	_, err := session.SendImage(context.Background(), 1, []byte("not an image"))

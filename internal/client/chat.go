@@ -44,3 +44,20 @@ func (s *Session) SendText(ctx context.Context, chatID int64, message string) (c
 	}
 	return chat.DecodeWriteResponse(reply.Body)
 }
+
+// SendReply sends one type-26 reply exactly once. The target metadata is
+// serialized independently of UI state and the mutation is never retried.
+func (s *Session) SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error) {
+	body, err := request.MarshalBSON()
+	if err != nil {
+		return chat.WriteResponse{}, err
+	}
+	if s == nil {
+		return chat.WriteResponse{}, ErrProtocol
+	}
+	reply, err := s.Request(ctx, chat.WriteCommand, body)
+	if err != nil {
+		return chat.WriteResponse{}, err
+	}
+	return chat.DecodeWriteResponse(reply.Body)
+}

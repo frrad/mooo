@@ -14,6 +14,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/friends"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/reactions"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -222,6 +223,16 @@ func (c *Client) SendText(ctx context.Context, chatID int64, message string) (ch
 	return session.SendText(ctx, chatID, message)
 }
 
+// SendReply lazily connects once, then sends one reply without retrying an
+// ambiguous transport result.
+func (c *Client) SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error) {
+	session, err := c.ensureSession(ctx)
+	if err != nil {
+		return chat.WriteResponse{}, err
+	}
+	return session.SendReply(ctx, request)
+}
+
 // SendImage lazily connects once, then sends one JPEG or PNG without retrying
 // any ambiguous mutation or upload stage.
 func (c *Client) SendImage(ctx context.Context, chatID int64, data []byte) (media.SendResult, error) {
@@ -246,6 +257,41 @@ func (c *Client) AddFriendByPhone(ctx context.Context, request friends.AddByPhon
 	state, doer := c.state, c.http
 	c.mu.Unlock()
 	return addFriendByPhone(ctx, doer, state, request)
+}
+
+// React applies or cancels one reaction through the authenticated HTTP API.
+// It sends the mutation exactly once and does not require a new LOCO login.
+func (c *Client) React(ctx context.Context, request reactions.Request) (reactions.Response, error) {
+	if c == nil || ctx == nil {
+		return reactions.Response{}, ErrProtocol
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return reactions.Response{}, ErrClientClosed
+	}
+	state, doer := c.state, c.http
+	c.mu.Unlock()
+	if request.RequestID == 0 {
+		request.RequestID = time.Now().UnixMilli()
+	}
+	return sendReaction(ctx, doer, state, request)
+}
+
+// ReactionMembers returns the current user IDs grouped by reaction type for one
+// message. It is a read-only HTTP lookup and does not open a LOCO session.
+func (c *Client) ReactionMembers(ctx context.Context, chatID, logID int64) (reactions.MembersResponse, error) {
+	if c == nil || ctx == nil {
+		return reactions.MembersResponse{}, ErrProtocol
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return reactions.MembersResponse{}, ErrClientClosed
+	}
+	state, doer := c.state, c.http
+	c.mu.Unlock()
+	return reactionMembers(ctx, doer, state, chatID, logID)
 }
 
 // Close permanently closes this Client and its owned session.
