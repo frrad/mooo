@@ -117,6 +117,7 @@ type ReactionItem struct {
 
 type ReactionChanged struct {
 	ChatID   int64
+	LinkID   int64
 	LogID    int64
 	Revision int64
 	Items    []ReactionItem
@@ -244,6 +245,10 @@ func decodeLogMeta(body []byte) (Event, error) {
 	if err != nil || revision <= 0 {
 		return nil, ErrMalformedEvent
 	}
+	linkID := optionalInt64(raw, "linkId")
+	if linkID < 0 {
+		return nil, ErrMalformedEvent
+	}
 	content, err := requiredString(raw, "content")
 	if err != nil {
 		return nil, ErrMalformedEvent
@@ -266,7 +271,7 @@ func decodeLogMeta(body []byte) (Event, error) {
 		}
 		items = append(items, ReactionItem{ID: item.ID, Kind: item.Kind, Count: item.Count, Alt: item.Alt})
 	}
-	return ReactionChanged{ChatID: chatID, LogID: logID, Revision: revision, Items: items}, nil
+	return ReactionChanged{ChatID: chatID, LinkID: linkID, LogID: logID, Revision: revision, Items: items}, nil
 }
 
 func messageEnvelope(raw bson.Raw) (int64, int64, int32, bson.Raw, error) {

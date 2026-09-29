@@ -42,6 +42,7 @@ type ClientProfile struct {
 	AppVersion  string
 	OSVersion   string
 	Language    string
+	UserID      int64
 	AccessToken string
 	DeviceUUID  string
 }
