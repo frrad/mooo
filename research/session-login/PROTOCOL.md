@@ -12,6 +12,7 @@ binary addresses, internal names, or proprietary implementation text.
 ```text
 registration HTTP succeeds
   -> install user identity and access-token state
+  -> renew all token fields once when the access token is rejected as expired
   -> GETCONF when routing is absent/stale
   -> CHECKIN against a ticket endpoint
   -> connect secure carriage transport
@@ -28,18 +29,17 @@ All seven current registration operations use:
 
 - base URL `https://katalk.kakao.com`;
 - HTTP `POST`;
-- URL-form parameters in the request body;
+- JSON parameters in the request body;
 - nested `device` dictionaries rather than flattened peer fields;
 - JSON response/error bodies with top-level dictionaries;
 - HTTP-status validation through a shared session.
 
-The application starts these requests with an empty explicit header collection.
-The registration builders add no authorization header, signature, nonce, digest,
-or per-request transform. Platform HTTP defaults may still produce ordinary
-transport headers, form content type, and cookie behavior; unobserved defaults must
-not be hard-coded as application protocol.
+The reviewed English 26.8.0 Mac profile sends `A: mac/26.8.0/en`,
+`Accept-Language: en`, `Content-Type: application/json`, and
+`User-Agent: KT/26.8.0 Mc/<osVersion> en`. The registration builders add no
+authorization header, signature, nonce, digest, or per-request transform.
 
-| Route | Form-body fields |
+| Route | JSON fields |
 | --- | --- |
 | `/mac/account/passcodeLogin/generate` | `email`, `password`, `permanent`, full `device` |
 | `/mac/account/passcodeLogin/registerDevice` | `email`, `password`, UUID-only `device` |
@@ -50,9 +50,9 @@ not be hard-coded as application protocol.
 | `/mac/account/qrCodeLogin/passwordCheck` | `password` |
 
 A full device contains `name`, `uuid`, `osVersion`, and `model`; a UUID-only
-device contains only `uuid`. `permanent` is Boolean at the semantic builder
-boundary. Exact form escaping is delegated to the form encoder and byte ordering
-is not protocol-significant.
+device contains only `uuid`. The wire UUID is
+`base64(SHA-1(UTF8(uuid)) || SHA-256(UTF8(uuid)))`, and `permanent` is a JSON
+Boolean. JSON object byte ordering is not protocol-significant.
 
 Malformed request construction fails before submission. Cancellation is distinct
 from ordinary transport failure. If no HTTP response exists, the shared failure
@@ -71,6 +71,34 @@ The QR coordinator owns the password-only request. It returns success only when:
 
 Every other shape or status fails closed.
 
+## Access-token renewal
+
+The authenticated Mac HTTP client renews an expired access token with:
+
+- base URL `https://katalk.kakao.com`;
+- route `/mac/account/renew_token.json`;
+- HTTP `POST` with an `application/x-www-form-urlencoded` body;
+- `grant_type=refresh_token` and `refresh_token=<current refresh token>`;
+- the ordinary Mac `A`, `Accept-Language`, and `User-Agent` headers;
+- `Authorization: <current access token>-<wire device UUID>`.
+
+The Authorization value is the existing, possibly expired access token joined to
+the registered wire UUID. The refresh token is sent only in the form body. No
+additional signature, nonce, digest, or token transform occurs in this path.
+
+A successful JSON dictionary provides three strings named `access_token`,
+`refresh_token`, and `token_type`. All three must be present and nonempty before
+any state changes. They replace the prior token triple atomically; user identity
+and unrelated auto-login metadata are preserved. A malformed, incomplete,
+non-successful, cancelled, or transport-failed renewal leaves the old credential
+snapshot untouched.
+
+Renewal is a credential transition, not a generic request retry. One admitted
+connection attempt may renew once and then make one fresh LOGINLIST attempt. It
+must not recursively renew, retry an ambiguous mutation, or loop on rejection.
+The profile owner lease covers reading the old generation, renewal, atomic state
+replacement, and the subsequent login.
+
 ### QR validation and results
 
 QR generation returns an opaque server string. The client validates it, parses its
@@ -80,6 +108,7 @@ an implementation must not accept an unchecked payload.
 
 | Code | Result |
 | ---: | --- |
+| `-150` | Main-device approval pending (bounded live observation) |
 | `1` | Unregistered device; device authorization required |
 | `5` | Suspended user |
 | `13` | Unsupported client/device version |
@@ -88,6 +117,7 @@ an implementation must not accept an unchecked payload.
 | `16` | QR expired |
 | `20` | Restricted account |
 | `29` | Invalid response |
+| `-404` | Expired/not-found after the advertised challenge lifetime (bounded live observation) |
 | other | Unknown terminal failure |
 
 A nested response status `-404` has a separate recovery/presentation branch whose
@@ -120,9 +150,11 @@ The final command is `LOGINLIST`, using the existing LOCO framed BSON transport.
 
 All scalar fields are set. `chatIds` and `maxIds` are positional pairs and must
 have equal length. Empty arrays are valid. Static evidence proves that `sKey` is
-unset, but generic serializer behavior for unset object values—omitted versus BSON
-null—still requires a synthetic comparison. Initially omit unset objects behind a
-versioned compatibility profile.
+unset. A follow-up trace of the generic serializer shows that it enumerates object
+properties and inserts a property only when its value is non-nil. The current
+profile therefore omits `sKey`; it does not encode BSON null. The same rule applies
+to other nil object-valued fields. Synthetic Go tests pin this omission and the
+observed integer widths.
 
 The access token is not decoded, hashed, or otherwise transformed at this builder.
 An import path may already have decrypted and formatted stored credential material;
@@ -196,16 +228,19 @@ Special events are distinct:
 - an upper-layer disconnect that survives/exhausts manager recovery logs out
   without database reset.
 
-Expired authentication is terminal: rejected credentials must not be retried in a
-tight loop. The current numeric association for the expired-token presentation is
-not yet proven.
+Expired authentication must not be retried in a tight loop. Shared current-client
+HTTP infrastructure recognizes `-950` as an expired-token condition, and a bounded
+owned-account observation returned `-950` from LOGINLIST after the same persisted
+token began receiving HTTP 401. This numeric association is high-confidence but
+combines static and controlled-live evidence rather than a direct LOGINLIST switch
+trace. A client may admit one renewal transition for `-950`, then fail closed if
+renewal or the following LOGINLIST fails.
 
 ## Current blockers
 
 - QR check-key validation algorithm and full QR URL grammar;
 - passcode numeric status table and complete registration success schemas;
 - effective platform-default cookie/header values, if server-significant;
-- omit-versus-null encoding for unset LOGINLIST object fields;
 - abbreviated response wire-key mappings not visible from property metadata;
 - semantic labels and complete mappings for LOCO statuses and kickout reasons;
 - exact ordinary recovery delay constants and internal state names;

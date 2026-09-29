@@ -20,8 +20,8 @@ const (
 	DeviceFull
 )
 
-// FieldMask identifies semantic form fields without prescribing URL-form
-// encoding or byte ordering.
+// FieldMask identifies semantic request fields without prescribing JSON byte
+// ordering.
 type FieldMask uint16
 
 const (
@@ -32,7 +32,7 @@ const (
 	FieldID
 )
 
-// FormStructure describes the nested form fields for a confirmed route.
+// FormStructure describes the nested request fields for a confirmed route.
 type FormStructure struct {
 	Fields FieldMask
 	Device DeviceShape

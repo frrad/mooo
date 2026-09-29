@@ -6,7 +6,11 @@
 package authstate
 
 import (
+	"bytes"
 	"crypto/rand"
+	"crypto/sha1" // The reviewed Mac device-identifier profile requires SHA-1.
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -39,6 +43,7 @@ var (
 	ErrUnsafePermissions     = errors.New("authstate: unsafe permissions")
 	ErrIncompleteCredentials = errors.New("authstate: incomplete credentials")
 	ErrInvalidCredentials    = errors.New("authstate: invalid credentials")
+	ErrCredentialsChanged    = errors.New("authstate: credentials changed")
 )
 
 // Config describes the identity to create. All values are client-supplied;
@@ -67,6 +72,22 @@ type Identity struct {
 	DeviceUUID string      `json:"device_uuid"`
 	DeviceName string      `json:"device_name"`
 	Metadata   MacMetadata `json:"metadata"`
+}
+
+// WireDeviceUUID derives the identifier sent by the reviewed Mac profile from
+// the client-owned UUID seed. The seed remains the durable local identity;
+// callers must use this derived value consistently for registration and LOCO.
+func (i Identity) WireDeviceUUID() (string, error) {
+	if !validUUID(i.DeviceUUID) {
+		return "", ErrCorrupt
+	}
+	input := []byte(i.DeviceUUID)
+	sha1Sum := sha1.Sum(input)
+	sha256Sum := sha256.Sum256(input)
+	combined := make([]byte, 0, len(sha1Sum)+len(sha256Sum))
+	combined = append(combined, sha1Sum[:]...)
+	combined = append(combined, sha256Sum[:]...)
+	return base64.StdEncoding.EncodeToString(combined), nil
 }
 
 // String never exposes the device UUID, name, or metadata. Identity values
@@ -233,6 +254,39 @@ func (s *Store) InstallCredentials(c Credentials) error {
 	return writeAtomic(s.path, state)
 }
 
+// CompareAndSwapCredentials atomically replaces one exact credential snapshot.
+// It is intended for token rotation while the caller holds the profile owner
+// lease. A stale expected value fails without modifying the state file.
+func (s *Store) CompareAndSwapCredentials(expected, replacement Credentials) error {
+	if s == nil || s.path == "" {
+		return ErrInvalidPath
+	}
+	if err := validateCredentials(expected); err != nil {
+		return err
+	}
+	if err := validateCredentials(replacement); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := validatePrivateDir(filepath.Dir(s.path)); err != nil {
+		return err
+	}
+	if err := validatePrivateFile(s.path); err != nil {
+		return err
+	}
+	state, err := read(s.path)
+	if err != nil {
+		return err
+	}
+	if state.Credentials == nil || !sameCredentials(*state.Credentials, expected) {
+		return ErrCredentialsChanged
+	}
+	copy := replacement.Clone()
+	state.Credentials = &copy
+	return writeAtomic(s.path, state)
+}
+
 // HasCredentials reports whether a complete credential set is installed.
 func (s *Store) HasCredentials() (bool, error) {
 	state, err := s.Snapshot()
@@ -271,6 +325,11 @@ func validateCredentials(c Credentials) error {
 		return ErrInvalidCredentials
 	}
 	return nil
+}
+
+func sameCredentials(a, b Credentials) bool {
+	return a.UserID == b.UserID && a.AccessToken == b.AccessToken &&
+		bytes.Equal(a.AutoLoginMaterial, b.AutoLoginMaterial)
 }
 
 func ensurePrivateDir(dir string) error {

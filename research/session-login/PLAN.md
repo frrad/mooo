@@ -13,9 +13,11 @@ Status: active work plan, 2026-09-20.
 - **SL-2: partial.** Registration-to-auth state boundaries and current access-token
   placement are known. Complete registration success fields and temporary
   persistence flags remain open.
-- **SL-3: static schema passed.** LOGINLIST command, 17 request fields/types,
-  response properties, token placement, and status predicates are mapped. Unset
-  object serialization and some response wire-key mappings await synthetic proof.
+- **SL-3: schema and request serialization passed.** LOGINLIST command, 17 request
+  fields/types, response properties, token placement, and status predicates are
+  mapped. Static serializer tracing proves nil object properties are omitted, and
+  synthetic Go tests pin omission plus the observed BSON integer widths. Some
+  response wire-key mappings remain open.
 - **SL-4: partial.** Booking/ticket bounds, endpoint cache validation/expiry, and
   route invalidation are mapped. Exact retry formulas and all negotiation variants
   remain open.
@@ -26,11 +28,16 @@ Status: active work plan, 2026-09-20.
   status classification, endpoint-cache rules, registration HTTP metadata, and a
   recovery reducer have synthetic tests. Network transmission remains deferred
   until serializer tests close the remaining byte-level gaps.
-- **SL-7: no longer cooldown-blocked, but the baseline remains incomplete.** One
-  controlled official Mac QR approval cleared `-997` on 2026-09-23, then the Mac
-  session failed its server connection and did not remain registered. Live
-  reversed-client validation remains limited to preplanned, single attempts after
-  the synthetic gates pass.
+- **SL-7: passed for the vertical slice.** On 2026-09-28 the clean-room client
+  completed QR authorization, persisted the returned credentials, and then used
+  them from fresh processes to complete `GETCONF -> CHECKIN -> secure-v3 carriage
+  -> LOGINLIST` with status 0 without another approval. A connected session also
+  decoded an exact synthetic self-chat sentence from an unsolicited `MSG`.
+- **SL-8: passed.** The current
+  client route, form fields, inherited authenticated headers, three-field success
+  result, and atomic replacement behavior are mapped and synthetically tested. A
+  single bounded renewal rotated persisted credentials without QR; the following
+  LOGINLIST reached the independent `-328` secondary-device limit and stopped.
 
 ## Target outcome
 

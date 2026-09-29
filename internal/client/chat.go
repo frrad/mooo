@@ -1,0 +1,23 @@
+package client
+
+import (
+	"context"
+
+	"github.com/frrad/mooo/internal/protocol/chat"
+)
+
+// CreateChat invokes Kakao's generic CREATE primitive. A request containing
+// one member creates a direct chat; requests with multiple members create a
+// group. The transport sends the mutation exactly once and never retries an
+// ambiguous result.
+func (s *Session) CreateChat(ctx context.Context, request chat.CreateRequest) (chat.CreateResponse, error) {
+	body, err := request.MarshalBSON()
+	if err != nil {
+		return chat.CreateResponse{}, err
+	}
+	reply, err := s.Request(ctx, chat.CreateCommand, body)
+	if err != nil {
+		return chat.CreateResponse{}, err
+	}
+	return chat.DecodeCreateResponse(reply.Body)
+}

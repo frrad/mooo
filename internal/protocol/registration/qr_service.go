@@ -21,7 +21,7 @@ type QRPresentationValidator interface {
 	Validate(QRPresentation) error
 }
 
-// QRRegistrationService composes reviewed form builders, an injected
+// QRRegistrationService composes reviewed request builders, an injected
 // single-attempt executor, and the reviewed QR response codecs. It does not
 // create an HTTP client, retry, install credentials, or run the reducer.
 type QRRegistrationService struct {

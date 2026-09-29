@@ -152,6 +152,41 @@ func TestInstallCredentialsIsCompleteAndAtomic(t *testing.T) {
 	}
 }
 
+func TestCompareAndSwapCredentials(t *testing.T) {
+	path := testPath(t)
+	store, err := Create(path, testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := Credentials{UserID: 42, AccessToken: "old-access", AutoLoginMaterial: []byte(`{"refresh_token":"old-refresh"}`)}
+	if err := store.InstallCredentials(old); err != nil {
+		t.Fatal(err)
+	}
+	replacement := Credentials{UserID: 42, AccessToken: "new-access", AutoLoginMaterial: []byte(`{"refresh_token":"new-refresh"}`)}
+	stale := old.Clone()
+	stale.AccessToken = "stale-access"
+	if err := store.CompareAndSwapCredentials(stale, replacement); !errors.Is(err, ErrCredentialsChanged) {
+		t.Fatalf("stale swap error = %v, want ErrCredentialsChanged", err)
+	}
+	state, err := store.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Credentials.AccessToken != old.AccessToken {
+		t.Fatal("stale swap modified credentials")
+	}
+	if err := store.CompareAndSwapCredentials(old, replacement); err != nil {
+		t.Fatal(err)
+	}
+	state, err = store.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Credentials.AccessToken != replacement.AccessToken || string(state.Credentials.AutoLoginMaterial) != string(replacement.AutoLoginMaterial) {
+		t.Fatalf("replacement not installed: %v", state.Credentials)
+	}
+}
+
 func TestCorruptionAndVersionMismatchFailClosed(t *testing.T) {
 	path := testPath(t)
 	if _, err := Create(path, testConfig()); err != nil {
@@ -236,5 +271,17 @@ func TestFormattingAndErrorsDoNotRevealSecrets(t *testing.T) {
 	}
 	if _, err := Create("relative/"+secret, testConfig()); err == nil || strings.Contains(err.Error(), secret) {
 		t.Fatalf("path error revealed input: %v", err)
+	}
+}
+
+func TestWireDeviceUUIDSyntheticVector(t *testing.T) {
+	identity := Identity{DeviceUUID: "00112233-4455-4677-8899-aabbccddeeff"}
+	got, err := identity.WireDeviceUUID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "qRwKCxYJX7oPVcRBsLzlO9zRvhYYqe8arn41VFrdvs5cxrBh4qisTCmekxEjW+85Kt3BJA=="
+	if got != want {
+		t.Fatalf("wire UUID mismatch: %q", got)
 	}
 }

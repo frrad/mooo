@@ -54,7 +54,7 @@ func TestNewHTTPRequestRejectsTamperedProfilesNilContextAndOversizedBody(t *test
 		{name: "nil context", want: ErrNilRequestContext},
 		{name: "wrong base", ctx: context.Background(), edit: func(f *FormRequest) { f.Profile.BaseURL = "https://other.invalid" }, want: ErrInvalidHTTPProfile},
 		{name: "wrong method", ctx: context.Background(), edit: func(f *FormRequest) { f.Profile.Method = HTTPMethod("PUT") }, want: ErrInvalidHTTPProfile},
-		{name: "wrong content type", ctx: context.Background(), edit: func(f *FormRequest) { f.ContentType = "application/json" }, want: ErrInvalidHTTPProfile},
+		{name: "wrong content type", ctx: context.Background(), edit: func(f *FormRequest) { f.ContentType = "application/x-www-form-urlencoded" }, want: ErrInvalidHTTPProfile},
 		{name: "oversized body", ctx: context.Background(), edit: func(f *FormRequest) { f.Body = []byte(strings.Repeat("x", MaxFormBodyBytes+1)) }, want: ErrFormTooLarge},
 	}
 	for _, test := range tests {

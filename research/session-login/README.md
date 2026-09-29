@@ -28,11 +28,18 @@ Already established:
 - registration clears transient QR/device-auth values before common session login;
 - downstream login consumes at least user identity, access token, and background
   state.
+- one client-owned QR authorization persisted credentials, and fresh Go processes
+  repeatedly completed `GETCONF -> CHECKIN -> secure-v3 carriage -> LOGINLIST`
+  without another approval;
+- an authenticated session decoded and matched one exact synthetic self-chat text
+  delivered in an unsolicited `MSG` BSON packet.
 
 Still required:
 
-- QR check-key validation, passcode statuses, and complete success schemas;
-- unset-object BSON behavior and remaining response key mappings;
+- QR check-key validation, the remaining passcode statuses, and complete success
+  schemas;
+- remaining response key mappings and production bootstrap transport;
 - exact recovery delay and catch-up/delivery-gap behavior;
+- complete `chatLog` typing, acknowledgement, cursor persistence, and deduplication;
 - token expiry, current-device revocation, kickout, and operator-action boundaries;
 - synthetic codecs, state-machine fixtures, and conformance tests.

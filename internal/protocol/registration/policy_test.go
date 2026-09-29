@@ -34,6 +34,7 @@ func TestDecodeQROutcome(t *testing.T) {
 		want Outcome
 	}{
 		{1, OutcomeUnregisteredDevice},
+		{-100, OutcomeUnregisteredDevice},
 		{5, OutcomeSuspended},
 		{13, OutcomeUnsupportedDevice},
 		{14, OutcomePending},
@@ -41,7 +42,6 @@ func TestDecodeQROutcome(t *testing.T) {
 		{16, OutcomeExpired},
 		{20, OutcomeRestricted},
 		{29, OutcomeInvalidResponse},
-		{-100, OutcomeUnknownFailure},
 		{-1, OutcomeUnknownFailure},
 		{0, OutcomeUnknownFailure},
 		{2, OutcomeUnknownFailure},

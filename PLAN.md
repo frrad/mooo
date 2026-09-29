@@ -21,6 +21,9 @@ sanitized, reproducible evidence.
       a single controlled retry on 2026-09-23 cleared the `-997` approval block,
       although the Mac session then failed its server connection and did not
       remain registered.
+- [x] Complete a clean-room QR authorization, persist the returned client-owned
+      state, reconnect from fresh processes, and receive one synthetic self-chat
+      message on 2026-09-28.
 - [ ] Establish repeatable experiments for login, device registration, reconnect,
       logout, and revocation.
 - [ ] Determine which observations are possible through logs, metadata, static
@@ -44,13 +47,15 @@ Execution through first text send/receive follows
 
 ## Phase 3 — Go protocol client
 
-- [ ] Generate a new client-owned device identity and complete QR-based secondary-
+- [x] Generate a new client-owned device identity and complete QR-based secondary-
       device authorization without importing official Mac state.
-- [ ] Persist only authentication state returned to that new identity, with
+- [x] Persist only authentication state returned to that new identity, with
       redacted diagnostics and secure local storage boundaries.
-- [ ] Implement and synthetically verify LOCO framing, BSON, and secure transport.
-- [ ] Implement `GETCONF` -> `CHECKIN` -> `LOGINLIST` and complete one bounded
-      disposable-account login.
+- [x] Implement and synthetically verify LOCO framing, BSON, and secure transport.
+- [x] Implement `GETCONF` -> `CHECKIN` -> `LOGINLIST` in the bounded lab probe and
+      complete one bounded disposable-account login.
+- [x] Implement and validate one-shot refresh-token rotation under the profile
+      lease, followed by exactly one fresh LOGINLIST attempt.
 - [ ] Specify and validate read-only inbound text delivery, acknowledgements,
       cursors, deduplication, and reconnect behavior.
 - [ ] Specify and validate one explicit outbound text send with safe idempotency
@@ -59,6 +64,13 @@ Execution through first text send/receive follows
 - [ ] Implement credential/session storage interfaces with secure defaults.
 - [ ] Implement device login and reconnect state machines.
 - [ ] Add read-only synchronization, then text receive/send.
+- [x] Introduce a long-lived client owner that lazily establishes and reuses one
+      session, validates response-body login status, completes login paging, and
+      never reconnects or retries mutations implicitly.
+- [ ] Add a private versioned continuity checkpoint and make the long-running
+      Matrix/Beeper bridge the exclusive per-profile session owner. On bridge
+      restart, perform one cursor-based resumed login rather than QR
+      authorization or a retry loop.
 - [ ] Verify against the disposable account and add regression tests.
 
 ## Phase 4 — Matrix/Beeper bridge

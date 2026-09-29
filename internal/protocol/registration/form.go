@@ -1,15 +1,19 @@
 package registration
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
-	"sort"
-	"strings"
 	"unicode/utf8"
 )
 
-// RegistrationFormContentType is the body content type used by the reviewed
-// Alamofire URL-form request profile.
-const RegistrationFormContentType = "application/x-www-form-urlencoded; charset=utf-8"
+// RegistrationJSONContentType is the exact content type emitted by the
+// reviewed Mac JSON request serializer.
+const RegistrationJSONContentType = "application/json"
+
+// RegistrationFormContentType is retained as a source-compatible alias while
+// the request types are renamed in a later API cleanup.
+const RegistrationFormContentType = RegistrationJSONContentType
 
 var (
 	// ErrInvalidFormRequest is deliberately static so request validation cannot
@@ -83,11 +87,7 @@ func (r FormRequest) String() string {
 
 func (r FormRequest) GoString() string { return r.String() }
 
-// BuildQRGenerateRequest validates and encodes one QR generation request.
-// Encoding follows the reviewed Alamofire URLEncoding.httpBody behavior:
-// sorted keys, nested bracket keys, and RFC3986 percent escaping.
-// The builder covers only request serialization; response decoding and
-// operation sequencing remain outside this package.
+// BuildQRGenerateRequest validates and JSON-encodes one QR generation request.
 func BuildQRGenerateRequest(request QRGenerateRequest) (FormRequest, error) {
 	if err := request.Device.validate(); err != nil {
 		return FormRequest{}, err
@@ -97,11 +97,11 @@ func BuildQRGenerateRequest(request QRGenerateRequest) (FormRequest, error) {
 			return FormRequest{}, err
 		}
 	}
-	values := formObject{
-		"device": fullDeviceFormValue(request.Device),
+	values := map[string]any{
+		"device": fullDeviceJSONValue(request.Device),
 	}
 	if request.PreviousID != nil {
-		values["previousId"] = formString(*request.PreviousID)
+		values["previousId"] = *request.PreviousID
 	}
 	return buildFormRequest(RouteQRGenerate, values)
 }
@@ -116,8 +116,7 @@ type PasscodeGenerateRequest struct {
 }
 
 // BuildPasscodeGenerateRequest validates and encodes one passcode generation
-// request. Alamofire's default BoolEncoding serializes false/true as numeric
-// 0/1 values.
+// request. Permanent remains a JSON Boolean.
 func BuildPasscodeGenerateRequest(request PasscodeGenerateRequest) (FormRequest, error) {
 	if err := validateRequiredFormString(request.Email); err != nil {
 		return FormRequest{}, err
@@ -128,11 +127,11 @@ func BuildPasscodeGenerateRequest(request PasscodeGenerateRequest) (FormRequest,
 	if err := request.Device.validate(); err != nil {
 		return FormRequest{}, err
 	}
-	values := formObject{
-		"device":    fullDeviceFormValue(request.Device),
-		"email":     formString(request.Email),
-		"password":  formString(request.Password),
-		"permanent": formBool(request.Permanent),
+	values := map[string]any{
+		"device":    fullDeviceJSONValue(request.Device),
+		"email":     request.Email,
+		"password":  request.Password,
+		"permanent": request.Permanent,
 	}
 	return buildFormRequest(RoutePasscodeGenerate, values)
 }
@@ -156,10 +155,10 @@ func BuildPasscodeRegisterRequest(request PasscodeRegisterRequest) (FormRequest,
 	if err := request.Device.validate(); err != nil {
 		return FormRequest{}, err
 	}
-	return buildFormRequest(RoutePasscodeRegister, formObject{
-		"device":   uuidOnlyDeviceFormValue(request.Device),
-		"email":    formString(request.Email),
-		"password": formString(request.Password),
+	return buildFormRequest(RoutePasscodeRegister, map[string]any{
+		"device":   uuidOnlyDeviceJSONValue(request.Device),
+		"email":    request.Email,
+		"password": request.Password,
 	})
 }
 
@@ -180,10 +179,10 @@ func BuildPasscodeCancelRequest(request PasscodeCancelRequest) (FormRequest, err
 	if err := request.Device.validate(); err != nil {
 		return FormRequest{}, err
 	}
-	return buildFormRequest(RoutePasscodeCancel, formObject{
-		"device":   uuidOnlyDeviceFormValue(request.Device),
-		"email":    formString(request.Email),
-		"password": formString(request.Password),
+	return buildFormRequest(RoutePasscodeCancel, map[string]any{
+		"device":   uuidOnlyDeviceJSONValue(request.Device),
+		"email":    request.Email,
+		"password": request.Password,
 	})
 }
 
@@ -200,9 +199,9 @@ func BuildQRCancelRequest(request QRCancelRequest) (FormRequest, error) {
 	if err := request.Device.validate(); err != nil {
 		return FormRequest{}, err
 	}
-	return buildFormRequest(RouteQRCancel, formObject{
-		"device": uuidOnlyDeviceFormValue(request.Device),
-		"id":     formString(request.ID),
+	return buildFormRequest(RouteQRCancel, map[string]any{
+		"device": uuidOnlyDeviceJSONValue(request.Device),
+		"id":     request.ID,
 	})
 }
 
@@ -220,9 +219,9 @@ func BuildQRLoginRequest(request QRLoginRequest) (FormRequest, error) {
 	if err := request.Device.validate(); err != nil {
 		return FormRequest{}, err
 	}
-	return buildFormRequest(RouteQRLogin, formObject{
-		"device": uuidOnlyDeviceFormValue(request.Device),
-		"id":     formString(request.ID),
+	return buildFormRequest(RouteQRLogin, map[string]any{
+		"device": uuidOnlyDeviceJSONValue(request.Device),
+		"id":     request.ID,
 	})
 }
 
@@ -236,17 +235,17 @@ func BuildQRPasswordCheckRequest(request QRPasswordCheckRequest) (FormRequest, e
 	if err := validateRequiredFormString(request.Password); err != nil {
 		return FormRequest{}, err
 	}
-	return buildFormRequest(RouteQRPasswordCheck, formObject{
-		"password": formString(request.Password),
+	return buildFormRequest(RouteQRPasswordCheck, map[string]any{
+		"password": request.Password,
 	})
 }
 
-func buildFormRequest(route Route, values formObject) (FormRequest, error) {
+func buildFormRequest(route Route, values map[string]any) (FormRequest, error) {
 	profile, ok := ProfileFor(route)
 	if !ok {
 		return FormRequest{}, ErrInvalidFormRequest
 	}
-	body, err := encodeForm(values)
+	body, err := marshalJSON(values)
 	if err != nil {
 		return FormRequest{}, err
 	}
@@ -255,108 +254,34 @@ func buildFormRequest(route Route, values formObject) (FormRequest, error) {
 	}
 	return FormRequest{
 		Profile:     profile,
-		ContentType: RegistrationFormContentType,
+		ContentType: RegistrationJSONContentType,
 		Body:        body,
 	}, nil
 }
 
-type formValue struct {
-	text   string
-	object formObject
-	kind   formValueKind
-}
-
-type formValueKind uint8
-
-const (
-	formStringKind formValueKind = iota + 1
-	formObjectKind
-)
-
-type formObject map[string]formValue
-
-func formString(value string) formValue {
-	return formValue{kind: formStringKind, text: value}
-}
-
-func formBool(value bool) formValue {
-	if value {
-		return formString("1")
-	}
-	return formString("0")
-}
-
-func fullDeviceFormValue(device FullDevice) formValue {
-	return formValue{
-		kind: formObjectKind,
-		object: formObject{
-			"model":     formString(device.Model),
-			"name":      formString(device.Name),
-			"osVersion": formString(device.OSVersion),
-			"uuid":      formString(device.UUID),
-		},
-	}
-}
-
-func uuidOnlyDeviceFormValue(device UUIDOnlyDevice) formValue {
-	return formValue{
-		kind: formObjectKind,
-		object: formObject{
-			"uuid": formString(device.UUID),
-		},
-	}
-}
-
-// encodeForm mirrors the reviewed Alamofire dictionary traversal. Top-level
-// keys are sorted as observed; nested keys are sorted here only to make the
-// otherwise unspecified nested-dictionary order deterministic. Nested keys use
-// bracket notation. Only strings are emitted by the typed builders above,
-// avoiding reflection and accidental protocol guesses.
-func encodeForm(values formObject) ([]byte, error) {
-	components := make([]string, 0, len(values))
-	if err := appendFormComponents(&components, "", values); err != nil {
+func marshalJSON(values map[string]any) ([]byte, error) {
+	var body bytes.Buffer
+	encoder := json.NewEncoder(&body)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(values); err != nil {
 		return nil, err
 	}
-	return []byte(strings.Join(components, "&")), nil
+	return bytes.TrimSuffix(body.Bytes(), []byte{'\n'}), nil
 }
 
-func appendFormComponents(components *[]string, prefix string, values formObject) error {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		if key == "" || !utf8.ValidString(key) {
-			return ErrInvalidFormRequest
-		}
-		keys = append(keys, key)
+func fullDeviceJSONValue(device FullDevice) map[string]any {
+	return map[string]any{
+		"model":     device.Model,
+		"name":      device.Name,
+		"osVersion": device.OSVersion,
+		"uuid":      device.UUID,
 	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		value := values[key]
-		name := key
-		if prefix != "" {
-			name = prefix + "[" + key + "]"
-		}
-		switch value.kind {
-		case formStringKind:
-			if !validOptionalFormString(value.text) {
-				return ErrInvalidFormRequest
-			}
-			*components = append(*components, percentEncode(name)+"="+percentEncode(value.text))
-		case formObjectKind:
-			if len(value.object) == 0 {
-				return ErrInvalidFormRequest
-			}
-			if err := appendFormComponents(components, name, value.object); err != nil {
-				return err
-			}
-		default:
-			return ErrInvalidFormRequest
-		}
-	}
-	return nil
 }
 
-func validOptionalFormString(value string) bool {
-	return validateOptionalFormString(value) == nil
+func uuidOnlyDeviceJSONValue(device UUIDOnlyDevice) map[string]any {
+	return map[string]any{
+		"uuid": device.UUID,
+	}
 }
 
 func validateRequiredFormString(value string) error {
@@ -380,24 +305,4 @@ func validateOptionalFormString(value string) error {
 		return ErrFormTooLarge
 	}
 	return nil
-}
-
-// percentEncode follows Alamofire's afURLQueryAllowed character set. In
-// particular, spaces become %20 (never '+'), '/', and '?' remain allowed, and
-// brackets, '&', '=', '+', and '%' are escaped.
-func percentEncode(value string) string {
-	const hex = "0123456789ABCDEF"
-	var builder strings.Builder
-	for i := 0; i < len(value); i++ {
-		b := value[i]
-		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') ||
-			(b >= '0' && b <= '9') || b == '-' || b == '.' || b == '_' || b == '~' || b == '/' || b == '?' {
-			builder.WriteByte(b)
-			continue
-		}
-		builder.WriteByte('%')
-		builder.WriteByte(hex[b>>4])
-		builder.WriteByte(hex[b&0x0f])
-	}
-	return builder.String()
 }

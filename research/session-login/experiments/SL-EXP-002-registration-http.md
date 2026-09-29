@@ -18,7 +18,7 @@ account, credential, live identifier, cookie store, or network request was used.
 
 ## Hypothesis
 
-The operations share one ordinary HTTP/form transport without an additional
+The operations share one ordinary HTTP/JSON transport without an additional
 registration-specific signing layer.
 
 ## Method
@@ -29,11 +29,11 @@ operation-specific completion adapter.
 
 ## Sanitized observation
 
-All seven operations use `https://katalk.kakao.com`, POST, URL-form bodies with
+All seven operations use `https://katalk.kakao.com`, POST, JSON bodies with
 nested device dictionaries, JSON responses, and shared HTTP-status validation.
-Their explicit header collections are empty and they add no signature, nonce,
-digest, authorization transform, or per-request interceptor. Platform defaults may
-still provide ordinary headers and cookie behavior.
+The current English Mac profile carries `A`, `Accept-Language`, `Content-Type`,
+and `User-Agent`; it adds no signature, nonce, digest, authorization transform,
+or per-request interceptor.
 
 Shared error dictionaries use `reason`, `detailCode`, and `status`; absence of an
 HTTP response becomes numeric `500`, while cancellation remains distinct.
@@ -50,5 +50,5 @@ Raw binary output remains in private lab storage. No runtime state changed.
 
 ## Follow-up
 
-Create invented form-body vectors and isolate the QR check-key validator if a safe
+Create invented JSON-body vectors and isolate the QR check-key validator if a safe
 pure-helper path is found.

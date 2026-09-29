@@ -99,7 +99,7 @@ exists before a successful server response.
 Complete the seven-operation registration codec using the current Mac profile:
 
 - HTTPS `POST` to the reviewed registration service;
-- URL-form request bodies with the exact nested device encoding;
+- JSON request bodies with exact nested device objects and current Mac headers;
 - QR generate, poll/login, cancel, and password-check operations;
 - passcode operations as typed codecs, even though the first live path uses QR;
 - bounded deadlines, JSON response decoding, and redacted errors;

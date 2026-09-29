@@ -19,7 +19,7 @@ var (
 )
 
 // NewHTTPRequest constructs, but never executes, one registration request.
-// It joins the reviewed base URL and route, uses the exact form body, applies
+// It joins the reviewed base URL and route, uses the exact JSON body, applies
 // only the evidenced Content-Type header, and leaves clients, cookies,
 // authentication, signing, retries, and deadlines to the caller.
 func NewHTTPRequest(ctx context.Context, form FormRequest) (*http.Request, error) {

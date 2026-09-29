@@ -1,7 +1,7 @@
 # Secondary-device registration protocol
 
-Status: reviewed clean-room partial specification, with Android comparison
-addendum, 2026-09-23.
+Status: reviewed clean-room partial specification, with Android comparison and
+bounded live wire validation, 2026-09-28.
 
 This document describes behavior established from logged-out static analysis of
 an authorized KakaoTalk for macOS 26.8.0 client. It contains no binary addresses,
@@ -150,17 +150,21 @@ Static request builders directly associate these fields with the seven operation
 | QR password check | `password` | none |
 
 `permanent` is Boolean. All seven operations are HTTPS `POST` requests to the
-reviewed `https://katalk.kakao.com` registration service. Their parameter
-dictionaries are encoded into the HTTP body with Alamofire `URLEncoding.httpBody`:
-the body content type is `application/x-www-form-urlencoded; charset=utf-8`,
-nested device keys use bracket notation such as `device[uuid]`, spaces use `%20`,
-and Boolean values use `1` or `0`. Top-level keys are sorted by Alamofire; nested
-dictionary order is not a protocol semantic, so the Go codec may canonicalize all
-pairs for deterministic fixtures.
+reviewed `https://katalk.kakao.com` registration service. The current Mac client
+uses a JSON request serializer and sends nested JSON objects with content type
+`application/json`; `permanent` is therefore a JSON Boolean. A bounded logged-out
+control capture and a clean-room live generate/cancel probe both confirmed this
+profile. The earlier URL-form attribution was incorrect.
 
-These encoding semantics combine direct current-client evidence of the
-`URLEncoding.httpBody` call with Alamofire's published implementation contract:
-<https://github.com/Alamofire/Alamofire/blob/master/Source/Core/ParameterEncoding.swift>.
+The device `uuid` is not the locally stored UUID text. For the reviewed Mac
+profile it is:
+
+```text
+base64(SHA-1(UTF8(uuid)) || SHA-256(UTF8(uuid)))
+```
+
+The durable client-owned UUID remains local and the derived value must be reused
+consistently for registration and subsequent session login.
 
 ### Shared HTTP session profile
 
@@ -171,12 +175,19 @@ initializer passes no custom server-trust manager, redirect handler,
 cached-response handler, or request interceptor, so TLS trust remains the platform
 default and no registration-specific transport hook is evidenced.
 
-Each registration request begins with an empty explicit header collection and the
-submission call passes nil for both the request interceptor and request modifier.
-No registration-specific authorization header, cookie value, signature, nonce,
-digest, or body transform is present in the traced path. The effective platform
-default headers and cookie-store behavior are not part of this clean-room contract;
-the identities of two additional stripped configuration setters remain unresolved.
+The logged-out QR-generation request carries exactly these application-visible
+headers for the reviewed English 26.8.0 profile on macOS 26.6.2:
+
+```text
+A: mac/26.8.0/en
+Accept-Language: en
+Content-Type: application/json
+User-Agent: KT/26.8.0 Mc/26.6.2 en
+```
+
+No registration authorization header, cookie, signature, nonce, digest, or body
+transform was observed. A clean-room request with this profile generated and
+cancelled a real QR challenge successfully without account approval.
 
 No registration-specific HTTP retry loop or Alamofire retry interceptor was
 identified. QR/passcode polling delays are controller-level behavior and are
@@ -211,14 +222,17 @@ The QR login/poll error code maps as follows:
 
 | Code | Semantic result |
 | ---: | --- |
+| `-100` | Unregistered device; device authorization required (controlled live observation) |
 | `1` | Unregistered device; device authorization required |
 | `5` | Suspended user |
 | `13` | Unsupported device version |
-| `14` | Main-device approval pending |
+| `-150` | Main-device approval pending (bounded live observation) |
+| `14` | Main-device approval pending (static controller mapping) |
 | `15` | Main-device rejection |
 | `16` | Expired QR challenge |
 | `20` | Restricted account |
 | `29` | Invalid response |
+| `-404` | Expired/not-found challenge after its advertised lifetime (bounded live observation) |
 | other | Unknown terminal failure |
 
 Relevant error-response keys are `response`, `nextRequestIntervalInSeconds`,

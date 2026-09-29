@@ -91,7 +91,7 @@ func TestQRServiceGenerateComposesReviewedRequestAndPreservesContext(t *testing.
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := "device%5Bmodel%5D=model&device%5Bname%5D=synthetic&device%5BosVersion%5D=mac&device%5Buuid%5D=uuid"
+		want := `{"device":{"model":"model","name":"synthetic","osVersion":"mac","uuid":"uuid"}}`
 		if string(body) != want {
 			t.Fatalf("body = %q, want %q", body, want)
 		}
