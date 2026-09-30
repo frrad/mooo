@@ -11,7 +11,7 @@ func TestMembershipPushMethodsRemainUnknownUntilContractIsComplete(t *testing.T)
 	// inventory, but their complete public wire/persistence contracts are not
 	// established yet. Preserve them as observable unknown packets rather than
 	// guessing at member mutations.
-	for _, method := range []string{"NEWMEM", "CHGCHATST", "CHGMETA", "CHGMCMETA", "LEFT"} {
+	for _, method := range []string{"CHGCHATST", "CHGMETA", "CHGMCMETA", "LEFT"} {
 		t.Run(method, func(t *testing.T) {
 			event, err := Decode(loco.Packet{Header: loco.Header{Method: method}})
 			unknown, ok := event.(UnknownPacket)

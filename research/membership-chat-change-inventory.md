@@ -1,7 +1,7 @@
 # Membership and chat-change inventory
 
-Status: first-party decoder identity contract plus bounded lifecycle evidence,
-2026-09-30. This note authorizes only the typed DELMEM decoder described below;
+Status: first-party decoder identity contracts plus bounded lifecycle evidence,
+2026-09-30. This note authorizes only the typed identity decoders described below;
 it forbids member persistence mutation, UI effects, retries, and reconnects.
 
 ## Inventory
@@ -38,6 +38,21 @@ membership persistence exists, and the decoder identity path now matches the
 member-removal input. The same evidence does not prove that the consumer is
 used identically for every direct-chat, group-chat, or open-chat shape.
 
+## NEWMEM bounded identity trace
+
+`NEWMEM` has the same one-field unsolicited model shape: a `chatLog` object.
+The model metadata gives `chatLog.chatId` and `chatLog.logId` as signed int64
+values. Its feed exposes an `invitees` collection typed as a member-array
+model; each member has signed int64 `userId`, signed int32 `userType`, and an
+optional string nickname. The handler delegates the notice to the manager.
+
+The manager callback schedules database work and consumes `chatLog.feed` and
+`feed.invitees`. Static calls then use `chatLog.chatId` to look up a chat room,
+conditionally request chat information, and pass a copied invitee collection
+through a member-update operation. A separate block turns the chat log into a
+chat-message/database operation. This establishes the wire identity path and
+the persistence ownership boundary, but not the full state contract.
+
 ## Explicit gaps
 
 The following layers remain unproven for `DELMEM`; this slice adds only a
@@ -46,15 +61,23 @@ typed decoder identity contract and no member mutation:
 - optional/null behavior when `chatLog`, `feed`, or `leaver` is absent;
 - status/error interpretation and database transaction failure behavior;
 - direct-chat versus group-chat guards and local event/UI consumers; and
-- malformed-body behavior of the official model initializer.
+- malformed-body behavior of the official model initializer;
+- optional/null behavior when `NEWMEM.feed` or `feed.invitees` is absent; and
+- the source and semantics of the manager's link/cursor argument and its
+  completion callbacks.
 
-The clean-room decoder therefore intentionally keeps `NEWMEM`, `LEFT`,
-`CHGCHATST`, `CHGMETA`, and `CHGMCMETA` observable as `UnknownPacket`.
-`DELMEM` has a synthetic decoder test for the proven identity path, while the
-stateful lifecycle remains unimplemented. The decoder fails closed for missing
+The clean-room decoder therefore intentionally keeps `LEFT`, `CHGCHATST`,
+`CHGMETA`, and `CHGMCMETA` observable as `UnknownPacket` while the synthetic
+`NEWMEM` identity test defines the next typed-decoder handoff. `DELMEM` has a
+synthetic decoder test for the proven identity path, while the stateful
+lifecycle remains unimplemented. The decoder fails closed for missing
 or wrong nested structure as an implementation safety rule; that behavior is
 not claimed as an observation of the official malformed-body path. This is not evidence that the
 official client ignores any of these methods.
+
+The NEWMEM decoder applies the same fail-closed safety rule to missing or
+wrong invitee structure; its synthetic malformed tests do not claim official
+malformed-input equivalence.
 
 ## Evidence trail
 
