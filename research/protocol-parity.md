@@ -224,9 +224,12 @@ LEFT has a separate typed-decoder handoff for signed int64 `chatId` and
 but those lifecycle and calendar effects remain outside the decoder.
 CHGCHATST has a separate typed-decoder handoff for signed int64 `chatId`,
 `plusUserId`, and `revision`, plus an opaque `chatStatus` BSON dictionary.
-The manager performs revision-gated room metadata persistence and emits a
-downstream delegate event; status labels and lifecycle effects remain outside
-the decoder.
+The manager requires an existing room, a non-null status dictionary, and a
+strictly newer revision; it merges the raw status under `cs`, stores the
+revision under `csr`, and emits its delegate only after the synchronous block
+returns. Equal/stale/missing-room notices are ignored. Status labels, write
+failure reporting, and lifecycle effects remain outside the decoder and pure
+reducer contract.
 
 CHGMETA has a separate typed-decoder handoff for signed int64 `chatId` and
 the nested metadata's signed int32 subtype plus signed int64 revision,
