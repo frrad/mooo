@@ -32,6 +32,7 @@ const (
 	KindChatLeft           Kind = "chat_left"
 	KindChatStatusChanged  Kind = "chat_status_changed"
 	KindChatMetaChanged    Kind = "chat_meta_changed"
+	KindChatMCMetaChanged  Kind = "chat_mcmeta_changed"
 	KindUnsupportedLogMeta Kind = "unsupported_log_meta"
 	KindUnknownPacket      Kind = "unknown_packet"
 )
@@ -271,6 +272,42 @@ type ChatStatusChanged struct {
 func (ChatStatusChanged) Kind() Kind { return KindChatStatusChanged }
 func (ChatStatusChanged) isEvent()   {}
 
+// ChatStatusState is the pure reducer input/output for a room's status
+// metadata. Persistence, database lookup, and downstream effects remain
+// outside this package.
+type ChatStatusState struct {
+	RoomExists bool
+	Revision   int64
+	ExtraInfo  bson.D
+}
+
+type ChatStatusTransition struct {
+	State   ChatStatusState
+	Applied bool
+}
+
+// ReduceChatStatus applies a strictly newer status to an existing room. The
+// status BSON is copied, and existing cs/csr fields are replaced rather than
+// duplicated; unrelated ExtraInfo fields are preserved in order.
+func ReduceChatStatus(state ChatStatusState, change ChatStatusChanged) ChatStatusTransition {
+	if !state.RoomExists || change.Revision <= state.Revision || len(change.Status) == 0 {
+		return ChatStatusTransition{State: state}
+	}
+	status := append(bson.Raw(nil), change.Status...)
+	extra := make(bson.D, 0, len(state.ExtraInfo)+2)
+	for _, field := range state.ExtraInfo {
+		if field.Key == "cs" || field.Key == "csr" {
+			continue
+		}
+		extra = append(extra, field)
+	}
+	extra = append(extra, bson.E{Key: "cs", Value: status}, bson.E{Key: "csr", Value: change.Revision})
+	return ChatStatusTransition{
+		State:   ChatStatusState{RoomExists: state.RoomExists, Revision: change.Revision, ExtraInfo: extra},
+		Applied: true,
+	}
+}
+
 // ChatMetaChanged carries the proven CHGMETA fields without interpreting the
 // numeric subtype or applying metadata persistence/lifecycle effects.
 type ChatMetaChanged struct {
@@ -284,6 +321,20 @@ type ChatMetaChanged struct {
 
 func (ChatMetaChanged) Kind() Kind { return KindChatMetaChanged }
 func (ChatMetaChanged) isEvent()   {}
+
+// ChatMCMetaChanged carries the decoder-proven MCM fields without interpreting
+// type labels or applying room/revision effects.
+type ChatMCMetaChanged struct {
+	ChatID       int64
+	Revision     int32
+	Type         string
+	Content      string
+	ImageURL     string
+	FullImageURL string
+}
+
+func (ChatMCMetaChanged) Kind() Kind { return KindChatMCMetaChanged }
+func (ChatMCMetaChanged) isEvent()   {}
 
 // Decode turns one unsolicited packet into a typed event. Unknown packet
 // methods and unsupported message types remain observable without exposing raw
@@ -308,6 +359,8 @@ func Decode(packet loco.Packet) (Event, error) {
 		return decodeChatStatusChanged(packet.Body)
 	case "CHGMETA":
 		return decodeChatMetaChanged(packet.Body)
+	case "CHGMCMETA":
+		return decodeChatMCMetaChanged(packet.Body)
 	case "LEFT":
 		return decodeChatLeft(packet.Body)
 	default:
@@ -484,6 +537,45 @@ func decodeChatMetaChanged(body []byte) (Event, error) {
 		result.Content = content
 	}
 	return result, nil
+}
+
+func decodeChatMCMetaChanged(body []byte) (Event, error) {
+	raw := bson.Raw(body)
+	if err := raw.Validate(); err != nil {
+		return nil, ErrMalformedEvent
+	}
+	chatID, err := exactInt64(raw, "chatId")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	revisionValue, err := raw.LookupErr("revision")
+	if err != nil || revisionValue.Type != bson.TypeInt32 {
+		return nil, ErrMalformedEvent
+	}
+	typeValue, err := requiredString(raw, "type")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	content, err := requiredString(raw, "content")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	imageURL, _, err := optionalString(raw, "imageUrl")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	fullImageURL, _, err := optionalString(raw, "fullImageUrl")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	return ChatMCMetaChanged{
+		ChatID:       chatID,
+		Revision:     revisionValue.Int32(),
+		Type:         typeValue,
+		Content:      content,
+		ImageURL:     imageURL,
+		FullImageURL: fullImageURL,
+	}, nil
 }
 
 func decodeChatLeft(body []byte) (Event, error) {

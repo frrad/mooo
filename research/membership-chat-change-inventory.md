@@ -69,6 +69,16 @@ metadata under the observed status/revision keys. A downstream delegate event
 is emitted, and a separate UI/client path can request a fresh status by chat
 ID. No network retry or status-value interpretation is proven here.
 
+The narrow gate is strict: a missing room, missing status dictionary, stale
+revision, or equal revision skips the database block and downstream delegate.
+For a newer revision on an existing room, the block preserves existing extra
+metadata, writes the raw status dictionary under `cs`, writes the incoming
+revision as an int64 under `csr`, and only then emits the manager-owned
+delegate event. The traced path uses a synchronous database-block call with
+no explicit completion/error branch, so write-failure reporting and rollback
+remain unproven. No chat-type guard is visible in this gate; any separate UI
+refresh guard is not conflated with persistence.
+
 ## CHGMETA bounded metadata trace
 
 The `CHGMETA` unsolicited model carries signed int64 `chatId` and a nested
@@ -85,6 +95,23 @@ the chat ID. Exact persistence keys, optional fields, subtype meanings,
 chat-type guards, and failure reporting remain open, so the decoder preserves
 the raw metadata fields without implementing those effects.
 
+## CHGMCMETA bounded metadata trace
+
+`CHGMCMETA` is distinct from `CHGMETA`. Its unsolicited model carries signed
+int64 `chatId`, signed int32 `revision`, and four string fields: `type`,
+`content`, `imageUrl`, and `fullImageUrl`. The string values are preserved as
+opaque metadata; no stable semantic labels are assigned to `type`.
+
+The carriage handler delegates the notice to the manager. The manager queues
+database-context work, looks up the room by `chatId`, and applies the notice
+only when that room exists. The room consumer routes on the opaque `type`
+value and reads the content or image URL fields; the traced manager path also
+compares and advances a separate MCM revision and can update pin/folder state.
+Optional string-field behavior, exact type values, database failure reporting,
+chat-type guards, and downstream notification semantics remain open. The
+decoder therefore exposes only the six model fields and performs no room or
+revision mutation.
+
 ## Explicit gaps
 
 The following layers remain unproven for `DELMEM`; this slice adds only a
@@ -98,10 +125,9 @@ typed decoder identity contract and no member mutation:
 - the source and semantics of the manager's link/cursor argument and its
   completion callbacks.
 
-The clean-room decoder therefore intentionally keeps `CHGMETA` and
-`CHGMCMETA` observable as `UnknownPacket`; `DELMEM`, `NEWMEM`, `LEFT`, and
-`CHGCHATST` now expose typed boundaries, while the CHGMETA handoff is covered
-by a synthetic decoder test. Each typed event has a synthetic decoder test for
+The clean-room decoder now exposes typed boundaries for `DELMEM`, `NEWMEM`,
+`LEFT`, `CHGCHATST`, `CHGMETA`, and `CHGMCMETA`. Each typed event has a
+synthetic decoder test for
 the proven field path, while stateful lifecycle remains
 unimplemented. The decoder fails closed for missing
 or wrong nested structure as an implementation safety rule; that behavior is
@@ -116,6 +142,11 @@ The CHGCHATST gaps are optional/null and malformed-body behavior, database
 failure reporting, the exact chat-type guard for downstream status refresh,
 and the semantic status-value set. Its synthetic test therefore asserts only
 the four proven top-level fields and leaves `chatStatus` opaque.
+
+The pure reducer characterization in
+`internal/protocol/events/chgchatst_transition_test.go` encodes only the
+proven strict revision gate and `cs`/`csr` merge. It does not claim database
+transaction semantics, UI behavior, or delegate delivery on an I/O failure.
 
 ## LEFT bounded identity and ownership trace
 
