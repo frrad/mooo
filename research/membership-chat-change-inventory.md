@@ -53,6 +53,22 @@ through a member-update operation. A separate block turns the chat log into a
 chat-message/database operation. This establishes the wire identity path and
 the persistence ownership boundary, but not the full state contract.
 
+## CHGCHATST bounded status trace
+
+The `CHGCHATST` unsolicited model has signed int64 `chatId`, signed int64
+`plusUserId`, signed int64 `revision`, and a `chatStatus` dictionary. Static
+evidence does not establish names, types, or semantic labels for dictionary
+entries or enumerate a stable status-value set, so the decoder handoff keeps
+that dictionary opaque.
+
+The handler delegates the notice to the manager. The manager looks up the room
+by chat ID and only schedules database work when the room and status dictionary
+are present and the notice revision is newer than the room's stored status
+revision. The database block merges the status dictionary into room extra
+metadata under the observed status/revision keys. A downstream delegate event
+is emitted, and a separate UI/client path can request a fresh status by chat
+ID. No network retry or status-value interpretation is proven here.
+
 ## Explicit gaps
 
 The following layers remain unproven for `DELMEM`; this slice adds only a
@@ -78,6 +94,11 @@ official client ignores any of these methods.
 The NEWMEM decoder applies the same fail-closed safety rule to missing or
 wrong invitee structure; its synthetic malformed tests do not claim official
 malformed-input equivalence.
+
+The CHGCHATST gaps are optional/null and malformed-body behavior, database
+failure reporting, the exact chat-type guard for downstream status refresh,
+and the semantic status-value set. Its synthetic test therefore asserts only
+the four proven top-level fields and leaves `chatStatus` opaque.
 
 ## LEFT bounded identity and ownership trace
 

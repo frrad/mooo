@@ -222,6 +222,11 @@ downstream consumers remain open; no member mutation is wired.
 LEFT has a separate typed-decoder handoff for signed int64 `chatId` and
 `lastTokenId`. The official manager deletes the room and updates its cursor,
 but those lifecycle and calendar effects remain outside the decoder.
+CHGCHATST has a separate typed-decoder handoff for signed int64 `chatId`,
+`plusUserId`, and `revision`, plus an opaque `chatStatus` BSON dictionary.
+The manager performs revision-gated room metadata persistence and emits a
+downstream delegate event; status labels and lifecycle effects remain outside
+the decoder.
 
 ## Current parity matrix
 
