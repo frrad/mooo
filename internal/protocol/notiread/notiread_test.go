@@ -1,6 +1,7 @@
 package notiread
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -99,9 +100,43 @@ func TestSendDoesNotRetryAmbiguousFailureOrReportReadSuccess(t *testing.T) {
 	}
 }
 
+func TestSendReturnsResponseWithoutInterpretingStatus(t *testing.T) {
+	response, err := bson.Marshal(bson.D{
+		{Key: "status", Value: int32(-950)},
+		{Key: "extraInfo", Value: bson.D{{Key: "notiRead", Value: false}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := &responseTransport{response: response}
+
+	got, err := Send(context.Background(), transport, Request{
+		ChatID: 42, LinkID: 7, Watermark: 99, NotiRead: true, ServiceID: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if transport.calls != 1 {
+		t.Fatalf("transport calls = %d, want one", transport.calls)
+	}
+	if !bytes.Equal(got, response) {
+		t.Fatalf("response bytes changed: got %x, want %x", got, response)
+	}
+}
+
 type failingTransport struct {
 	err   error
 	calls int
+}
+
+type responseTransport struct {
+	response []byte
+	calls    int
+}
+
+func (t *responseTransport) Request(context.Context, string, []byte) ([]byte, error) {
+	t.calls++
+	return t.response, nil
 }
 
 func (t *failingTransport) Request(context.Context, string, []byte) ([]byte, error) {
