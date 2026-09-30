@@ -79,13 +79,22 @@ var (
 )
 
 func newKakaoClient(login *bridgev2.UserLogin, userID int64, open func() (kakaoClient, error)) *KakaoClient {
-	return &KakaoClient{
-		login:     login,
-		userID:    userID,
-		open:      open,
-		queue:     login.QueueRemoteEvent,
-		sendState: login.BridgeState.Send,
+	kc := &KakaoClient{
+		login:  login,
+		userID: userID,
+		open:   open,
+		queue:  login.QueueRemoteEvent,
 	}
+	kc.sendState = func(state status.BridgeState) { kc.stateQueue().Send(state) }
+	return kc
+}
+
+// stateQueue looks up the login's bridge-state queue at send time. The
+// framework loads a stored login by calling LoadUserLogin before it creates
+// the queue, so binding it at construction would capture nil and silently
+// drop every state.
+func (kc *KakaoClient) stateQueue() *bridgev2.BridgeStateQueue {
+	return kc.login.BridgeState
 }
 
 func (kc *KakaoClient) log() *zerolog.Logger {

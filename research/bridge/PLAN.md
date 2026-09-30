@@ -61,8 +61,28 @@ Status: active work plan, 2026-09-30. Framework decision:
       safe settings.
 - [x] Unit tests with a fake client: ordering, the commit rule, non-commit on
       failure (replay after restart), and single-attempt sends.
-- [ ] Live-validate against the local harness and the disposable accounts:
-      import login, inbound text, outbound text, and restart replay.
+- [x] Live-validate against the local harness and the disposable accounts
+      (2026-09-30; bridge logged in as account B from its clean-room profile,
+      official Android 26.8.2 as account A, throwaway Synapse). Import login,
+      A→Matrix text, Matrix→A text, clean shutdown, and resumed login after
+      restart all worked. Only synthetic text was used.
+- [x] Live-found bug: after a restart the framework calls `LoadUserLogin`
+      before it creates the login's bridge-state queue, so a queue bound at
+      construction was nil and every state was dropped. The queue is now looked
+      up at send time; regression test added.
+- [x] Live-found bug: the lab profile file is `state.json`, which the profile
+      name rule rejected. Dots are now allowed after the first character;
+      regression test added.
+- [ ] **Catch up at connect time, before committing live events.** Live
+      finding: a message A sent while the bridge was stopped was not delivered
+      after restart, and the next live message's commit advanced the chat's
+      cursor past it, with no gap recorded. So the bridge currently skips
+      offline messages permanently. On connect, run bounded `CatchUp` for
+      each chat whose server maximum is ahead of its commit, bridge and commit
+      those events in order, and only then consume live events. Chats with no
+      commit yet need a policy that does not trigger an unbounded from-zero
+      recovery. `SYNCMSG` may mark messages read, so this is the one read side
+      effect B0 accepts.
 - [ ] Exercise the connector through the scripted mock backend. That backend
       lives in `internal/client` tests and is not yet reusable from other
       packages.

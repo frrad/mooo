@@ -71,9 +71,9 @@ func parseID(value string) (int64, error) {
 	return parsed, nil
 }
 
-var profileNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+var profileNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
-var errInvalidProfileName = errors.New("connector: profile name must be 1-64 letters, digits, '_' or '-', starting with a letter or digit")
+var errInvalidProfileName = errors.New("connector: profile name must be 1-64 letters, digits, '.', '_' or '-', starting with a letter or digit")
 
 // profileStatePath resolves a profile name inside the configured profile
 // directory. Names are restricted to a single safe path component so a login
