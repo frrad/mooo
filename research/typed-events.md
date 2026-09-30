@@ -24,6 +24,9 @@ than failures. Their raw BSON is deliberately not exposed by the typed layer.
 - `UnsupportedMessage`: chat ID, log ID, and numeric message type.
 - `ReactionChanged`: aggregate reaction items and the server revision from
   reaction metadata changes.
+- `ReadStateChanged`: the chat ID, member ID, and positive server watermark from
+  `DECUNREAD`. This is member read progress, not a message commit cursor and not
+  an instruction to mark the local conversation read.
 - `UnsupportedLogMeta`: chat ID, log ID, and unsupported metadata type.
 - `UnknownPacket`: method name only.
 
@@ -43,10 +46,11 @@ observation).
 
 ## Still pending
 
-Read receipts, typing, chat/member changes, deletion, server changes, and
-kickout need protocol-specific decoders before they graduate from unknown
-events. Reaction aggregate changes are typed; reaction actor attribution is an
-explicit HTTP lookup rather than part of the push event. Durable committed
+Typing, chat/member changes, deletion, server changes, and kickout need
+protocol-specific decoders before they graduate from unknown events. Read-state
+watermarks are typed, while the explicit local mark-read operation remains
+unimplemented. Reaction aggregate changes are typed; reaction actor attribution
+is an explicit HTTP lookup rather than part of the push event. Durable committed
 cursors, resumed `LOGINLIST`, duplicate suppression, and bounded `SYNCMSG`
 catch-up are implemented as described in `message-continuity.md`. Live cursor-
 boundary validation and any distinct server acknowledgement command remain open.

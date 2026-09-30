@@ -24,6 +24,7 @@ const (
 	KindPhotoMessage       Kind = "photo_message"
 	KindUnsupportedMessage Kind = "unsupported_message"
 	KindReactionChanged    Kind = "reaction_changed"
+	KindReadStateChanged   Kind = "read_state_changed"
 	KindUnsupportedLogMeta Kind = "unsupported_log_meta"
 	KindUnknownPacket      Kind = "unknown_packet"
 )
@@ -167,6 +168,18 @@ func (m ReactionChanged) String() string {
 
 func (m ReactionChanged) GoString() string { return m.String() }
 
+// ReadStateChanged reports that one room member's server watermark advanced.
+// It does not imply that the local application should mark the conversation
+// read; UserID identifies whose watermark changed.
+type ReadStateChanged struct {
+	ChatID    int64
+	UserID    int64
+	Watermark int64
+}
+
+func (ReadStateChanged) Kind() Kind { return KindReadStateChanged }
+func (ReadStateChanged) isEvent()   {}
+
 type UnsupportedLogMeta struct {
 	ChatID int64
 	LogID  int64
@@ -192,9 +205,31 @@ func Decode(packet loco.Packet) (Event, error) {
 		return decodeMessage(packet)
 	case "CHGLOGMETA":
 		return decodeLogMeta(packet.Body)
+	case "DECUNREAD":
+		return decodeReadState(packet.Body)
 	default:
 		return UnknownPacket{Method: packet.Header.Method}, nil
 	}
+}
+
+func decodeReadState(body []byte) (Event, error) {
+	raw := bson.Raw(body)
+	if err := raw.Validate(); err != nil {
+		return nil, ErrMalformedEvent
+	}
+	chatID, err := requiredInt64(raw, "chatId")
+	if err != nil || chatID <= 0 {
+		return nil, ErrMalformedEvent
+	}
+	userID, err := requiredInt64(raw, "userId")
+	if err != nil || userID <= 0 {
+		return nil, ErrMalformedEvent
+	}
+	watermark, err := requiredInt64(raw, "watermark")
+	if err != nil || watermark <= 0 {
+		return nil, ErrMalformedEvent
+	}
+	return ReadStateChanged{ChatID: chatID, UserID: userID, Watermark: watermark}, nil
 }
 
 func decodeMessage(packet loco.Packet) (Event, error) {
