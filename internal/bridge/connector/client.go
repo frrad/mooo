@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/rs/zerolog"
@@ -15,6 +16,7 @@ import (
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
+	"github.com/frrad/mooo/internal/protocol/syncmsg"
 )
 
 // kakaoClient is the subset of client.Client the connector uses. It exists so
@@ -23,6 +25,8 @@ type kakaoClient interface {
 	Connect(ctx context.Context) error
 	Events(ctx context.Context) (<-chan events.Result, error)
 	CommitEvent(event events.Event) error
+	ResumeTargets(ctx context.Context) ([]syncmsg.Target, error)
+	CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error)
 	SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error)
 	Close() error
 }
@@ -123,7 +127,7 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateProfileUnavailable})
 		return
 	}
-	stream, err := connectAndSubscribe(ctx, c)
+	stream, err := kc.connectAndSubscribe(ctx, c)
 	if err != nil {
 		_ = c.Close()
 		kc.log().Err(err).Msg("Failed to connect to KakaoTalk")
@@ -144,11 +148,45 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	go kc.run(c, stream, done)
 }
 
-func connectAndSubscribe(ctx context.Context, c kakaoClient) (<-chan events.Result, error) {
+// connectAndSubscribe logs in, recovers what was missed while disconnected,
+// and only then subscribes to live events. The order matters: the client
+// commits strictly in delivery order per chat, and a live message committed
+// first would move the chat's cursor past the missed ones. Until Events is
+// called the session buffers pushes, so nothing live is lost meanwhile.
+func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (<-chan events.Result, error) {
 	if err := c.Connect(ctx); err != nil {
 		return nil, err
 	}
+	if err := kc.catchUp(ctx, c); err != nil {
+		return nil, err
+	}
 	return c.Events(ctx)
+}
+
+// catchUp bridges and commits, in order, the messages each previously
+// bridged chat received while the bridge was away. SYNCMSG may mark them read
+// on the server. A chat whose interval cannot be recovered keeps its recorded
+// gap and gets a notice; any other failure aborts the connection so live
+// commits never skip past unrecovered messages.
+func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
+	targets, err := c.ResumeTargets(ctx)
+	if err != nil {
+		return fmt.Errorf("list catch-up targets: %w", err)
+	}
+	for _, target := range targets {
+		missed, err := c.CatchUp(ctx, target.ChatID, target.MaxLogID)
+		if errors.Is(err, client.ErrGapUnresolved) {
+			kc.log().Warn().Int64("kakao_chat_id", target.ChatID).Msg("Could not recover messages missed while disconnected")
+			kc.queue(kc.gapNotice(target.ChatID, target.MaxLogID))
+			continue
+		} else if err != nil {
+			return fmt.Errorf("catch up chat: %w", err)
+		}
+		for _, evt := range missed {
+			kc.handleEvent(c, evt)
+		}
+	}
+	return nil
 }
 
 // run consumes the typed event stream until the session ends. It is the only

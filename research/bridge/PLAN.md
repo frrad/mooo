@@ -73,16 +73,23 @@ Status: active work plan, 2026-09-30. Framework decision:
 - [x] Live-found bug: the lab profile file is `state.json`, which the profile
       name rule rejected. Dots are now allowed after the first character;
       regression test added.
-- [ ] **Catch up at connect time, before committing live events.** Live
-      finding: a message A sent while the bridge was stopped was not delivered
-      after restart, and the next live message's commit advanced the chat's
-      cursor past it, with no gap recorded. So the bridge currently skips
-      offline messages permanently. On connect, run bounded `CatchUp` for
-      each chat whose server maximum is ahead of its commit, bridge and commit
-      those events in order, and only then consume live events. Chats with no
-      commit yet need a policy that does not trigger an unbounded from-zero
-      recovery. `SYNCMSG` may mark messages read, so this is the one read side
-      effect B0 accepts.
+- [x] Catch up at connect time, before committing live events. Live finding:
+      a message sent while the bridge was stopped was skipped, and the next live
+      commit moved the cursor past it. The bridge now lists chats it has
+      committed before whose server maximum is ahead (`Client.ResumeTargets`),
+      recovers each interval with `CatchUp`, bridges and commits those messages
+      in order, and only then subscribes to live events (the session buffers
+      pushes meanwhile). An unrecoverable interval keeps its recorded gap and
+      gets one notice in the room; any other failure aborts the connect. Chats
+      never committed are left to opt-in backfill.
+- [x] Live-found protocol bug: `CatchUp` declared `cnt=300`, but `cnt` is the
+      number of messages the client already holds in the range, so the server
+      returned nothing. Catch-up now sends `cnt=0`; validated live (two offline
+      messages recovered in order before a live one). Regression-tested.
+- [ ] Read-state follow-up: the client records a local read watermark after
+      every `SYNCMSG`, including `cnt=0` recovery, which one run suggests does
+      not mark messages read. Confirm with an A/B test before B4 read receipts
+      rely on that watermark.
 - [ ] Exercise the connector through the scripted mock backend. That backend
       lives in `internal/client` tests and is not yet reusable from other
       packages.
