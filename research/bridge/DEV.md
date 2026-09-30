@@ -67,7 +67,9 @@ homeserver, and start the bridge:
 ## Logging in
 
 Start a DM with the bridge bot and send `login import-profile`, then enter
-the profile's name. The name must be a single file name inside
+the profile's name. `list-logins` shows the login's connection state.
+Stopping the bridge with an interrupt shuts it down cleanly even though the
+process exits with status 1. The name must be a single file name inside
 `profile_dir`, never a path.
 
 Point `profile_dir` at the directory where the profile already lives rather
@@ -84,3 +86,6 @@ use that profile until the bridge stops.
 - Only plain text (and emotes) can be sent from Matrix.
 - A lost Kakao session is reported through bridge state, not reconnected. Restart
   the bridge to reconnect; the restart performs one resumed login.
+- Messages sent while the bridge is stopped are not caught up, and a later
+  live message moves the chat's cursor past them. Do not rely on restarts
+  until connect-time catch-up lands.

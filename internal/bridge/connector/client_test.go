@@ -547,3 +547,21 @@ func TestDisconnectDuringConnectReleasesProfile(t *testing.T) {
 		t.Fatalf("close calls = %d, want the opened client released once", fake.closeCalls)
 	}
 }
+
+// Regression: after a bridge restart the framework calls LoadUserLogin before
+// creating the login's BridgeState queue. Binding the queue at construction
+// captured nil, so every later state was silently dropped.
+func TestBridgeStateQueueIsResolvedAtSendTime(t *testing.T) {
+	login := &bridgev2.UserLogin{
+		UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID)},
+		Log:       zerolog.Nop(),
+	}
+	kc := newKakaoClient(login, testSelfID, nil)
+
+	queue := &bridgev2.BridgeStateQueue{}
+	login.BridgeState = queue
+
+	if kc.stateQueue() != queue {
+		t.Fatal("client kept the bridge-state queue that existed when it was constructed")
+	}
+}

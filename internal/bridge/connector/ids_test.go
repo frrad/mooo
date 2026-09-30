@@ -51,7 +51,12 @@ func TestProfileStatePathStaysInsideProfileDir(t *testing.T) {
 	if err != nil || path != filepath.Join("/srv/profiles", "lab-1") {
 		t.Fatalf("profileStatePath = %q, %v", path, err)
 	}
-	for _, name := range []string{"", ".", "..", "../etc/passwd", "a/b", `a\b`, ".hidden", "-flag", "name with space"} {
+	// Regression: the lab client stores its profile as "state.json".
+	path, err = profileStatePath("/srv/profiles", "state.json")
+	if err != nil || path != filepath.Join("/srv/profiles", "state.json") {
+		t.Fatalf("profileStatePath(state.json) = %q, %v", path, err)
+	}
+	for _, name := range []string{"", ".", "..", "../etc/passwd", "./x", "a/b", `a\b`, ".hidden", "-flag", "name with space"} {
 		if _, err := profileStatePath("/srv/profiles", name); !errors.Is(err, errInvalidProfileName) {
 			t.Errorf("profileStatePath(%q) error = %v, want errInvalidProfileName", name, err)
 		}
