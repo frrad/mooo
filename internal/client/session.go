@@ -177,7 +177,7 @@ func connectSessionWithResume(ctx context.Context, state authstate.State, resume
 		_ = carriage.close()
 		return nil, StatusError{Command: "LOGINLIST", Status: status}
 	}
-	chatData, nextID, pendingPushes, cursor, err := finishLoginSync(carriage, loginReply.Body, 3)
+	chatData, nextID, pendingPushes, cursor, err := finishLoginSync(carriage, loginReply.Body, status, 3)
 	if err != nil {
 		_ = carriage.close()
 		return nil, ErrLogin
@@ -580,22 +580,39 @@ func endpoint(body []byte) (string, int, error) {
 	return hostValue.StringValue(), port, nil
 }
 
-func finishLoginSync(wire *wireConn, first []byte, nextID uint32) ([]bson.Raw, uint32, []loco.Packet, loginCursor, error) {
+func finishLoginSync(wire *wireConn, first []byte, firstStatus int32, nextID uint32) ([]bson.Raw, uint32, []loco.Packet, loginCursor, error) {
 	page := append(bson.Raw(nil), first...)
+	status := firstStatus
 	var chats []bson.Raw
 	var pushes []loco.Packet
 	var cursor loginCursor
 	for range 20 {
-		if err := updateLoginCursor(page, &cursor); err != nil {
-			return nil, nextID, pushes, cursor, err
-		}
-		pageChats, eof, lastTokenID, lastChatID, err := parseChatPage(page)
+		pageChats, eof, err := parseChatPageContent(page)
 		if err != nil {
 			return nil, nextID, pushes, cursor, err
 		}
+		// The official client applies per-chat deltas for its accepted negative
+		// list statuses, but only a status-zero EOF commits global progress.
+		if err := updateLoginCursor(page, &cursor, status == 0 && eof); err != nil {
+			return nil, nextID, pushes, cursor, err
+		}
 		chats = append(chats, pageChats...)
+		if status != 0 {
+			if status == -305 || status == -310 {
+				return chats, nextID, pushes, cursor, nil
+			}
+			return nil, nextID, pushes, cursor, ErrProtocol
+		}
 		if eof {
 			return chats, nextID, pushes, cursor, nil
+		}
+		lastTokenID, err := bsonInt64(page, "lastTokenId")
+		if err != nil {
+			return nil, nextID, pushes, cursor, ErrProtocol
+		}
+		lastChatID, err := bsonInt64(page, "lastChatId")
+		if err != nil {
+			return nil, nextID, pushes, cursor, ErrProtocol
 		}
 		body, err := bson.Marshal(bson.D{
 			{Key: "lastTokenId", Value: lastTokenID},
@@ -607,23 +624,26 @@ func finishLoginSync(wire *wireConn, first []byte, nextID uint32) ([]bson.Raw, u
 		reply, unsolicited, err := wire.request(nextID, "LCHATLIST", body)
 		nextID++
 		pushes = append(pushes, unsolicited...)
-		status, statusErr := responseStatus(reply)
-		if err != nil || statusErr != nil || status != 0 {
+		replyStatus, statusErr := responseStatus(reply)
+		if err != nil || statusErr != nil || (replyStatus != 0 && replyStatus != -310) {
 			return nil, nextID, pushes, cursor, ErrProtocol
 		}
+		status = replyStatus
 		page = append(page[:0], reply.Body...)
 	}
 	return nil, nextID, pushes, cursor, ErrProtocol
 }
 
-func updateLoginCursor(page bson.Raw, cursor *loginCursor) error {
-	if value, err := bsonInt64(page, "lastTokenId"); err == nil && value >= 0 {
-		copy := value
-		cursor.lastTokenID = &copy
-	}
-	if value, err := bsonInt64(page, "lbk"); err == nil && value >= 0 && value <= 1<<31-1 {
-		copy := int32(value)
-		cursor.lbk = &copy
+func updateLoginCursor(page bson.Raw, cursor *loginCursor, updateGlobal bool) error {
+	if updateGlobal {
+		if value, err := bsonInt64(page, "lastTokenId"); err == nil && value >= 0 {
+			copy := value
+			cursor.lastTokenID = &copy
+		}
+		if value, err := bsonInt64(page, "lbk"); err == nil && value >= 0 && value <= 1<<31-1 {
+			copy := int32(value)
+			cursor.lbk = &copy
+		}
 	}
 	if value, err := page.LookupErr("chatDatas"); err == nil {
 		if value.Type != bson.TypeArray {
@@ -706,30 +726,11 @@ func setLoginTarget(targets *[]continuity.ChatTarget, target continuity.ChatTarg
 }
 
 func parseChatPage(page bson.Raw) ([]bson.Raw, bool, int64, int64, error) {
-	if err := page.Validate(); err != nil {
-		return nil, false, 0, 0, ErrProtocol
+	chats, eof, err := parseChatPageContent(page)
+	if err != nil {
+		return nil, false, 0, 0, err
 	}
-	var chats []bson.Raw
-	if value, err := page.LookupErr("chatDatas"); err == nil {
-		if value.Type != bson.TypeArray {
-			return nil, false, 0, 0, ErrProtocol
-		}
-		values, err := value.Array().Values()
-		if err != nil {
-			return nil, false, 0, 0, ErrProtocol
-		}
-		for _, value := range values {
-			if value.Type != bson.TypeEmbeddedDocument {
-				return nil, false, 0, 0, ErrProtocol
-			}
-			chats = append(chats, append(bson.Raw(nil), value.Document()...))
-		}
-	}
-	eofValue, err := page.LookupErr("eof")
-	if err != nil || eofValue.Type != bson.TypeBoolean {
-		return nil, false, 0, 0, ErrProtocol
-	}
-	if eofValue.Boolean() {
+	if eof {
 		return chats, true, 0, 0, nil
 	}
 	lastTokenID, err := bsonInt64(page, "lastTokenId")
@@ -741,6 +742,33 @@ func parseChatPage(page bson.Raw) ([]bson.Raw, bool, int64, int64, error) {
 		return nil, false, 0, 0, ErrProtocol
 	}
 	return chats, false, lastTokenID, lastChatID, nil
+}
+
+func parseChatPageContent(page bson.Raw) ([]bson.Raw, bool, error) {
+	if err := page.Validate(); err != nil {
+		return nil, false, ErrProtocol
+	}
+	var chats []bson.Raw
+	if value, err := page.LookupErr("chatDatas"); err == nil {
+		if value.Type != bson.TypeArray {
+			return nil, false, ErrProtocol
+		}
+		values, err := value.Array().Values()
+		if err != nil {
+			return nil, false, ErrProtocol
+		}
+		for _, value := range values {
+			if value.Type != bson.TypeEmbeddedDocument {
+				return nil, false, ErrProtocol
+			}
+			chats = append(chats, append(bson.Raw(nil), value.Document()...))
+		}
+	}
+	eofValue, err := page.LookupErr("eof")
+	if err != nil || eofValue.Type != bson.TypeBoolean {
+		return nil, false, ErrProtocol
+	}
+	return chats, eofValue.Boolean(), nil
 }
 
 func bsonInt64(raw bson.Raw, key string) (int64, error) {

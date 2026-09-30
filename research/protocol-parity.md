@@ -70,6 +70,12 @@ The official login-list response handler:
 - gates global token and blind-token updates on end-of-list state; and
 - may issue secondary information requests after processing returned chats.
 
+Full coordinator tracing further distinguishes page data from durable global
+progress. Accepted `LOGINLIST -305` processes its included delta but skips
+follow-on list pagination and token commitment. `LCHATLIST -310` processes the
+chat/deletion delta, terminates pagination without error, and does not advance the
+global token/blind-token cursors. Only status-zero EOF makes those cursors durable.
+
 The chat-data handler constructs or updates the chat room, distinguishes the
 last embedded chat log from the last server log, consults the existing message
 store, creates explicit loss marks when local history is absent, and collects
@@ -94,7 +100,7 @@ least one official branch or storage effect remains unresolved.
 | --- | --- | --- | --- | --- | --- | --- |
 | QR secondary-device registration | Substantial | Partial | Partial | Partial | Substantial | Partial |
 | Booking/check-in/secure carriage | Substantial | Partial | Endpoint cache partial | Partial | Substantial | Partial |
-| LOGINLIST/LCHATLIST | Substantial | Newly traced | Durable inventory implemented; official DB model partial | Partial success and follow-up requests open | Strong synthetic coverage | Partial |
+| LOGINLIST/LCHATLIST | Substantial | Pagination and partial-success traced | Delta/global cursor split implemented; official DB model partial | Metadata/link follow-ups open | Strong synthetic coverage | Partial |
 | Inbound message events | Common text/reply/photo mapped | Basic dispatch mapped | Explicit durable commit implemented | Official receipt/read-state behavior open | Strong for implemented types | Partial |
 | SYNCMSG continuity | Core schema mapped | Newly traced | Checkpoint implemented; official loss marks partial | Retention/bootstrap and post-sync follow-ups open | Paging/no-progress/live regressions covered | Partial |
 | Text send | Baseline mapped | No-retry behavior mapped | Message-ID lifecycle partial | Ambiguous delivery modeled | Strong baseline | Partial |
@@ -106,9 +112,9 @@ least one official branch or storage effect remains unresolved.
 
 ## Immediate work queue
 
-1. Close the continuity dossier: partial-success semantics, exact deletion
-   behavior, loss-mark transitions, initial-history bootstrap policy, post-sync
-   follow-ups, and deletion regression fixtures.
+1. Close the continuity dossier: remaining database deletion details, loss-mark
+   transitions, initial-history bootstrap policy, metadata/link follow-ups, and
+   post-sync thread/member work.
 2. Trace inbound acknowledgement/read-state behavior from packet handler through
    database mutation and outgoing commands.
 3. Trace membership/chat-change response handlers and persistence before adding

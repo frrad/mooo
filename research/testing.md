@@ -25,6 +25,8 @@ scenarios cover:
 - `LOGINLIST -950`, one HTTP token renewal, and one fresh login with the rotated
   credential;
 - resumed `LOGINLIST` with persisted chat/max, token, and blind-token cursors;
+- accepted `LOGINLIST -305` and partial `LCHATLIST -310`, proving useful chat and
+  deletion deltas survive while pagination stops and global cursors do not advance;
 - full-login inventory followed by an empty delta login across checkpoint reopen,
   proving the chat target survives without becoming an acknowledgement;
 - official deletion-before-chat-data ordering, proving a same-page recreated chat

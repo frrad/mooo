@@ -183,10 +183,21 @@ Observed predicates:
 The semantic labels of the three negative statuses remain unresolved. Unknown
 statuses preserve their numeric value and fail closed.
 
+Status zero processes the included chat/deletion delta and may continue through
+`LCHATLIST` until EOF. Accepted `LOGINLIST -305` processes its included delta but
+does not start another list page and does not advance the global token/blind-token
+cursors. `LOGINLIST -310` is not accepted as a completed login.
+
+For a follow-on `LCHATLIST`, status zero processes the page and may paginate.
+Status `-310` also processes `delChatIds` and `chatDatas`, then terminates the list
+phase successfully without committing the global cursors. Only a status-zero EOF
+page advances the global token and blind-token state. Thus per-chat delta mutation
+and global-cursor commitment are separate operations.
+
 An accepted login installs minimum-log, carriage, voice, chat-list, revision, and
-cursor state before the higher-level session becomes logged in. Updates must be
-atomic from the caller's perspective; a partially decoded response must not advance
-resume cursors.
+eligible cursor state before the higher-level session becomes logged in. Updates
+must be atomic from the caller's perspective; a partially decoded response must
+not advance resume cursors.
 
 ## Routing cache and retry
 

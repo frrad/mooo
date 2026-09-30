@@ -33,7 +33,9 @@ can move from `internal/client` to a public package without exposing wire types.
 - Chat operations use the session already owned by `Client`; they do not invoke a
   free-standing login function.
 - `LOGINLIST` is accepted from its BSON `status`, not the LOCO frame header.
-- All required `LCHATLIST` pages are consumed before the session becomes usable.
+- Status-zero `LCHATLIST` pages are consumed through EOF before the session becomes
+  usable. A partial-success page applies its chat/deletion delta, stops pagination,
+  and leaves the prior global token cursors intact.
 - No operation transparently reconnects. A disconnect during a mutation is
   ambiguous, so reconnect and reconciliation must be an explicit higher-level
   decision.
