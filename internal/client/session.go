@@ -23,6 +23,8 @@ import (
 const (
 	bookingHost  = "booking-loco.kakao.com"
 	requestLimit = 64
+	requestIDMin = 100000000
+	requestIDMax = 200000000
 )
 
 var (
@@ -242,8 +244,11 @@ func (s *Session) Request(ctx context.Context, command string, body []byte) (loc
 		s.mu.Unlock()
 		return loco.Packet{}, ErrClosed
 	}
-	id := s.nextID
-	s.nextID++
+	id, err := s.allocateRequestIDLocked()
+	if err != nil {
+		s.mu.Unlock()
+		return loco.Packet{}, err
+	}
 	result := make(chan requestResult, 1)
 	s.pending[id] = result
 	wire := s.wire
@@ -272,6 +277,29 @@ func (s *Session) Request(ctx context.Context, command string, body []byte) (loc
 		return reply, StatusError{Command: command, Status: status}
 	}
 	return reply, nil
+}
+
+// allocateRequestIDLocked returns one ID from the official bounded request
+// range. The caller must hold s.mu. IDs still present in pending are skipped
+// so wraparound cannot correlate a new request with an older callback.
+func (s *Session) allocateRequestIDLocked() (uint32, error) {
+	if s.nextID < requestIDMin || s.nextID >= requestIDMax {
+		s.nextID = requestIDMin
+	}
+	start := s.nextID
+	for {
+		id := s.nextID
+		s.nextID++
+		if s.nextID >= requestIDMax {
+			s.nextID = requestIDMin
+		}
+		if _, pending := s.pending[id]; !pending {
+			return id, nil
+		}
+		if s.nextID == start {
+			return 0, ErrProtocol
+		}
+	}
 }
 
 func (s *Session) writeRequest(wire *wireConn, id uint32, command string, body []byte) error {

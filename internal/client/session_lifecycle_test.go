@@ -201,3 +201,26 @@ func TestSessionRequestIDWrapsBeforeOfficialUpperBound(t *testing.T) {
 		t.Fatalf("request IDs = %d, %d; want 199999999, 100000000", first, second)
 	}
 }
+
+func TestSessionRequestIDSkipsPendingAfterWrap(t *testing.T) {
+	session := &Session{
+		nextID: 199999999,
+		pending: map[uint32]chan requestResult{
+			100000000: make(chan requestResult),
+		},
+	}
+	session.mu.Lock()
+	first, err := session.allocateRequestIDLocked()
+	if err != nil {
+		session.mu.Unlock()
+		t.Fatal(err)
+	}
+	second, err := session.allocateRequestIDLocked()
+	session.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != 199999999 || second != 100000001 {
+		t.Fatalf("request IDs = %d, %d; want 199999999, 100000001", first, second)
+	}
+}
