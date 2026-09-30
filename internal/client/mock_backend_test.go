@@ -313,6 +313,98 @@ func TestScriptedBackendResumedLoginUsesDurableCursors(t *testing.T) {
 	}
 }
 
+func TestScriptedBackendPartialLChatListKeepsDeltasWithoutAdvancingGlobalCursor(t *testing.T) {
+	state := reusableTestState()
+	booking := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
+		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
+		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
+	)))
+	checkin := newScriptedBackend(t, false, expectRequest("CHECKIN", nil, statusDocument(
+		bson.E{Key: "host", Value: "carriage.invalid"}, bson.E{Key: "port", Value: int32(995)},
+	)))
+	carriage := newScriptedBackend(t, true,
+		expectRequest("LOGINLIST", nil, statusDocument(
+			bson.E{Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: int64(42)}}}},
+			bson.E{Key: "eof", Value: false},
+			bson.E{Key: "lastTokenId", Value: int64(11)},
+			bson.E{Key: "lastChatId", Value: int64(42)},
+			bson.E{Key: "lbk", Value: int32(3)},
+		)),
+		expectRequest("LCHATLIST", func(raw bson.Raw) error {
+			if err := requireInt64(raw, "lastTokenId", 11); err != nil {
+				return err
+			}
+			return requireInt64(raw, "lastChatId", 42)
+		}, bson.D{
+			{Key: "status", Value: int32(-310)},
+			{Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: int64(43)}}}},
+			{Key: "delChatIds", Value: bson.A{int64(42)}},
+			{Key: "eof", Value: false},
+		}),
+	)
+	dialers := sessionDialers{
+		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
+			switch host {
+			case bookingHost:
+				return booking.client, nil
+			case "checkin.invalid":
+				return checkin.client, nil
+			default:
+				return nil, fmt.Errorf("unexpected TLS host %q", host)
+			}
+		},
+		secure: func(_ context.Context, host string, _ int) (*wireConn, error) {
+			if host != "carriage.invalid" {
+				return nil, fmt.Errorf("unexpected secure host %q", host)
+			}
+			return carriage.client, nil
+		},
+	}
+	session, err := connectSessionWithResume(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	if len(session.initialChatData) != 2 {
+		t.Fatalf("chat deltas = %d, want 2", len(session.initialChatData))
+	}
+	if len(session.loginCursor.observed) != 2 || len(session.loginCursor.deleted) != 1 || session.loginCursor.deleted[0] != 42 {
+		t.Fatalf("inventory delta = %#v", session.loginCursor)
+	}
+	if session.loginCursor.lastTokenID != nil || session.loginCursor.lbk != nil {
+		t.Fatalf("partial page advanced global cursor: %#v", session.loginCursor)
+	}
+	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
+		backend.wait(t)
+	}
+}
+
+func TestScriptedBackendLoginAlreadyCurrentDoesNotPageOrAdvanceGlobalCursor(t *testing.T) {
+	dialers, backends := scriptedLoginAttempt(t, "token", bson.D{
+		{Key: "status", Value: int32(-305)},
+		{Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: int64(42)}}}},
+		{Key: "delChatIds", Value: bson.A{int64(9)}},
+		{Key: "eof", Value: false},
+		{Key: "lastTokenId", Value: int64(91)},
+		{Key: "lastChatId", Value: int64(42)},
+		{Key: "lbk", Value: int32(8)},
+	})
+	session, err := connectSessionWithResume(t.Context(), reusableTestState(), continuity.Checkpoint{Version: continuity.Version}, dialers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	if len(session.initialChatData) != 1 || len(session.loginCursor.observed) != 1 || len(session.loginCursor.deleted) != 1 {
+		t.Fatalf("already-current delta = %#v, chats=%d", session.loginCursor, len(session.initialChatData))
+	}
+	if session.loginCursor.lastTokenID != nil || session.loginCursor.lbk != nil {
+		t.Fatalf("already-current response advanced global cursor: %#v", session.loginCursor)
+	}
+	for _, backend := range backends {
+		backend.wait(t)
+	}
+}
+
 func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	const (
 		userID = int64(7)

@@ -37,7 +37,9 @@ A targeted follow-up of the official `handleLChatListResponse:` path confirmed
 the surrounding state semantics that the first narrow pass missed. On successful
 or partially successful pages, the Mac client separately enumerates `delChatIds`
 and `chatDatas`; it applies those records to existing state and updates the token
-cursors at end-of-list. It does not treat each page as a replacement inventory.
+cursors only on a status-zero end-of-list. A partial-success page terminates the
+list phase without committing global cursors. It does not treat each page as a
+replacement inventory.
 The `SYNCMSG` success callback likewise enumerates the response collection using
 normal Objective-C messaging, for which a nil collection naturally produces zero
 iterations. These observations independently support merging delta chat pages and
@@ -70,6 +72,10 @@ and proves both that the target survives and that it does not leak into
 
 The next process feeds those positional chat/max pairs and global cursors into
 `LOGINLIST`. A socket is never serialized and QR authorization is never repeated.
+During login, page deltas accumulate independently from the global cursor. A
+status-zero EOF atomically makes both eligible for checkpoint installation;
+`LCHATLIST -310` and accepted `LOGINLIST -305` retain their useful inventory
+deltas while leaving the previous global cursor intact.
 
 `Client.Events` suppresses messages at or below the committed boundary and exact
 duplicates observed within the current process. Merely receiving an event does not

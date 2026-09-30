@@ -127,7 +127,7 @@ func TestUpdateLoginCursorCapturesInventoryAndDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	var cursor loginCursor
-	if err := updateLoginCursor(page, &cursor); err != nil {
+	if err := updateLoginCursor(page, &cursor, true); err != nil {
 		t.Fatal(err)
 	}
 	if cursor.lastTokenID == nil || *cursor.lastTokenID != 12 {
