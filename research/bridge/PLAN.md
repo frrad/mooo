@@ -44,16 +44,55 @@ Status: active work plan, 2026-09-30. Framework decision:
 
 ### B0: skeleton
 
-- [ ] Add mautrix-go. Scaffold the connector and `cmd/mooo-bridge`.
-- [ ] Create a local dev harness: a disposable homeserver config plus a
-      generated appservice registration. Keep all of it outside the repository
-      or gitignored.
-- [ ] Import-profile login for an existing lab profile.
-- [ ] Bridge direct-message text both ways.
-- [ ] Spike: confirm the framework hook that signals a remote event was
-      handled, and wire `CommitEvent` to it. Add a crash-replay regression test.
-- [ ] Unit tests with a fake client, plus one test through the scripted mock
-      backend.
+- [x] Add mautrix-go (v0.31.0, pure-Go Olm via the `goolm` tag). Scaffold the
+      connector and `cmd/mooo-bridge`.
+- [x] Document a local dev harness in [`DEV.md`](DEV.md): a disposable
+      homeserver plus a generated appservice registration, all kept outside the
+      repository.
+- [x] Import-profile login for an existing lab profile, restricted to bridge
+      admins and to names inside the configured profile directory.
+- [x] Bridge text in both directions, and replies inbound. Photos and
+      unsupported kinds arrive as notices, so every message event is committed
+      in order.
+- [x] Spike: with `bridge.portal_event_buffer: 0` and `async_events: false`,
+      `QueueRemoteEvent` handles the event inline and returns its real result.
+      A queued or backgrounded result is not a commit signal. The connector
+      commits only on a finished, error-free result, and the binary forces the
+      safe settings.
+- [x] Unit tests with a fake client: ordering, the commit rule, non-commit on
+      failure (replay after restart), and single-attempt sends.
+- [x] Live-validate against the local harness and the disposable accounts
+      (2026-09-30; bridge logged in as account B from its clean-room profile,
+      official Android 26.8.2 as account A, throwaway Synapse). Import login,
+      A→Matrix text, Matrix→A text, clean shutdown, and resumed login after
+      restart all worked. Only synthetic text was used.
+- [x] Live-found bug: after a restart the framework calls `LoadUserLogin`
+      before it creates the login's bridge-state queue, so a queue bound at
+      construction was nil and every state was dropped. The queue is now looked
+      up at send time; regression test added.
+- [x] Live-found bug: the lab profile file is `state.json`, which the profile
+      name rule rejected. Dots are now allowed after the first character;
+      regression test added.
+- [x] Catch up at connect time, before committing live events. Live finding:
+      a message sent while the bridge was stopped was skipped, and the next live
+      commit moved the cursor past it. The bridge now lists chats it has
+      committed before whose server maximum is ahead (`Client.ResumeTargets`),
+      recovers each interval with `CatchUp`, bridges and commits those messages
+      in order, and only then subscribes to live events (the session buffers
+      pushes meanwhile). An unrecoverable interval keeps its recorded gap and
+      gets one notice in the room; any other failure aborts the connect. Chats
+      never committed are left to opt-in backfill.
+- [x] Live-found protocol bug: `CatchUp` declared `cnt=300`, but `cnt` is the
+      number of messages the client already holds in the range, so the server
+      returned nothing. Catch-up now sends `cnt=0`; validated live (two offline
+      messages recovered in order before a live one). Regression-tested.
+- [ ] Read-state follow-up: the client records a local read watermark after
+      every `SYNCMSG`, including `cnt=0` recovery, which one run suggests does
+      not mark messages read. Confirm with an A/B test before B4 read receipts
+      rely on that watermark.
+- [ ] Exercise the connector through the scripted mock backend. That backend
+      lives in `internal/client` tests and is not yet reusable from other
+      packages.
 
 ### B1: login and media
 
@@ -91,9 +130,12 @@ Status: active work plan, 2026-09-30. Framework decision:
 
 ## Open questions
 
-- Which framework hook gives a reliable "handled" signal for commits, and does
-  it hold under the framework's async event handling?
-- Database driver: cgo SQLite, pure-Go SQLite, or Postgres only?
+- A message that fails to bridge stays at the head of its chat's commit queue,
+  so later commits in that chat fail until a restart replays it. A persistent
+  conversion failure would therefore replay on every restart. Decide on a
+  bounded skip policy with an explicit gap record.
+- Database: the framework supports cgo SQLite (`sqlite3-fk-wal`) and
+  Postgres. Is SQLite enough for the homelab target?
 - How should aggregate reaction updates reconcile with per-sender Matrix
   reactions when the detail lookup fails or disagrees?
 - Does receiving a message through the bridge change any read-state

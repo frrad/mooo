@@ -32,6 +32,7 @@ func TestRequestRejectsUnboundedOrEmptyRange(t *testing.T) {
 		{ChatID: 0, Cur: 1, Max: 2, Count: 1},
 		{ChatID: 1, Cur: 2, Max: 2, Count: 1},
 		{ChatID: 1, Cur: 1, Max: 2, Count: 301},
+		{ChatID: 1, Cur: 1, Max: 2, Count: -1},
 	} {
 		if _, err := request.MarshalBSON(); !errors.Is(err, ErrInvalidRequest) {
 			t.Fatalf("request %#v error = %v", request, err)
@@ -103,5 +104,15 @@ func TestTargetFromChatData(t *testing.T) {
 	})
 	if _, err := TargetFromChatData(mismatch); !errors.Is(err, ErrInvalidResponse) {
 		t.Fatalf("mismatch error = %v", err)
+	}
+}
+
+func TestRequestAcceptsZeroHeldMessages(t *testing.T) {
+	body, err := (Request{ChatID: 42, Cur: 100, Max: 900, Count: 0}).MarshalBSON()
+	if err != nil {
+		t.Fatalf("count 0 rejected: %v", err)
+	}
+	if count := bson.Raw(body).Lookup("cnt"); count.Type != bson.TypeInt32 || count.Int32() != 0 {
+		t.Fatalf("cnt = %v", count)
 	}
 }

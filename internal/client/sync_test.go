@@ -201,9 +201,13 @@ func checkSyncRequest(chatID, cur, max int64) func(bson.Raw) error {
 				return err
 			}
 		}
+		// Regression (live, 2026-09-30): cnt declares how many messages in
+		// (cur, max] the client already holds, and the server returns only the
+		// ones missing. Catch-up holds none of them; declaring 300 made the
+		// server return nothing for a real offline message.
 		count, err := raw.LookupErr("cnt")
-		if err != nil || count.Type != bson.TypeInt32 || count.Int32() != 300 {
-			return errors.New("cnt is not int32(300)")
+		if err != nil || count.Type != bson.TypeInt32 || count.Int32() != 0 {
+			return errors.New("cnt is not int32(0)")
 		}
 		return nil
 	}
@@ -238,4 +242,40 @@ func testContinuityClient(t *testing.T, checkpoint *continuity.Store, backend *s
 		return session, nil
 	}
 	return api
+}
+
+func TestResumeTargetsOnlyIncludeCommittedChatsThatFellBehind(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	token := int64(7)
+	known := []continuity.ChatTarget{
+		{ChatID: 1, MaxLogID: 100}, // committed through its server maximum
+		{ChatID: 2, MaxLogID: 200}, // committed, then fell behind
+		{ChatID: 3, MaxLogID: 300}, // never committed: history is backfill, not catch-up
+		{ChatID: 4, MaxLogID: 400}, // committed ahead of the (stale) server maximum
+	}
+	if err := checkpoint.InstallSession(&token, nil, known, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, commit := range []continuity.ChatCursor{{ChatID: 1, MaxLogID: 100}, {ChatID: 2, MaxLogID: 150}, {ChatID: 4, MaxLogID: 450}} {
+		if _, err := checkpoint.CommitMessage(commit.ChatID, commit.MaxLogID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	api, err := newClient(reusableTestState(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api.checkpoint = checkpoint
+	api.dial = func(context.Context, authstate.State) (*Session, error) {
+		return &Session{initialChatData: []bson.Raw{}}, nil
+	}
+
+	targets, err := api.ResumeTargets(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(targets) != 1 || targets[0] != (syncmsg.Target{ChatID: 2, MaxLogID: 200}) {
+		t.Fatalf("resume targets = %#v, want only chat 2 through 200", targets)
+	}
 }

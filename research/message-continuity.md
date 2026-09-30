@@ -1,7 +1,7 @@
 # Message continuity and recovery
 
-Status: durable resume and synthetic recovery implemented; one bounded live
-`SYNCMSG` recovery succeeded, while full offline/restart validation remains.
+Status: durable resume and recovery implemented and live-validated through the
+bridge: an offline message is recovered on restart before live events.
 
 ## First-party observations
 
@@ -32,6 +32,23 @@ Confidence is high for the command, request shape and widths, response collectio
 page limit, and no-progress behavior (static binary analysis, 2026-09-29). Cursor
 inclusivity and server retention/error boundaries still require a controlled live
 experiment.
+
+### `cnt` declares held messages (2026-09-30)
+
+`cnt` is not a page size. The official per-room sync sends `cur` as the room's
+last-synced log and computes `max` and `cnt` from its local database: `cnt` is the
+number of messages it already stores after `cur` (capped at 300), and `max` is the
+highest stored log ID. A controlled live test confirmed the server returns only the
+messages the client does not declare holding: for a range containing one missing
+message, `cnt=300` and `cnt=1` returned nothing, while `cnt=0` returned the message
+(SL-BIN-035, SL-LIVE-013). Catch-up therefore declares zero held messages.
+
+The same request serves explicit mark-as-read and read-all. One run suggested
+that `cnt=0` recovery left the sender's unread marker in place while requests that
+declared held messages cleared it (SL-LIVE-014); treat this read-state effect as
+a hypothesis until a dedicated A/B test confirms it. The client currently records
+a local read watermark after every `SYNCMSG`, including `cnt=0` recovery, which
+may be wrong if recovery does not mark messages read.
 
 A targeted follow-up of the official `handleLChatListResponse:` path confirmed
 the surrounding state semantics that the first narrow pass missed. On successful
@@ -141,7 +158,7 @@ same chat, preventing concurrent handlers from advancing that chat's maximum out
 of order.
 
 `Client.CatchUp(chatId, targetMax)` starts from the committed boundary, requests
-bounded 300-item `SYNCMSG` pages, validates increasing log IDs within the requested
+`SYNCMSG` pages declaring zero held messages (`cnt=0`), validates increasing log IDs within the requested
 range, and returns typed but uncommitted events. It tolerates one inclusive repeat
 of `cur`. An empty/non-progressing page before `targetMax`, an invalid ordering, or
 more than 100 pages fails closed. A bounded no-progress/page-limit failure first
@@ -165,8 +182,6 @@ inventory with a zero ceiling but omitted from catch-up targets.
 
 ## Remaining validation
 
-- Complete one owned-account experiment covering an offline message, resumed
-  `LOGINLIST`, and `SYNCMSG`, without retaining message contents or live IDs.
 - Confirm whether `cur` is inclusive in every server branch and classify
   retention/permission/status failures.
 - Confirm the current server's `INFOLINK` optional/empty response encodings before
