@@ -30,6 +30,7 @@ const (
 	KindMemberRemoved      Kind = "member_removed"
 	KindMemberAdded        Kind = "member_added"
 	KindChatLeft           Kind = "chat_left"
+	KindChatStatusChanged  Kind = "chat_status_changed"
 	KindUnsupportedLogMeta Kind = "unsupported_log_meta"
 	KindUnknownPacket      Kind = "unknown_packet"
 )
@@ -256,6 +257,19 @@ type ChatLeft struct {
 func (ChatLeft) Kind() Kind { return KindChatLeft }
 func (ChatLeft) isEvent()   {}
 
+// ChatStatusChanged carries the typed identity and opaque status document from
+// a CHGCHATST notice. Status interpretation and lifecycle effects remain
+// outside the decoder boundary.
+type ChatStatusChanged struct {
+	ChatID     int64
+	PlusUserID int64
+	Revision   int64
+	Status     bson.Raw
+}
+
+func (ChatStatusChanged) Kind() Kind { return KindChatStatusChanged }
+func (ChatStatusChanged) isEvent()   {}
+
 // Decode turns one unsolicited packet into a typed event. Unknown packet
 // methods and unsupported message types remain observable without exposing raw
 // account data. Malformed known packets return ErrMalformedEvent.
@@ -275,6 +289,8 @@ func Decode(packet loco.Packet) (Event, error) {
 		return decodeMemberRemoved(packet.Body)
 	case "NEWMEM":
 		return decodeMemberAdded(packet.Body)
+	case "CHGCHATST":
+		return decodeChatStatusChanged(packet.Body)
 	case "LEFT":
 		return decodeChatLeft(packet.Body)
 	default:
@@ -390,6 +406,31 @@ func decodeMemberAdded(body []byte) (Event, error) {
 		members = append(members, MemberIdentity{UserID: userID, UserType: userTypeValue.Int32()})
 	}
 	return MemberAdded{ChatID: chatID, LogID: logID, Members: members}, nil
+}
+
+func decodeChatStatusChanged(body []byte) (Event, error) {
+	raw := bson.Raw(body)
+	if err := raw.Validate(); err != nil {
+		return nil, ErrMalformedEvent
+	}
+	chatID, err := exactInt64(raw, "chatId")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	plusUserID, err := exactInt64(raw, "plusUserId")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	revision, err := exactInt64(raw, "revision")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	statusValue, err := raw.LookupErr("chatStatus")
+	if err != nil || statusValue.Type != bson.TypeEmbeddedDocument {
+		return nil, ErrMalformedEvent
+	}
+	statusCopy := append(bson.Raw(nil), statusValue.Document()...)
+	return ChatStatusChanged{ChatID: chatID, PlusUserID: plusUserID, Revision: revision, Status: statusCopy}, nil
 }
 
 func decodeChatLeft(body []byte) (Event, error) {
