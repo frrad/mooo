@@ -29,8 +29,8 @@ func TestDecodeEventStreamContinuesAfterMalformedPacket(t *testing.T) {
 		t.Fatalf("first result = %#v", first)
 	}
 	second := <-output
-	packet, ok := second.Event.(events.UnknownPacket)
-	if second.Err != nil || !ok || packet.Method != "KICKOUT" {
+	kickout, ok := second.Event.(events.Kickout)
+	if second.Err != nil || !ok || kickout.Reason != 0 {
 		t.Fatalf("second result = %#v", second)
 	}
 	if _, ok := <-output; ok {
