@@ -112,6 +112,8 @@ Status: active work plan, 2026-09-30. Framework decision:
 
 ### B3: lifecycle
 
+Reconnect is planned in detail in [`../reconnect.md`](../reconnect.md).
+
 - [ ] Reconnect state machine, `CHANGESVR`, `KICKOUT`, and bridge-state
       reporting.
 - [ ] Live-validate the resume and catch-up boundary through the bridge.

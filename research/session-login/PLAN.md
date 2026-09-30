@@ -133,6 +133,9 @@ bootstrap failure.
 
 ### SL-5 — Reconnect, kickout, and revocation
 
+The consolidated open questions, experiments, and build plan are in
+[`../reconnect.md`](../reconnect.md).
+
 Specify:
 
 - clean disconnect, transient network loss, idle timeout, and app wake;

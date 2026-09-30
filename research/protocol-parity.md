@@ -273,7 +273,8 @@ least one official branch or storage effect remains unresolved.
    more feature APIs.
 4. Revisit text and photo sending for official message-ID persistence,
    cancellation, and restart behavior.
-5. Complete reconnect/server-change/kickout orchestration before bridge ownership
+5. Complete reconnect/server-change/kickout orchestration (plan:
+   [`reconnect.md`](reconnect.md)) before bridge ownership
    is treated as production-ready.
 
 The matrix is deliberately conservative. Live success demonstrates

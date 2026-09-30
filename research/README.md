@@ -32,6 +32,8 @@ non-sensitive experiment identifier.
   transport observations.
 - `session-login/` tracks the vertical slice from completed registration through
   LOCO authentication and reconnect.
+- `reconnect.md` is the entry point for reconnect: what is established, the
+  open static and live questions, the build plan, and exit criteria.
 - `device-registration/` specifies secondary-device registration, including the
   recovered passcode and QR state machines, evidence, and open experiments.
 - `credential-storage/` determines how candidate macOS preference values are
