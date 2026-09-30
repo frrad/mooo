@@ -26,6 +26,8 @@ reproducible research before bridge features.
   and decisions whose mistakes could expose credentials or accounts.
 - Keep work autonomous and goal-oriented. Record durable plans in `PLAN.md` rather
   than opening GitHub issues unless the maintainer asks for issues.
+- Do all work on feature branches and land it through pull requests; never
+  commit or push directly to `main`.
 - Make small, reviewable commits. Pull requests use squash merges and require
   passing CI before merge.
 - The maintainer authorizes agents to merge their own pull requests once all
