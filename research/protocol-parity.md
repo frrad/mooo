@@ -215,6 +215,10 @@ members by user ID. Optional nested-body behavior, transaction failures,
 direct/open-chat guards, and downstream UI behavior remain unresolved, so no
 automatic member mutation is wired. See
 [`research/membership-chat-change-inventory.md`](membership-chat-change-inventory.md).
+NEWMEM now has a separate typed-decoder handoff for signed int64 chat/log IDs
+and `feed.invitees` member IDs/types. Its manager/database path is bounded, but
+optional nested-body behavior, completion failures, chat-type guards, and
+downstream consumers remain open; no member mutation is wired.
 
 ## Current parity matrix
 
