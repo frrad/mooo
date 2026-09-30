@@ -203,6 +203,18 @@ of the response boolean remain open. The static chain and synthetic contracts
 are recorded in [`research/read-state-notiread.md`](read-state-notiread.md) and
 [`research/read-state-notiread-response.md`](read-state-notiread-response.md).
 
+## Membership and chat-change inventory
+
+The official client has unsolicited models for `DELMEM`, `NEWMEM`, `LEFT`, and
+chat-status/meta changes, plus request paths such as `ADDMEM`, `GETMEM`, and
+`CHECKJOIN`. The most promising bounded candidate is `DELMEM`: its model owns a
+typed `chatLog`, the manager delegates the notice before persistence work, and
+the observed database consumer can remove members by user ID. Exact BSON
+nesting, departed-member identity mapping, transaction failure behavior, and
+direct-chat versus group-chat guards are not yet proven. The decoder therefore
+keeps these methods as `UnknownPacket` rather than guessing at local mutation.
+See [`research/membership-chat-change-inventory.md`](membership-chat-change-inventory.md).
+
 ## Current parity matrix
 
 `Mapped` means the complete seven-layer dossier is supported by first-party
