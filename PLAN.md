@@ -58,6 +58,9 @@ Execution through first text send/receive follows
       lease, followed by exactly one fresh LOGINLIST attempt.
 - [ ] Specify and validate read-only inbound text delivery, acknowledgements,
       cursors, deduplication, and reconnect behavior.
+- [ ] Complete the Ghidra-first parity dossiers in `research/protocol-parity.md`,
+      beginning with continuity, acknowledgement/read-state, membership/chat
+      changes, mutation identity, and reconnect lifecycle.
 - [x] Specify and validate one explicit outbound text send with safe idempotency
       and no automatic retry after ambiguous delivery.
 - [ ] Implement transport, framing, and serialization packages.

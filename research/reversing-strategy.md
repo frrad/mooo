@@ -1,11 +1,17 @@
 # Reversing strategy
 
-Status: initial target decision, 2026-09-20.
+Status: primary target selected; full-chain parity workflow active, 2026-09-29.
 
 This document selects the first official client to study and defines the boundary
 between private binary analysis and public protocol work. It records conclusions,
 not decompiler output. Raw artifacts and account-specific observations remain in
 the ignored lab area described by `research/CLEANROOM.md`.
+
+The operational definition of full behavioral parity, its seven-layer evidence
+gate, current matrix, and work queue now live in
+[`protocol-parity.md`](protocol-parity.md). In particular, analysis must trace the
+response handler, persistent state changes, and downstream consumers rather than
+stopping after recovering a request constructor.
 
 ## Decision
 

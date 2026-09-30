@@ -42,6 +42,10 @@ reproducible research before bridge features.
   observations before consulting public prior art. Use prior art only afterward
   to confirm, challenge, or contextualize independently derived findings; never
   use it as the starting point for a protocol implementation.
+- For protocol parity work, trace the complete official-client chain: request
+  model, response model, callers/callbacks, persistent state changes, downstream
+  consumers, and failure behavior. Do not infer parity from a request constructor
+  or one successful live path; record any untraced layer as an explicit gap.
 - Separate observed facts from hypotheses and implementation decisions.
 - Do not copy decompiled source or proprietary assets into the implementation.
   Document behavior in an implementation-neutral specification first.
