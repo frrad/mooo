@@ -104,10 +104,17 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 	if checkpoint == nil {
 		return nil, ErrProtocol
 	}
-	current := committedMax(checkpoint.Snapshot().Chats, chatID)
+	checkpointState := checkpoint.Snapshot()
+	current := committedMax(checkpointState.Chats, chatID)
 	if current >= targetMax {
+		if hasGapThrough(checkpointState.HistoryGaps, chatID, targetMax) {
+			if err := checkpoint.ResolveGapThrough(chatID, targetMax); err != nil {
+				return nil, err
+			}
+		}
 		return []events.Event{}, nil
 	}
+	gapStart := current + 1
 
 	result := make([]events.Event, 0)
 	for range maxCatchUpPages {
@@ -144,6 +151,11 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 			progressed = true
 		}
 		if current == targetMax {
+			if hasGapThrough(checkpointState.HistoryGaps, chatID, targetMax) {
+				if err := checkpoint.ResolveGapThrough(chatID, targetMax); err != nil {
+					return nil, err
+				}
+			}
 			for _, event := range result {
 				chatID, logID, _ := events.MessagePosition(event)
 				c.queueCommit(chatID, logID)
@@ -151,10 +163,21 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 			return result, nil
 		}
 		if !progressed {
+			if err := checkpoint.RecordGap(chatID, gapStart, targetMax); err != nil {
+				return nil, errors.Join(ErrGapUnresolved, err)
+			}
 			return nil, ErrGapUnresolved
 		}
 	}
+	if err := checkpoint.RecordGap(chatID, gapStart, targetMax); err != nil {
+		return nil, errors.Join(ErrGapUnresolved, err)
+	}
 	return nil, ErrGapUnresolved
+}
+
+func hasGapThrough(gaps []continuity.HistoryGap, chatID, logID int64) bool {
+	index := sort.Search(len(gaps), func(i int) bool { return gaps[i].ChatID >= chatID })
+	return index < len(gaps) && gaps[index].ChatID == chatID && gaps[index].FromLogID <= logID
 }
 
 func committedMax(cursors []continuity.ChatCursor, chatID int64) int64 {

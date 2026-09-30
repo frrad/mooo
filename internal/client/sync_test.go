@@ -20,6 +20,9 @@ func TestCatchUpPagesWithoutAdvancingCheckpoint(t *testing.T) {
 	if _, err := checkpoint.CommitMessage(42, 100); err != nil {
 		t.Fatal(err)
 	}
+	if err := checkpoint.RecordGap(42, 101, 110); err != nil {
+		t.Fatal(err)
+	}
 	backend := newScriptedBackend(t, false,
 		expectRequest("SYNCMSG", checkSyncRequest(42, 100, 105), statusDocument(
 			bson.E{Key: "chatLogs", Value: bson.A{
@@ -50,6 +53,9 @@ func TestCatchUpPagesWithoutAdvancingCheckpoint(t *testing.T) {
 	if checkpoint.IsCommitted(42, 105) {
 		t.Fatal("catch-up advanced checkpoint before application commit")
 	}
+	if got := checkpoint.Snapshot().HistoryGaps; len(got) != 1 || got[0] != (continuity.HistoryGap{ChatID: 42, FromLogID: 106, ToLogID: 110}) {
+		t.Fatalf("catch-up resolved wrong gap prefix: %#v", got)
+	}
 	for _, event := range eventsOut {
 		if err := api.CommitEvent(event); err != nil {
 			t.Fatal(err)
@@ -77,6 +83,32 @@ func TestCatchUpFailsOnNoProgress(t *testing.T) {
 	}
 	if !checkpoint.IsCommitted(42, 100) || checkpoint.IsCommitted(42, 101) {
 		t.Fatal("failed catch-up changed checkpoint")
+	}
+	if got := checkpoint.Snapshot().HistoryGaps; len(got) != 1 || got[0] != (continuity.HistoryGap{ChatID: 42, FromLogID: 101, ToLogID: 105}) {
+		t.Fatalf("failed catch-up gap = %#v", got)
+	}
+	backend.wait(t)
+}
+
+func TestCatchUpPageLimitPersistsWholeUncommittedGap(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	steps := make([]backendStep, 0, maxCatchUpPages)
+	for page := range maxCatchUpPages {
+		cur := int64(page)
+		logID := cur + 1
+		steps = append(steps, expectRequest("SYNCMSG", checkSyncRequest(42, cur, 101), statusDocument(
+			bson.E{Key: "chatLogs", Value: bson.A{
+				bson.D{{Key: "logId", Value: logID}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "synthetic"}},
+			}},
+		)))
+	}
+	backend := newScriptedBackend(t, false, steps...)
+	api := testContinuityClient(t, checkpoint, backend)
+	if _, err := api.CatchUp(t.Context(), 42, 101); !errors.Is(err, ErrGapUnresolved) {
+		t.Fatalf("CatchUp error = %v", err)
+	}
+	if got := checkpoint.Snapshot().HistoryGaps; len(got) != 1 || got[0] != (continuity.HistoryGap{ChatID: 42, FromLogID: 1, ToLogID: 101}) {
+		t.Fatalf("page-limit gap = %#v", got)
 	}
 	backend.wait(t)
 }

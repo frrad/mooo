@@ -45,18 +45,30 @@ normal Objective-C messaging, for which a nil collection naturally produces zero
 iterations. These observations independently support merging delta chat pages and
 treating absent/null `chatLogs` as an empty page.
 
+A deeper first-party pass located the official loss-mark storage transitions.
+The Mac client creates a synthetic stored marker at a log boundary after checking
+the neighboring normal messages and existing markers. Successful synchronization
+can remove one marker by exact log ID or remove markers across a bounded range;
+the range path clamps its lower bound to the room's minimum retained log ID before
+querying and deleting the matching objects. The surrounding `SYNCMSG` callbacks
+also perform post-sync thread updates and may request member metadata. This proves
+that missing history is durable room state in the official client, not merely a
+transient error return. Exact marker-message presentation and every callback's
+range-bound source remain implementation details under review.
+
 ## Implementation contract
 
-`Client.Open` creates a separate version-2 checkpoint beside the selected private
-authentication state. It is owner-only, rejects unknown fields and versions, and
-uses synced temporary-file replacement plus directory syncing. The existing
-per-profile lease covers both files.
+`Client.Open` creates a separate version-3 checkpoint beside the selected private
+authentication state. It is owner-only, rejects unknown fields and future
+versions, migrates version 2 atomically, and uses synced temporary-file replacement
+plus directory syncing. The existing per-profile lease covers both files.
 
 The checkpoint contains:
 
 - the chat-list token and blind-token cursor returned by a fully completed login;
 - a sorted inventory of the latest server-observed chat recovery targets; 
-- a sorted `(chatId, maxLogId)` boundary for application-committed messages; and
+- a sorted `(chatId, maxLogId)` boundary for application-committed messages;
+- a sorted inclusive unresolved-history interval per chat; and
 - clean versus interrupted shutdown state.
 
 Observed targets and committed maxima are deliberately distinct. A target says
@@ -90,8 +102,18 @@ of order.
 bounded 300-item `SYNCMSG` pages, validates increasing log IDs within the requested
 range, and returns typed but uncommitted events. It tolerates one inclusive repeat
 of `cur`. An empty/non-progressing page before `targetMax`, an invalid ordering, or
-more than 100 pages fails closed. The caller commits returned events in order after
-durable handling.
+more than 100 pages fails closed. A bounded no-progress/page-limit failure first
+persists the complete unresolved interval from the committed boundary through the
+target. A later successful recovery removes only the recovered prefix, preserving
+any newer outstanding tail. Protocol/network failures do not invent gap state.
+The caller commits returned events in order after durable handling.
+
+The clean-room checkpoint deliberately stores an implementation-neutral interval
+rather than copying the official client's synthetic database-message model. The
+three state dimensions remain separate: a server-observed target is work to fetch,
+a history gap records failed bounded recovery, and a committed cursor alone says
+the application durably handled a message. None of the first two is sent as an
+acknowledgement.
 
 `Client.InitialSyncTargets` reads those ceilings from the merged durable inventory.
 The inventory is populated from the live-validated chat-data shape: top-level
@@ -105,5 +127,6 @@ inventory with a zero ceiling but omitted from catch-up targets.
   `LOGINLIST`, and `SYNCMSG`, without retaining message contents or live IDs.
 - Confirm whether `cur` is inclusive in every server branch and classify
   retention/permission/status failures.
+- Map post-sync thread/member follow-ups and initial-history bootstrap policy.
 - Map server-directed reconnect, `CHANGESVR`, and `KICKOUT` into the checkpointed
   lifecycle without introducing an automatic mutation retry.

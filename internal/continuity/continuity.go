@@ -13,7 +13,9 @@ import (
 	"sync"
 )
 
-const Version uint32 = 2
+const Version uint32 = 3
+
+const previousVersion uint32 = 2
 
 var (
 	ErrInvalidPath       = errors.New("continuity: invalid path")
@@ -39,6 +41,15 @@ type ChatTarget struct {
 	MaxLogID int64 `json:"max_log_id"`
 }
 
+// HistoryGap is an inclusive interval that bounded recovery has not resolved.
+// It is operational state, not an acknowledgement: neither bound may be sent
+// to Kakao as an application-committed cursor.
+type HistoryGap struct {
+	ChatID    int64 `json:"chat_id"`
+	FromLogID int64 `json:"from_log_id"`
+	ToLogID   int64 `json:"to_log_id"`
+}
+
 // Checkpoint is deliberately separate from authentication state. Advancing it
 // means the application has durably handled the corresponding messages, not
 // merely that the network reader observed them.
@@ -49,6 +60,7 @@ type Checkpoint struct {
 	LBK           int32        `json:"lbk"`
 	Chats         []ChatCursor `json:"chats"`
 	KnownChats    []ChatTarget `json:"known_chats"`
+	HistoryGaps   []HistoryGap `json:"history_gaps"`
 }
 
 func (c Checkpoint) Clone() Checkpoint {
@@ -58,6 +70,9 @@ func (c Checkpoint) Clone() Checkpoint {
 	targets := make([]ChatTarget, len(c.KnownChats))
 	copy(targets, c.KnownChats)
 	c.KnownChats = targets
+	gaps := make([]HistoryGap, len(c.HistoryGaps))
+	copy(gaps, c.HistoryGaps)
+	c.HistoryGaps = gaps
 	return c
 }
 
@@ -95,14 +110,18 @@ func Open(path string) (*Store, error) {
 	if err := validatePrivateDir(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
-	data, err := read(path)
+	data, migrated, err := read(path)
 	if errors.Is(err, os.ErrNotExist) {
-		data = Checkpoint{Version: Version, CleanShutdown: true, Chats: []ChatCursor{}, KnownChats: []ChatTarget{}}
+		data = Checkpoint{Version: Version, CleanShutdown: true, Chats: []ChatCursor{}, KnownChats: []ChatTarget{}, HistoryGaps: []HistoryGap{}}
 		if err := writeInitial(path, data); err != nil {
 			return nil, err
 		}
 	} else if err != nil {
 		return nil, err
+	} else if migrated {
+		if err := writeAtomic(path, data); err != nil {
+			return nil, err
+		}
 	}
 	return &Store{path: path, data: data}, nil
 }
@@ -142,6 +161,7 @@ func (s *Store) InstallSession(lastTokenID *int64, lbk *int32, observed []ChatTa
 			}
 			removeTarget(&next.KnownChats, chatID)
 			removeCursor(&next.Chats, chatID)
+			removeGap(&next.HistoryGaps, chatID)
 		}
 		for _, target := range observed {
 			if target.ChatID <= 0 || target.MaxLogID < 0 {
@@ -153,6 +173,50 @@ func (s *Store) InstallSession(lastTokenID *int64, lbk *int32, observed []ChatTa
 			raiseTarget(&next.KnownChats, ChatTarget(cursor))
 		}
 		next.CleanShutdown = false
+		return nil
+	})
+}
+
+// RecordGap durably records an unresolved inclusive interval. Repeated or
+// overlapping observations for the same chat are conservatively unioned.
+func (s *Store) RecordGap(chatID, fromLogID, toLogID int64) error {
+	if chatID <= 0 || fromLogID <= 0 || toLogID < fromLogID {
+		return ErrInvalidCursor
+	}
+	return s.update(func(next *Checkpoint) error {
+		index := sort.Search(len(next.HistoryGaps), func(i int) bool { return next.HistoryGaps[i].ChatID >= chatID })
+		if index < len(next.HistoryGaps) && next.HistoryGaps[index].ChatID == chatID {
+			if fromLogID < next.HistoryGaps[index].FromLogID {
+				next.HistoryGaps[index].FromLogID = fromLogID
+			}
+			if toLogID > next.HistoryGaps[index].ToLogID {
+				next.HistoryGaps[index].ToLogID = toLogID
+			}
+			return nil
+		}
+		next.HistoryGaps = append(next.HistoryGaps, HistoryGap{})
+		copy(next.HistoryGaps[index+1:], next.HistoryGaps[index:])
+		next.HistoryGaps[index] = HistoryGap{ChatID: chatID, FromLogID: fromLogID, ToLogID: toLogID}
+		return nil
+	})
+}
+
+// ResolveGapThrough removes the recovered prefix of a chat's outstanding gap.
+// A gap beyond logID is retained.
+func (s *Store) ResolveGapThrough(chatID, logID int64) error {
+	if chatID <= 0 || logID <= 0 {
+		return ErrInvalidCursor
+	}
+	return s.update(func(next *Checkpoint) error {
+		index := sort.Search(len(next.HistoryGaps), func(i int) bool { return next.HistoryGaps[i].ChatID >= chatID })
+		if index >= len(next.HistoryGaps) || next.HistoryGaps[index].ChatID != chatID || logID < next.HistoryGaps[index].FromLogID {
+			return nil
+		}
+		if logID >= next.HistoryGaps[index].ToLogID {
+			removeGap(&next.HistoryGaps, chatID)
+			return nil
+		}
+		next.HistoryGaps[index].FromLogID = logID + 1
 		return nil
 	})
 }
@@ -229,7 +293,7 @@ func validate(data Checkpoint) error {
 	if data.Version != Version {
 		return ErrVersionMismatch
 	}
-	if data.LastTokenID < 0 || data.LBK < 0 || data.Chats == nil || data.KnownChats == nil {
+	if data.LastTokenID < 0 || data.LBK < 0 || data.Chats == nil || data.KnownChats == nil || data.HistoryGaps == nil {
 		return ErrCorrupt
 	}
 	var previous int64
@@ -245,6 +309,13 @@ func validate(data Checkpoint) error {
 			return ErrCorrupt
 		}
 		previous = target.ChatID
+	}
+	previous = 0
+	for i, gap := range data.HistoryGaps {
+		if gap.ChatID <= 0 || gap.FromLogID <= 0 || gap.ToLogID < gap.FromLogID || (i > 0 && gap.ChatID <= previous) {
+			return ErrCorrupt
+		}
+		previous = gap.ChatID
 	}
 	return nil
 }
@@ -285,33 +356,49 @@ func removeCursor(cursors *[]ChatCursor, chatID int64) {
 	}
 }
 
-func read(path string) (Checkpoint, error) {
+func removeGap(gaps *[]HistoryGap, chatID int64) {
+	index := sort.Search(len(*gaps), func(i int) bool { return (*gaps)[i].ChatID >= chatID })
+	if index < len(*gaps) && (*gaps)[index].ChatID == chatID {
+		*gaps = append((*gaps)[:index], (*gaps)[index+1:]...)
+	}
+}
+
+func read(path string) (Checkpoint, bool, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
-		return Checkpoint{}, err
+		return Checkpoint{}, false, err
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
-		return Checkpoint{}, ErrUnsafePermissions
+		return Checkpoint{}, false, ErrUnsafePermissions
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return Checkpoint{}, ErrCorrupt
+		return Checkpoint{}, false, ErrCorrupt
 	}
 	defer func() { _ = f.Close() }()
 	var data Checkpoint
 	decoder := json.NewDecoder(io.LimitReader(f, 2<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&data); err != nil {
-		return Checkpoint{}, ErrCorrupt
+		return Checkpoint{}, false, ErrCorrupt
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return Checkpoint{}, ErrCorrupt
+		return Checkpoint{}, false, ErrCorrupt
+	}
+	migrated := false
+	if data.Version == previousVersion {
+		if data.LastTokenID < 0 || data.LBK < 0 || data.Chats == nil || data.KnownChats == nil {
+			return Checkpoint{}, false, ErrCorrupt
+		}
+		data.Version = Version
+		data.HistoryGaps = []HistoryGap{}
+		migrated = true
 	}
 	if err := validate(data); err != nil {
-		return Checkpoint{}, err
+		return Checkpoint{}, false, err
 	}
-	return data, nil
+	return data, migrated, nil
 }
 
 func validatePrivateDir(path string) error {
