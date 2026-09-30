@@ -44,16 +44,28 @@ Status: active work plan, 2026-09-30. Framework decision:
 
 ### B0: skeleton
 
-- [ ] Add mautrix-go. Scaffold the connector and `cmd/mooo-bridge`.
-- [ ] Create a local dev harness: a disposable homeserver config plus a
-      generated appservice registration. Keep all of it outside the repository
-      or gitignored.
-- [ ] Import-profile login for an existing lab profile.
-- [ ] Bridge direct-message text both ways.
-- [ ] Spike: confirm the framework hook that signals a remote event was
-      handled, and wire `CommitEvent` to it. Add a crash-replay regression test.
-- [ ] Unit tests with a fake client, plus one test through the scripted mock
-      backend.
+- [x] Add mautrix-go (v0.31.0, pure-Go Olm via the `goolm` tag). Scaffold the
+      connector and `cmd/mooo-bridge`.
+- [x] Document a local dev harness in [`DEV.md`](DEV.md): a disposable
+      homeserver plus a generated appservice registration, all kept outside the
+      repository.
+- [x] Import-profile login for an existing lab profile, restricted to bridge
+      admins and to names inside the configured profile directory.
+- [x] Bridge text in both directions, and replies inbound. Photos and
+      unsupported kinds arrive as notices, so every message event is committed
+      in order.
+- [x] Spike: with `bridge.portal_event_buffer: 0` and `async_events: false`,
+      `QueueRemoteEvent` handles the event inline and returns its real result.
+      A queued or backgrounded result is not a commit signal. The connector
+      commits only on a finished, error-free result, and the binary forces the
+      safe settings.
+- [x] Unit tests with a fake client: ordering, the commit rule, non-commit on
+      failure (replay after restart), and single-attempt sends.
+- [ ] Live-validate against the local harness and the disposable accounts:
+      import login, inbound text, outbound text, and restart replay.
+- [ ] Exercise the connector through the scripted mock backend. That backend
+      lives in `internal/client` tests and is not yet reusable from other
+      packages.
 
 ### B1: login and media
 
@@ -88,9 +100,12 @@ Status: active work plan, 2026-09-30. Framework decision:
 
 ## Open questions
 
-- Which framework hook gives a reliable "handled" signal for commits, and does
-  it hold under the framework's async event handling?
-- Database driver: cgo SQLite, pure-Go SQLite, or Postgres only?
+- A message that fails to bridge stays at the head of its chat's commit queue,
+  so later commits in that chat fail until a restart replays it. A persistent
+  conversion failure would therefore replay on every restart. Decide on a
+  bounded skip policy with an explicit gap record.
+- Database: the framework supports cgo SQLite (`sqlite3-fk-wal`) and
+  Postgres. Is SQLite enough for the homelab target?
 - How should aggregate reaction updates reconcile with per-sender Matrix
   reactions when the detail lookup fails or disagrees?
 - Does receiving a message through the bridge change any read-state
