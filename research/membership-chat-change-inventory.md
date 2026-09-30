@@ -85,6 +85,23 @@ the chat ID. Exact persistence keys, optional fields, subtype meanings,
 chat-type guards, and failure reporting remain open, so the decoder preserves
 the raw metadata fields without implementing those effects.
 
+## CHGMCMETA bounded metadata trace
+
+`CHGMCMETA` is distinct from `CHGMETA`. Its unsolicited model carries signed
+int64 `chatId`, signed int32 `revision`, and four string fields: `type`,
+`content`, `imageUrl`, and `fullImageUrl`. The string values are preserved as
+opaque metadata; no stable semantic labels are assigned to `type`.
+
+The carriage handler delegates the notice to the manager. The manager queues
+database-context work, looks up the room by `chatId`, and applies the notice
+only when that room exists. The room consumer routes on the opaque `type`
+value and reads the content or image URL fields; the traced manager path also
+compares and advances a separate MCM revision and can update pin/folder state.
+Optional string-field behavior, exact type values, database failure reporting,
+chat-type guards, and downstream notification semantics remain open. The
+decoder therefore exposes only the six model fields and performs no room or
+revision mutation.
+
 ## Explicit gaps
 
 The following layers remain unproven for `DELMEM`; this slice adds only a
@@ -98,10 +115,9 @@ typed decoder identity contract and no member mutation:
 - the source and semantics of the manager's link/cursor argument and its
   completion callbacks.
 
-The clean-room decoder therefore intentionally keeps `CHGMETA` and
-`CHGMCMETA` observable as `UnknownPacket`; `DELMEM`, `NEWMEM`, `LEFT`, and
-`CHGCHATST` now expose typed boundaries, while the CHGMETA handoff is covered
-by a synthetic decoder test. Each typed event has a synthetic decoder test for
+The clean-room decoder now exposes typed boundaries for `DELMEM`, `NEWMEM`,
+`LEFT`, `CHGCHATST`, `CHGMETA`, and `CHGMCMETA`. Each typed event has a
+synthetic decoder test for
 the proven field path, while stateful lifecycle remains
 unimplemented. The decoder fails closed for missing
 or wrong nested structure as an implementation safety rule; that behavior is
