@@ -1,0 +1,549 @@
+package connector
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/rs/zerolog"
+	"maunium.net/go/mautrix/bridgev2"
+	"maunium.net/go/mautrix/bridgev2/database"
+	"maunium.net/go/mautrix/bridgev2/networkid"
+	"maunium.net/go/mautrix/bridgev2/simplevent"
+	"maunium.net/go/mautrix/bridgev2/status"
+	"maunium.net/go/mautrix/event"
+
+	"github.com/frrad/mooo/internal/protocol/chat"
+	"github.com/frrad/mooo/internal/protocol/events"
+	"github.com/frrad/mooo/internal/protocol/media"
+)
+
+const (
+	testSelfID  int64 = 1000
+	testOtherID int64 = 2000
+	testChatID  int64 = 3000
+)
+
+type sentText struct {
+	chatID  int64
+	message string
+}
+
+type fakeKakao struct {
+	mu         sync.Mutex
+	connectErr error
+	stream     chan events.Result
+	commits    []events.Event
+	sends      []sentText
+	sendResp   chat.WriteResponse
+	sendErr    error
+	closeCalls int
+}
+
+func (f *fakeKakao) Connect(ctx context.Context) error { return f.connectErr }
+
+func (f *fakeKakao) Events(ctx context.Context) (<-chan events.Result, error) {
+	return f.stream, nil
+}
+
+func (f *fakeKakao) CommitEvent(evt events.Event) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.commits = append(f.commits, evt)
+	return nil
+}
+
+func (f *fakeKakao) SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sends = append(f.sends, sentText{chatID: chatID, message: message})
+	return f.sendResp, f.sendErr
+}
+
+func (f *fakeKakao) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closeCalls++
+	return nil
+}
+
+func (f *fakeKakao) committed() []events.Event {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]events.Event(nil), f.commits...)
+}
+
+// testHarness records everything the KakaoClient hands to the bridge.
+type testHarness struct {
+	mu      sync.Mutex
+	queued  []bridgev2.RemoteEvent
+	results []bridgev2.EventHandlingResult
+	states  []status.BridgeState
+}
+
+func (h *testHarness) queue(evt bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.queued = append(h.queued, evt)
+	if len(h.results) == 0 {
+		return bridgev2.EventHandlingResultSuccess
+	}
+	result := h.results[0]
+	h.results = h.results[1:]
+	return result
+}
+
+func (h *testHarness) sendState(state status.BridgeState) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.states = append(h.states, state)
+}
+
+func (h *testHarness) stateEvents() []status.BridgeStateEvent {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]status.BridgeStateEvent, 0, len(h.states))
+	for _, state := range h.states {
+		out = append(out, state.StateEvent)
+	}
+	return out
+}
+
+func (h *testHarness) lastState() status.BridgeState {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.states[len(h.states)-1]
+}
+
+func newTestClient(t *testing.T, open func() (kakaoClient, error)) (*KakaoClient, *testHarness) {
+	t.Helper()
+	login := &bridgev2.UserLogin{
+		UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID)},
+		Log:       zerolog.Nop(),
+	}
+	kc := newKakaoClient(login, testSelfID, open)
+	harness := &testHarness{}
+	kc.queue = harness.queue
+	kc.sendState = harness.sendState
+	return kc, harness
+}
+
+func convertedBody(t *testing.T, converted *bridgev2.ConvertedMessage) *event.MessageEventContent {
+	t.Helper()
+	if len(converted.Parts) != 1 {
+		t.Fatalf("converted message has %d parts, want 1", len(converted.Parts))
+	}
+	return converted.Parts[0].Content
+}
+
+func TestCommittableOnlyWhenHandlingFinished(t *testing.T) {
+	cases := []struct {
+		name   string
+		result bridgev2.EventHandlingResult
+		want   bool
+	}{
+		{"success", bridgev2.EventHandlingResultSuccess, true},
+		{"ignored duplicate", bridgev2.EventHandlingResultIgnored, true},
+		{"queued", bridgev2.EventHandlingResultQueued, false},
+		{"failed", bridgev2.EventHandlingResultFailed, false},
+		{"success with error", bridgev2.EventHandlingResultSuccess.WithError(errors.New("boom")), false},
+		{"backgrounded after timeout", bridgev2.EventHandlingResult{Queued: true, Success: true, Error: bridgev2.ErrHandlerBackgrounded}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := committable(tc.result); got != tc.want {
+				t.Fatalf("committable = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInboundTextIsBridgedThenCommitted(t *testing.T) {
+	kc, harness := newTestClient(t, nil)
+	fake := &fakeKakao{}
+	text := events.TextMessage{ChatID: testChatID, LogID: 11, AuthorID: testOtherID, SentAt: 1700000000, Message: "hello"}
+
+	kc.handleEvent(fake, text)
+
+	if len(harness.queued) != 1 {
+		t.Fatalf("queued %d events, want 1", len(harness.queued))
+	}
+	msg, ok := harness.queued[0].(*simplevent.Message[events.TextMessage])
+	if !ok {
+		t.Fatalf("queued %T", harness.queued[0])
+	}
+	if msg.GetType() != bridgev2.RemoteEventMessage {
+		t.Errorf("type = %v", msg.GetType())
+	}
+	if msg.GetPortalKey() != (networkid.PortalKey{ID: "3000", Receiver: "1000"}) {
+		t.Errorf("portal key = %+v", msg.GetPortalKey())
+	}
+	if msg.GetID() != networkid.MessageID("3000:11") {
+		t.Errorf("message ID = %q", msg.GetID())
+	}
+	if msg.GetSender() != (bridgev2.EventSender{Sender: "2000"}) {
+		t.Errorf("sender = %+v", msg.GetSender())
+	}
+	if !msg.ShouldCreatePortal() {
+		t.Error("message would not create its portal")
+	}
+	if !msg.GetTimestamp().Equal(time.Unix(1700000000, 0)) {
+		t.Errorf("timestamp = %v", msg.GetTimestamp())
+	}
+	converted, err := msg.ConvertMessage(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := convertedBody(t, converted)
+	if content.MsgType != event.MsgText || content.Body != "hello" {
+		t.Errorf("content = %+v", content)
+	}
+
+	commits := fake.committed()
+	if len(commits) != 1 || commits[0] != events.Event(text) {
+		t.Fatalf("commits = %v", commits)
+	}
+}
+
+func TestInboundMessageIsNotCommittedUnlessBridged(t *testing.T) {
+	for _, result := range []bridgev2.EventHandlingResult{
+		bridgev2.EventHandlingResultFailed,
+		bridgev2.EventHandlingResultQueued,
+		{Queued: true, Success: true, Error: bridgev2.ErrHandlerBackgrounded},
+	} {
+		kc, harness := newTestClient(t, nil)
+		harness.results = []bridgev2.EventHandlingResult{result}
+		fake := &fakeKakao{}
+
+		kc.handleEvent(fake, events.TextMessage{ChatID: testChatID, LogID: 11, AuthorID: testOtherID, Message: "hello"})
+
+		if commits := fake.committed(); len(commits) != 0 {
+			t.Fatalf("result %+v committed %v; an unbridged message must stay replayable", result, commits)
+		}
+	}
+}
+
+func TestOwnMessageFromAnotherDeviceIsFromMe(t *testing.T) {
+	kc, harness := newTestClient(t, nil)
+
+	kc.handleEvent(&fakeKakao{}, events.TextMessage{ChatID: testChatID, LogID: 12, AuthorID: testSelfID, Message: "from phone"})
+
+	sender := harness.queued[0].GetSender()
+	want := bridgev2.EventSender{IsFromMe: true, SenderLogin: "1000", Sender: "1000"}
+	if sender != want {
+		t.Fatalf("sender = %+v, want %+v", sender, want)
+	}
+}
+
+func TestInboundReplyTargetsChatScopedMessage(t *testing.T) {
+	kc, harness := newTestClient(t, nil)
+	fake := &fakeKakao{}
+	reply := events.ReplyMessage{
+		ChatID: testChatID, LogID: 13, AuthorID: testOtherID, SentAt: 1700000001, Message: "reply text",
+		Source: events.ReplySource{LogID: 11, UserID: testSelfID, Message: "original"},
+	}
+
+	kc.handleEvent(fake, reply)
+
+	msg := harness.queued[0].(*simplevent.Message[events.ReplyMessage])
+	converted, err := msg.ConvertMessage(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if converted.ReplyTo == nil || converted.ReplyTo.MessageID != networkid.MessageID("3000:11") {
+		t.Fatalf("reply target = %+v", converted.ReplyTo)
+	}
+	if content := convertedBody(t, converted); content.Body != "reply text" {
+		t.Fatalf("body = %q", content.Body)
+	}
+	if len(fake.committed()) != 1 {
+		t.Fatal("reply was not committed")
+	}
+}
+
+func TestUnrenderedMessageKindsBecomeNoticesAndAreCommitted(t *testing.T) {
+	photo := events.PhotoMessage{Message: media.PhotoMessage{ChatID: testChatID, LogID: 14}}
+	unsupported := events.UnsupportedMessage{ChatID: testChatID, LogID: 15, Type: 99}
+
+	for _, evt := range []events.Event{photo, unsupported} {
+		kc, harness := newTestClient(t, nil)
+		fake := &fakeKakao{}
+
+		kc.handleEvent(fake, evt)
+
+		if len(harness.queued) != 1 {
+			t.Fatalf("%T queued %d events", evt, len(harness.queued))
+		}
+		msg := harness.queued[0].(*simplevent.Message[string])
+		if msg.GetSender() != (bridgev2.EventSender{}) {
+			t.Errorf("%T sender = %+v, want the bridge bot", evt, msg.GetSender())
+		}
+		converted, err := msg.ConvertMessage(context.Background(), nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if content := convertedBody(t, converted); content.MsgType != event.MsgNotice || content.Body == "" {
+			t.Errorf("%T content = %+v", evt, content)
+		}
+		if len(fake.committed()) != 1 {
+			t.Errorf("%T was not committed; skipping it would block later commits in its chat", evt)
+		}
+	}
+}
+
+func TestMetadataEventsAreNotQueuedOrCommitted(t *testing.T) {
+	kc, harness := newTestClient(t, nil)
+	fake := &fakeKakao{}
+
+	kc.handleEvent(fake, events.ReadStateChanged{ChatID: testChatID, UserID: testOtherID, Watermark: 11})
+	kc.handleEvent(fake, events.UnknownPacket{Method: "SOMETHING"})
+
+	if len(harness.queued) != 0 || len(fake.committed()) != 0 {
+		t.Fatalf("queued %d, committed %d", len(harness.queued), len(fake.committed()))
+	}
+}
+
+func waitForState(t *testing.T, harness *testHarness, want status.BridgeStateEvent) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		states := harness.stateEvents()
+		if len(states) > 0 && states[len(states)-1] == want {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("states = %v, want last %s", harness.stateEvents(), want)
+}
+
+func TestConnectRunsEventLoopAndReportsSessionEnd(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result, 4)}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+
+	kc.Connect(context.Background())
+	if !kc.IsLoggedIn() {
+		t.Fatal("not logged in after connect")
+	}
+	fake.stream <- events.Result{Err: errors.New("malformed")}
+	fake.stream <- events.Result{Event: events.TextMessage{ChatID: testChatID, LogID: 21, AuthorID: testOtherID, Message: "one"}}
+	close(fake.stream)
+
+	waitForState(t, harness, status.StateTransientDisconnect)
+	if got := harness.stateEvents(); got[0] != status.StateConnecting || got[1] != status.StateConnected {
+		t.Fatalf("states = %v", got)
+	}
+	if harness.lastState().Error != stateDisconnected {
+		t.Fatalf("error = %q", harness.lastState().Error)
+	}
+	if len(fake.committed()) != 1 {
+		t.Fatalf("commits = %v", fake.committed())
+	}
+}
+
+func TestKickoutReportsBadCredentials(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result, 2)}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+
+	kc.Connect(context.Background())
+	fake.stream <- events.Result{Event: events.Kickout{Reason: 1}}
+	close(fake.stream)
+
+	waitForState(t, harness, status.StateBadCredentials)
+	if harness.lastState().Error != stateKickedOut {
+		t.Fatalf("error = %q", harness.lastState().Error)
+	}
+}
+
+func TestDisconnectClosesClientWithoutReportingFailure(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result)}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.Connect(context.Background())
+
+	// The real client closes its event stream when closed.
+	go func() {
+		for {
+			fake.mu.Lock()
+			closed := fake.closeCalls > 0
+			fake.mu.Unlock()
+			if closed {
+				close(fake.stream)
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+	kc.Disconnect()
+
+	if fake.closeCalls != 1 {
+		t.Fatalf("close calls = %d", fake.closeCalls)
+	}
+	if kc.IsLoggedIn() {
+		t.Fatal("still logged in after disconnect")
+	}
+	if last := harness.lastState().StateEvent; last != status.StateConnected {
+		t.Fatalf("last state = %s; a requested disconnect is not a failure", last)
+	}
+}
+
+func TestConnectFailuresAreReportedWithoutRetry(t *testing.T) {
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return nil, errors.New("profile in use") })
+	kc.Connect(context.Background())
+	if last := harness.lastState(); last.StateEvent != status.StateUnknownError || last.Error != stateProfileUnavailable {
+		t.Fatalf("open failure state = %+v", last)
+	}
+
+	opens := 0
+	fake := &fakeKakao{connectErr: errors.New("network down")}
+	kc, harness = newTestClient(t, func() (kakaoClient, error) {
+		opens++
+		return fake, nil
+	})
+	kc.Connect(context.Background())
+	if last := harness.lastState(); last.StateEvent != status.StateTransientDisconnect || last.Error != stateConnectFailed {
+		t.Fatalf("connect failure state = %+v", last)
+	}
+	if opens != 1 || fake.closeCalls != 1 {
+		t.Fatalf("opens = %d, closes = %d; a failed connect must release the profile once and not retry", opens, fake.closeCalls)
+	}
+	if kc.IsLoggedIn() {
+		t.Fatal("logged in after failed connect")
+	}
+}
+
+func connectedClient(t *testing.T, fake *fakeKakao) *KakaoClient {
+	t.Helper()
+	fake.stream = make(chan events.Result)
+	t.Cleanup(func() { close(fake.stream) })
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.Connect(context.Background())
+	return kc
+}
+
+func matrixMessage(msgType event.MessageType, body string) *bridgev2.MatrixMessage {
+	msg := &bridgev2.MatrixMessage{}
+	msg.Content = &event.MessageEventContent{MsgType: msgType, Body: body}
+	msg.Portal = &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, "1000")}}
+	return msg
+}
+
+func TestOutboundTextIsSentOnceAndRecorded(t *testing.T) {
+	fake := &fakeKakao{sendResp: chat.WriteResponse{ChatID: testChatID, LogID: 31, SendAt: 1700000002}}
+	kc := connectedClient(t, fake)
+
+	resp, err := kc.HandleMatrixMessage(context.Background(), matrixMessage(event.MsgText, "hi there"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.sends) != 1 || fake.sends[0] != (sentText{chatID: testChatID, message: "hi there"}) {
+		t.Fatalf("sends = %+v", fake.sends)
+	}
+	if resp.DB.ID != networkid.MessageID("3000:31") || resp.DB.SenderID != networkid.UserID("1000") {
+		t.Fatalf("db message = %+v", resp.DB)
+	}
+	if !resp.DB.Timestamp.Equal(time.Unix(1700000002, 0)) {
+		t.Fatalf("timestamp = %v", resp.DB.Timestamp)
+	}
+}
+
+func TestOutboundEmoteIsPrefixed(t *testing.T) {
+	fake := &fakeKakao{sendResp: chat.WriteResponse{LogID: 32}}
+	kc := connectedClient(t, fake)
+
+	if _, err := kc.HandleMatrixMessage(context.Background(), matrixMessage(event.MsgEmote, "waves")); err != nil {
+		t.Fatal(err)
+	}
+	if fake.sends[0].message != "* waves" {
+		t.Fatalf("sent %q", fake.sends[0].message)
+	}
+}
+
+func TestOutboundSendFailureIsNotRetried(t *testing.T) {
+	sendErr := errors.New("connection reset during write")
+	fake := &fakeKakao{sendErr: sendErr}
+	kc := connectedClient(t, fake)
+
+	_, err := kc.HandleMatrixMessage(context.Background(), matrixMessage(event.MsgText, "maybe delivered"))
+	if !errors.Is(err, sendErr) {
+		t.Fatalf("error = %v", err)
+	}
+	if len(fake.sends) != 1 {
+		t.Fatalf("sent %d times; an ambiguous send must not be retried", len(fake.sends))
+	}
+}
+
+func TestOutboundRejectsWhatCannotBeSent(t *testing.T) {
+	fake := &fakeKakao{}
+	kc := connectedClient(t, fake)
+	if _, err := kc.HandleMatrixMessage(context.Background(), matrixMessage(event.MsgImage, "photo.jpg")); !errors.Is(err, bridgev2.ErrUnsupportedMessageType) {
+		t.Fatalf("image error = %v", err)
+	}
+
+	fake = &fakeKakao{sendResp: chat.WriteResponse{LogID: 0}}
+	kc = connectedClient(t, fake)
+	if _, err := kc.HandleMatrixMessage(context.Background(), matrixMessage(event.MsgText, "hi")); err == nil {
+		t.Fatal("accepted a send response without a log ID")
+	}
+
+	disconnected, _ := newTestClient(t, nil)
+	if _, err := disconnected.HandleMatrixMessage(context.Background(), matrixMessage(event.MsgText, "hi")); !errors.Is(err, bridgev2.ErrNotLoggedIn) {
+		t.Fatalf("disconnected error = %v", err)
+	}
+}
+
+func TestOverlappingConnectOpensProfileOnce(t *testing.T) {
+	release := make(chan struct{})
+	opens := 0
+	var opensMu sync.Mutex
+	fake := &fakeKakao{stream: make(chan events.Result)}
+	t.Cleanup(func() { close(fake.stream) })
+	kc, _ := newTestClient(t, func() (kakaoClient, error) {
+		opensMu.Lock()
+		opens++
+		opensMu.Unlock()
+		<-release
+		return fake, nil
+	})
+
+	first := make(chan struct{})
+	go func() {
+		kc.Connect(context.Background())
+		close(first)
+	}()
+	for {
+		opensMu.Lock()
+		started := opens == 1
+		opensMu.Unlock()
+		if started {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	kc.Connect(context.Background())
+	close(release)
+	<-first
+
+	if opens != 1 {
+		t.Fatalf("opened the profile %d times", opens)
+	}
+}
+
+func TestDisconnectDuringConnectReleasesProfile(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result)}
+	t.Cleanup(func() { close(fake.stream) })
+	var kc *KakaoClient
+	kc, _ = newTestClient(t, func() (kakaoClient, error) {
+		kc.Disconnect()
+		return fake, nil
+	})
+
+	kc.Connect(context.Background())
+
+	if kc.IsLoggedIn() {
+		t.Fatal("logged in although disconnect was requested during connect")
+	}
+	if fake.closeCalls != 1 {
+		t.Fatalf("close calls = %d, want the opened client released once", fake.closeCalls)
+	}
+}
