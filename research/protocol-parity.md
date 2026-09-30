@@ -207,13 +207,14 @@ are recorded in [`research/read-state-notiread.md`](read-state-notiread.md) and
 
 The official client has unsolicited models for `DELMEM`, `NEWMEM`, `LEFT`, and
 chat-status/meta changes, plus request paths such as `ADDMEM`, `GETMEM`, and
-`CHECKJOIN`. The most promising bounded candidate is `DELMEM`: its model owns a
-typed `chatLog`, the manager delegates the notice before persistence work, and
-the observed database consumer can remove members by user ID. Exact BSON
-nesting, departed-member identity mapping, transaction failure behavior, and
-direct-chat versus group-chat guards are not yet proven. The decoder therefore
-keeps these methods as `UnknownPacket` rather than guessing at local mutation.
-See [`research/membership-chat-change-inventory.md`](membership-chat-change-inventory.md).
+`CHECKJOIN`. DELMEM's decoder identity path is now bounded: signed int64
+`chatLog.chatId` and `chatLog.logId` pair with the signed int64
+`chatLog.feed.leaver.userId` and signed int32 member type. The manager delegates
+the notice before persistence work, and the observed database consumer removes
+members by user ID. Optional nested-body behavior, transaction failures,
+direct/open-chat guards, and downstream UI behavior remain unresolved, so no
+automatic member mutation is wired. See
+[`research/membership-chat-change-inventory.md`](membership-chat-change-inventory.md).
 
 ## Current parity matrix
 

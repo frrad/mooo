@@ -1,7 +1,8 @@
 # Membership and chat-change inventory
 
-Status: bounded first-party inventory and negative evidence, 2026-09-30.
-No membership production implementation is authorized by this note.
+Status: first-party decoder identity contract plus bounded lifecycle evidence,
+2026-09-30. This note authorizes only the typed DELMEM decoder described below;
+it forbids member persistence mutation, UI effects, retries, and reconnects.
 
 ## Inventory
 
@@ -14,38 +15,46 @@ that a command's full parity contract is understood.
 ## Highest-value candidate: DELMEM
 
 `DELMEM` has a dedicated unsolicited model with one model-owned field,
-`chatLog`, whose type is a chat-log model. The chat-log metadata exposes the
-following implementation-neutral fields: int64 chat ID and log ID, int32 raw
-type, and optional message, attachment, and supplement strings. The handler
-passes the notice to a manager delegate before any state consumer. The traced
-manager callback schedules database-context work rather than performing a
-network retry or an automatic reconnect.
+`chatLog`, whose type is a chat-log model. The relevant nested model metadata is
+implementation-neutral but exact in type: `chatLog.chatId` and `chatLog.logId`
+are signed int64 values; its feed contains a `leaver` member; and that member
+contains signed int64 `userId`, signed int32 `userType`, and an optional string
+nickname. The proven identity path for a deletion event is therefore
+`chatLog.feed.leaver.userId`, paired with the chat and log IDs. Other chat-log
+fields include a signed int32 raw/type value and optional message,
+attachment, supplement, and extra data, but they are not needed to identify
+the departed member.
+
+The handler passes the notice to a manager delegate before any state consumer.
+The traced manager callback schedules database-context work rather than
+performing a network retry or an automatic reconnect.
 
 Static evidence also shows a membership-oriented database consumer that builds
 sets of user IDs, subtracts invitee IDs, compares the current user's ID and
 member type, and removes a member by user ID. A separate omitted-history repair
 path looks up a room by chat ID, enumerates stored members, and calls the
 member-removal operation for selected IDs. These observations establish that
-membership persistence exists, but they do not prove which user-ID source in
-the database block corresponds to each `DELMEM` wire field, nor whether the
-same consumer is used for every direct-chat and group-chat shape.
+membership persistence exists, and the decoder identity path now matches the
+member-removal input. The same evidence does not prove that the consumer is
+used identically for every direct-chat, group-chat, or open-chat shape.
 
 ## Explicit gaps
 
-The following layers remain unproven for `DELMEM`, so this slice does not add a
-typed event or member mutation:
+The following layers remain unproven for `DELMEM`; this slice adds only a
+typed decoder identity contract and no member mutation:
 
-- exact BSON nesting and optional/null rules for the `chatLog` body;
-- the mapping from a deletion notice to the departed member ID(s);
+- optional/null behavior when `chatLog`, `feed`, or `leaver` is absent;
 - status/error interpretation and database transaction failure behavior;
 - direct-chat versus group-chat guards and local event/UI consumers; and
 - malformed-body behavior of the official model initializer.
 
-The clean-room decoder therefore intentionally keeps `DELMEM`, `NEWMEM`,
-`LEFT`, `CHGCHATST`, `CHGMETA`, and `CHGMCMETA` observable as `UnknownPacket`.
-The synthetic characterization test protects that boundary until a complete
-seven-layer dossier is available. This is a negative-evidence contract, not a
-claim that the official client ignores those methods.
+The clean-room decoder therefore intentionally keeps `NEWMEM`, `LEFT`,
+`CHGCHATST`, `CHGMETA`, and `CHGMCMETA` observable as `UnknownPacket`.
+`DELMEM` has a synthetic decoder test for the proven identity path, while the
+stateful lifecycle remains unimplemented. The decoder fails closed for missing
+or wrong nested structure as an implementation safety rule; that behavior is
+not claimed as an observation of the official malformed-body path. This is not evidence that the
+official client ignores any of these methods.
 
 ## Evidence trail
 
@@ -54,5 +63,5 @@ claim that the official client ignores those methods.
   decompilation of the DELMEM packet handler and database callback; no live
   membership mutation was performed.
 - Public transfer: only field names/types, ownership boundaries, and synthetic
-  unknown-method behavior are recorded here. Private binary names, offsets,
+  decoder identity behavior are recorded here. Private binary names, offsets,
   decompiler output, accounts, and message data are omitted.
