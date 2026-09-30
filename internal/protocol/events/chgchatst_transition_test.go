@@ -37,6 +37,62 @@ func TestReduceChatStatusAppliesOnlyNewerExistingRoomState(t *testing.T) {
 	}
 }
 
+func TestReduceChatStatusReplacesExistingStatusFieldsAndOwnsStatus(t *testing.T) {
+	statusBytes, err := bson.Marshal(bson.D{{Key: "synthetic", Value: "new"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := ChatStatusState{
+		RoomExists: true,
+		Revision:   7,
+		ExtraInfo: bson.D{
+			{Key: "cs", Value: bson.Raw{1, 2, 3}},
+			{Key: "keep", Value: "value"},
+			{Key: "csr", Value: int64(7)},
+			{Key: "cs", Value: bson.Raw{4, 5, 6}},
+		},
+	}
+	result := ReduceChatStatus(initial, ChatStatusChanged{Revision: 9, Status: statusBytes})
+	if !result.Applied {
+		t.Fatal("newer status was not applied")
+	}
+	if got := countExtraKey(result.State.ExtraInfo, "cs"); got != 1 {
+		t.Fatalf("cs field count = %d, want 1", got)
+	}
+	if got := countExtraKey(result.State.ExtraInfo, "csr"); got != 1 {
+		t.Fatalf("csr field count = %d, want 1", got)
+	}
+	statusField := findExtra(result.State.ExtraInfo, "cs")
+	status, ok := statusField.Value.(bson.Raw)
+	if !ok || string(status) != string(statusBytes) {
+		t.Fatalf("cs = %#v, want owned status bytes", statusField.Value)
+	}
+	original := append([]byte(nil), status...)
+	statusBytes[0] ^= 0xff
+	if string(status) != string(original) {
+		t.Fatal("status output unexpectedly aliases input")
+	}
+}
+
+func countExtraKey(extra bson.D, key string) int {
+	count := 0
+	for _, field := range extra {
+		if field.Key == key {
+			count++
+		}
+	}
+	return count
+}
+
+func findExtra(extra bson.D, key string) bson.E {
+	for _, field := range extra {
+		if field.Key == key {
+			return field
+		}
+	}
+	return bson.E{}
+}
+
 func TestReduceChatStatusRejectsMissingRoomAndStaleOrDuplicateRevision(t *testing.T) {
 	statusBytes, err := bson.Marshal(bson.D{{Key: "synthetic", Value: "opaque"}})
 	if err != nil {
