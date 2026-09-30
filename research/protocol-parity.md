@@ -160,6 +160,10 @@ unresolved. `SYNCMSG` is consequently not semantically read-only: catch-up can
 have read side effects. Until the acknowledgement and failure contract is
 traced, the clean-room client must keep inbound delivery, application commit,
 and explicit read state distinct rather than inferring read state from receipt.
+The request initializer uses the short `li` property for link ID and writes all
+five fields before dispatch through the shared carriage request path. The static
+chain and synthetic request contract are recorded in
+[`research/read-state-notiread.md`](read-state-notiread.md).
 
 ## Current parity matrix
 
