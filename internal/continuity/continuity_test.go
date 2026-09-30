@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -65,7 +67,7 @@ func TestStorePersistsSortedResumeBoundary(t *testing.T) {
 
 func TestStoreRejectsUnknownVersionAndUnsafeMode(t *testing.T) {
 	path := testPath(t)
-	if err := os.WriteFile(path, []byte(`{"version":3,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[]}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"version":4,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Open(path); !errors.Is(err, ErrVersionMismatch) {
@@ -79,6 +81,71 @@ func TestStoreRejectsUnknownVersionAndUnsafeMode(t *testing.T) {
 	}
 	if _, err := Open(path); !errors.Is(err, ErrUnsafePermissions) {
 		t.Fatalf("permissions error = %v", err)
+	}
+}
+
+func TestOpenMigratesVersionTwoCheckpoint(t *testing.T) {
+	path := testPath(t)
+	if err := os.WriteFile(path, []byte(`{"version":2,"clean_shutdown":false,"last_token_id":9,"lbk":3,"chats":[{"chat_id":42,"max_log_id":100}],"known_chats":[{"chat_id":42,"max_log_id":105}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := store.Snapshot()
+	if got.Version != Version || got.HistoryGaps == nil || len(got.HistoryGaps) != 0 {
+		t.Fatalf("migrated checkpoint = %#v", got)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) == "" || !strings.Contains(string(contents), `"version":3`) || !strings.Contains(string(contents), `"history_gaps":[]`) {
+		t.Fatalf("migration was not persisted: %s", contents)
+	}
+}
+
+func TestHistoryGapsPersistMergeResolveAndDelete(t *testing.T) {
+	path := testPath(t)
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordGap(9, 101, 105); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordGap(3, 40, 50); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordGap(9, 99, 103); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []HistoryGap{{ChatID: 3, FromLogID: 40, ToLogID: 50}, {ChatID: 9, FromLogID: 99, ToLogID: 105}}
+	if got := reopened.Snapshot().HistoryGaps; !slices.Equal(got, want) {
+		t.Fatalf("history gaps = %#v, want %#v", got, want)
+	}
+	if err := reopened.ResolveGapThrough(9, 101); err != nil {
+		t.Fatal(err)
+	}
+	if got := reopened.Snapshot().HistoryGaps[1]; got != (HistoryGap{ChatID: 9, FromLogID: 102, ToLogID: 105}) {
+		t.Fatalf("partially resolved gap = %#v", got)
+	}
+	if err := reopened.InstallSession(nil, nil, nil, []int64{9}, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := reopened.Snapshot().HistoryGaps; len(got) != 1 || got[0].ChatID != 3 {
+		t.Fatalf("deleted chat gaps = %#v", got)
+	}
+	if err := reopened.ResolveGapThrough(3, 50); err != nil {
+		t.Fatal(err)
+	}
+	if got := reopened.Snapshot().HistoryGaps; len(got) != 0 {
+		t.Fatalf("resolved gaps = %#v", got)
 	}
 }
 

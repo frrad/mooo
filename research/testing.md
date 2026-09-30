@@ -33,7 +33,10 @@ scenarios cover:
   regains its recovery target without inheriting the deleted commit boundary;
 - duplicate suppression plus explicit message commits across checkpoint reopen;
 - paged `SYNCMSG` catch-up, sparse ordered log IDs, and fail-closed no-progress
-  handling without premature checkpoint advancement;
+  handling that durably records an unresolved interval without prematurely
+  advancing the checkpoint;
+- version-2 checkpoint migration plus sorted gap persistence, conservative merge,
+  prefix resolution, newer-tail preservation, and deleted-chat cleanup;
 - disconnect after `WRITE`, proving no retry or implicit reconnect; and
 - disconnect after uploaded photo bytes but before `COMPLETE`, proving no
   repeated `SHIP`, `POST`, or media connection.
