@@ -42,15 +42,15 @@ The manager's kickout consumer first checks that the session is logged in and
 not already logging out. Only then does it derive the reset choice from the
 reason-bearing user-info and invoke logout-with-reset. Reasons 1 and 10 are
 the reviewed reset-database cases; the reason labels themselves remain
-uninterpreted.
+uninterpreted. An unauthenticated KICKOUT is a no-op with no state or effects.
 
 This guard is materially different from ordinary carriage disconnect. A
 socket failure fails pending callbacks and publishes transport status; a
 guarded `KICKOUT` is a manager-owned terminal logout decision. Neither path
-implicitly retries an ambiguous mutation. The reducer already models reason
-1/10 reset effects, generation checks, terminal-state rejection, and stale
-callbacks, but currently applies `KICKOUT` even when `Authenticated` is false
-and has no explicit `isLoggingOut` state.
+implicitly retries an ambiguous mutation. The reducer models reason 1/10 reset
+effects, generation checks, terminal-state rejection, stale callbacks, and the
+unauthenticated no-op guard; an explicit `isLoggingOut` state remains outside
+this reducer's current scope.
 
 ## Persistence, checkpoint, and reconnect ownership
 
@@ -65,11 +65,9 @@ dispatch does not yet connect the unknown push packets to this reducer.
 
 `internal/protocol/sessionlogin/terminal_guard_test.go` encodes the narrow
 proven guard: a KICKOUT received outside an authenticated session must not
-change recovery state or emit logout/reset effects. It intentionally fails
-against the current reducer because that reducer applies KICKOUT without the
-official login guard. Existing tests continue to cover reason 1/10 reset
-mapping, CHANGESVR route-clear/logout effects, generation staleness, and
-terminal duplicate rejection.
+change recovery state or emit logout/reset effects. Existing tests continue to
+cover reason 1/10 reset mapping, CHANGESVR route-clear/logout effects,
+generation staleness, and terminal duplicate rejection.
 
 ## Provenance and confidence
 
