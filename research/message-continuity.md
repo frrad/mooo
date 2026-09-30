@@ -45,16 +45,39 @@ normal Objective-C messaging, for which a nil collection naturally produces zero
 iterations. These observations independently support merging delta chat pages and
 treating absent/null `chatLogs` as an empty page.
 
-A deeper first-party pass located the official loss-mark storage transitions.
-The Mac client creates a synthetic stored marker at a log boundary after checking
-the neighboring normal messages and existing markers. Successful synchronization
-can remove one marker by exact log ID or remove markers across a bounded range;
-the range path clamps its lower bound to the room's minimum retained log ID before
-querying and deleting the matching objects. The surrounding `SYNCMSG` callbacks
-also perform post-sync thread updates and may request member metadata. This proves
-that missing history is durable room state in the official client, not merely a
-transient error return. Exact marker-message presentation and every callback's
-range-bound source remain implementation details under review.
+A deeper first-party pass located the official loss-mark storage transitions and
+their principal boundary inputs. The Mac client creates a synthetic stored marker
+at a log boundary after checking the neighboring normal messages and existing
+markers. On `LOGINLIST`, a returned last chat log can produce a marker at
+`prevId + 1` when `prevId` is positive, the exact previous message is absent, and
+older normal history exists. If there is no returned last chat log, a positive
+`lastServerLogId` with no exact stored message can produce a marker at
+`lastServerLogId + 1`.
+
+The `SYNCMSG` success callback reads the minimum and maximum returned `logId`,
+raises the room's `lastSyncLogId` and `lastMChatLogId` to the maximum when needed,
+and removes stored loss marks strictly between the two returned bounds. Its first-
+message check can create a marker at `first.prevId + 1` when the previous message
+is absent and lies beyond the response's `jsi` boundary. It also removes the
+marker at `max + 1` when the next known server message links back with
+`prevId == max`. The multi-chat `MCHATLOGS` path uses the same open-range and
+next-message-link cleanup pattern.
+
+At the storage layer, exact removal queries chat ID, log ID, and loss-mark type;
+range removal first clamps the lower bound to the room's minimum retained log ID,
+then deletes markers satisfying `lower < logId < upper`. This proves that missing
+history is durable room state in the official client, not merely a transient
+error return.
+
+`doAfterSyncMsg:` is narrower than an initial decompiler function boundary
+suggested: when the room's pending thread-ID set is non-empty, it passes that
+chat-to-thread-ID mapping to the thread reconciler and clears the set. The
+reconciler is a local persistence path: it runs in the database context, revises
+stored thread state from room/message data, completes, and broadcasts an internal
+update. No LOCO thread-fetch request was observed on this path. The adjacent
+member-add request belongs to the separate
+`doAddMemWithChatRoom:memberIds:completion:` method and is not evidence of
+automatic post-`SYNCMSG` member refresh.
 
 ## Implementation contract
 
@@ -127,6 +150,6 @@ inventory with a zero ceiling but omitted from catch-up targets.
   `LOGINLIST`, and `SYNCMSG`, without retaining message contents or live IDs.
 - Confirm whether `cur` is inclusive in every server branch and classify
   retention/permission/status failures.
-- Map post-sync thread/member follow-ups and initial-history bootstrap policy.
+- Map initial-history bootstrap policy and remaining metadata/link follow-ups.
 - Map server-directed reconnect, `CHANGESVR`, and `KICKOUT` into the checkpointed
   lifecycle without introducing an automatic mutation retry.

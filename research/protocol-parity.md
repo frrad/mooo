@@ -82,18 +82,30 @@ store, creates explicit loss marks when local history is absent, and collects
 chat IDs whose metadata revisions require later synchronization.
 
 The official SYNCMSG chain constructs the reviewed four-field request, sends it
-through the carriage manager, processes a nil-safe chat-log collection, and runs
-post-sync thread/member follow-up work. Failure to reach the known server
-boundary remains explicit state rather than an acknowledged cursor.
+through the carriage manager, and processes a nil-safe chat-log collection.
+`doAfterSyncMsg:` invokes chat-thread reconciliation only when the room
+accumulated pending thread IDs, then clears that set. The invoked Swift wrapper
+converts the chat-to-thread-ID mapping, runs local database work, revises stored
+thread state from room/message data, and broadcasts an internal completion
+signal; no LOCO thread-fetch request was observed. A nearby member-add request
+initially appeared inside the same decompiler function, but the Objective-C
+method table places it in the separate
+`doAddMemWithChatRoom:memberIds:completion:` method; it is not a SYNCMSG
+member-refresh branch. Failure to reach the known server boundary remains
+explicit state rather than an acknowledged cursor.
 
 The official persistence path represents that state with synthetic loss-mark
 messages. It suppresses redundant markers using exact and neighboring-message
-lookups, removes an exact marker after boundary recovery, and can delete all
-markers in a recovered range after clamping the lower bound to the room's minimum
-retained log ID. The clean-room client now preserves the same durable invariant
-as a per-chat inclusive interval, kept separate from observed targets and
-application commits. This is an implementation-neutral model, not a reproduction
-of the official database or UI object.
+lookups, removes an exact marker after boundary recovery, and can delete markers
+strictly inside a recovered range after clamping its lower bound to the room's
+minimum retained log ID. LOGINLIST marker creation uses either `prevId + 1` from
+the returned last chat log or `lastServerLogId + 1` when no last chat log exists.
+SYNCMSG uses the first returned message's `prevId + 1` after checking its `jsi`
+boundary and local storage; it clears the marker at `max + 1` when the next known
+server message links back to the recovered maximum. The clean-room client preserves
+the same durable invariant as a per-chat inclusive interval, kept separate from
+observed targets and application commits. This is an implementation-neutral
+model, not a reproduction of the official database or UI object.
 
 These findings explain both live regressions found during the pilot: delta chat
 pages must merge into durable inventory, and a missing/null `chatLogs` collection
@@ -111,7 +123,7 @@ least one official branch or storage effect remains unresolved.
 | Booking/check-in/secure carriage | Substantial | Partial | Endpoint cache partial | Partial | Substantial | Partial |
 | LOGINLIST/LCHATLIST | Substantial | Pagination and partial-success traced | Delta/global cursor split implemented; official DB model partial | Metadata/link follow-ups open | Strong synthetic coverage | Partial |
 | Inbound message events | Common text/reply/photo mapped | Basic dispatch mapped | Explicit durable commit implemented | Official receipt/read-state behavior open | Strong for implemented types | Partial |
-| SYNCMSG continuity | Core schema mapped | Recovery and marker callbacks traced | Durable gap lifecycle implemented; official marker placement partial | Retention/bootstrap and post-sync follow-ups open | Paging, persistence, migration, deletion, no-progress, and live regressions covered | Partial |
+| SYNCMSG continuity | Core schema mapped | Recovery, marker, and post-sync callback traced | Durable gap lifecycle implemented; principal marker and local-thread transitions mapped | Retention/bootstrap and metadata/link follow-ups open | Paging, persistence, migration, deletion, no-progress, and live regressions covered | Partial |
 | Text send | Baseline mapped | No-retry behavior mapped | Message-ID lifecycle partial | Ambiguous delivery modeled | Strong baseline | Partial |
 | Photo transfer | Baseline mapped | Multi-stage flow mapped | Resume state partial | Ambiguous stage failures covered | Strong baseline | Partial |
 | Replies and reactions | Implemented subset mapped | Primary paths mapped | Revision/storage behavior partial | Some aggregate/detail paths mapped | Implemented subset covered | Partial |
@@ -121,8 +133,8 @@ least one official branch or storage effect remains unresolved.
 
 ## Immediate work queue
 
-1. Close the continuity dossier: exact marker-boundary inputs, initial-history
-   bootstrap policy, metadata/link follow-ups, and post-sync thread/member work.
+1. Close the continuity dossier: initial-history bootstrap policy and
+   metadata/link follow-ups.
 2. Trace inbound acknowledgement/read-state behavior from packet handler through
    database mutation and outgoing commands.
 3. Trace membership/chat-change response handlers and persistence before adding
