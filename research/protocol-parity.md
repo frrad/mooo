@@ -129,6 +129,25 @@ These findings explain both live regressions found during the pilot: delta chat
 pages must merge into durable inventory, and a missing/null `chatLogs` collection
 is an empty successful page rather than malformed BSON.
 
+## Read-state pilot
+
+The first-party inbound read-state command is `DECUNREAD`. Its model contains
+int64 `chatId`, `userId`, and `watermark` fields. The packet handler delegates the
+notice into the database context. For every member, it advances that room
+member's watermark. When `userId` is the current account, it also recomputes or
+clears the room's unread count against the new watermark, clears mention/reply
+state when the watermark reaches the last log, and updates joined/archive state.
+
+`NOTIREAD` is a distinct automatic response in the official inbound-message
+path, not sufficient evidence of an explicit user mark-read action. After an
+accepted `MSG` callback and an existing room lookup, the official client sends
+`NOTIREAD` with int64 chat ID, link ID, and message-log watermark, plus the
+room's boolean notification-read value and the message service ID. The clean-room
+client does not yet emit it: acknowledgement semantics, failure behavior, and
+the explicit `CHATONROOM` mark-read lifecycle remain under review. This preserves
+the existing rule that receiving or bridging a message alone must not mark it
+read.
+
 ## Current parity matrix
 
 `Mapped` means the complete seven-layer dossier is supported by first-party
@@ -140,13 +159,13 @@ least one official branch or storage effect remains unresolved.
 | QR secondary-device registration | Substantial | Partial | Partial | Partial | Substantial | Partial |
 | Booking/check-in/secure carriage | Substantial | Partial | Endpoint cache partial | Partial | Substantial | Partial |
 | LOGINLIST/LCHATLIST | Substantial | Pagination, partial success, and OpenChat metadata follow-up traced | Delta/global cursor split implemented; OpenChat link store not implemented | Detailed official room DB/UI model partial | Strong synthetic coverage | Partial |
-| Inbound message events | Common text/reply/photo mapped | Basic dispatch mapped | Explicit durable commit implemented | Official receipt/read-state behavior open | Strong for implemented types | Partial |
+| Inbound message events | Common text/reply/photo/read-state mapped | Basic dispatch mapped | Explicit durable message commit implemented | Automatic NOTIREAD and explicit mark-read behavior open | Strong for implemented types | Partial |
 | SYNCMSG continuity | Core schema mapped | Recovery, marker, restore-only boundary repair, and post-sync callback traced | Durable gap lifecycle implemented; principal marker and local-thread transitions mapped | Retention/error boundaries and UI presentation open | Paging, persistence, migration, deletion, no-progress, and live regressions covered | Partial |
 | Text send | Baseline mapped | No-retry behavior mapped | Message-ID lifecycle partial | Ambiguous delivery modeled | Strong baseline | Partial |
 | Photo transfer | Baseline mapped | Multi-stage flow mapped | Resume state partial | Ambiguous stage failures covered | Strong baseline | Partial |
 | Replies and reactions | Implemented subset mapped | Primary paths mapped | Revision/storage behavior partial | Some aggregate/detail paths mapped | Implemented subset covered | Partial |
 | Membership and chat changes | Inventory only | Missing | Missing | Missing | Minimal | Missing |
-| Read receipts, typing, deletion | Inventory only | Missing | Missing | Missing | Minimal | Missing |
+| Read receipts, typing, deletion | DECUNREAD and NOTIREAD core models mapped | Inbound watermark path traced; mark-read open | Official DECUNREAD mutations traced; client exposes typed event only | Typing/deletion and explicit read lifecycle open | DECUNREAD parser coverage | Partial |
 | CHANGESVR/KICKOUT/reconnect | Commands and some reasons mapped | Reducer exists | Reset/invalidation partial | Automatic lifecycle not wired | Reducer coverage | Partial |
 
 ## Immediate work queue

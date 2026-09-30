@@ -120,6 +120,36 @@ func TestDecodeReactionChanged(t *testing.T) {
 	}
 }
 
+func TestDecodeReadStateChanged(t *testing.T) {
+	event, err := Decode(packet(t, "DECUNREAD", bson.D{
+		{Key: "chatId", Value: int64(42)},
+		{Key: "userId", Value: int64(7)},
+		{Key: "watermark", Value: int64(99)},
+	}))
+	changed, ok := event.(ReadStateChanged)
+	if err != nil || !ok {
+		t.Fatalf("event=%T err=%v", event, err)
+	}
+	if changed.ChatID != 42 || changed.UserID != 7 || changed.Watermark != 99 || changed.Kind() != KindReadStateChanged {
+		t.Fatalf("read state = %#v", changed)
+	}
+	if _, _, ok := MessagePosition(changed); ok {
+		t.Fatal("read-state watermark treated as a message commit position")
+	}
+
+	for name, body := range map[string]bson.D{
+		"missing member": {{Key: "chatId", Value: int64(42)}, {Key: "watermark", Value: int64(99)}},
+		"zero watermark": {{Key: "chatId", Value: int64(42)}, {Key: "userId", Value: int64(7)}, {Key: "watermark", Value: int64(0)}},
+		"wrong type":     {{Key: "chatId", Value: int64(42)}, {Key: "userId", Value: "7"}, {Key: "watermark", Value: int64(99)}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Decode(packet(t, "DECUNREAD", body)); !errors.Is(err, ErrMalformedEvent) {
+				t.Fatalf("malformed error = %v", err)
+			}
+		})
+	}
+}
+
 func TestDecodeUnknownAndMalformed(t *testing.T) {
 	event, err := Decode(packet(t, "KICKOUT", bson.D{{Key: "reason", Value: "synthetic"}}))
 	unknown, ok := event.(UnknownPacket)
