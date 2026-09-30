@@ -150,7 +150,7 @@ func (s *Store) InstallSession(lastTokenID *int64, lbk *int32, observed []ChatTa
 			setTarget(&next.KnownChats, target)
 		}
 		for _, cursor := range next.Chats {
-			raiseTarget(&next.KnownChats, ChatTarget{ChatID: cursor.ChatID, MaxLogID: cursor.MaxLogID})
+			raiseTarget(&next.KnownChats, ChatTarget(cursor))
 		}
 		next.CleanShutdown = false
 		return nil

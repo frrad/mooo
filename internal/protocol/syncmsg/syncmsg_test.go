@@ -64,6 +64,27 @@ func TestParseResponseRequiresOrderedLogIDs(t *testing.T) {
 	}
 }
 
+func TestParseResponseAcceptsOmittedEmptyChatLogs(t *testing.T) {
+	for name, document := range map[string]bson.D{
+		"omitted": {{Key: "status", Value: int32(0)}},
+		"null":    {{Key: "status", Value: int32(0)}, {Key: "chatLogs", Value: nil}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			body, err := bson.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := ParseResponse(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response.ChatLogs == nil || len(response.ChatLogs) != 0 {
+				t.Fatalf("chatLogs = %#v, want non-nil empty", response.ChatLogs)
+			}
+		})
+	}
+}
+
 func TestTargetFromChatData(t *testing.T) {
 	body, err := bson.Marshal(bson.D{
 		{Key: "c", Value: int64(42)},

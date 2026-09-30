@@ -4,6 +4,7 @@ package syncmsg
 
 import (
 	"errors"
+	"fmt"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -76,8 +77,15 @@ func ParseResponse(body []byte) (Response, error) {
 		return Response{}, ErrInvalidResponse
 	}
 	value, err := raw.LookupErr("chatLogs")
-	if err != nil || value.Type != bson.TypeArray {
-		return Response{}, ErrInvalidResponse
+	if err != nil {
+		// Live status-0 responses omit chatLogs when the page is empty.
+		return Response{ChatLogs: []bson.Raw{}}, nil
+	}
+	if value.Type == bson.TypeNull {
+		return Response{ChatLogs: []bson.Raw{}}, nil
+	}
+	if value.Type != bson.TypeArray {
+		return Response{}, fmt.Errorf("%w: chatLogs type %s", ErrInvalidResponse, value.Type)
 	}
 	values, err := value.Array().Values()
 	if err != nil {
@@ -87,12 +95,12 @@ func ParseResponse(body []byte) (Response, error) {
 	var previous int64
 	for _, value := range values {
 		if value.Type != bson.TypeEmbeddedDocument {
-			return Response{}, ErrInvalidResponse
+			return Response{}, fmt.Errorf("%w: chatLogs element", ErrInvalidResponse)
 		}
 		document := value.Document()
 		logID, err := integer(document, "logId")
 		if err != nil || logID <= 0 || (previous > 0 && logID <= previous) {
-			return Response{}, ErrInvalidResponse
+			return Response{}, fmt.Errorf("%w: chatLogs logId/order", ErrInvalidResponse)
 		}
 		previous = logID
 		result.ChatLogs = append(result.ChatLogs, append(bson.Raw(nil), document...))

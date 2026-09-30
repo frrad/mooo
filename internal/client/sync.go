@@ -32,7 +32,7 @@ func (s *Session) SyncMessages(ctx context.Context, request syncmsg.Request) (sy
 	}
 	response, err := syncmsg.ParseResponse(reply.Body)
 	if err != nil {
-		return syncmsg.Response{}, ErrProtocol
+		return syncmsg.Response{}, err
 	}
 	return response, nil
 }

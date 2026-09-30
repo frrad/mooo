@@ -18,6 +18,7 @@ properties:
   count;
 - the normal page limit is 300;
 - a successful response exposes an ordered `chatLogs` collection;
+- a successful empty page may omit or null `chatLogs` rather than sending an empty array;
 - the client distinguishes a room's `lastLogId` from `lastSyncLogId`; and
 - failure to make progress toward the known maximum creates explicit missing-
   history ("loss mark") state rather than silently advancing the synchronized
@@ -31,6 +32,16 @@ Confidence is high for the command, request shape and widths, response collectio
 page limit, and no-progress behavior (static binary analysis, 2026-09-29). Cursor
 inclusivity and server retention/error boundaries still require a controlled live
 experiment.
+
+A targeted follow-up of the official `handleLChatListResponse:` path confirmed
+the surrounding state semantics that the first narrow pass missed. On successful
+or partially successful pages, the Mac client separately enumerates `delChatIds`
+and `chatDatas`; it applies those records to existing state and updates the token
+cursors at end-of-list. It does not treat each page as a replacement inventory.
+The `SYNCMSG` success callback likewise enumerates the response collection using
+normal Objective-C messaging, for which a nil collection naturally produces zero
+iterations. These observations independently support merging delta chat pages and
+treating absent/null `chatLogs` as an empty page.
 
 ## Implementation contract
 
