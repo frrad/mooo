@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/frrad/mooo/internal/authstate"
+	"github.com/frrad/mooo/internal/continuity"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/sessionlogin"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -53,6 +54,15 @@ type Session struct {
 	userID          int64
 	appVersion      string
 	mediaDial       wireDialer
+	loginCursor     loginCursor
+}
+
+type loginCursor struct {
+	lastTokenID      *int64
+	lbk              *int32
+	observed         []continuity.ChatTarget
+	deleted          []int64
+	replaceInventory bool
 }
 
 type requestResult struct {
@@ -74,10 +84,14 @@ func productionSessionDialers() sessionDialers {
 // connectSession performs GETCONF, CHECKIN, secure carriage setup, and
 // LOGINLIST from client-owned state. Client owns and reuses the result.
 func connectSession(ctx context.Context, state authstate.State) (*Session, error) {
-	return connectSessionWithDialers(ctx, state, productionSessionDialers())
+	return connectSessionWithResume(ctx, state, continuity.Checkpoint{Version: continuity.Version}, productionSessionDialers())
 }
 
 func connectSessionWithDialers(ctx context.Context, state authstate.State, dialers sessionDialers) (*Session, error) {
+	return connectSessionWithResume(ctx, state, continuity.Checkpoint{Version: continuity.Version}, dialers)
+}
+
+func connectSessionWithResume(ctx context.Context, state authstate.State, resume continuity.Checkpoint, dialers sessionDialers) (*Session, error) {
 	if ctx == nil || state.Credentials == nil {
 		return nil, ErrCredentialsAbsent
 	}
@@ -138,11 +152,12 @@ func connectSessionWithDialers(ctx context.Context, state authstate.State, diale
 		return nil, ErrBootstrap
 	}
 
+	chatIDs, maxIDs := resume.LoginCursors()
 	loginBody, err := (sessionlogin.LoginListRequest{
 		AppVer: state.Identity.Metadata.AppVersion, OS: "mac", Lang: "en", DUUID: wireUUID,
 		OAuthToken: state.Credentials.AccessToken, NType: 0, MCCMNC: "99999", Revision: 0,
 		DType: 2, PCST: 0, RP: []byte{0, 0, 0xff, 0xff, 0, 0}, BG: false,
-		ChatIDs: []int64{}, MaxIDs: []int64{}, LastTokenID: 0, LBK: 0,
+		ChatIDs: chatIDs, MaxIDs: maxIDs, LastTokenID: resume.LastTokenID, LBK: resume.LBK,
 	}).MarshalBSON()
 	if err != nil {
 		_ = carriage.close()
@@ -162,11 +177,12 @@ func connectSessionWithDialers(ctx context.Context, state authstate.State, diale
 		_ = carriage.close()
 		return nil, StatusError{Command: "LOGINLIST", Status: status}
 	}
-	chatData, nextID, pendingPushes, err := finishLoginSync(carriage, loginReply.Body, 3)
+	chatData, nextID, pendingPushes, cursor, err := finishLoginSync(carriage, loginReply.Body, 3)
 	if err != nil {
 		_ = carriage.close()
 		return nil, ErrLogin
 	}
+	cursor.replaceInventory = resume.LastTokenID == 0
 	pushBuffer := requestLimit
 	if len(pendingPushes) > pushBuffer {
 		pushBuffer = len(pendingPushes)
@@ -180,6 +196,7 @@ func connectSessionWithDialers(ctx context.Context, state authstate.State, diale
 		userID:          state.Credentials.UserID,
 		appVersion:      state.Identity.Metadata.AppVersion,
 		mediaDial:       dialers.secure,
+		loginCursor:     cursor,
 	}
 	for _, packet := range pendingPushes {
 		session.pushes <- packet
@@ -563,36 +580,129 @@ func endpoint(body []byte) (string, int, error) {
 	return hostValue.StringValue(), port, nil
 }
 
-func finishLoginSync(wire *wireConn, first []byte, nextID uint32) ([]bson.Raw, uint32, []loco.Packet, error) {
+func finishLoginSync(wire *wireConn, first []byte, nextID uint32) ([]bson.Raw, uint32, []loco.Packet, loginCursor, error) {
 	page := append(bson.Raw(nil), first...)
 	var chats []bson.Raw
 	var pushes []loco.Packet
+	var cursor loginCursor
 	for range 20 {
+		if err := updateLoginCursor(page, &cursor); err != nil {
+			return nil, nextID, pushes, cursor, err
+		}
 		pageChats, eof, lastTokenID, lastChatID, err := parseChatPage(page)
 		if err != nil {
-			return nil, nextID, pushes, err
+			return nil, nextID, pushes, cursor, err
 		}
 		chats = append(chats, pageChats...)
 		if eof {
-			return chats, nextID, pushes, nil
+			return chats, nextID, pushes, cursor, nil
 		}
 		body, err := bson.Marshal(bson.D{
 			{Key: "lastTokenId", Value: lastTokenID},
 			{Key: "lastChatId", Value: lastChatID},
 		})
 		if err != nil {
-			return nil, nextID, pushes, ErrProtocol
+			return nil, nextID, pushes, cursor, ErrProtocol
 		}
 		reply, unsolicited, err := wire.request(nextID, "LCHATLIST", body)
 		nextID++
 		pushes = append(pushes, unsolicited...)
 		status, statusErr := responseStatus(reply)
 		if err != nil || statusErr != nil || status != 0 {
-			return nil, nextID, pushes, ErrProtocol
+			return nil, nextID, pushes, cursor, ErrProtocol
 		}
 		page = append(page[:0], reply.Body...)
 	}
-	return nil, nextID, pushes, ErrProtocol
+	return nil, nextID, pushes, cursor, ErrProtocol
+}
+
+func updateLoginCursor(page bson.Raw, cursor *loginCursor) error {
+	if value, err := bsonInt64(page, "lastTokenId"); err == nil && value >= 0 {
+		copy := value
+		cursor.lastTokenID = &copy
+	}
+	if value, err := bsonInt64(page, "lbk"); err == nil && value >= 0 && value <= 1<<31-1 {
+		copy := int32(value)
+		cursor.lbk = &copy
+	}
+	if value, err := page.LookupErr("chatDatas"); err == nil {
+		if value.Type != bson.TypeArray {
+			return ErrProtocol
+		}
+		values, err := value.Array().Values()
+		if err != nil {
+			return ErrProtocol
+		}
+		for _, value := range values {
+			if value.Type != bson.TypeEmbeddedDocument {
+				return ErrProtocol
+			}
+			target, err := loginChatTarget(value.Document())
+			if err != nil {
+				return err
+			}
+			setLoginTarget(&cursor.observed, target)
+		}
+	}
+	if value, err := page.LookupErr("delChatIds"); err == nil {
+		if value.Type != bson.TypeArray {
+			return ErrProtocol
+		}
+		values, err := value.Array().Values()
+		if err != nil {
+			return ErrProtocol
+		}
+		for _, value := range values {
+			var chatID int64
+			switch value.Type {
+			case bson.TypeInt32:
+				chatID = int64(value.Int32())
+			case bson.TypeInt64:
+				chatID = value.Int64()
+			default:
+				return ErrProtocol
+			}
+			if chatID <= 0 {
+				return ErrProtocol
+			}
+			cursor.deleted = append(cursor.deleted, chatID)
+		}
+	}
+	return nil
+}
+
+func loginChatTarget(raw bson.Raw) (continuity.ChatTarget, error) {
+	chatID, err := bsonInt64(raw, "c")
+	if err != nil || chatID <= 0 {
+		return continuity.ChatTarget{}, ErrProtocol
+	}
+	target := continuity.ChatTarget{ChatID: chatID}
+	last, err := raw.LookupErr("l")
+	if err != nil || last.Type == bson.TypeNull {
+		return target, nil
+	}
+	if last.Type != bson.TypeEmbeddedDocument {
+		return continuity.ChatTarget{}, ErrProtocol
+	}
+	logID, err := bsonInt64(last.Document(), "logId")
+	if err != nil || logID <= 0 {
+		return continuity.ChatTarget{}, ErrProtocol
+	}
+	if nestedChatID, nestedErr := bsonInt64(last.Document(), "chatId"); nestedErr == nil && nestedChatID != chatID {
+		return continuity.ChatTarget{}, ErrProtocol
+	}
+	target.MaxLogID = logID
+	return target, nil
+}
+
+func setLoginTarget(targets *[]continuity.ChatTarget, target continuity.ChatTarget) {
+	for i := range *targets {
+		if (*targets)[i].ChatID == target.ChatID {
+			(*targets)[i] = target
+			return
+		}
+	}
+	*targets = append(*targets, target)
 }
 
 func parseChatPage(page bson.Raw) ([]bson.Raw, bool, int64, int64, error) {

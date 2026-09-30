@@ -111,6 +111,36 @@ func TestParseChatPageCursor(t *testing.T) {
 	}
 }
 
+func TestUpdateLoginCursorCapturesInventoryAndDeletion(t *testing.T) {
+	page, err := bson.Marshal(bson.D{
+		{Key: "chatDatas", Value: bson.A{
+			bson.D{
+				{Key: "c", Value: int64(42)},
+				{Key: "l", Value: bson.D{{Key: "chatId", Value: int64(42)}, {Key: "logId", Value: int64(105)}}},
+			},
+			bson.D{{Key: "c", Value: int64(7)}, {Key: "l", Value: nil}},
+		}},
+		{Key: "delChatIds", Value: bson.A{int64(9)}},
+		{Key: "lastTokenId", Value: int64(12)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cursor loginCursor
+	if err := updateLoginCursor(page, &cursor); err != nil {
+		t.Fatal(err)
+	}
+	if cursor.lastTokenID == nil || *cursor.lastTokenID != 12 {
+		t.Fatalf("last token = %v", cursor.lastTokenID)
+	}
+	if len(cursor.observed) != 2 || cursor.observed[0].ChatID != 42 || cursor.observed[0].MaxLogID != 105 || cursor.observed[1].ChatID != 7 || cursor.observed[1].MaxLogID != 0 {
+		t.Fatalf("observed inventory = %#v", cursor.observed)
+	}
+	if len(cursor.deleted) != 1 || cursor.deleted[0] != 9 {
+		t.Fatalf("deleted inventory = %v", cursor.deleted)
+	}
+}
+
 func TestResponseStatusUsesBSONStatus(t *testing.T) {
 	body, err := bson.Marshal(bson.D{{Key: "status", Value: int32(-328)}})
 	if err != nil {

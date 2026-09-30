@@ -24,6 +24,12 @@ scenarios cover:
 - `SHIP` -> media `POST` -> offset-resumed encrypted bytes -> `COMPLETE`;
 - `LOGINLIST -950`, one HTTP token renewal, and one fresh login with the rotated
   credential;
+- resumed `LOGINLIST` with persisted chat/max, token, and blind-token cursors;
+- full-login inventory followed by an empty delta login across checkpoint reopen,
+  proving the chat target survives without becoming an acknowledgement;
+- duplicate suppression plus explicit message commits across checkpoint reopen;
+- paged `SYNCMSG` catch-up, sparse ordered log IDs, and fail-closed no-progress
+  handling without premature checkpoint advancement;
 - disconnect after `WRITE`, proving no retry or implicit reconnect; and
 - disconnect after uploaded photo bytes but before `COMPLETE`, proving no
   repeated `SHIP`, `POST`, or media connection.

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/frrad/mooo/internal/authstate"
+	"github.com/frrad/mooo/internal/continuity"
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/friends"
@@ -21,6 +22,8 @@ import (
 var ErrClientClosed = errors.New("client: client closed")
 
 var ErrPushConsumerSelected = errors.New("client: push consumer already selected")
+
+var ErrCommitOrder = errors.New("client: event commit is not the next delivered message for its chat")
 
 type pushConsumerMode uint8
 
@@ -41,6 +44,7 @@ type Client struct {
 	mu               sync.Mutex
 	state            authstate.State
 	store            *authstate.Store
+	checkpoint       *continuity.Store
 	http             friends.Doer
 	session          *Session
 	closed           bool
@@ -49,6 +53,8 @@ type Client struct {
 	lease            *profileLease
 	pushConsumer     pushConsumerMode
 	eventStream      chan events.Result
+	commitMu         sync.Mutex
+	pendingCommits   map[int64][]int64
 }
 
 // Open acquires the profile's process-wide owner lease and creates a reusable
@@ -75,6 +81,16 @@ func Open(statePath string, doer friends.Doer) (*Client, error) {
 	}
 	client.lease = lease
 	client.store = store
+	checkpoint, err := continuity.Open(statePath + ".continuity")
+	if err != nil {
+		_ = lease.Close()
+		return nil, err
+	}
+	client.checkpoint = checkpoint
+	resume := checkpoint.Snapshot()
+	client.dial = func(ctx context.Context, state authstate.State) (*Session, error) {
+		return connectSessionWithResume(ctx, state, resume, productionSessionDialers())
+	}
 	return client, nil
 }
 
@@ -114,6 +130,12 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 	}
 	session, err := c.dial(ctx, c.state)
 	if err == nil {
+		if c.checkpoint != nil {
+			if checkpointErr := c.checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
+				_ = session.Close()
+				return nil, checkpointErr
+			}
+		}
 		c.session = session
 		return session, nil
 	}
@@ -128,6 +150,12 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 	session, err = c.dial(ctx, c.state)
 	if err != nil {
 		return nil, err
+	}
+	if c.checkpoint != nil {
+		if checkpointErr := c.checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
+			_ = session.Close()
+			return nil, checkpointErr
+		}
 	}
 	c.session = session
 	return session, nil
@@ -191,16 +219,97 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 	c.pushConsumer = pushConsumerTyped
 	c.eventStream = stream
 	c.mu.Unlock()
-	go decodeEventStream(raw, stream)
+	go decodeEventStreamWithContinuity(raw, stream, c.checkpoint, c.queueCommit)
 	return stream, nil
 }
 
 func decodeEventStream(raw <-chan loco.Packet, output chan<- events.Result) {
+	decodeEventStreamWithContinuity(raw, output, nil, nil)
+}
+
+type messagePosition struct {
+	chatID int64
+	logID  int64
+}
+
+const observedPositionLimit = 4096
+
+func decodeEventStreamWithContinuity(raw <-chan loco.Packet, output chan<- events.Result, checkpoint *continuity.Store, delivered func(int64, int64)) {
 	defer close(output)
+	seen := make(map[messagePosition]struct{})
+	order := make([]messagePosition, 0, observedPositionLimit)
 	for packet := range raw {
 		event, err := events.Decode(packet)
+		if err == nil {
+			if chatID, logID, ok := events.MessagePosition(event); ok {
+				position := messagePosition{chatID: chatID, logID: logID}
+				if checkpoint != nil && checkpoint.IsCommitted(chatID, logID) {
+					continue
+				}
+				if _, duplicate := seen[position]; duplicate {
+					continue
+				}
+				seen[position] = struct{}{}
+				order = append(order, position)
+				if len(order) > observedPositionLimit {
+					delete(seen, order[0])
+					order = order[1:]
+				}
+				if delivered != nil {
+					delivered(chatID, logID)
+				}
+			}
+		}
 		output <- events.Result{Event: event, Err: err}
 	}
+}
+
+// CommitEvent advances the durable resume boundary after the application has
+// successfully persisted or bridged one incoming message. It is intentionally
+// explicit: receiving an event is not sufficient to prevent replay after a
+// crash.
+func (c *Client) CommitEvent(event events.Event) error {
+	if c == nil || event == nil {
+		return ErrProtocol
+	}
+	chatID, logID, ok := events.MessagePosition(event)
+	if !ok {
+		return ErrProtocol
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return ErrClientClosed
+	}
+	checkpoint := c.checkpoint
+	c.mu.Unlock()
+	if checkpoint == nil {
+		return ErrProtocol
+	}
+	c.commitMu.Lock()
+	defer c.commitMu.Unlock()
+	queue := c.pendingCommits[chatID]
+	if len(queue) == 0 || queue[0] != logID {
+		return ErrCommitOrder
+	}
+	_, err := checkpoint.CommitMessage(chatID, logID)
+	if err == nil {
+		if len(queue) == 1 {
+			delete(c.pendingCommits, chatID)
+		} else {
+			c.pendingCommits[chatID] = queue[1:]
+		}
+	}
+	return err
+}
+
+func (c *Client) queueCommit(chatID, logID int64) {
+	c.commitMu.Lock()
+	defer c.commitMu.Unlock()
+	if c.pendingCommits == nil {
+		c.pendingCommits = make(map[int64][]int64)
+	}
+	c.pendingCommits[chatID] = append(c.pendingCommits[chatID], logID)
 }
 
 // CreateChat uses the client's existing session, or lazily establishes its
@@ -338,8 +447,12 @@ func (c *Client) Close() error {
 	}
 	c.closed = true
 	var err error
-	if c.session != nil {
+	hadSession := c.session != nil
+	if hadSession {
 		err = c.session.Close()
+	}
+	if hadSession && c.checkpoint != nil {
+		err = errors.Join(err, c.checkpoint.MarkClean())
 	}
 	if c.lease != nil {
 		err = errors.Join(err, c.lease.Close())

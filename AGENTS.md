@@ -70,6 +70,9 @@ reproducible research before bridge features.
   stable public API exists, and private code under `internal/`.
 - Write tests for protocol parsers and state machines using synthetic or thoroughly
   sanitized fixtures.
+- Whenever a bug is discovered in production or during a live owned-account
+  experiment, add a regression test that reproduces the failure and protects the
+  fix before considering the bug resolved.
 - Run `go test ./...`, `go vet ./...`, formatting, linting, vulnerability checks,
   and secret scanning before merging.
 
