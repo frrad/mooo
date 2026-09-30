@@ -98,6 +98,8 @@ The following LEFT details remain open: missing/null field behavior, database
 failure reporting, exact chat-type guard for the calendar path, and downstream
 UI/notification behavior. The synthetic decoder test therefore carries only
 the two proven int64 fields and does not assert deletion or calendar effects.
+Its malformed-input tests are fail-closed implementation safety checks, not
+claims about official malformed-input equivalence.
 
 ## Evidence trail
 
