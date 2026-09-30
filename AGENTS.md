@@ -33,6 +33,9 @@ reproducible research before bridge features.
 - The maintainer authorizes agents to merge their own pull requests once all
   required CI checks pass and GitHub reports the PR as mergeable. Always use a
   squash merge; never merge with pending or failing required checks.
+- Once a self-contained, reviewable piece of work is done and validated locally,
+  open a pull request for it and merge it as soon as the required CI checks
+  pass. Do not wait for the maintainer to ask for the PR or the merge.
 
 ## Research safety
 
