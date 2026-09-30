@@ -40,20 +40,23 @@ mutation associated with one accepted inbound message.
 
 ## Response and failure boundary
 
-The request is sent through the shared carriage request path with a completion
-callback. The static trace confirms request construction and dispatch, but does
-not establish a retry loop, a local watermark write, or a caller-visible
-interpretation of a failed `NOTIREAD` completion. Until a response callback is
-traced at the model and caller boundary, implementations must treat a
-transport error, malformed response, disconnect, timeout, or non-zero LOCO
-status as an unacknowledged automatic mutation and must not retry it
-implicitly. The inbound message itself remains delivered independently of this
-follow-up.
+The request-specific completion block is now traced through the response model.
+It wraps a non-null packet in the official `NOTIREAD` response object and
+passes a nil packet through as a nil response; it does not inspect a status
+field. The shared pending-response path removes the matching callback and
+invokes it with the packet and nil error, also without a response-status
+branch. No dedicated `NOTIREAD` persistence or downstream consumer was found.
 
-The response model has a `notiRead` boolean accessor and accepts the shared
-packet-header response. Its exact server-side acknowledgement status semantics
-remain open; that is intentionally not guessed by the conformance tests in
-this change.
+The response model's `notiRead` accessor reads an optional boolean-like value
+from extra information and defaults to true when absent. The exact key and
+server acknowledgement meaning remain open. Carriage-unavailable requests
+receive an error without a packet, while a receive timeout disconnects the
+agent. Pending-callback fan-out after disconnect was not proven, so a timeout
+or disconnect remains an ambiguous, unacknowledged mutation and must not be
+treated as local read success or retried implicitly. The inbound message
+remains delivered independently of this follow-up. See
+[`research/read-state-notiread-response.md`](read-state-notiread-response.md)
+for the layer-by-layer trace and conformance boundary.
 
 ## Explicit user read operations
 
@@ -73,13 +76,13 @@ commit and read-watermark persistence must remain separate transactions.
 ## Test handoff
 
 `internal/protocol/notiread/notiread_test.go` encodes the five-field request
-shape, BSON widths, and the no-implicit-retry/failure contract as synthetic
-tests. The package has no production implementation on this branch by design.
-The implementation stage should add the smallest transport-independent request
-codec and wire it into the existing one-shot carriage path, then make these
-tests pass without coupling automatic notification-read state to application
-message commits. Response status semantics remain deliberately untested until
-the response callback and caller boundary are traced.
+shape, BSON widths, the no-implicit-retry/failure contract, and raw response
+pass-through as synthetic tests. The response test is a passing
+characterization test: it protects the observed absence of status
+interpretation without inventing a success predicate. The implementation
+stage must keep automatic notification-read state separate from application
+message commits; disconnect callback fan-out and response status semantics
+remain explicit follow-up gaps.
 
 ## Provenance
 
@@ -89,7 +92,8 @@ the response callback and caller boundary are traced.
   model initializer tracing, and decompilation of the inbound message handler,
   request sender, request initializer, response initializer/accessor, and
   explicit mark-read coordinators.
-- Confidence: high for the inbound call chain and request fields/types;
-  medium for the short `li` wire spelling until a clean-room live capture or
-  serializer-level trace confirms it; low/open for response status and
-  completion-side effects.
+- Confidence: high for the inbound call chain, request fields/types, and the
+  traced packet-forwarding boundary; medium for the short `li` wire spelling
+  until a clean-room live capture or serializer-level trace confirms it and
+  for the optional response boolean's exact meaning; open for pending-callback
+  fan-out after timeout/disconnect.

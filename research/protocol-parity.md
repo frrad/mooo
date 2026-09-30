@@ -161,9 +161,14 @@ have read side effects. Until the acknowledgement and failure contract is
 traced, the clean-room client must keep inbound delivery, application commit,
 and explicit read state distinct rather than inferring read state from receipt.
 The request initializer uses the short `li` property for link ID and writes all
-five fields before dispatch through the shared carriage request path. The static
-chain and synthetic request contract are recorded in
-[`research/read-state-notiread.md`](read-state-notiread.md).
+five fields before dispatch through the shared carriage request path. The
+response callback forwards a non-null packet as a response object without a
+status branch; carriage-unavailable sends fail before a packet, and receive
+timeouts disconnect the agent. No NOTIREAD-specific persistence consumer was
+found, while pending-callback fan-out after disconnect and the server meaning
+of the response boolean remain open. The static chain and synthetic contracts
+are recorded in [`research/read-state-notiread.md`](read-state-notiread.md) and
+[`research/read-state-notiread-response.md`](read-state-notiread-response.md).
 
 ## Current parity matrix
 
