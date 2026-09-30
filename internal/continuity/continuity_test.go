@@ -155,6 +155,32 @@ func TestDeltaLoginPreservesKnownChatWithoutAcknowledgingIt(t *testing.T) {
 	}
 }
 
+func TestInstallSessionAppliesDeletionBeforeObservedDelta(t *testing.T) {
+	store, err := Open(testPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CommitMessage(42, 100); err != nil {
+		t.Fatal(err)
+	}
+	token := int64(8)
+	if err := store.InstallSession(
+		&token,
+		nil,
+		[]ChatTarget{{ChatID: 42, MaxLogID: 105}},
+		[]int64{42},
+		false,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Snapshot().SyncTargets(); len(got) != 1 || got[0] != (ChatTarget{ChatID: 42, MaxLogID: 105}) {
+		t.Fatalf("recreated target = %#v", got)
+	}
+	if chatIDs, maxIDs := store.Snapshot().LoginCursors(); len(chatIDs) != 0 || len(maxIDs) != 0 {
+		t.Fatalf("deleted commit survived recreated delta = %v / %v", chatIDs, maxIDs)
+	}
+}
+
 func mustStat(t *testing.T, path string) os.FileInfo {
 	t.Helper()
 	info, err := os.Stat(path)

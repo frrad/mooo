@@ -26,6 +26,8 @@ non-sensitive experiment identifier.
 - `client-inventory.md` records sanitized client baselines.
 - `reversing-strategy.md` selects the primary target and defines the first analysis
   work packages.
+- `protocol-parity.md` defines the Ghidra-first full-chain parity gate, records the
+  conservative feature matrix, and prioritizes unresolved official-client paths.
 - `protocol-bootstrap.md` records the initial packet, serialization, and secure
   transport observations.
 - `session-login/` tracks the vertical slice from completed registration through

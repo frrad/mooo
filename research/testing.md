@@ -27,6 +27,8 @@ scenarios cover:
 - resumed `LOGINLIST` with persisted chat/max, token, and blind-token cursors;
 - full-login inventory followed by an empty delta login across checkpoint reopen,
   proving the chat target survives without becoming an acknowledgement;
+- official deletion-before-chat-data ordering, proving a same-page recreated chat
+  regains its recovery target without inheriting the deleted commit boundary;
 - duplicate suppression plus explicit message commits across checkpoint reopen;
 - paged `SYNCMSG` catch-up, sparse ordered log IDs, and fail-closed no-progress
   handling without premature checkpoint advancement;
