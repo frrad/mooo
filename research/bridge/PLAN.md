@@ -38,7 +38,7 @@ Status: active work plan, 2026-09-30. Framework decision:
 | Own messages | Messages written by the logged-in account on another device are sent through double puppeting. |
 | Connection | The bridge decides when to reconnect. Kakao gives it no reconnect of its own. Retries use exponential backoff and then run a bounded `CatchUp`. A dropped connection is reported as a transient disconnect; `KICKOUT` is reported as logged out or bad credentials. |
 | Read state | Matrix read receipts go to `MarkRead`. `DECUNREAD` becomes ghost read receipts. Catch-up and backfill use `SYNCMSG`, which can mark messages read on the server, so both are bounded and backfill is opt-in. |
-| Chat metadata | No client API exists yet for chat list, names, avatars, members, or profiles. Until B2, portals use placeholder names derived from IDs. |
+| Chat metadata | No client API exists yet for chat list, names, avatars, members, or profiles. Until B2, portals use placeholder names derived from IDs. B2 uses `CHATINFO` for room metadata and `MEMBER` for profiles ([dossier](../chat-metadata.md)). |
 
 ## Phases
 
@@ -66,7 +66,10 @@ Status: active work plan, 2026-09-30. Framework decision:
 ### B2: chat metadata (protocol research first)
 
 - [ ] Ghidra-first dossiers for chat info, member lists, member profiles, and
-      friend/contact sync, following the parity rules in `AGENTS.md`.
+      friend/contact sync, following the parity rules in `AGENTS.md`. Chat
+      info, members, and member lists are traced in
+      [`chat-metadata.md`](../chat-metadata.md); friend/contact sync and the
+      listed live-encoding gaps remain.
 - [ ] Client APIs for them, with synthetic fixtures.
 - [ ] Portal names, avatars, and members. Group portals.
 - [ ] Membership events: `NEWMEM`, `DELMEM`, `LEFT`, `CHGCHATST`.
