@@ -75,6 +75,10 @@ or wrong nested structure as an implementation safety rule; that behavior is
 not claimed as an observation of the official malformed-body path. This is not evidence that the
 official client ignores any of these methods.
 
+The NEWMEM decoder applies the same fail-closed safety rule to missing or
+wrong invitee structure; its synthetic malformed tests do not claim official
+malformed-input equivalence.
+
 ## Evidence trail
 
 - Client: official macOS KakaoTalk 26.8.0 arm64, inspected 2026-09-30.

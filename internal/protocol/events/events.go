@@ -28,6 +28,7 @@ const (
 	KindChangeServer       Kind = "change_server"
 	KindKickout            Kind = "kickout"
 	KindMemberRemoved      Kind = "member_removed"
+	KindMemberAdded        Kind = "member_added"
 	KindUnsupportedLogMeta Kind = "unsupported_log_meta"
 	KindUnknownPacket      Kind = "unknown_packet"
 )
@@ -228,6 +229,22 @@ type MemberRemoved struct {
 func (MemberRemoved) Kind() Kind { return KindMemberRemoved }
 func (MemberRemoved) isEvent()   {}
 
+type MemberIdentity struct {
+	UserID   int64
+	UserType int32
+}
+
+// MemberAdded identifies invitees carried by a NEWMEM notice. It is a typed
+// event only; persistence and room mutation remain separate.
+type MemberAdded struct {
+	ChatID  int64
+	LogID   int64
+	Members []MemberIdentity
+}
+
+func (MemberAdded) Kind() Kind { return KindMemberAdded }
+func (MemberAdded) isEvent()   {}
+
 // Decode turns one unsolicited packet into a typed event. Unknown packet
 // methods and unsupported message types remain observable without exposing raw
 // account data. Malformed known packets return ErrMalformedEvent.
@@ -245,6 +262,8 @@ func Decode(packet loco.Packet) (Event, error) {
 		return decodeKickout(packet.Body)
 	case "DELMEM":
 		return decodeMemberRemoved(packet.Body)
+	case "NEWMEM":
+		return decodeMemberAdded(packet.Body)
 	default:
 		return UnknownPacket{Method: packet.Header.Method}, nil
 	}
@@ -309,6 +328,55 @@ func decodeMemberRemoved(body []byte) (Event, error) {
 		return nil, ErrMalformedEvent
 	}
 	return MemberRemoved{ChatID: chatID, LogID: logID, UserID: userID, UserType: userTypeValue.Int32()}, nil
+}
+
+func decodeMemberAdded(body []byte) (Event, error) {
+	raw := bson.Raw(body)
+	if err := raw.Validate(); err != nil {
+		return nil, ErrMalformedEvent
+	}
+	chatLogValue, err := raw.LookupErr("chatLog")
+	if err != nil || chatLogValue.Type != bson.TypeEmbeddedDocument {
+		return nil, ErrMalformedEvent
+	}
+	chatLog := chatLogValue.Document()
+	chatID, err := exactInt64(chatLog, "chatId")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	logID, err := exactInt64(chatLog, "logId")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	feedValue, err := chatLog.LookupErr("feed")
+	if err != nil || feedValue.Type != bson.TypeEmbeddedDocument {
+		return nil, ErrMalformedEvent
+	}
+	inviteesValue, err := feedValue.Document().LookupErr("invitees")
+	if err != nil || inviteesValue.Type != bson.TypeArray {
+		return nil, ErrMalformedEvent
+	}
+	values, err := inviteesValue.Array().Values()
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	members := make([]MemberIdentity, 0, len(values))
+	for _, value := range values {
+		if value.Type != bson.TypeEmbeddedDocument {
+			return nil, ErrMalformedEvent
+		}
+		member := value.Document()
+		userID, err := exactInt64(member, "userId")
+		if err != nil {
+			return nil, ErrMalformedEvent
+		}
+		userTypeValue, err := member.LookupErr("userType")
+		if err != nil || userTypeValue.Type != bson.TypeInt32 {
+			return nil, ErrMalformedEvent
+		}
+		members = append(members, MemberIdentity{UserID: userID, UserType: userTypeValue.Int32()})
+	}
+	return MemberAdded{ChatID: chatID, LogID: logID, Members: members}, nil
 }
 
 func decodeReadState(body []byte) (Event, error) {
