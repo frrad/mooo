@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -15,9 +16,11 @@ import (
 	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
 
+	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/syncmsg"
 )
 
 const (
@@ -31,21 +34,48 @@ type sentText struct {
 	message string
 }
 
+type catchUpResult struct {
+	events []events.Event
+	err    error
+}
+
 type fakeKakao struct {
-	mu         sync.Mutex
-	connectErr error
-	stream     chan events.Result
-	commits    []events.Event
-	sends      []sentText
-	sendResp   chat.WriteResponse
-	sendErr    error
-	closeCalls int
+	mu            sync.Mutex
+	connectErr    error
+	resumeTargets []syncmsg.Target
+	resumeErr     error
+	catchUps      map[int64]catchUpResult
+	calls         []string
+	stream        chan events.Result
+	commits       []events.Event
+	sends         []sentText
+	sendResp      chat.WriteResponse
+	sendErr       error
+	closeCalls    int
 }
 
 func (f *fakeKakao) Connect(ctx context.Context) error { return f.connectErr }
 
 func (f *fakeKakao) Events(ctx context.Context) (<-chan events.Result, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, "Events")
 	return f.stream, nil
+}
+
+func (f *fakeKakao) ResumeTargets(ctx context.Context) ([]syncmsg.Target, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, "ResumeTargets")
+	return f.resumeTargets, f.resumeErr
+}
+
+func (f *fakeKakao) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, fmt.Sprintf("CatchUp(%d,%d)", chatID, targetMax))
+	result := f.catchUps[chatID]
+	return result.events, result.err
 }
 
 func (f *fakeKakao) CommitEvent(evt events.Event) error {
@@ -563,5 +593,98 @@ func TestBridgeStateQueueIsResolvedAtSendTime(t *testing.T) {
 
 	if kc.stateQueue() != queue {
 		t.Fatal("client kept the bridge-state queue that existed when it was constructed")
+	}
+}
+
+func TestConnectCatchesUpMissedMessagesBeforeSubscribingToLiveEvents(t *testing.T) {
+	missedOne := events.TextMessage{ChatID: testChatID, LogID: 41, AuthorID: testOtherID, Message: "missed one"}
+	missedTwo := events.TextMessage{ChatID: testChatID, LogID: 42, AuthorID: testOtherID, Message: "missed two"}
+	live := events.TextMessage{ChatID: testChatID, LogID: 43, AuthorID: testOtherID, Message: "live"}
+	fake := &fakeKakao{
+		stream:        make(chan events.Result, 1),
+		resumeTargets: []syncmsg.Target{{ChatID: testChatID, MaxLogID: 42}},
+		catchUps:      map[int64]catchUpResult{testChatID: {events: []events.Event{missedOne, missedTwo}}},
+	}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+
+	kc.Connect(context.Background())
+	fake.stream <- events.Result{Event: live}
+	close(fake.stream)
+	waitForState(t, harness, status.StateTransientDisconnect)
+
+	wantCalls := []string{"ResumeTargets", "CatchUp(3000,42)", "Events"}
+	if fmt.Sprint(fake.calls) != fmt.Sprint(wantCalls) {
+		t.Fatalf("calls = %v, want %v", fake.calls, wantCalls)
+	}
+	wantCommits := []events.Event{missedOne, missedTwo, live}
+	if fmt.Sprint(fake.committed()) != fmt.Sprint(wantCommits) {
+		t.Fatalf("commits = %v, want missed messages before the live one", fake.committed())
+	}
+	if got := harness.stateEvents(); got[1] != status.StateConnected {
+		t.Fatalf("states = %v", got)
+	}
+}
+
+func TestUnrecoverableGapPostsNoticeAndKeepsConnecting(t *testing.T) {
+	fake := &fakeKakao{
+		stream:        make(chan events.Result),
+		resumeTargets: []syncmsg.Target{{ChatID: testChatID, MaxLogID: 42}},
+		catchUps:      map[int64]catchUpResult{testChatID: {err: client.ErrGapUnresolved}},
+	}
+	t.Cleanup(func() { close(fake.stream) })
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+
+	kc.Connect(context.Background())
+
+	if !kc.IsLoggedIn() || harness.lastState().StateEvent != status.StateConnected {
+		t.Fatalf("logged in = %t, states = %v", kc.IsLoggedIn(), harness.stateEvents())
+	}
+	if len(harness.queued) != 1 {
+		t.Fatalf("queued %d events, want one gap notice", len(harness.queued))
+	}
+	notice := harness.queued[0].(*simplevent.Message[string])
+	if notice.GetID() != networkid.MessageID("gap:3000:42") || notice.GetPortalKey().ID != "3000" {
+		t.Fatalf("notice ID = %q, portal = %+v", notice.GetID(), notice.GetPortalKey())
+	}
+	converted, err := notice.ConvertMessage(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content := convertedBody(t, converted); content.MsgType != event.MsgNotice {
+		t.Fatalf("content = %+v", content)
+	}
+	if len(fake.committed()) != 0 {
+		t.Fatalf("committed %v for an unrecovered gap", fake.committed())
+	}
+}
+
+func TestCatchUpFailureAbortsConnectBeforeLiveEvents(t *testing.T) {
+	for name, fake := range map[string]*fakeKakao{
+		"targets": {resumeErr: errors.New("targets failed")},
+		"catch-up": {
+			resumeTargets: []syncmsg.Target{{ChatID: testChatID, MaxLogID: 42}},
+			catchUps:      map[int64]catchUpResult{testChatID: {err: errors.New("connection reset")}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+
+			kc.Connect(context.Background())
+
+			if kc.IsLoggedIn() {
+				t.Fatal("logged in although catch-up failed")
+			}
+			if last := harness.lastState(); last.StateEvent != status.StateTransientDisconnect || last.Error != stateConnectFailed {
+				t.Fatalf("state = %+v", last)
+			}
+			for _, call := range fake.calls {
+				if call == "Events" {
+					t.Fatal("subscribed to live events after a failed catch-up; live commits could skip missed messages")
+				}
+			}
+			if fake.closeCalls != 1 {
+				t.Fatalf("close calls = %d", fake.closeCalls)
+			}
+		})
 	}
 }
