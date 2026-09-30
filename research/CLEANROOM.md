@@ -12,7 +12,19 @@ standard.
 Authorized researchers may study lawfully obtained clients, binaries, emulator
 behavior, logs, and traffic. Raw binaries, disassembly, decompiler output, Ghidra
 projects, captures, databases, screenshots, identifiers, tokens, and keys stay
-outside the repository.
+outside this repository.
+
+Lane A tooling and derived artifacts have a dedicated private home in the
+[`frrad/kakao`](https://github.com/frrad/kakao) repository: the headless Ghidra
+query/parity scripts, decompiled text exports, and version-specific RE notes. The
+shipped binary and the analyzed Ghidra project are never committed even there —
+they live as private GitHub Release assets on that repo, fetched on demand
+(including from cloud Claude Code sessions). Live account material — credentials,
+session tokens, device identifiers, phone numbers, messages, raw captures,
+decrypted databases, QR payloads — stays out of git entirely, in both repos. The
+clean-room boundary is therefore one-way: sanitized behavioral specifications flow
+from `frrad/kakao` into this repository; decompiled source, pseudocode, internal
+names, offsets, and proprietary strings never do.
 
 The output of this lane is an implementation-neutral behavioral specification:
 states, field meanings, encodings, error behavior, preconditions, postconditions,

@@ -5,7 +5,14 @@ Status: primary target selected; full-chain parity workflow active, 2026-09-29.
 This document selects the first official client to study and defines the boundary
 between private binary analysis and public protocol work. It records conclusions,
 not decompiler output. Raw artifacts and account-specific observations remain in
-the ignored lab area described by `research/CLEANROOM.md`.
+the ignored lab area described by `research/CLEANROOM.md`, and the private binary
+analysis tooling and derived artifacts live in the dedicated private repository
+[`frrad/kakao`](https://github.com/frrad/kakao) — headless Ghidra query/parity
+scripts, decompiled exports, and version-specific notes, with the shipped binaries
+and analyzed Ghidra project held as private release assets rather than committed.
+That repo is where cloud sessions run the Ghidra pass; only sanitized behavioral
+specifications flow from it into this repository (see `research/CLEANROOM.md`,
+Lane A).
 
 The operational definition of full behavioral parity, its seven-layer evidence
 gate, current matrix, and work queue now live in

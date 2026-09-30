@@ -105,3 +105,10 @@ reproducible research before bridge features.
   CAPTCHA, MFA, or accepting service terms. Never record those secrets in project
   files or commentary.
 - Publishing sanitized source and documentation to `frrad/mooo` is authorized.
+- Private binary-analysis tooling and derived artifacts live in the dedicated
+  private repository `frrad/kakao` (Lane A in `research/CLEANROOM.md`): headless
+  Ghidra query/parity scripts, decompiled exports, and version-specific notes, with
+  the shipped binaries and analyzed Ghidra project held as private GitHub Release
+  assets. Cloud sessions run the Ghidra pass there. Only sanitized, implementation-
+  neutral specifications flow from `frrad/kakao` into this repository; never copy
+  decompiled source, pseudocode, offsets, internal names, or proprietary strings.
