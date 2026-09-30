@@ -69,6 +69,16 @@ metadata under the observed status/revision keys. A downstream delegate event
 is emitted, and a separate UI/client path can request a fresh status by chat
 ID. No network retry or status-value interpretation is proven here.
 
+The narrow gate is strict: a missing room, missing status dictionary, stale
+revision, or equal revision skips the database block and downstream delegate.
+For a newer revision on an existing room, the block preserves existing extra
+metadata, writes the raw status dictionary under `cs`, writes the incoming
+revision as an int64 under `csr`, and only then emits the manager-owned
+delegate event. The traced path uses a synchronous database-block call with
+no explicit completion/error branch, so write-failure reporting and rollback
+remain unproven. No chat-type guard is visible in this gate; any separate UI
+refresh guard is not conflated with persistence.
+
 ## CHGMETA bounded metadata trace
 
 The `CHGMETA` unsolicited model carries signed int64 `chatId` and a nested
@@ -132,6 +142,11 @@ The CHGCHATST gaps are optional/null and malformed-body behavior, database
 failure reporting, the exact chat-type guard for downstream status refresh,
 and the semantic status-value set. Its synthetic test therefore asserts only
 the four proven top-level fields and leaves `chatStatus` opaque.
+
+The pure reducer characterization in
+`internal/protocol/events/chgchatst_transition_test.go` encodes only the
+proven strict revision gate and `cs`/`csr` merge. It does not claim database
+transaction semantics, UI behavior, or delegate delivery on an I/O failure.
 
 ## LEFT bounded identity and ownership trace
 
