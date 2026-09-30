@@ -12,9 +12,9 @@ source, offsets, account values, or raw captures.
 The LOCO default receive dispatcher maps the `CHANGESVR` and `KICKOUT` methods
 to their respective push-notice response models. The model handlers verify
 that the manager delegate responds, then forward the notice to the manager.
-The clean-room event stream currently exposes both as `UnknownPacket`; it does
-not silently treat either event as a normal message or a successful request
-response.
+The clean-room event stream decodes them as typed `ChangeServer` and `Kickout`
+events; it does not treat either as a normal message or a successful request
+response. Nothing acts on them yet; see [`reconnect.md`](reconnect.md).
 
 `CHANGESVR` reaches the manager as a typed push notice, but the traced manager
 path does not consume a notice payload field. `KICKOUT` reaches the manager as
