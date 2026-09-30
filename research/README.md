@@ -28,6 +28,8 @@ non-sensitive experiment identifier.
   work packages.
 - `protocol-parity.md` defines the Ghidra-first full-chain parity gate, records the
   conservative feature matrix, and prioritizes unresolved official-client paths.
+- `chat-metadata.md` is the B2 dossier for `CHATINFO`, `MEMBER`, `MEMLIST`, and
+  `GETMEM`: models, wire keys, orchestration, persistence, and open gaps.
 - `protocol-bootstrap.md` records the initial packet, serialization, and secure
   transport observations.
 - `session-login/` tracks the vertical slice from completed registration through

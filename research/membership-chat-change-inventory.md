@@ -52,6 +52,10 @@ conditionally request chat information, and pass a copied invitee collection
 through a member-update operation. A separate block turns the chat log into a
 chat-message/database operation. This establishes the wire identity path and
 the persistence ownership boundary, but not the full state contract.
+The `CHATINFO` and `MEMBER` follow-up requests are specified in
+[`chat-metadata.md`](chat-metadata.md). Feed invitees and leavers use a
+three-field feed-member model (`userId`, `userType`, `nickName`), which is
+distinct from the `MEMBER` profile model.
 
 ## CHGCHATST bounded status trace
 
