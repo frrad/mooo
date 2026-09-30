@@ -37,6 +37,28 @@ func TestDecodeChangeMetaPreservesOpaqueSubtypeAndMetadataFields(t *testing.T) {
 	}
 }
 
+func TestDecodeChangeMetaAllowsAbsentOptionalFields(t *testing.T) {
+	body, err := bson.Marshal(bson.D{
+		{Key: "chatId", Value: int64(42)},
+		{Key: "meta", Value: bson.D{{Key: "type", Value: int32(14)}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := Decode(loco.Packet{Header: loco.Header{Method: "CHGMETA"}, Body: body})
+	if err != nil {
+		t.Fatalf("Decode(CHGMETA) error = %v", err)
+	}
+	changed, ok := event.(ChatMetaChanged)
+	if !ok {
+		t.Fatalf("Decode(CHGMETA) event = %T, want ChatMetaChanged", event)
+	}
+	if changed.ChatID != 42 || changed.Type != 14 || changed.Revision != 0 ||
+		changed.AuthorID != 0 || changed.UpdatedAt != 0 || changed.Content != "" {
+		t.Fatalf("CHGMETA minimal = %#v, want zero optional fields", changed)
+	}
+}
+
 func TestDecodeChangeMetaFailsClosedForUnprovenStructure(t *testing.T) {
 	cases := []struct {
 		name string
@@ -54,6 +76,22 @@ func TestDecodeChangeMetaFailsClosedForUnprovenStructure(t *testing.T) {
 		{name: "non-document metadata", body: bson.D{
 			{Key: "chatId", Value: int64(42)},
 			{Key: "meta", Value: "opaque"},
+		}},
+		{name: "wrong revision width", body: bson.D{
+			{Key: "chatId", Value: int64(42)},
+			{Key: "meta", Value: bson.D{{Key: "type", Value: int32(14)}, {Key: "revision", Value: int32(9)}}},
+		}},
+		{name: "wrong author width", body: bson.D{
+			{Key: "chatId", Value: int64(42)},
+			{Key: "meta", Value: bson.D{{Key: "type", Value: int32(14)}, {Key: "authorId", Value: "77"}}},
+		}},
+		{name: "wrong updated-at width", body: bson.D{
+			{Key: "chatId", Value: int64(42)},
+			{Key: "meta", Value: bson.D{{Key: "type", Value: int32(14)}, {Key: "updatedAt", Value: true}}},
+		}},
+		{name: "wrong content type", body: bson.D{
+			{Key: "chatId", Value: int64(42)},
+			{Key: "meta", Value: bson.D{{Key: "type", Value: int32(14)}, {Key: "content", Value: int32(1)}}},
 		}},
 	}
 	for _, test := range cases {
