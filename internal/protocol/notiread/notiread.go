@@ -26,9 +26,9 @@ type Request struct {
 }
 
 func (r Request) Validate() error {
-	if r.ChatID <= 0 || r.LinkID < 0 || r.Watermark <= 0 || r.ServiceID < 0 {
-		return ErrInvalidRequest
-	}
+	// The reviewed contract establishes wire types, not value domains. Keep
+	// this method for the transport-independent request boundary without
+	// inventing restrictions that the evidence does not establish.
 	return nil
 }
 

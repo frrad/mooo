@@ -59,6 +59,34 @@ func TestRequestWireShape(t *testing.T) {
 	}
 }
 
+func TestRequestPreservesIntegerEdges(t *testing.T) {
+	const (
+		minInt64 = -1 << 63
+		maxInt64 = 1<<63 - 1
+		minInt32 = -1 << 31
+	)
+	body, err := (Request{
+		ChatID: minInt64, LinkID: maxInt64, Watermark: minInt64,
+		NotiRead: false, ServiceID: minInt32,
+	}).MarshalBSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := bson.Raw(body)
+	if got := raw.Lookup("chatId"); got.Type != bson.TypeInt64 || got.Int64() != minInt64 {
+		t.Fatalf("chatId = %v/%d, want int64 %d", got.Type, got.Int64(), minInt64)
+	}
+	if got := raw.Lookup("li"); got.Type != bson.TypeInt64 || got.Int64() != maxInt64 {
+		t.Fatalf("li = %v/%d, want int64 %d", got.Type, got.Int64(), maxInt64)
+	}
+	if got := raw.Lookup("watermark"); got.Type != bson.TypeInt64 || got.Int64() != minInt64 {
+		t.Fatalf("watermark = %v/%d, want int64 %d", got.Type, got.Int64(), minInt64)
+	}
+	if got := raw.Lookup("serviceId"); got.Type != bson.TypeInt32 || got.Int32() != minInt32 {
+		t.Fatalf("serviceId = %v/%d, want int32 %d", got.Type, got.Int32(), minInt32)
+	}
+}
+
 func TestSendDoesNotRetryAmbiguousFailureOrReportReadSuccess(t *testing.T) {
 	transport := &failingTransport{err: errors.New("synthetic disconnect")}
 	request := Request{ChatID: 42, LinkID: 7, Watermark: 99, NotiRead: true, ServiceID: 3}
