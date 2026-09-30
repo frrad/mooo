@@ -174,3 +174,39 @@ func TestClientMarkReadDisconnectDoesNotPersistOrRetry(t *testing.T) {
 	}
 	backend.wait(t)
 }
+
+func TestClientSyncMessagesRecordsObservedServerReadSideEffect(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", nil, statusDocument(
+		bson.E{Key: "chatLogs", Value: bson.A{}},
+	)))
+	api := testContinuityClient(t, checkpoint, backend)
+	_, err := api.SyncMessages(context.Background(), syncmsg.Request{
+		ChatID: 42, Cur: 98, Max: 99, Count: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := checkpoint.ReadWatermark(42); got != 99 {
+		t.Fatalf("SYNCMSG read watermark = %d, want 99", got)
+	}
+	backend.wait(t)
+}
+
+func TestClientSyncMessagesFailureDoesNotRecordReadSideEffect(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", nil,
+		bson.D{{Key: "status", Value: int32(-321)}},
+	))
+	api := testContinuityClient(t, checkpoint, backend)
+	_, err := api.SyncMessages(context.Background(), syncmsg.Request{
+		ChatID: 42, Cur: 98, Max: 99, Count: 1,
+	})
+	if err == nil {
+		t.Fatal("SYNCMSG unexpectedly succeeded")
+	}
+	if got := checkpoint.ReadWatermark(42); got != 0 {
+		t.Fatalf("failed SYNCMSG read watermark = %d, want zero", got)
+	}
+	backend.wait(t)
+}

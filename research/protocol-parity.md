@@ -178,14 +178,15 @@ least one official branch or storage effect remains unresolved.
 | Photo transfer | Baseline mapped | Multi-stage flow mapped | Resume state partial | Ambiguous stage failures covered | Strong baseline | Partial |
 | Replies and reactions | Implemented subset mapped | Primary paths mapped | Revision/storage behavior partial | Some aggregate/detail paths mapped | Implemented subset covered | Partial |
 | Membership and chat changes | Inventory only | Missing | Missing | Missing | Minimal | Missing |
-| Read receipts, typing, deletion | DECUNREAD, NOTIREAD, and SYNCMSG read-side effect path mapped | Mac markAsRead/read-all routes through SYNCMSG; CHATOFF is local teardown; no distinct wire requests found | Official DECUNREAD mutations traced; client exposes typed event only; no separate explicit mark-read write identified | SYNCMSG is not semantically read-only; live NOTIREAD/read-side-effect mechanism and failure behavior remain unresolved | DECUNREAD parser coverage; bounded A/B observation; synthetic side-effect coverage pending | Partial |
+| Read receipts, typing, deletion | DECUNREAD, NOTIREAD, and SYNCMSG read-side effect path mapped | Mac markAsRead/read-all routes through SYNCMSG; CHATOFF is local teardown; no distinct wire requests found | Official DECUNREAD mutations traced; client persists successful SYNCMSG read watermarks separately from message commits | SYNCMSG is not semantically read-only; live NOTIREAD/read-side-effect mechanism and failure behavior remain unresolved | DECUNREAD parser coverage; bounded A/B observation; synthetic SYNCMSG success/failure and persistence coverage | Partial |
 | CHANGESVR/KICKOUT/reconnect | Commands and some reasons mapped | Reducer exists | Reset/invalidation partial | Automatic lifecycle not wired | Reducer coverage | Partial |
 
 ## Immediate work queue
 
 1. Complete the read-state dossier: trace the status, acknowledgement, and
-   failure behavior around `SYNCMSG`, `DECUNREAD`, and `NOTIREAD`; add synthetic
-   coverage for its read side effects before exposing mark-read/read-all APIs.
+   failure behavior around `SYNCMSG`, `DECUNREAD`, and `NOTIREAD`; extend the
+   existing synthetic SYNCMSG read-side-effect coverage as new official
+   behavior is established before exposing broader read-state APIs.
 2. Live-confirm remaining continuity server behavior: cursor inclusivity,
    retention/error boundaries, and `INFOLINK` optional/empty encodings.
 3. Trace membership/chat-change response handlers and persistence before adding

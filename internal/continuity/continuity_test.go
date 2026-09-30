@@ -67,7 +67,7 @@ func TestStorePersistsSortedResumeBoundary(t *testing.T) {
 
 func TestStoreRejectsUnknownVersionAndUnsafeMode(t *testing.T) {
 	path := testPath(t)
-	if err := os.WriteFile(path, []byte(`{"version":4,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[]}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"version":5,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Open(path); !errors.Is(err, ErrVersionMismatch) {
@@ -101,8 +101,123 @@ func TestOpenMigratesVersionTwoCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(contents) == "" || !strings.Contains(string(contents), `"version":3`) || !strings.Contains(string(contents), `"history_gaps":[]`) {
+	if string(contents) == "" || !strings.Contains(string(contents), `"version":4`) || !strings.Contains(string(contents), `"history_gaps":[]`) || !strings.Contains(string(contents), `"read_watermarks":[]`) {
 		t.Fatalf("migration was not persisted: %s", contents)
+	}
+}
+
+func TestOpenMigratesVersionThreeCheckpoint(t *testing.T) {
+	path := testPath(t)
+	if err := os.WriteFile(path, []byte(`{"version":3,"clean_shutdown":false,"last_token_id":9,"lbk":3,"chats":[{"chat_id":42,"max_log_id":100}],"known_chats":[{"chat_id":42,"max_log_id":105}],"history_gaps":[{"chat_id":42,"from_log_id":106,"to_log_id":110}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := store.Snapshot()
+	if got.Version != Version || len(got.HistoryGaps) != 1 || got.ReadWatermarks == nil || len(got.ReadWatermarks) != 0 {
+		t.Fatalf("migrated checkpoint = %#v", got)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), `"version":4`) || !strings.Contains(string(contents), `"read_watermarks":[]`) {
+		t.Fatalf("v3 migration was not persisted: %s", contents)
+	}
+}
+
+func TestReadWatermarksPersistSortedAndMonotonic(t *testing.T) {
+	path := testPath(t)
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if advanced, err := store.CommitReadWatermark(9, 100); err != nil || !advanced {
+		t.Fatalf("first watermark = (%t, %v)", advanced, err)
+	}
+	if advanced, err := store.CommitReadWatermark(3, 80); err != nil || !advanced {
+		t.Fatalf("second watermark = (%t, %v)", advanced, err)
+	}
+	if advanced, err := store.CommitReadWatermark(9, 99); err != nil || advanced {
+		t.Fatalf("stale watermark = (%t, %v)", advanced, err)
+	}
+	if got := store.ReadWatermark(9); got != 100 {
+		t.Fatalf("watermark = %d, want 100", got)
+	}
+	if got := store.ReadWatermark(3); got != 80 {
+		t.Fatalf("watermark = %d, want 80", got)
+	}
+	if got := store.ReadWatermark(7); got != 0 {
+		t.Fatalf("missing watermark = %d, want 0", got)
+	}
+
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := reopened.Snapshot()
+	want := []ReadWatermark{{ChatID: 3, Watermark: 80}, {ChatID: 9, Watermark: 100}}
+	if !slices.Equal(snapshot.ReadWatermarks, want) {
+		t.Fatalf("read watermarks = %#v, want %#v", snapshot.ReadWatermarks, want)
+	}
+	if got := reopened.ReadWatermark(9); got != 100 {
+		t.Fatalf("reopened watermark = %d, want 100", got)
+	}
+}
+
+func TestReadWatermarkRejectsInvalidInputs(t *testing.T) {
+	store, err := Open(testPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, values := range [][2]int64{{0, 1}, {-1, 1}, {1, 0}, {1, -1}} {
+		if advanced, err := store.CommitReadWatermark(values[0], values[1]); !errors.Is(err, ErrInvalidCursor) || advanced {
+			t.Fatalf("invalid watermark %v = (%t, %v)", values, advanced, err)
+		}
+	}
+	if got := store.ReadWatermark(0); got != 0 {
+		t.Fatalf("invalid read watermark = %d", got)
+	}
+
+	path := testPath(t)
+	for _, contents := range []string{
+		`{"version":4,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[{"chat_id":0,"watermark":1}]}`,
+		`{"version":4,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[{"chat_id":2,"watermark":0}]}`,
+		`{"version":4,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[{"chat_id":3,"watermark":2},{"chat_id":3,"watermark":4}]}`,
+	} {
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Open(path); !errors.Is(err, ErrCorrupt) {
+			t.Fatalf("invalid persisted watermark error = %v", err)
+		}
+	}
+}
+
+func TestReadWatermarkDeletedWithChat(t *testing.T) {
+	store, err := Open(testPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CommitMessage(42, 100); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CommitReadWatermark(42, 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordGap(42, 101, 105); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InstallSession(nil, nil, nil, []int64{42}, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.ReadWatermark(42); got != 0 {
+		t.Fatalf("deleted chat watermark = %d, want 0", got)
+	}
+	if snapshot := store.Snapshot(); len(snapshot.Chats) != 0 || len(snapshot.HistoryGaps) != 0 || len(snapshot.ReadWatermarks) != 0 {
+		t.Fatalf("deleted chat state = %#v", snapshot)
 	}
 }
 

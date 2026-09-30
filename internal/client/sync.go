@@ -16,8 +16,10 @@ var ErrGapUnresolved = errors.New("client: message gap unresolved")
 
 const maxCatchUpPages = 100
 
-// SyncMessages performs one reviewed, read-only SYNCMSG page request. It does
-// not advance the durable checkpoint; only CommitEvent may do that.
+// SyncMessages performs one reviewed SYNCMSG page request. Kakao may also
+// advance the account's server-visible read watermark through max, so callers
+// must treat this as a read-state mutation even though it does not advance the
+// local application commit checkpoint.
 func (s *Session) SyncMessages(ctx context.Context, request syncmsg.Request) (syncmsg.Response, error) {
 	if s == nil || ctx == nil {
 		return syncmsg.Response{}, ErrProtocol
@@ -39,11 +41,28 @@ func (s *Session) SyncMessages(ctx context.Context, request syncmsg.Request) (sy
 
 // SyncMessages performs one page through the client's existing session.
 func (c *Client) SyncMessages(ctx context.Context, request syncmsg.Request) (syncmsg.Response, error) {
+	if c == nil || ctx == nil {
+		return syncmsg.Response{}, ErrProtocol
+	}
+	c.readMu.Lock()
+	defer c.readMu.Unlock()
 	session, err := c.ensureSession(ctx)
 	if err != nil {
 		return syncmsg.Response{}, err
 	}
-	return session.SyncMessages(ctx, request)
+	response, err := session.SyncMessages(ctx, request)
+	if err != nil {
+		return syncmsg.Response{}, err
+	}
+	c.mu.Lock()
+	checkpoint := c.checkpoint
+	c.mu.Unlock()
+	if checkpoint != nil {
+		if _, err := checkpoint.CommitReadWatermark(request.ChatID, request.Max); err != nil {
+			return syncmsg.Response{}, err
+		}
+	}
+	return response, nil
 }
 
 // InitialSyncTargets returns each synchronized chat's current last-log ceiling.
@@ -88,8 +107,10 @@ func (c *Client) InitialSyncTargets(ctx context.Context) ([]syncmsg.Target, erro
 
 // CatchUp retrieves the missing interval after this profile's committed chat
 // maximum through targetMax. The result remains uncommitted so a crash before
-// the application persists it causes replay rather than loss. An empty or
-// non-progressing server page before targetMax is an explicit gap failure.
+// the application persists it causes replay rather than loss. SYNCMSG may make
+// that interval appear read to other participants; Kakao's current Mac client
+// uses the same operation for explicit read-all. An empty or non-progressing
+// server page before targetMax is an explicit gap failure.
 func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error) {
 	if c == nil || ctx == nil || chatID <= 0 || targetMax <= 0 {
 		return nil, ErrProtocol

@@ -13,9 +13,12 @@ import (
 	"sync"
 )
 
-const Version uint32 = 3
+const Version uint32 = 4
 
-const previousVersion uint32 = 2
+const (
+	previousVersion uint32 = 3
+	oldestVersion   uint32 = 2
+)
 
 var (
 	ErrInvalidPath       = errors.New("continuity: invalid path")
@@ -50,17 +53,26 @@ type HistoryGap struct {
 	ToLogID   int64 `json:"to_log_id"`
 }
 
+// ReadWatermark is the highest server read position durably observed for one
+// chat. It is independent from ChatCursor: receiving/processing a message is
+// not the same operation as acknowledging that it was read.
+type ReadWatermark struct {
+	ChatID    int64 `json:"chat_id"`
+	Watermark int64 `json:"watermark"`
+}
+
 // Checkpoint is deliberately separate from authentication state. Advancing it
 // means the application has durably handled the corresponding messages, not
 // merely that the network reader observed them.
 type Checkpoint struct {
-	Version       uint32       `json:"version"`
-	CleanShutdown bool         `json:"clean_shutdown"`
-	LastTokenID   int64        `json:"last_token_id"`
-	LBK           int32        `json:"lbk"`
-	Chats         []ChatCursor `json:"chats"`
-	KnownChats    []ChatTarget `json:"known_chats"`
-	HistoryGaps   []HistoryGap `json:"history_gaps"`
+	Version        uint32          `json:"version"`
+	CleanShutdown  bool            `json:"clean_shutdown"`
+	LastTokenID    int64           `json:"last_token_id"`
+	LBK            int32           `json:"lbk"`
+	Chats          []ChatCursor    `json:"chats"`
+	KnownChats     []ChatTarget    `json:"known_chats"`
+	HistoryGaps    []HistoryGap    `json:"history_gaps"`
+	ReadWatermarks []ReadWatermark `json:"read_watermarks"`
 }
 
 func (c Checkpoint) Clone() Checkpoint {
@@ -73,6 +85,9 @@ func (c Checkpoint) Clone() Checkpoint {
 	gaps := make([]HistoryGap, len(c.HistoryGaps))
 	copy(gaps, c.HistoryGaps)
 	c.HistoryGaps = gaps
+	watermarks := make([]ReadWatermark, len(c.ReadWatermarks))
+	copy(watermarks, c.ReadWatermarks)
+	c.ReadWatermarks = watermarks
 	return c
 }
 
@@ -112,7 +127,7 @@ func Open(path string) (*Store, error) {
 	}
 	data, migrated, err := read(path)
 	if errors.Is(err, os.ErrNotExist) {
-		data = Checkpoint{Version: Version, CleanShutdown: true, Chats: []ChatCursor{}, KnownChats: []ChatTarget{}, HistoryGaps: []HistoryGap{}}
+		data = Checkpoint{Version: Version, CleanShutdown: true, Chats: []ChatCursor{}, KnownChats: []ChatTarget{}, HistoryGaps: []HistoryGap{}, ReadWatermarks: []ReadWatermark{}}
 		if err := writeInitial(path, data); err != nil {
 			return nil, err
 		}
@@ -162,6 +177,7 @@ func (s *Store) InstallSession(lastTokenID *int64, lbk *int32, observed []ChatTa
 			removeTarget(&next.KnownChats, chatID)
 			removeCursor(&next.Chats, chatID)
 			removeGap(&next.HistoryGaps, chatID)
+			removeReadWatermark(&next.ReadWatermarks, chatID)
 		}
 		for _, target := range observed {
 			if target.ChatID <= 0 || target.MaxLogID < 0 {
@@ -250,6 +266,47 @@ func (s *Store) CommitMessage(chatID, logID int64) (bool, error) {
 	return advanced, err
 }
 
+// ReadWatermark returns the durable server read position for one chat. A
+// missing or invalid chat ID has no recorded watermark and returns zero.
+func (s *Store) ReadWatermark(chatID int64) int64 {
+	if s == nil || chatID <= 0 {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index := sort.Search(len(s.data.ReadWatermarks), func(i int) bool { return s.data.ReadWatermarks[i].ChatID >= chatID })
+	if index >= len(s.data.ReadWatermarks) || s.data.ReadWatermarks[index].ChatID != chatID {
+		return 0
+	}
+	return s.data.ReadWatermarks[index].Watermark
+}
+
+// CommitReadWatermark advances one chat's durable server read position.
+// Recommitting an older/equal watermark is an idempotent no-op.
+func (s *Store) CommitReadWatermark(chatID, watermark int64) (bool, error) {
+	if chatID <= 0 || watermark <= 0 {
+		return false, ErrInvalidCursor
+	}
+	advanced := false
+	err := s.update(func(next *Checkpoint) error {
+		index := sort.Search(len(next.ReadWatermarks), func(i int) bool { return next.ReadWatermarks[i].ChatID >= chatID })
+		if index < len(next.ReadWatermarks) && next.ReadWatermarks[index].ChatID == chatID {
+			if watermark <= next.ReadWatermarks[index].Watermark {
+				return nil
+			}
+			next.ReadWatermarks[index].Watermark = watermark
+			advanced = true
+			return nil
+		}
+		next.ReadWatermarks = append(next.ReadWatermarks, ReadWatermark{})
+		copy(next.ReadWatermarks[index+1:], next.ReadWatermarks[index:])
+		next.ReadWatermarks[index] = ReadWatermark{ChatID: chatID, Watermark: watermark}
+		advanced = true
+		return nil
+	})
+	return advanced, err
+}
+
 // IsCommitted reports whether a message lies at or below the durable resume
 // boundary for its chat.
 func (s *Store) IsCommitted(chatID, logID int64) bool {
@@ -293,7 +350,7 @@ func validate(data Checkpoint) error {
 	if data.Version != Version {
 		return ErrVersionMismatch
 	}
-	if data.LastTokenID < 0 || data.LBK < 0 || data.Chats == nil || data.KnownChats == nil || data.HistoryGaps == nil {
+	if data.LastTokenID < 0 || data.LBK < 0 || data.Chats == nil || data.KnownChats == nil || data.HistoryGaps == nil || data.ReadWatermarks == nil {
 		return ErrCorrupt
 	}
 	var previous int64
@@ -316,6 +373,13 @@ func validate(data Checkpoint) error {
 			return ErrCorrupt
 		}
 		previous = gap.ChatID
+	}
+	previous = 0
+	for i, watermark := range data.ReadWatermarks {
+		if watermark.ChatID <= 0 || watermark.Watermark <= 0 || (i > 0 && watermark.ChatID <= previous) {
+			return ErrCorrupt
+		}
+		previous = watermark.ChatID
 	}
 	return nil
 }
@@ -363,6 +427,13 @@ func removeGap(gaps *[]HistoryGap, chatID int64) {
 	}
 }
 
+func removeReadWatermark(watermarks *[]ReadWatermark, chatID int64) {
+	index := sort.Search(len(*watermarks), func(i int) bool { return (*watermarks)[i].ChatID >= chatID })
+	if index < len(*watermarks) && (*watermarks)[index].ChatID == chatID {
+		*watermarks = append((*watermarks)[:index], (*watermarks)[index+1:]...)
+	}
+}
+
 func read(path string) (Checkpoint, bool, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -387,12 +458,15 @@ func read(path string) (Checkpoint, bool, error) {
 		return Checkpoint{}, false, ErrCorrupt
 	}
 	migrated := false
-	if data.Version == previousVersion {
+	if data.Version == oldestVersion || data.Version == previousVersion {
 		if data.LastTokenID < 0 || data.LBK < 0 || data.Chats == nil || data.KnownChats == nil {
 			return Checkpoint{}, false, ErrCorrupt
 		}
+		if data.Version == oldestVersion {
+			data.HistoryGaps = []HistoryGap{}
+		}
+		data.ReadWatermarks = []ReadWatermark{}
 		data.Version = Version
-		data.HistoryGaps = []HistoryGap{}
 		migrated = true
 	}
 	if err := validate(data); err != nil {
