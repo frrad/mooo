@@ -31,6 +31,7 @@ const (
 	KindMemberAdded        Kind = "member_added"
 	KindChatLeft           Kind = "chat_left"
 	KindChatStatusChanged  Kind = "chat_status_changed"
+	KindChatMetaChanged    Kind = "chat_meta_changed"
 	KindUnsupportedLogMeta Kind = "unsupported_log_meta"
 	KindUnknownPacket      Kind = "unknown_packet"
 )
@@ -270,6 +271,20 @@ type ChatStatusChanged struct {
 func (ChatStatusChanged) Kind() Kind { return KindChatStatusChanged }
 func (ChatStatusChanged) isEvent()   {}
 
+// ChatMetaChanged carries the proven CHGMETA fields without interpreting the
+// numeric subtype or applying metadata persistence/lifecycle effects.
+type ChatMetaChanged struct {
+	ChatID    int64
+	Type      int32
+	Revision  int64
+	AuthorID  int64
+	Content   string
+	UpdatedAt int64
+}
+
+func (ChatMetaChanged) Kind() Kind { return KindChatMetaChanged }
+func (ChatMetaChanged) isEvent()   {}
+
 // Decode turns one unsolicited packet into a typed event. Unknown packet
 // methods and unsupported message types remain observable without exposing raw
 // account data. Malformed known packets return ErrMalformedEvent.
@@ -291,6 +306,8 @@ func Decode(packet loco.Packet) (Event, error) {
 		return decodeMemberAdded(packet.Body)
 	case "CHGCHATST":
 		return decodeChatStatusChanged(packet.Body)
+	case "CHGMETA":
+		return decodeChatMetaChanged(packet.Body)
 	case "LEFT":
 		return decodeChatLeft(packet.Body)
 	default:
@@ -431,6 +448,42 @@ func decodeChatStatusChanged(body []byte) (Event, error) {
 	}
 	statusCopy := append(bson.Raw(nil), statusValue.Document()...)
 	return ChatStatusChanged{ChatID: chatID, PlusUserID: plusUserID, Revision: revision, Status: statusCopy}, nil
+}
+
+func decodeChatMetaChanged(body []byte) (Event, error) {
+	raw := bson.Raw(body)
+	if err := raw.Validate(); err != nil {
+		return nil, ErrMalformedEvent
+	}
+	chatID, err := exactInt64(raw, "chatId")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	metaValue, err := raw.LookupErr("meta")
+	if err != nil || metaValue.Type != bson.TypeEmbeddedDocument {
+		return nil, ErrMalformedEvent
+	}
+	meta := metaValue.Document()
+	typeValue, err := meta.LookupErr("type")
+	if err != nil || typeValue.Type != bson.TypeInt32 {
+		return nil, ErrMalformedEvent
+	}
+	result := ChatMetaChanged{ChatID: chatID, Type: typeValue.Int32()}
+	if result.Revision, err = optionalExactInt64(meta, "revision"); err != nil {
+		return nil, ErrMalformedEvent
+	}
+	if result.AuthorID, err = optionalExactInt64(meta, "authorId"); err != nil {
+		return nil, ErrMalformedEvent
+	}
+	if result.UpdatedAt, err = optionalExactInt64(meta, "updatedAt"); err != nil {
+		return nil, ErrMalformedEvent
+	}
+	if content, present, err := optionalString(meta, "content"); err != nil {
+		return nil, ErrMalformedEvent
+	} else if present {
+		result.Content = content
+	}
+	return result, nil
 }
 
 func decodeChatLeft(body []byte) (Event, error) {
@@ -629,6 +682,28 @@ func exactInt64(raw bson.Raw, key string) (int64, error) {
 		return 0, ErrMalformedEvent
 	}
 	return value.Int64(), nil
+}
+
+func optionalExactInt64(raw bson.Raw, key string) (int64, error) {
+	value, err := raw.LookupErr(key)
+	if err != nil {
+		return 0, nil
+	}
+	if value.Type != bson.TypeInt64 {
+		return 0, ErrMalformedEvent
+	}
+	return value.Int64(), nil
+}
+
+func optionalString(raw bson.Raw, key string) (string, bool, error) {
+	value, err := raw.LookupErr(key)
+	if err != nil {
+		return "", false, nil
+	}
+	if value.Type != bson.TypeString {
+		return "", true, ErrMalformedEvent
+	}
+	return value.StringValue(), true, nil
 }
 
 func optionalInt64(raw bson.Raw, key string) int64 {
