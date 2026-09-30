@@ -144,9 +144,22 @@ accepted `MSG` callback and an existing room lookup, the official client sends
 `NOTIREAD` with int64 chat ID, link ID, and message-log watermark, plus the
 room's boolean notification-read value and the message service ID. The clean-room
 client does not yet emit it: acknowledgement semantics, failure behavior, and
-the explicit `CHATONROOM` mark-read lifecycle remain under review. This preserves
-the existing rule that receiving or bridging a message alone must not mark it
-read.
+the explicit `CHATONROOM` mark-read lifecycle remain under review. Static tracing
+of the Mac client's explicit `markAsRead` and read-all entry points routes those
+operations through `SYNCMSG`; no separate mark-read LOCO request was found.
+`CHATOFF` in this path is local room teardown, and no distinct `CHATOFF` wire
+request was found. These names therefore must not be exposed as independent
+server operations without further evidence.
+
+A bounded owned A/B experiment on 2026-09-30 found that LOGINLIST alone left the
+sender's unread marker in place, while a status-zero `SYNCMSG` crossing the
+one-message boundary removed it. Receiving a live `MSG` while connected also
+appeared to clear the sender's unread marker even though the clean-room client
+did not emit `NOTIREAD`; the mechanism and official-client path remain
+unresolved. `SYNCMSG` is consequently not semantically read-only: catch-up can
+have read side effects. Until the acknowledgement and failure contract is
+traced, the clean-room client must keep inbound delivery, application commit,
+and explicit read state distinct rather than inferring read state from receipt.
 
 ## Current parity matrix
 
@@ -159,21 +172,22 @@ least one official branch or storage effect remains unresolved.
 | QR secondary-device registration | Substantial | Partial | Partial | Partial | Substantial | Partial |
 | Booking/check-in/secure carriage | Substantial | Partial | Endpoint cache partial | Partial | Substantial | Partial |
 | LOGINLIST/LCHATLIST | Substantial | Pagination, partial success, and OpenChat metadata follow-up traced | Delta/global cursor split implemented; OpenChat link store not implemented | Detailed official room DB/UI model partial | Strong synthetic coverage | Partial |
-| Inbound message events | Common text/reply/photo/read-state mapped | Basic dispatch mapped | Explicit durable message commit implemented | Automatic NOTIREAD and explicit mark-read behavior open | Strong for implemented types | Partial |
+| Inbound message events | Common text/reply/photo/read-state mapped | Basic dispatch mapped | Explicit durable message commit implemented; SYNCMSG may also affect read state | Live MSG appeared to clear sender unread without an observed NOTIREAD; mechanism unresolved | Strong for implemented types | Partial |
 | SYNCMSG continuity | Core schema mapped | Recovery, marker, restore-only boundary repair, and post-sync callback traced | Durable gap lifecycle implemented; principal marker and local-thread transitions mapped | Retention/error boundaries and UI presentation open | Paging, persistence, migration, deletion, no-progress, and live regressions covered | Partial |
 | Text send | Baseline mapped | No-retry behavior mapped | Message-ID lifecycle partial | Ambiguous delivery modeled | Strong baseline | Partial |
 | Photo transfer | Baseline mapped | Multi-stage flow mapped | Resume state partial | Ambiguous stage failures covered | Strong baseline | Partial |
 | Replies and reactions | Implemented subset mapped | Primary paths mapped | Revision/storage behavior partial | Some aggregate/detail paths mapped | Implemented subset covered | Partial |
 | Membership and chat changes | Inventory only | Missing | Missing | Missing | Minimal | Missing |
-| Read receipts, typing, deletion | DECUNREAD and NOTIREAD core models mapped | Inbound watermark path traced; mark-read open | Official DECUNREAD mutations traced; client exposes typed event only | Typing/deletion and explicit read lifecycle open | DECUNREAD parser coverage | Partial |
+| Read receipts, typing, deletion | DECUNREAD, NOTIREAD, and SYNCMSG read-side effect path mapped | Mac markAsRead/read-all routes through SYNCMSG; CHATOFF is local teardown; no distinct wire requests found | Official DECUNREAD mutations traced; client exposes typed event only; no separate explicit mark-read write identified | SYNCMSG is not semantically read-only; live NOTIREAD/read-side-effect mechanism and failure behavior remain unresolved | DECUNREAD parser coverage; bounded A/B observation; synthetic side-effect coverage pending | Partial |
 | CHANGESVR/KICKOUT/reconnect | Commands and some reasons mapped | Reducer exists | Reset/invalidation partial | Automatic lifecycle not wired | Reducer coverage | Partial |
 
 ## Immediate work queue
 
-1. Live-confirm remaining continuity server behavior: cursor inclusivity,
+1. Complete the read-state dossier: trace the status, acknowledgement, and
+   failure behavior around `SYNCMSG`, `DECUNREAD`, and `NOTIREAD`; add synthetic
+   coverage for its read side effects before exposing mark-read/read-all APIs.
+2. Live-confirm remaining continuity server behavior: cursor inclusivity,
    retention/error boundaries, and `INFOLINK` optional/empty encodings.
-2. Trace inbound acknowledgement/read-state behavior from packet handler through
-   database mutation and outgoing commands.
 3. Trace membership/chat-change response handlers and persistence before adding
    more feature APIs.
 4. Revisit text and photo sending for official message-ID persistence,
