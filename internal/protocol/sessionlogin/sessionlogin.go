@@ -306,6 +306,9 @@ func ReduceRecovery(s RecoveryState, event RecoveryEvent) (RecoveryState, []Reco
 		if err := recoveryGeneration(s, e.Generation); err != nil {
 			return s, nil, err
 		}
+		if !s.Authenticated {
+			return s, nil, nil
+		}
 		if s.Phase == RecoveryTerminal {
 			return s, nil, ErrRecoveryTransition
 		}
