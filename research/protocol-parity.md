@@ -57,6 +57,15 @@ implementations, direct callers, resolved invoked selectors, direct callees,
 referenced strings, and decompilation into the external lab directory. Reports
 are version-specific evidence, not files to copy into the implementation.
 
+The manager-owned `CHANGESVR`/`KICKOUT` lifecycle is now traced beyond generic
+carriage teardown. `CHANGESVR` delegates to route clearing, ticket-address
+cursor advancement, and ordinary logout. `KICKOUT` carries an integer reason
+through user-info and reaches logout-with-reset only when the manager is logged
+in and not already logging out; reasons 1 and 10 request database reset. The
+clean-room event stream still exposes these push methods as unknown packets,
+and the pure reducer now guards unauthenticated KICKOUT. See
+[`research/manager-terminal-lifecycle.md`](manager-terminal-lifecycle.md).
+
 The shared carriage callback lifecycle is now traced separately from command
 semantics. Request completions are registered in memory under packet
 correlation identities, removed on matching response, and fanned out with an
@@ -198,7 +207,7 @@ least one official branch or storage effect remains unresolved.
 | Replies and reactions | Implemented subset mapped | Primary paths mapped | Revision/storage behavior partial | Some aggregate/detail paths mapped | Implemented subset covered | Partial |
 | Membership and chat changes | Inventory only | Missing | Missing | Missing | Minimal | Missing |
 | Read receipts, typing, deletion | DECUNREAD, NOTIREAD, and SYNCMSG read-side effect path mapped | Mac markAsRead/read-all routes through SYNCMSG; CHATOFF is local teardown; no distinct wire requests found | Official DECUNREAD mutations traced; client persists successful SYNCMSG read watermarks separately from message commits | SYNCMSG is not semantically read-only; live NOTIREAD/read-side-effect mechanism and failure behavior remain unresolved | DECUNREAD parser coverage; bounded A/B observation; synthetic SYNCMSG success/failure and persistence coverage | Partial |
-| CHANGESVR/KICKOUT/reconnect | Commands and some reasons mapped | Manager delegation, pending-failure fan-out, and packet-ID lifecycle traced | Route clearing/reset ownership mapped; full durable recovery partial | Reconnect remains an explicit manager decision | Reducer plus lifecycle characterization, collision skipping, and packet-ID wrap coverage | Partial |
+| CHANGESVR/KICKOUT/reconnect | Commands and some reasons mapped | Manager delegation, pending-failure fan-out, and packet-ID lifecycle traced | Route clearing/reset ownership mapped; full durable recovery partial | Reconnect remains an explicit manager decision | Reducer plus lifecycle characterization, collision skipping, packet-ID wrap, and unauthenticated-KICKOUT coverage | Partial |
 
 ## Immediate work queue
 
