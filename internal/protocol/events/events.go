@@ -29,6 +29,7 @@ const (
 	KindKickout            Kind = "kickout"
 	KindMemberRemoved      Kind = "member_removed"
 	KindMemberAdded        Kind = "member_added"
+	KindChatLeft           Kind = "chat_left"
 	KindUnsupportedLogMeta Kind = "unsupported_log_meta"
 	KindUnknownPacket      Kind = "unknown_packet"
 )
@@ -245,6 +246,16 @@ type MemberAdded struct {
 func (MemberAdded) Kind() Kind { return KindMemberAdded }
 func (MemberAdded) isEvent()   {}
 
+// ChatLeft carries the chat and cursor identity from a LEFT notice. Room
+// deletion and cursor persistence remain manager-owned effects.
+type ChatLeft struct {
+	ChatID      int64
+	LastTokenID int64
+}
+
+func (ChatLeft) Kind() Kind { return KindChatLeft }
+func (ChatLeft) isEvent()   {}
+
 // Decode turns one unsolicited packet into a typed event. Unknown packet
 // methods and unsupported message types remain observable without exposing raw
 // account data. Malformed known packets return ErrMalformedEvent.
@@ -264,6 +275,8 @@ func Decode(packet loco.Packet) (Event, error) {
 		return decodeMemberRemoved(packet.Body)
 	case "NEWMEM":
 		return decodeMemberAdded(packet.Body)
+	case "LEFT":
+		return decodeChatLeft(packet.Body)
 	default:
 		return UnknownPacket{Method: packet.Header.Method}, nil
 	}
@@ -377,6 +390,22 @@ func decodeMemberAdded(body []byte) (Event, error) {
 		members = append(members, MemberIdentity{UserID: userID, UserType: userTypeValue.Int32()})
 	}
 	return MemberAdded{ChatID: chatID, LogID: logID, Members: members}, nil
+}
+
+func decodeChatLeft(body []byte) (Event, error) {
+	raw := bson.Raw(body)
+	if err := raw.Validate(); err != nil {
+		return nil, ErrMalformedEvent
+	}
+	chatID, err := exactInt64(raw, "chatId")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	lastTokenID, err := exactInt64(raw, "lastTokenId")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	return ChatLeft{ChatID: chatID, LastTokenID: lastTokenID}, nil
 }
 
 func decodeReadState(body []byte) (Event, error) {

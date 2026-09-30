@@ -66,11 +66,11 @@ typed decoder identity contract and no member mutation:
 - the source and semantics of the manager's link/cursor argument and its
   completion callbacks.
 
-The clean-room decoder therefore intentionally keeps `LEFT`, `CHGCHATST`,
-`CHGMETA`, and `CHGMCMETA` observable as `UnknownPacket` while the synthetic
-`NEWMEM` identity test defines the next typed-decoder handoff. `DELMEM` has a
-synthetic decoder test for the proven identity path, while the stateful
-lifecycle remains unimplemented. The decoder fails closed for missing
+The clean-room decoder therefore intentionally keeps `CHGCHATST`, `CHGMETA`,
+and `CHGMCMETA` observable as `UnknownPacket`; `DELMEM`, `NEWMEM`, and `LEFT`
+now expose only their typed identity boundaries. Each has a synthetic decoder
+test for the proven identity path, while stateful lifecycle remains
+unimplemented. The decoder fails closed for missing
 or wrong nested structure as an implementation safety rule; that behavior is
 not claimed as an observation of the official malformed-body path. This is not evidence that the
 official client ignores any of these methods.
@@ -78,6 +78,28 @@ official client ignores any of these methods.
 The NEWMEM decoder applies the same fail-closed safety rule to missing or
 wrong invitee structure; its synthetic malformed tests do not claim official
 malformed-input equivalence.
+
+## LEFT bounded identity and ownership trace
+
+The `LEFT` unsolicited model has two own fields: signed int64 `chatId` and
+signed int64 `lastTokenId`. It has no member identity or `chatLog` field, so the
+wire model describes the local client's chat departure rather than another
+member leaving. The carriage handler reads `lastTokenId`, updates the manager's
+cursor, and then delegates the notice to the manager.
+
+The manager schedules a database block that looks up the room by `chatId` and
+calls the room deletion operation. It also updates the manager cursor and
+invokes a calendar synchronization path for a leave-team-chat case. The
+observed block has no explicit completion callback or network retry. This is a
+typed decoder boundary only: room deletion, cursor mutation, and calendar
+effects remain manager-owned.
+
+The following LEFT details remain open: missing/null field behavior, database
+failure reporting, exact chat-type guard for the calendar path, and downstream
+UI/notification behavior. The synthetic decoder test therefore carries only
+the two proven int64 fields and does not assert deletion or calendar effects.
+Its malformed-input tests are fail-closed implementation safety checks, not
+claims about official malformed-input equivalence.
 
 ## Evidence trail
 

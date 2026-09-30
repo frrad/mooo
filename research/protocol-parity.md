@@ -219,6 +219,9 @@ NEWMEM now has a separate typed-decoder handoff for signed int64 chat/log IDs
 and `feed.invitees` member IDs/types. Its manager/database path is bounded, but
 optional nested-body behavior, completion failures, chat-type guards, and
 downstream consumers remain open; no member mutation is wired.
+LEFT has a separate typed-decoder handoff for signed int64 `chatId` and
+`lastTokenId`. The official manager deletes the room and updates its cursor,
+but those lifecycle and calendar effects remain outside the decoder.
 
 ## Current parity matrix
 
