@@ -228,6 +228,11 @@ The manager performs revision-gated room metadata persistence and emits a
 downstream delegate event; status labels and lifecycle effects remain outside
 the decoder.
 
+CHGMETA has a separate typed-decoder handoff for signed int64 `chatId` and
+the nested metadata's signed int32 subtype plus signed int64 revision,
+author, and update timestamp fields. Content remains opaque metadata; subtype
+labels and persistence effects are not inferred.
+
 ## Current parity matrix
 
 `Mapped` means the complete seven-layer dossier is supported by first-party

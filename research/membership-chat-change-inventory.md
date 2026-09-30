@@ -69,6 +69,22 @@ metadata under the observed status/revision keys. A downstream delegate event
 is emitted, and a separate UI/client path can request a fresh status by chat
 ID. No network retry or status-value interpretation is proven here.
 
+## CHGMETA bounded metadata trace
+
+The `CHGMETA` unsolicited model carries signed int64 `chatId` and a nested
+`meta` object. The nested model exposes signed int32 `type`, signed int64
+`revision`, signed int64 `authorId`, string `content`, and signed int64
+`updatedAt`. The numeric subtype values observed in the manager block include
+3, 14, 15, and 21; their semantic labels are intentionally not assigned here.
+
+The handler delegates the notice to the manager. The manager schedules a
+database block for the chat room. Static control flow branches on the metadata
+subtype and performs revision/content comparisons before invoking downstream
+room or calendar consumers; one helper requests a typed metadata refresh using
+the chat ID. Exact persistence keys, optional fields, subtype meanings,
+chat-type guards, and failure reporting remain open, so the decoder preserves
+the raw metadata fields without implementing those effects.
+
 ## Explicit gaps
 
 The following layers remain unproven for `DELMEM`; this slice adds only a
@@ -82,10 +98,11 @@ typed decoder identity contract and no member mutation:
 - the source and semantics of the manager's link/cursor argument and its
   completion callbacks.
 
-The clean-room decoder therefore intentionally keeps `CHGCHATST`, `CHGMETA`,
-and `CHGMCMETA` observable as `UnknownPacket`; `DELMEM`, `NEWMEM`, and `LEFT`
-now expose only their typed identity boundaries. Each has a synthetic decoder
-test for the proven identity path, while stateful lifecycle remains
+The clean-room decoder therefore intentionally keeps `CHGMETA` and
+`CHGMCMETA` observable as `UnknownPacket`; `DELMEM`, `NEWMEM`, `LEFT`, and
+`CHGCHATST` now expose typed boundaries, while the CHGMETA handoff is covered
+by a synthetic decoder test. Each typed event has a synthetic decoder test for
+the proven field path, while stateful lifecycle remains
 unimplemented. The decoder fails closed for missing
 or wrong nested structure as an implementation safety rule; that behavior is
 not claimed as an observation of the official malformed-body path. This is not evidence that the
