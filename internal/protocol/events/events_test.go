@@ -151,9 +151,9 @@ func TestDecodeReadStateChanged(t *testing.T) {
 }
 
 func TestDecodeUnknownAndMalformed(t *testing.T) {
-	event, err := Decode(packet(t, "KICKOUT", bson.D{{Key: "reason", Value: "synthetic"}}))
+	event, err := Decode(packet(t, "KICKOUTX", bson.D{{Key: "reason", Value: "synthetic"}}))
 	unknown, ok := event.(UnknownPacket)
-	if err != nil || !ok || unknown.Method != "KICKOUT" {
+	if err != nil || !ok || unknown.Method != "KICKOUTX" {
 		t.Fatalf("event=%T value=%#v err=%v", event, event, err)
 	}
 	malformed := packet(t, "MSG", bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.D{{Key: "type", Value: int32(1)}}}})

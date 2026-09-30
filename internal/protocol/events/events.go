@@ -25,6 +25,8 @@ const (
 	KindUnsupportedMessage Kind = "unsupported_message"
 	KindReactionChanged    Kind = "reaction_changed"
 	KindReadStateChanged   Kind = "read_state_changed"
+	KindChangeServer       Kind = "change_server"
+	KindKickout            Kind = "kickout"
 	KindUnsupportedLogMeta Kind = "unsupported_log_meta"
 	KindUnknownPacket      Kind = "unknown_packet"
 )
@@ -196,6 +198,23 @@ type UnknownPacket struct {
 func (UnknownPacket) Kind() Kind { return KindUnknownPacket }
 func (UnknownPacket) isEvent()   {}
 
+// ChangeServer reports a server-directed route-change notice. Its payload is
+// intentionally empty at this decoder boundary; lifecycle effects belong to
+// the owning manager.
+type ChangeServer struct{}
+
+func (ChangeServer) Kind() Kind { return KindChangeServer }
+func (ChangeServer) isEvent()   {}
+
+// Kickout reports a server-directed session termination notice. Reason is the
+// signed int32 value supplied by the server, or zero when it is absent.
+type Kickout struct {
+	Reason int32
+}
+
+func (Kickout) Kind() Kind { return KindKickout }
+func (Kickout) isEvent()   {}
+
 // Decode turns one unsolicited packet into a typed event. Unknown packet
 // methods and unsupported message types remain observable without exposing raw
 // account data. Malformed known packets return ErrMalformedEvent.
@@ -207,9 +226,36 @@ func Decode(packet loco.Packet) (Event, error) {
 		return decodeLogMeta(packet.Body)
 	case "DECUNREAD":
 		return decodeReadState(packet.Body)
+	case "CHANGESVR":
+		return decodeChangeServer(packet.Body)
+	case "KICKOUT":
+		return decodeKickout(packet.Body)
 	default:
 		return UnknownPacket{Method: packet.Header.Method}, nil
 	}
+}
+
+func decodeChangeServer(body []byte) (Event, error) {
+	if err := bson.Raw(body).Validate(); err != nil {
+		return nil, ErrMalformedEvent
+	}
+	return ChangeServer{}, nil
+}
+
+func decodeKickout(body []byte) (Event, error) {
+	raw := bson.Raw(body)
+	if err := raw.Validate(); err != nil {
+		return nil, ErrMalformedEvent
+	}
+	reason := int32(0)
+	value, err := raw.LookupErr("reason")
+	if err == nil {
+		if value.Type != bson.TypeInt32 {
+			return nil, ErrMalformedEvent
+		}
+		reason = value.Int32()
+	}
+	return Kickout{Reason: reason}, nil
 }
 
 func decodeReadState(body []byte) (Event, error) {
