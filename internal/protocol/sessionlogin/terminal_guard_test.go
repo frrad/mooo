@@ -4,7 +4,10 @@ import "testing"
 
 func TestKickoutOutsideAuthenticatedSessionHasNoLogoutEffects(t *testing.T) {
 	state := NewRecoveryState(true, false, true)
-	next, effects, _ := ReduceRecovery(state, Kickout{Generation: 1, Reason: 10})
+	next, effects, err := ReduceRecovery(state, Kickout{Generation: 1, Reason: 10})
+	if err != nil {
+		t.Fatalf("unauthenticated KICKOUT error = %v, want nil", err)
+	}
 	if next != state {
 		t.Fatalf("unauthenticated KICKOUT changed state: before=%#v after=%#v", state, next)
 	}
