@@ -35,6 +35,9 @@ scenarios cover:
 - paged `SYNCMSG` catch-up, sparse ordered log IDs, and fail-closed no-progress
   handling that durably records an unresolved interval without prematurely
   advancing the checkpoint;
+- `SYNCMSG` catch-up that crosses a recovered message boundary while keeping
+  application commit and read-state side effects distinct; this is required
+  because the official path is not semantically read-only;
 - version-2 checkpoint migration plus sorted gap persistence, conservative merge,
   prefix resolution, newer-tail preservation, and deleted-chat cleanup;
 - disconnect after `WRITE`, proving no retry or implicit reconnect; and
@@ -49,6 +52,11 @@ URL, device identifier, or message from a live profile is used as a fixture.
 - Protocol package tests pin framing, encryption, BSON/JSON widths, validation,
   hostile lengths, media checksums, URL policy, and registration state-machine
   transitions.
+- Read-state tests should separately cover typed `DECUNREAD`, the automatic
+  `NOTIREAD` shape, and `SYNCMSG`'s possible read side effect. Absence of a
+  `NOTIREAD` packet must not be treated as proof that an inbound message stayed
+  unread, and no synthetic test should model `CHATOFF` as a wire command until
+  one is found in the official path.
 - HTTP components use injected round trippers or doers to verify exact requests,
   bounded responses, cancellation, and redaction.
 - Private owned-account probes remain a manual interoperability gate for facts a

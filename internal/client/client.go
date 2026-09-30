@@ -55,6 +55,7 @@ type Client struct {
 	eventStream      chan events.Result
 	commitMu         sync.Mutex
 	pendingCommits   map[int64][]int64
+	readMu           sync.Mutex
 }
 
 // Open acquires the profile's process-wide owner lease and creates a reusable

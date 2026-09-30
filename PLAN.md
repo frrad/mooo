@@ -56,8 +56,9 @@ Execution through first text send/receive follows
       complete one bounded disposable-account login.
 - [x] Implement and validate one-shot refresh-token rotation under the profile
       lease, followed by exactly one fresh LOGINLIST attempt.
-- [ ] Specify and validate read-only inbound text delivery, acknowledgements,
-      cursors, deduplication, and reconnect behavior.
+- [ ] Specify and validate inbound text delivery, acknowledgements, cursors,
+      deduplication, reconnect behavior, and the fact that SYNCMSG catch-up may
+      have read side effects.
 - [ ] Complete the Ghidra-first parity dossiers in `research/protocol-parity.md`,
       beginning with continuity, acknowledgement/read-state, membership/chat
       changes, mutation identity, and reconnect lifecycle.
@@ -66,7 +67,12 @@ Execution through first text send/receive follows
 - [ ] Implement transport, framing, and serialization packages.
 - [ ] Implement credential/session storage interfaces with secure defaults.
 - [ ] Implement device login and reconnect state machines.
-- [ ] Add read-only synchronization, then text receive/send.
+- [ ] Add synchronization, then text receive/send, with read side effects
+      modeled explicitly.
+- [ ] Specify and validate read-state semantics: DECUNREAD and NOTIREAD,
+      explicit markAsRead/read-all routing through SYNCMSG, local CHATOFF
+      teardown, and the required separation of delivery, commit, and read
+      state.
 - [x] Introduce a long-lived client owner that lazily establishes and reuses one
       session, validates response-body login status, completes login paging, and
       never reconnects or retries mutations implicitly.
