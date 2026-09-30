@@ -762,9 +762,16 @@ func TestScriptedBackendExpiredTokenRenewsThenLogsInOnce(t *testing.T) {
 	}
 }
 
+// A missing media COMPLETE is ambiguous: the upload must fail without retrying
+// SHIP, POST, or the byte stream, and it must not tear down the main LOCO
+// session, which may still deliver the resulting chat log as a push. The main
+// backend is held open until the first attempt has been checked, then the test
+// waits for the reader to observe its disconnect before asserting ErrClosed,
+// so the result does not depend on how the reader and writer are scheduled.
 func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 	imageData := syntheticClientJPEG(t)
 	shipRequests := 0
+	releaseMain := make(chan struct{})
 	mainBackend := newScriptedBackend(t, true, func(server *wireConn) error {
 		request, err := server.read()
 		if err != nil {
@@ -774,9 +781,13 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 			return fmt.Errorf("method = %q, want SHIP", request.Header.Method)
 		}
 		shipRequests++
-		return writeBackendPacket(server, request.Header.PacketID, "SHIP", mustBSON(statusDocument(
+		if err := writeBackendPacket(server, request.Header.PacketID, "SHIP", mustBSON(statusDocument(
 			bson.E{Key: "k", Value: "synthetic-ticket"}, bson.E{Key: "vh", Value: "media.invalid"}, bson.E{Key: "p", Value: int32(995)},
-		)))
+		))); err != nil {
+			return err
+		}
+		<-releaseMain
+		return nil
 	})
 	postRequests := 0
 	mediaBackend := newScriptedBackend(t, true, func(server *wireConn) error {
@@ -812,17 +823,38 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 			return mediaBackend.client, nil
 		},
 	}
-	go session.readLoop()
+	readerDone := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		session.readLoop()
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if _, err := session.SendImage(ctx, 42, imageData); err == nil {
+	_, err := session.SendImage(ctx, 42, imageData)
+	if err == nil {
 		t.Fatal("photo without COMPLETE unexpectedly succeeded")
+	}
+	if !errors.Is(err, io.EOF) || errors.Is(err, ErrClosed) {
+		t.Fatalf("first photo error = %v, want media COMPLETE EOF", err)
+	}
+	mediaBackend.wait(t)
+	session.mu.Lock()
+	closedByUpload := session.closed
+	session.mu.Unlock()
+	if closedByUpload {
+		t.Fatal("ambiguous media COMPLETE closed the main session")
+	}
+
+	close(releaseMain)
+	mainBackend.wait(t)
+	select {
+	case <-readerDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reader did not observe main disconnect")
 	}
 	if _, err := session.SendImage(ctx, 42, imageData); !errors.Is(err, ErrClosed) {
 		t.Fatalf("second photo error = %v, want ErrClosed", err)
 	}
-	mainBackend.wait(t)
-	mediaBackend.wait(t)
 	if shipRequests != 1 || postRequests != 1 || mediaDials != 1 {
 		t.Fatalf("SHIP=%d POST=%d media dials=%d, want one each", shipRequests, postRequests, mediaDials)
 	}
