@@ -272,6 +272,42 @@ type ChatStatusChanged struct {
 func (ChatStatusChanged) Kind() Kind { return KindChatStatusChanged }
 func (ChatStatusChanged) isEvent()   {}
 
+// ChatStatusState is the pure reducer input/output for a room's status
+// metadata. Persistence, database lookup, and downstream effects remain
+// outside this package.
+type ChatStatusState struct {
+	RoomExists bool
+	Revision   int64
+	ExtraInfo  bson.D
+}
+
+type ChatStatusTransition struct {
+	State   ChatStatusState
+	Applied bool
+}
+
+// ReduceChatStatus applies a strictly newer status to an existing room. The
+// status BSON is copied, and existing cs/csr fields are replaced rather than
+// duplicated; unrelated ExtraInfo fields are preserved in order.
+func ReduceChatStatus(state ChatStatusState, change ChatStatusChanged) ChatStatusTransition {
+	if !state.RoomExists || change.Revision <= state.Revision || len(change.Status) == 0 {
+		return ChatStatusTransition{State: state}
+	}
+	status := append(bson.Raw(nil), change.Status...)
+	extra := make(bson.D, 0, len(state.ExtraInfo)+2)
+	for _, field := range state.ExtraInfo {
+		if field.Key == "cs" || field.Key == "csr" {
+			continue
+		}
+		extra = append(extra, field)
+	}
+	extra = append(extra, bson.E{Key: "cs", Value: status}, bson.E{Key: "csr", Value: change.Revision})
+	return ChatStatusTransition{
+		State:   ChatStatusState{RoomExists: state.RoomExists, Revision: change.Revision, ExtraInfo: extra},
+		Applied: true,
+	}
+}
+
 // ChatMetaChanged carries the proven CHGMETA fields without interpreting the
 // numeric subtype or applying metadata persistence/lifecycle effects.
 type ChatMetaChanged struct {
