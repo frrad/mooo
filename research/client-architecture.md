@@ -65,6 +65,13 @@ never committed. A restart necessarily opens a new network socket and performs
 one resumed login; it must not redo QR authorization or start an unbounded login
 loop.
 
+Inbound delivery has an explicit application commit boundary. The reader may
+decode and emit a message, but only the bridge's post-persistence
+`Client.CommitEvent` advances its per-chat maximum. Replayed events at or below
+that maximum and exact within-process duplicates are suppressed. When login/chat
+state supplies a greater target maximum, bounded `SYNCMSG` pages recover the
+interval; no progress produces an explicit gap error rather than cursor advance.
+
 The bridge exposes chat, send, sync, and event behavior through Matrix/Beeper.
 Separate local IPC is unnecessary unless a concrete operational need appears.
 Research or repair commands must respect the same profile lease and cannot touch

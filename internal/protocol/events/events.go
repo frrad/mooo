@@ -43,6 +43,41 @@ type Result struct {
 	Err   error
 }
 
+// MessagePosition returns the durable per-chat resume position carried by an
+// incoming MSG event. Metadata and unknown packets are not message cursors.
+func MessagePosition(event Event) (chatID, logID int64, ok bool) {
+	switch value := event.(type) {
+	case TextMessage:
+		return value.ChatID, value.LogID, true
+	case *TextMessage:
+		if value != nil {
+			return value.ChatID, value.LogID, true
+		}
+	case ReplyMessage:
+		return value.ChatID, value.LogID, true
+	case *ReplyMessage:
+		if value != nil {
+			return value.ChatID, value.LogID, true
+		}
+	case PhotoMessage:
+		return value.Message.ChatID, value.Message.LogID, true
+	case *PhotoMessage:
+		if value == nil {
+			return 0, 0, false
+		}
+		return value.Message.ChatID, value.Message.LogID, true
+	case UnsupportedMessage:
+		return value.ChatID, value.LogID, true
+	case *UnsupportedMessage:
+		if value != nil {
+			return value.ChatID, value.LogID, true
+		}
+	default:
+		return 0, 0, false
+	}
+	return 0, 0, false
+}
+
 type TextMessage struct {
 	ChatID   int64
 	LogID    int64

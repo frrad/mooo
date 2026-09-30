@@ -4,8 +4,10 @@
 secondary-device protocol and, eventually, providing a self-hosted Matrix/Beeper
 bridge.
 
-The project is intentionally starting with protocol research. It does not yet
-authenticate with KakaoTalk or bridge messages.
+The project is still pre-alpha, but its clean-room Go client now performs
+client-owned QR enrollment, persistent secondary-device authentication, direct
+text/photo messaging, replies, reactions, and durable cursor-based message
+continuity. The Matrix/Beeper bridge is not implemented yet.
 
 ## Principles
 
@@ -19,6 +21,10 @@ authenticate with KakaoTalk or bridge messages.
 ## Repository layout
 
 - `cmd/mooo-lab`: non-invasive research CLI and future protocol exerciser.
+- `internal/client`: long-lived authenticated client, messaging, events, and
+  durable continuity orchestration.
+- `internal/continuity`: private versioned resume checkpoint and commit boundary.
+- `internal/protocol`: transport-independent wire models and codecs.
 - `internal/buildinfo`: build metadata used to verify the Go toolchain and CI.
 - `research`: sourced notes, experiment records, and sanitized findings.
 - `docs/adr`: architecture decision records.
@@ -50,6 +56,10 @@ go run ./cmd/mooo-lab auth inspect \
 The state path must be absolute. Its directory and file are restricted to the
 current user, and inspection output reports presence only; identity and credential
 values stay redacted. These commands do not make network requests.
+
+Network-capable APIs remain internal while their lifecycle and compatibility
+contracts are being validated. A profile opened by the client receives a sibling
+`.continuity` checkpoint under the same owner-only directory and profile lease.
 
 See [PLAN.md](PLAN.md) for the current research sequence.
 

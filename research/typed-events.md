@@ -46,9 +46,10 @@ observation).
 Read receipts, typing, chat/member changes, deletion, server changes, and
 kickout need protocol-specific decoders before they graduate from unknown
 events. Reaction aggregate changes are typed; reaction actor attribution is an
-explicit HTTP lookup rather than part of the push event. Cursor persistence,
-acknowledgement, deduplication, gap recovery, and offline catch-up remain
-separate continuity work.
+explicit HTTP lookup rather than part of the push event. Durable committed
+cursors, resumed `LOGINLIST`, duplicate suppression, and bounded `SYNCMSG`
+catch-up are implemented as described in `message-continuity.md`. Live cursor-
+boundary validation and any distinct server acknowledgement command remain open.
 
 All automated fixtures are synthetic. Live message content and identifiers are
 not stored in the repository.

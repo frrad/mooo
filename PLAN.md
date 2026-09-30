@@ -85,6 +85,11 @@ Execution through first text send/receive follows
       Matrix/Beeper bridge the exclusive per-profile session owner. On bridge
       restart, perform one cursor-based resumed login rather than QR
       authorization or a retry loop.
+- [x] Implement the private versioned checkpoint, explicit application commit
+      boundary, resumed `LOGINLIST` cursor inputs, duplicate suppression, and
+      bounded no-progress-detecting `SYNCMSG` recovery with synthetic tests.
+- [ ] Live-validate the resume/catch-up boundary and wire the eventual bridge as
+      the sole checkpoint committer and per-profile session owner.
 - [ ] Verify against the disposable account and add regression tests.
 
 ## Phase 4 — Matrix/Beeper bridge
