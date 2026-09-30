@@ -112,7 +112,9 @@ ordinary-login chain. Its sole resolved caller is cloud-restore new-count
 recomputation, where it repairs a missing restored boundary while suppressing an
 existing exact message or marker. The normal startup policy is the reviewed
 `LOGINLIST`/`LCHATLIST` chat-data path followed by bounded history recovery; the
-restore helper is not a general bootstrap rule.
+restore helper is not a general bootstrap rule. Kakao cloud backup/restore is
+outside this project's product scope; this path is retained only as negative
+evidence against applying restore behavior to normal sessions.
 
 The chat-list metadata follow-up is now traced end to end. Positive OpenChat link
 IDs with no stored link are deferred; missing links and stale stored link tokens

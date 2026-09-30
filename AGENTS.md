@@ -6,6 +6,13 @@ Build a public, self-hostable KakaoTalk secondary-device implementation in Go,
 followed by a Matrix/Beeper bridge. Prioritize protocol understanding and safe,
 reproducible research before bridge features.
 
+## Product scope
+
+- Kakao cloud backup and cloud restore are out of scope. Restore-only official-
+  client behavior may be documented when it prevents a false parity inference,
+  but do not implement or live-test backup/restore support unless the maintainer
+  explicitly changes this scope.
+
 ## Working style
 
 - At the start of a local research session, read `.lab/STATE.md` if it exists.
