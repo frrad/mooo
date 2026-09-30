@@ -107,6 +107,22 @@ the same durable invariant as a per-chat inclusive interval, kept separate from
 observed targets and application commits. This is an implementation-neutral
 model, not a reproduction of the official database or UI object.
 
+A similarly named `lastLogId + 1` marker helper is not part of the observed
+ordinary-login chain. Its sole resolved caller is cloud-restore new-count
+recomputation, where it repairs a missing restored boundary while suppressing an
+existing exact message or marker. The normal startup policy is the reviewed
+`LOGINLIST`/`LCHATLIST` chat-data path followed by bounded history recovery; the
+restore helper is not a general bootstrap rule.
+
+The chat-list metadata follow-up is now traced end to end. Positive OpenChat link
+IDs with no stored link are deferred; missing links and stale stored link tokens
+are batched into `INFOLINK`. The request carries an int64 ID array. On success,
+the returned `openLinks` collection is updated in the database before the client
+replays the deferred chat-data records. A failed response does not replay them.
+Non-OpenChat records have no dependency on this request. This closes the
+previously open identification and ordering question without making direct-chat
+resume contingent on OpenChat metadata support.
+
 These findings explain both live regressions found during the pilot: delta chat
 pages must merge into durable inventory, and a missing/null `chatLogs` collection
 is an empty successful page rather than malformed BSON.
@@ -121,9 +137,9 @@ least one official branch or storage effect remains unresolved.
 | --- | --- | --- | --- | --- | --- | --- |
 | QR secondary-device registration | Substantial | Partial | Partial | Partial | Substantial | Partial |
 | Booking/check-in/secure carriage | Substantial | Partial | Endpoint cache partial | Partial | Substantial | Partial |
-| LOGINLIST/LCHATLIST | Substantial | Pagination and partial-success traced | Delta/global cursor split implemented; official DB model partial | Metadata/link follow-ups open | Strong synthetic coverage | Partial |
+| LOGINLIST/LCHATLIST | Substantial | Pagination, partial success, and OpenChat metadata follow-up traced | Delta/global cursor split implemented; OpenChat link store not implemented | Detailed official room DB/UI model partial | Strong synthetic coverage | Partial |
 | Inbound message events | Common text/reply/photo mapped | Basic dispatch mapped | Explicit durable commit implemented | Official receipt/read-state behavior open | Strong for implemented types | Partial |
-| SYNCMSG continuity | Core schema mapped | Recovery, marker, and post-sync callback traced | Durable gap lifecycle implemented; principal marker and local-thread transitions mapped | Retention/bootstrap and metadata/link follow-ups open | Paging, persistence, migration, deletion, no-progress, and live regressions covered | Partial |
+| SYNCMSG continuity | Core schema mapped | Recovery, marker, restore-only boundary repair, and post-sync callback traced | Durable gap lifecycle implemented; principal marker and local-thread transitions mapped | Retention/error boundaries and UI presentation open | Paging, persistence, migration, deletion, no-progress, and live regressions covered | Partial |
 | Text send | Baseline mapped | No-retry behavior mapped | Message-ID lifecycle partial | Ambiguous delivery modeled | Strong baseline | Partial |
 | Photo transfer | Baseline mapped | Multi-stage flow mapped | Resume state partial | Ambiguous stage failures covered | Strong baseline | Partial |
 | Replies and reactions | Implemented subset mapped | Primary paths mapped | Revision/storage behavior partial | Some aggregate/detail paths mapped | Implemented subset covered | Partial |
@@ -133,8 +149,8 @@ least one official branch or storage effect remains unresolved.
 
 ## Immediate work queue
 
-1. Close the continuity dossier: initial-history bootstrap policy and
-   metadata/link follow-ups.
+1. Live-confirm remaining continuity server behavior: cursor inclusivity,
+   retention/error boundaries, and `INFOLINK` optional/empty encodings.
 2. Trace inbound acknowledgement/read-state behavior from packet handler through
    database mutation and outgoing commands.
 3. Trace membership/chat-change response handlers and persistence before adding

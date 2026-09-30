@@ -79,6 +79,25 @@ member-add request belongs to the separate
 `doAddMemWithChatRoom:memberIds:completion:` method and is not evidence of
 automatic post-`SYNCMSG` member refresh.
 
+The remaining login bootstrap path is also narrower than its helper names first
+suggested. The only observed caller of the helper that creates a marker at a
+room's `lastLogId + 1` is cloud-restore new-count recomputation. It skips rooms
+whose `lastLogId` is zero, skips an existing exact message, suppresses a duplicate
+marker at the next ID, and otherwise creates that marker. No call edge connects
+this restore repair to ordinary `LOGINLIST`/`LCHATLIST` startup. Normal login
+bootstrap therefore remains governed by the chat-data and `SYNCMSG` transitions
+above; the restore-only rule must not be applied globally.
+
+OpenChat metadata is the one network follow-up in the reviewed chat-list handler.
+For chat data with a positive link ID, the client looks up the stored link. A
+missing link defers that chat-data record; a stored link whose token is older than
+the returned token is also scheduled for refresh, but its chat data can be
+handled immediately. The client batches the selected IDs into one `INFOLINK`
+request using an int64-array field. A successful response persists its
+`openLinks` collection in the database, then replays only the deferred chat-data
+records through the normal handler. Failure does not replay those deferred
+records. Chats without a positive link ID bypass this metadata dependency.
+
 ## Implementation contract
 
 `Client.Open` creates a separate version-3 checkpoint beside the selected private
@@ -150,6 +169,8 @@ inventory with a zero ceiling but omitted from catch-up targets.
   `LOGINLIST`, and `SYNCMSG`, without retaining message contents or live IDs.
 - Confirm whether `cur` is inclusive in every server branch and classify
   retention/permission/status failures.
-- Map initial-history bootstrap policy and remaining metadata/link follow-ups.
+- Confirm the current server's `INFOLINK` optional/empty response encodings before
+  implementing OpenChat metadata persistence; direct-chat continuity does not
+  depend on it.
 - Map server-directed reconnect, `CHANGESVR`, and `KICKOUT` into the checkpointed
   lifecycle without introducing an automatic mutation retry.
