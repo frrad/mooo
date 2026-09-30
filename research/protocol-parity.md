@@ -170,6 +170,20 @@ operations through `SYNCMSG`; no separate mark-read LOCO request was found.
 request was found. These names therefore must not be exposed as independent
 server operations without further evidence.
 
+## Terminal push-notice decoder boundary
+
+The unsolicited-packet model boundary is characterized separately from
+session lifecycle. `CHANGESVR` constructs a typed zero-field notice: its model
+adds no fields beyond the common push-notice base, and the traced manager
+consumer does not use a payload. `KICKOUT` constructs a typed notice with one
+signed int32 `reason` field; an omitted reason remains zero. The decoder passes
+these values downstream without logging out, resetting storage, changing the
+route, or reconnecting. Invalid BSON for either recognized method is
+malformed, while an unrecognized method remains `UnknownPacket`. Wrong-width
+numeric coercion is intentionally not specified because the static evidence
+did not prove it. Synthetic decoder contracts are in
+[`research/terminal-event-decoders.md`](terminal-event-decoders.md).
+
 A bounded owned A/B experiment on 2026-09-30 found that LOGINLIST alone left the
 sender's unread marker in place, while a status-zero `SYNCMSG` crossing the
 one-message boundary removed it. Receiving a live `MSG` while connected also
