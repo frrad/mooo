@@ -9,6 +9,11 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+// MaxPageSize bounds Count. Count is not a page size: it declares how many
+// messages in (Cur, Max] the client already holds, and the server returns the
+// ones missing. The official client counts its locally stored messages in the
+// range, capped at this value. A client recovering an interval it holds none
+// of sends zero.
 const MaxPageSize int32 = 300
 
 var (
@@ -24,7 +29,7 @@ type Request struct {
 }
 
 func (r Request) MarshalBSON() ([]byte, error) {
-	if r.ChatID <= 0 || r.Cur < 0 || r.Max <= r.Cur || r.Count <= 0 || r.Count > MaxPageSize {
+	if r.ChatID <= 0 || r.Cur < 0 || r.Max <= r.Cur || r.Count < 0 || r.Count > MaxPageSize {
 		return nil, ErrInvalidRequest
 	}
 	return bson.Marshal(bson.D{

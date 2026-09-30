@@ -54,6 +54,15 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 	}
 }
 
+// gapNotice tells the room that messages up to targetMax could not be
+// recovered. Its ID is derived from the gap so repeated reconnects that hit
+// the same gap post it once.
+func (kc *KakaoClient) gapNotice(chatID, targetMax int64) bridgev2.RemoteEvent {
+	id := networkid.MessageID(fmt.Sprintf("gap:%d:%d", chatID, targetMax))
+	return newMessage(kc.messageMeta(chatID, 0, 0, 0), id,
+		"Some KakaoTalk messages sent while the bridge was disconnected could not be recovered.", convertNotice)
+}
+
 func newMessage[T any](
 	meta simplevent.EventMeta,
 	id networkid.MessageID,

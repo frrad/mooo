@@ -86,6 +86,6 @@ use that profile until the bridge stops.
 - Only plain text (and emotes) can be sent from Matrix.
 - A lost Kakao session is reported through bridge state, not reconnected. Restart
   the bridge to reconnect; the restart performs one resumed login.
-- Messages sent while the bridge is stopped are not caught up, and a later
-  live message moves the chat's cursor past them. Do not rely on restarts
-  until connect-time catch-up lands.
+- Messages sent while the bridge is stopped are caught up on restart only for
+  chats the bridge has bridged before. History from other chats is not
+  backfilled.

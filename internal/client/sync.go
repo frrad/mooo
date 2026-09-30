@@ -105,6 +105,33 @@ func (c *Client) InitialSyncTargets(ctx context.Context) ([]syncmsg.Target, erro
 	return targets, nil
 }
 
+// ResumeTargets returns the chats that need catch-up after a resumed login:
+// those this profile has committed before whose server maximum is now ahead
+// of that commit. Chats never committed are omitted, because recovering them
+// would be an unbounded history backfill rather than resumption, and SYNCMSG
+// may mark everything it returns as read.
+func (c *Client) ResumeTargets(ctx context.Context) ([]syncmsg.Target, error) {
+	targets, err := c.InitialSyncTargets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	checkpoint := c.checkpoint
+	c.mu.Unlock()
+	if checkpoint == nil {
+		return nil, ErrProtocol
+	}
+	commits := checkpoint.Snapshot().Chats
+	result := make([]syncmsg.Target, 0)
+	for _, target := range targets {
+		committed := committedMax(commits, target.ChatID)
+		if committed > 0 && target.MaxLogID > committed {
+			result = append(result, target)
+		}
+	}
+	return result, nil
+}
+
 // CatchUp retrieves the missing interval after this profile's committed chat
 // maximum through targetMax. The result remains uncommitted so a crash before
 // the application persists it causes replay rather than loss. SYNCMSG may make
@@ -140,7 +167,9 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 	result := make([]events.Event, 0)
 	for range maxCatchUpPages {
 		page, err := c.SyncMessages(ctx, syncmsg.Request{
-			ChatID: chatID, Cur: current, Max: targetMax, Count: syncmsg.MaxPageSize,
+			// This client holds none of the messages after its commit, so it
+			// declares zero and the server returns the missing ones.
+			ChatID: chatID, Cur: current, Max: targetMax, Count: 0,
 		})
 		if err != nil {
 			return nil, err
