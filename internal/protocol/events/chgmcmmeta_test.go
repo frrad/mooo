@@ -36,6 +36,29 @@ func TestDecodeChangeMCMetaPreservesTypedFields(t *testing.T) {
 	}
 }
 
+func TestDecodeChangeMCMetaAllowsAbsentImages(t *testing.T) {
+	body, err := bson.Marshal(bson.D{
+		{Key: "chatId", Value: int64(42)},
+		{Key: "revision", Value: int32(9)},
+		{Key: "type", Value: "opaque-type"},
+		{Key: "content", Value: "opaque-content"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := Decode(loco.Packet{Header: loco.Header{Method: "CHGMCMETA"}, Body: body})
+	if err != nil {
+		t.Fatalf("Decode(CHGMCMETA) error = %v", err)
+	}
+	changed, ok := event.(ChatMCMetaChanged)
+	if !ok {
+		t.Fatalf("Decode(CHGMCMETA) event = %T, want ChatMCMetaChanged", event)
+	}
+	if changed.ImageURL != "" || changed.FullImageURL != "" {
+		t.Fatalf("CHGMCMETA minimal = %#v, want empty optional image URLs", changed)
+	}
+}
+
 func TestDecodeChangeMCMetaFailsClosedForUnprovenStructure(t *testing.T) {
 	cases := []struct {
 		name string
@@ -74,6 +97,20 @@ func TestDecodeChangeMCMetaFailsClosedForUnprovenStructure(t *testing.T) {
 			{Key: "revision", Value: int32(9)},
 			{Key: "type", Value: "opaque-type"},
 			{Key: "content", Value: int32(1)},
+		}},
+		{name: "wrong image URL encoding", body: bson.D{
+			{Key: "chatId", Value: int64(42)},
+			{Key: "revision", Value: int32(9)},
+			{Key: "type", Value: "opaque-type"},
+			{Key: "content", Value: "opaque-content"},
+			{Key: "imageUrl", Value: int32(1)},
+		}},
+		{name: "wrong full image URL encoding", body: bson.D{
+			{Key: "chatId", Value: int64(42)},
+			{Key: "revision", Value: int32(9)},
+			{Key: "type", Value: "opaque-type"},
+			{Key: "content", Value: "opaque-content"},
+			{Key: "fullImageUrl", Value: int32(1)},
 		}},
 	}
 	for _, test := range cases {

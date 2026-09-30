@@ -115,9 +115,9 @@ typed decoder identity contract and no member mutation:
 - the source and semantics of the manager's link/cursor argument and its
   completion callbacks.
 
-The clean-room decoder therefore intentionally keeps `CHGMETA` observable as
-`UnknownPacket`; `DELMEM`, `NEWMEM`, `LEFT`, `CHGCHATST`, and `CHGMCMETA` now
-expose typed boundaries. Each typed event has a synthetic decoder test for
+The clean-room decoder now exposes typed boundaries for `DELMEM`, `NEWMEM`,
+`LEFT`, `CHGCHATST`, `CHGMETA`, and `CHGMCMETA`. Each typed event has a
+synthetic decoder test for
 the proven field path, while stateful lifecycle remains
 unimplemented. The decoder fails closed for missing
 or wrong nested structure as an implementation safety rule; that behavior is
