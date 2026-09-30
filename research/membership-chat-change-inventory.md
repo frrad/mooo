@@ -67,10 +67,10 @@ typed decoder identity contract and no member mutation:
   completion callbacks.
 
 The clean-room decoder therefore intentionally keeps `CHGCHATST`, `CHGMETA`,
-and `CHGMCMETA` observable as `UnknownPacket` while the synthetic
-`NEWMEM` identity test defines the next typed-decoder handoff. `DELMEM` has a
-synthetic decoder test for the proven identity path, while the stateful
-lifecycle remains unimplemented. The decoder fails closed for missing
+and `CHGMCMETA` observable as `UnknownPacket`; `DELMEM`, `NEWMEM`, and `LEFT`
+now expose only their typed identity boundaries. Each has a synthetic decoder
+test for the proven identity path, while stateful lifecycle remains
+unimplemented. The decoder fails closed for missing
 or wrong nested structure as an implementation safety rule; that behavior is
 not claimed as an observation of the official malformed-body path. This is not evidence that the
 official client ignores any of these methods.
