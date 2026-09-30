@@ -27,6 +27,7 @@ const (
 	KindReadStateChanged   Kind = "read_state_changed"
 	KindChangeServer       Kind = "change_server"
 	KindKickout            Kind = "kickout"
+	KindMemberRemoved      Kind = "member_removed"
 	KindUnsupportedLogMeta Kind = "unsupported_log_meta"
 	KindUnknownPacket      Kind = "unknown_packet"
 )
@@ -215,6 +216,18 @@ type Kickout struct {
 func (Kickout) Kind() Kind { return KindKickout }
 func (Kickout) isEvent()   {}
 
+// MemberRemoved identifies the departed member carried by a DELMEM notice.
+// It is a typed event only; persistence and room mutation remain separate.
+type MemberRemoved struct {
+	ChatID   int64
+	LogID    int64
+	UserID   int64
+	UserType int32
+}
+
+func (MemberRemoved) Kind() Kind { return KindMemberRemoved }
+func (MemberRemoved) isEvent()   {}
+
 // Decode turns one unsolicited packet into a typed event. Unknown packet
 // methods and unsupported message types remain observable without exposing raw
 // account data. Malformed known packets return ErrMalformedEvent.
@@ -230,6 +243,8 @@ func Decode(packet loco.Packet) (Event, error) {
 		return decodeChangeServer(packet.Body)
 	case "KICKOUT":
 		return decodeKickout(packet.Body)
+	case "DELMEM":
+		return decodeMemberRemoved(packet.Body)
 	default:
 		return UnknownPacket{Method: packet.Header.Method}, nil
 	}
@@ -256,6 +271,44 @@ func decodeKickout(body []byte) (Event, error) {
 		reason = value.Int32()
 	}
 	return Kickout{Reason: reason}, nil
+}
+
+func decodeMemberRemoved(body []byte) (Event, error) {
+	raw := bson.Raw(body)
+	if err := raw.Validate(); err != nil {
+		return nil, ErrMalformedEvent
+	}
+	chatLogValue, err := raw.LookupErr("chatLog")
+	if err != nil || chatLogValue.Type != bson.TypeEmbeddedDocument {
+		return nil, ErrMalformedEvent
+	}
+	chatLog := chatLogValue.Document()
+	chatID, err := exactInt64(chatLog, "chatId")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	logID, err := exactInt64(chatLog, "logId")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	feedValue, err := chatLog.LookupErr("feed")
+	if err != nil || feedValue.Type != bson.TypeEmbeddedDocument {
+		return nil, ErrMalformedEvent
+	}
+	leaverValue, err := feedValue.Document().LookupErr("leaver")
+	if err != nil || leaverValue.Type != bson.TypeEmbeddedDocument {
+		return nil, ErrMalformedEvent
+	}
+	leaver := leaverValue.Document()
+	userID, err := exactInt64(leaver, "userId")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	userTypeValue, err := leaver.LookupErr("userType")
+	if err != nil || userTypeValue.Type != bson.TypeInt32 {
+		return nil, ErrMalformedEvent
+	}
+	return MemberRemoved{ChatID: chatID, LogID: logID, UserID: userID, UserType: userTypeValue.Int32()}, nil
 }
 
 func decodeReadState(body []byte) (Event, error) {
@@ -430,6 +483,14 @@ func requiredInt64(raw bson.Raw, key string) (int64, error) {
 	default:
 		return 0, ErrMalformedEvent
 	}
+}
+
+func exactInt64(raw bson.Raw, key string) (int64, error) {
+	value, err := raw.LookupErr(key)
+	if err != nil || value.Type != bson.TypeInt64 {
+		return 0, ErrMalformedEvent
+	}
+	return value.Int64(), nil
 }
 
 func optionalInt64(raw bson.Raw, key string) int64 {

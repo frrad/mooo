@@ -1,8 +1,8 @@
 # Membership and chat-change inventory
 
 Status: first-party decoder identity contract plus bounded lifecycle evidence,
-2026-09-30. No membership production implementation is authorized by this
-note.
+2026-09-30. This note authorizes only the typed DELMEM decoder described below;
+it forbids member persistence mutation, UI effects, retries, and reconnects.
 
 ## Inventory
 
@@ -51,7 +51,9 @@ typed decoder identity contract and no member mutation:
 The clean-room decoder therefore intentionally keeps `NEWMEM`, `LEFT`,
 `CHGCHATST`, `CHGMETA`, and `CHGMCMETA` observable as `UnknownPacket`.
 `DELMEM` has a synthetic decoder test for the proven identity path, while the
-stateful lifecycle remains unimplemented. This is not evidence that the
+stateful lifecycle remains unimplemented. The decoder fails closed for missing
+or wrong nested structure as an implementation safety rule; that behavior is
+not claimed as an observation of the official malformed-body path. This is not evidence that the
 official client ignores any of these methods.
 
 ## Evidence trail
