@@ -103,7 +103,10 @@ Execution through first text send/receive follows
 
 ## Phase 4 — Matrix/Beeper bridge
 
-- [ ] Reassess current mautrix-go and Beeper bridge conventions.
+Execution follows [`research/bridge/PLAN.md`](research/bridge/PLAN.md).
+
+- [x] Reassess current mautrix-go and Beeper bridge conventions; adopt
+      `bridgev2` ([ADR 0003](docs/adr/0003-bridge-on-mautrix-bridgev2.md)).
 - [ ] Define identifier mapping, portals, puppeting, backfill, and state recovery.
 - [ ] Implement standard Matrix application-service behavior while preserving
       Beeper compatibility.

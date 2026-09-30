@@ -1,0 +1,5 @@
+# Directory holding operator-created Kakao profiles. Each profile consists of
+# the private auth-state file named after the profile, plus the ".lock" and
+# ".continuity" files the client keeps beside it. The directory must be
+# accessible only by the bridge's user (mode 0700).
+profile_dir: ./profiles
