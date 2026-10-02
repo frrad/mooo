@@ -39,3 +39,37 @@ process abort; that is an implementation decision.
 The pure-selection cases are executable against the independent reducer and
 the profile-policy case remains explicitly unresolved. No durable checkpoint
 or profile-replacement implementation is included here.
+
+## Synchronous persistence dispatch boundary
+
+After the strict comparison selects an update, the client obtains the shared
+persistence singleton's nested database context and invokes its
+`performBlockAndWait` operation. The MKNest implementation checks both its database and operation queue. With
+both present, it invokes the block inline when already on the current queue;
+otherwise it wraps the block through a write-block helper and calls
+`addOperations:waitUntilFinished:` with a wait flag. The wrapper weakly loads
+the owner, invokes the supplied block inside an autorelease pool, then invokes
+`processChangedObjects` before draining the pool; downstream effects of that
+processing call are not recovered. When either database or queue is
+unavailable, the inspected body skips the block and exposes no error result.
+
+The token block writes the token cursor. Its auxiliary loss-check path is
+guarded by existing stored cursor values: an existing loss-check value is
+positive, then the reread loss-check value equals the existing token value,
+before the loss-check setter is reached with the incoming value. If either
+guard fails, that auxiliary setter is skipped while the token setter remains
+part of the block. The blind-token block writes the blind cursor without this
+auxiliary branch.
+
+The nested context is created lazily from a database path, key, and schema
+builder. A missing or failed context construction can therefore prevent the
+setter block from running. The inspected callback does not expose a durable
+save result, rollback, retry, or error callback. Those behaviors, plus reset,
+profile replacement, transaction isolation, and restart durability, remain
+explicit gaps. A clean-room implementation may model the dispatch as a
+serialized effect and return storage errors from its own backend; those are
+implementation decisions.
+
+The observed token zero assertion path is represented as a typed error in a
+clean-room implementation rather than reproducing process termination. The
+blind-token path has no corresponding zero assertion in the inspected body.
