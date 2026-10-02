@@ -66,7 +66,7 @@ func ApplyTokenDirtyEvent(state *TokenDirtyState, event TokenDirtyEvent) ([]stri
 		if tokenDirtyValuesEqual(event.Field, event.Old, event.Incoming) {
 			return append(effects, "no_changed_field_delta"), nil
 		}
-		state.OriginalOld[event.Field] = event.Old
+		state.OriginalOld[event.Field] = cloneTokenDirtyValue(event.Field, event.Old)
 		state.Dirty = true
 		state.Registered = true
 		return append(effects, "old_value_recorded", "dirty_true", "nest_registration"), nil
@@ -103,4 +103,13 @@ func tokenDirtyValuesEqual(field string, left, right TokenDirtyValue) bool {
 		return *left.Int32 == *right.Int32
 	}
 	return *left.Int64 == *right.Int64
+}
+
+func cloneTokenDirtyValue(field string, value TokenDirtyValue) TokenDirtyValue {
+	if field == "lastBlindToken" {
+		copy := *value.Int32
+		return TokenDirtyValue{Int32: &copy}
+	}
+	copy := *value.Int64
+	return TokenDirtyValue{Int64: &copy}
 }

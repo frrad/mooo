@@ -28,8 +28,13 @@ func TestApplyTokenDirtyEventInitializationAndEqualObserver(t *testing.T) {
 
 func TestApplyTokenDirtyEventOverwritesOriginalOldValue(t *testing.T) {
 	state := &TokenDirtyState{}
-	if _, err := ApplyTokenDirtyEvent(state, TokenDirtyEvent{Initialization: "observer", Field: "lastBlindToken", Old: i32(7), Incoming: i32(8)}); err != nil {
+	old := int32(7)
+	if _, err := ApplyTokenDirtyEvent(state, TokenDirtyEvent{Initialization: "observer", Field: "lastBlindToken", Old: TokenDirtyValue{Int32: &old}, Incoming: i32(8)}); err != nil {
 		t.Fatal(err)
+	}
+	old = 99
+	if got := *state.OriginalOld["lastBlindToken"].Int32; got != 7 {
+		t.Fatalf("recorded old value aliased input: got %d want 7", got)
 	}
 	if _, err := ApplyTokenDirtyEvent(state, TokenDirtyEvent{Initialization: "observer", Field: "lastBlindToken", Old: i32(8), Incoming: i32(9)}); err != nil {
 		t.Fatal(err)
