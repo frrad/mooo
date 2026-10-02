@@ -54,7 +54,7 @@ func TestTokenDirtyVectorsSchema(t *testing.T) {
 		if vector.Initialization != "non_database" && vector.Initialization != "database" {
 			t.Fatalf("%q: initialization = %q", vector.Name, vector.Initialization)
 		}
-		if vector.Execution != "observed" && vector.Execution != "unresolved" {
+		if vector.Execution != "observed" && vector.Execution != "observed_generic" && vector.Execution != "unresolved" {
 			t.Fatalf("%q: execution = %q", vector.Name, vector.Execution)
 		}
 		if seen[vector.Name] {
@@ -63,8 +63,9 @@ func TestTokenDirtyVectorsSchema(t *testing.T) {
 		seen[vector.Name] = true
 	}
 	for _, name := range []string{
-		"new model token change records field and dirty state",
-		"new model blind token change records field and dirty state",
+		"new model initialization registers changed object",
+		"observer event with changed blind token records delta",
+		"observer event with equal token has no changed field delta",
 		"database-loaded initializer registration boundary",
 		"dirty transaction save and commit result",
 		"exception rollback and rethrow",

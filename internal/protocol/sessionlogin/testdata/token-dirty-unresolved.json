@@ -3,30 +3,28 @@
   "status": "observed model dirty path; durable consumer unresolved",
   "vectors": [
     {
-      "name": "new model token change records field and dirty state",
+      "name": "new model initialization registers changed object",
       "initialization": "non_database",
       "field": "lastTokenId",
-      "old": 41,
-      "incoming": 42,
-      "expect": ["property_assignment", "changed_field_recorded", "dirty_true", "nest_registration"],
+      "expect": ["initialization_defaults", "dirty_true", "nest_registration"],
       "execution": "observed"
     },
     {
-      "name": "new model blind token change records field and dirty state",
+      "name": "observer event with changed blind token records delta",
       "initialization": "non_database",
       "field": "lastBlindToken",
       "old": 7,
       "incoming": 8,
-      "expect": ["property_assignment", "changed_field_recorded", "dirty_true", "nest_registration"],
+      "expect": ["observer_event_input", "changed_field_recorded", "dirty_true"],
       "execution": "observed"
     },
     {
-      "name": "equal token change has no changed field delta",
+      "name": "observer event with equal token has no changed field delta",
       "initialization": "non_database",
       "field": "lastTokenId",
       "old": 42,
       "incoming": 42,
-      "expect": ["property_assignment", "no_changed_field_delta"],
+      "expect": ["observer_event_input", "no_changed_field_delta"],
       "execution": "observed"
     },
     {
@@ -53,8 +51,8 @@
       "field": "lastTokenId",
       "old": 41,
       "incoming": 42,
-      "expect": ["revert_changed_objects", "rollback", "clear_changed_registry", "rethrow", "retry_unresolved"],
-      "execution": "observed"
+      "expect": ["revert_changed_objects", "rollback", "clear_changed_registry", "rethrow", "token_mapping_unresolved"],
+      "execution": "observed_generic"
     }
   ]
 }

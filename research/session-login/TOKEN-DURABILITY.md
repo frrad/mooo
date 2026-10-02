@@ -24,9 +24,10 @@ When they differ, it records the changed field and sets the model dirty. The
 model's `lastTokenId` setter is a direct signed 64-bit store; the dirty effect
 comes from the surrounding observer path. No direct setter-to-nest call was
 observed. The binary contains no class implementation of
-`automaticallyNotifiesObserversForKey:`; a clean-room implementation should
-make its notification policy explicit rather than relying on an undocumented
-runtime default.
+`automaticallyNotifiesObserversForKey:`. The observer callback is therefore
+observed, while the runtime policy that causes a property setter to emit that
+event remains unproven; a clean-room implementation should make notification
+explicit rather than relying on an undocumented runtime default.
 
 The database coordinator later consumes the nest's changed-object registry. It
 opens a transaction, classifies deleted and dirty objects, invokes each dirty
