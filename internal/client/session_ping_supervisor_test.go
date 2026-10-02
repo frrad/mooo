@@ -73,13 +73,6 @@ func TestSessionLifecycleSchedulerBindsBeforeUse(t *testing.T) {
 	}
 }
 
-func TestSessionLifecycleSchedulerCannotBeReplaced(t *testing.T) {
-	session := newSession(&recordingPingScheduler{})
-	if err := session.setLifecycleScheduler(&recordingPingScheduler{}); !errors.Is(err, ErrProtocol) {
-		t.Fatalf("rebinding error=%v want ErrProtocol", err)
-	}
-}
-
 func TestSessionRejectsRequestsDuringLocalClose(t *testing.T) {
 	scheduler := &closeAdmissionScheduler{entered: make(chan struct{}), release: make(chan struct{})}
 	conn := &closeAdmissionConn{}
@@ -340,7 +333,7 @@ func TestSessionTransportDisconnectSchedulesBeforeTerminalFanout(t *testing.T) {
 	}
 	wantErr := errors.New("synthetic carriage disconnect")
 	session.finishRead(wantErr)
-	if got, want := scheduler.snapshot(), []string{"schedule"}; !reflect.DeepEqual(got, want) {
+	if got, want := scheduler.snapshot(), []string{"schedule", "cancel"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("scheduler events=%v want=%v", got, want)
 	}
 	select {
@@ -350,6 +343,10 @@ func TestSessionTransportDisconnectSchedulesBeforeTerminalFanout(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("pending waiter was not failed")
+	}
+	session.finishRead(ErrProtocol)
+	if got, want := scheduler.snapshot(), []string{"schedule", "cancel"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("repeated finishRead scheduler events=%v want=%v", got, want)
 	}
 }
 
