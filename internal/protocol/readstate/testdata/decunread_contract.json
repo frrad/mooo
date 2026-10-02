@@ -288,6 +288,60 @@
     }
   },
   {
+    "name": "current zero unread at last log preserves mention",
+    "state": {
+      "roomExists": true,
+      "currentUserId": 7,
+      "countOfNewMessage": 0,
+      "lastLogId": 100,
+      "lastSeenLogId": 98,
+      "mentionReplyPresent": true,
+      "memberWatermarks": {
+        "7": 90
+      },
+      "activeMemberIds": [
+        7
+      ],
+      "activeMemberCount": 1
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 7,
+      "watermark": 100
+    },
+    "inputs": {
+      "eligibleUnreadCount": 9
+    },
+    "want": {
+      "applied": true,
+      "mentionReplyPresent": true,
+      "memberWatermarks": {
+        "7": 100
+      },
+      "activeMemberIds": [
+        7
+      ],
+      "activeMemberCount": 1,
+      "effects": [
+        {
+          "kind": "check_joined"
+        },
+        {
+          "kind": "archive_refresh"
+        },
+        {
+          "kind": "member_watermark",
+          "userId": 7,
+          "watermark": 100
+        },
+        {
+          "kind": "member_watermark_maintenance",
+          "userId": 7
+        }
+      ]
+    }
+  },
+  {
     "name": "current stale member watermark still routes room effects",
     "state": {
       "roomExists": true,
