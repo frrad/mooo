@@ -16,6 +16,29 @@ func TestDECUNREADMissingRoomPreservesSnapshot(t *testing.T) {
 	}
 }
 
+func TestDECUNREADReturnedSnapshotOwnsCollections(t *testing.T) {
+	input := State{
+		RoomExists:       true,
+		CurrentUserID:    7,
+		ActiveMemberIDs:  []int64{7},
+		BotIDs:           map[int64]bool{9: true},
+		MemberWatermarks: map[int64]int64{7: 10},
+	}
+	got := ReduceDECUNREAD(input, Notice{ChatID: 42, UserID: 8, Watermark: 12}, Inputs{})
+	got.State.ActiveMemberIDs[0] = 99
+	got.State.MemberWatermarks[8] = 99
+	got.State.BotIDs[9] = false
+	if !reflect.DeepEqual(input.ActiveMemberIDs, []int64{7}) {
+		t.Fatalf("input active members aliased returned state: %#v", input.ActiveMemberIDs)
+	}
+	if !reflect.DeepEqual(input.MemberWatermarks, map[int64]int64{7: 10}) {
+		t.Fatalf("input watermarks aliased returned state: %#v", input.MemberWatermarks)
+	}
+	if !reflect.DeepEqual(input.BotIDs, map[int64]bool{9: true}) {
+		t.Fatalf("input bot IDs aliased returned state: %#v", input.BotIDs)
+	}
+}
+
 func TestDECUNREADExistingCountPreservedWithoutMemberAddition(t *testing.T) {
 	input := State{RoomExists: true, CurrentUserID: 7, CountOfNewMessage: 2, ActiveMemberIDs: []int64{7}, ActiveMemberCount: 9}
 	got := ReduceDECUNREAD(input, Notice{ChatID: 42, UserID: 7, Watermark: 1}, Inputs{})

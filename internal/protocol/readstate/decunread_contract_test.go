@@ -44,6 +44,7 @@ type decUnreadInputsJSON struct {
 
 type decUnreadWantJSON struct {
 	Applied             bool                  `json:"applied"`
+	PreserveSnapshot    bool                  `json:"preserveSnapshot"`
 	UnreadCount         *int64                `json:"unreadCount"`
 	MentionReplyPresent bool                  `json:"mentionReplyPresent"`
 	MemberWatermarks    map[int64]int64       `json:"memberWatermarks"`
@@ -93,10 +94,8 @@ func TestDECUNREADContractVectors(t *testing.T) {
 			beforeActive := append([]int64(nil), state.ActiveMemberIDs...)
 			beforeBots := cloneBots(state.BotIDs)
 			got := ReduceDECUNREAD(state, Notice{ChatID: fixture.Notice.ChatID, UserID: fixture.Notice.UserID, Watermark: fixture.Notice.Watermark}, inputs)
-			if fixture.Name == "missing room" || fixture.Name == "bot member is suppressed by helper guard" || fixture.Name == "frozen room type three suppresses helper" || fixture.Name == "non-current member" {
-				if !reflect.DeepEqual(got.State, state) && fixture.Name != "non-current member" {
-					t.Fatalf("guarded state changed: got %#v want %#v", got.State, state)
-				}
+			if fixture.Want.PreserveSnapshot && !reflect.DeepEqual(got.State, state) {
+				t.Fatalf("preserved snapshot changed: got %#v want %#v", got.State, state)
 			}
 			if !reflect.DeepEqual(state.MemberWatermarks, beforeMembers) || !reflect.DeepEqual(state.ActiveMemberIDs, beforeActive) || !reflect.DeepEqual(state.BotIDs, beforeBots) {
 				t.Fatalf("input member watermarks mutated: got %#v, want %#v", state.MemberWatermarks, beforeMembers)
