@@ -36,10 +36,10 @@ for every header or body.
 The producer retains its accumulation buffer and loops while another complete
 frame is available; split bodies remain buffered for a later supply. The packet
 header decoder consumes the first 22 bytes as: unsigned 32-bit packet ID,
-unsigned 16-bit status, an 11-byte UTF-8 method field, an unsigned 8-bit body
-type, and an unsigned 32-bit body length. The producer compares accumulated
-length with 22 plus that body length. Short-input exception behavior and any
-method-string validation remain untraced.
+unsigned 16-bit status, an 11-byte method slice converted through a NUL-terminated UTF-8 string
+constructor, an unsigned 8-bit body type, and an unsigned 32-bit body length. The producer compares accumulated
+length with 22 plus that body length. Short-input exception behavior, invalid UTF-8 handling, and embedded-NUL or
+unterminated method behavior remain untraced.
 
 These effects are implementation-neutral. A replacement may use a pure planner
 with injected crypto-presence, tag, prefix value, and accumulated byte count;

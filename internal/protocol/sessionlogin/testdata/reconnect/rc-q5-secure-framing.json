@@ -81,16 +81,19 @@
       "expected": [
         "route_body",
         "supply_raw_data",
-        "header_callback_if_supported",
-        "conditional_timeout_disarm_after_header",
-        "complete_packet_callback_after_body",
         "decode_packet_id_u32",
         "decode_status_u16",
         "decode_method_utf8_11",
         "decode_body_type_u8",
-        "decode_body_length_u32"
+        "decode_body_length_u32",
+        "header_callback_if_supported",
+        "conditional_timeout_disarm_after_header",
+        "complete_packet_callback_after_body"
       ],
-      "delegate_is_agent": true
+      "delegate_is_agent": true,
+      "expected_buffered_bytes": 0,
+      "expected_bytes_needed": 0,
+      "expected_current_header_present": false
     },
     {
       "name": "producer existing header waits for complete body",
@@ -104,8 +107,8 @@
         "route_body",
         "supply_raw_data"
       ],
-      "expected_remaining_bytes": 14,
-      "expected_current_header_present": true
+      "expected_buffered_bytes": 22,
+      "expected_bytes_needed": 8
     },
     {
       "name": "producer split body remains buffered",
@@ -119,8 +122,8 @@
         "route_body",
         "supply_raw_data"
       ],
-      "expected_remaining_bytes": 5,
-      "expected_current_header_present": true
+      "expected_buffered_bytes": 25,
+      "expected_bytes_needed": 5
     },
     {
       "name": "producer loops over two complete frames",
@@ -131,27 +134,33 @@
       "current_header_present": false,
       "delegate_supports_header": true,
       "delegate_supports_packet": true,
-      "expected_remaining_bytes": 0,
-      "expected_current_header_present": false,
       "timeout_identity_matches": false,
       "expected": [
         "route_body",
         "supply_raw_data",
-        "header_callback_if_supported",
-        "complete_packet_callback_after_body",
-        "header_callback_if_supported",
-        "complete_packet_callback_after_body",
-        "producer_loop_next_frame",
         "decode_packet_id_u32",
         "decode_status_u16",
         "decode_method_utf8_11",
         "decode_body_type_u8",
-        "decode_body_length_u32"
+        "decode_body_length_u32",
+        "header_callback_if_supported",
+        "complete_packet_callback_after_body",
+        "decode_packet_id_u32",
+        "decode_status_u16",
+        "decode_method_utf8_11",
+        "decode_body_type_u8",
+        "decode_body_length_u32",
+        "header_callback_if_supported",
+        "complete_packet_callback_after_body",
+        "producer_loop_next_frame"
       ],
       "body_lengths": [
         8,
         8
-      ]
+      ],
+      "expected_buffered_bytes": 0,
+      "expected_bytes_needed": 0,
+      "expected_current_header_present": false
     },
     {
       "name": "producer header callback absent delegate",
@@ -165,13 +174,16 @@
       "expected": [
         "route_body",
         "supply_raw_data",
-        "complete_packet_callback_after_body",
         "decode_packet_id_u32",
         "decode_status_u16",
         "decode_method_utf8_11",
         "decode_body_type_u8",
-        "decode_body_length_u32"
-      ]
+        "decode_body_length_u32",
+        "complete_packet_callback_after_body"
+      ],
+      "expected_buffered_bytes": 0,
+      "expected_bytes_needed": 0,
+      "expected_current_header_present": false
     },
     {
       "name": "producer packet callback absent delegate",
@@ -185,13 +197,16 @@
       "expected": [
         "route_body",
         "supply_raw_data",
-        "header_callback_if_supported",
         "decode_packet_id_u32",
         "decode_status_u16",
         "decode_method_utf8_11",
         "decode_body_type_u8",
-        "decode_body_length_u32"
-      ]
+        "decode_body_length_u32",
+        "header_callback_if_supported"
+      ],
+      "expected_buffered_bytes": 0,
+      "expected_bytes_needed": 0,
+      "expected_current_header_present": false
     },
     {
       "name": "producer below minimum retains partial buffer",
@@ -206,7 +221,9 @@
         "route_body",
         "supply_raw_data",
         "buffer_retained_below_minimum"
-      ]
+      ],
+      "expected_buffered_bytes": 10,
+      "expected_bytes_needed": 12
     }
   ]
 }
