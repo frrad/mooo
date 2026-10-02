@@ -171,7 +171,7 @@
         "RC-BIN-018"
       ],
       "handler_present": true,
-      "pending_count": 0,
+      "pending_count": 1,
       "expect": [
         "lookup_completion_by_unique_id",
         "route_unmatched_to_default_handler"

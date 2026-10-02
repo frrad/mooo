@@ -60,6 +60,12 @@ func validateStatusHandlerContract(v statusHandlerContract) error {
 			return fmt.Errorf("invalid case %q", c.Name)
 		}
 		seen[c.Name] = true
+		if c.PendingCount != nil && *c.PendingCount < 0 {
+			return fmt.Errorf("negative pending count")
+		}
+		if c.CompletionMatch != nil && *c.CompletionMatch && (c.PendingCount == nil || *c.PendingCount == 0) {
+			return fmt.Errorf("matched response without pending completion")
+		}
 		for _, id := range c.Evidence {
 			if id < "RC-BIN-014" || id > "RC-BIN-018" {
 				return fmt.Errorf("evidence=%q", id)
@@ -76,7 +82,7 @@ func validateStatusHandlerContract(v statusHandlerContract) error {
 				return fmt.Errorf("setter inputs")
 			}
 		case "manager-status-zero", "manager-status-three":
-			if c.AgentCurrent == nil || c.LatchInitial == nil || c.CallbackPresent == nil {
+			if c.AgentCurrent == nil || c.LatchInitial == nil || c.CallbackPresent == nil || !*c.CallbackPresent {
 				return fmt.Errorf("status inputs")
 			}
 		case "manager-status-gate":
