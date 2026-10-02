@@ -1,8 +1,10 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"testing"
@@ -73,12 +75,17 @@ func TestSessionBackgroundReaderDispatchesIdlePushAndResponse(t *testing.T) {
 			serverDone <- err
 			return
 		}
-		if _, err := io.CopyN(io.Discard, serverConn, int64(parsed.BodyLen)); err != nil {
+		body := make([]byte, parsed.BodyLen)
+		if _, err := io.ReadFull(serverConn, body); err != nil {
 			serverDone <- err
 			return
 		}
-		body, _ := bson.Marshal(bson.D{{Key: "status", Value: int32(0)}})
-		reply, err := (loco.Packet{Header: loco.Header{PacketID: parsed.PacketID, Method: parsed.Method, BodyType: loco.BodyTypeBSON}, Body: body}).MarshalBinary(0)
+		if !bytes.Equal(body, []byte{5, 0, 0, 0, 0}) {
+			serverDone <- fmt.Errorf("PING body = %v, want empty BSON document", body)
+			return
+		}
+		replyBody, _ := bson.Marshal(bson.D{{Key: "status", Value: int32(0)}})
+		reply, err := (loco.Packet{Header: loco.Header{PacketID: parsed.PacketID, Method: parsed.Method, BodyType: loco.BodyTypeBSON}, Body: replyBody}).MarshalBinary(0)
 		if err == nil {
 			_, err = serverConn.Write(reply)
 		}
