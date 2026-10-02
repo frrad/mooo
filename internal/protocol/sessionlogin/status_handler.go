@@ -21,13 +21,14 @@ type StatusHandlerInput struct {
 	CallbackPresent bool
 	CompletionID    string
 	Error           string
-	PacketPresent   bool
+	ResultPresent   bool
 }
 
 // StatusHandlerState is the durable-free projection needed by the reviewed
 // status and pending-response cases. Pending entries are copied on output.
 type StatusHandlerState struct {
 	AgentID        string
+	ManagerID      string
 	AgentStatus    int8
 	InternalStatus int8
 	HandlerPresent bool
@@ -81,7 +82,6 @@ type StatusHandlerEffect struct {
 	ErrorUserInfoPresent bool
 	ResultPresent        bool
 	CompletionID         string
-	PacketPresent        bool
 	Selector             string
 }
 
@@ -128,7 +128,7 @@ func ReduceStatusHandler(state StatusHandlerState, input StatusHandlerInput) (St
 				effects = append(effects, StatusHandlerEffect{Kind: StatusEffectNoCallback})
 			}
 			effects = append(effects,
-				StatusHandlerEffect{Kind: StatusEffectQueueCancel, AgentID: agent, Selector: "PING"},
+				StatusHandlerEffect{Kind: StatusEffectQueueCancel, AgentID: state.ManagerID, Selector: "sendPingRequest:"},
 				StatusHandlerEffect{Kind: StatusEffectClearHandler, AgentID: agent},
 			)
 			return state, effects
@@ -182,12 +182,12 @@ func ReduceStatusHandler(state StatusHandlerState, input StatusHandlerInput) (St
 				delete(state.Pending, input.CompletionID)
 				return state, append(effects,
 					StatusHandlerEffect{Kind: StatusEffectRemoveCompletion, CompletionID: input.CompletionID},
-					StatusHandlerEffect{Kind: StatusEffectInvokeCompletion, CompletionID: input.CompletionID, PacketPresent: input.PacketPresent},
+					StatusHandlerEffect{Kind: StatusEffectInvokeCompletion, CompletionID: input.CompletionID, ResultPresent: input.ResultPresent},
 				)
 			}
 		}
 		if state.DefaultHandler {
-			return state, append(effects, StatusHandlerEffect{Kind: StatusEffectRouteDefault})
+			return state, append(effects, StatusHandlerEffect{Kind: StatusEffectRouteDefault, CompletionID: input.CompletionID, ResultPresent: input.ResultPresent})
 		}
 		return state, append(effects, StatusHandlerEffect{Kind: StatusEffectNoDefaultHandler})
 	default:

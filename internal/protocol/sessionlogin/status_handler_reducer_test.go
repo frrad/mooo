@@ -18,6 +18,7 @@ func TestReduceStatusHandlerMatchesApprovedContract(t *testing.T) {
 				Latch:          boolValue(tc.LatchInitial),
 				DefaultHandler: boolValue(tc.DefaultHandlerPresent),
 				AgentID:        "agent",
+				ManagerID:      "manager",
 				AgentStatus:    int8Value(tc.OldStatus),
 				Pending:        make(map[string]struct{}),
 			}
@@ -44,9 +45,10 @@ func TestReduceStatusHandlerMatchesApprovedContract(t *testing.T) {
 				input.Kind = StatusHandlerPendingResponse
 				if boolValue(tc.CompletionMatch) {
 					input.CompletionID = "uid-1"
-					input.PacketPresent = true
+					input.ResultPresent = true
 				} else {
 					input.CompletionID = "missing"
+					input.ResultPresent = true
 				}
 			}
 			beforePending := clonePending(state.Pending)
@@ -67,7 +69,7 @@ func TestReduceStatusHandlerMatchesApprovedContract(t *testing.T) {
 				t.Fatalf("setter changed wrong status field: got agent=%d want=%d", gotState.AgentStatus, int8Value(tc.NewStatus))
 			}
 			if tc.Kind == "manager-status-zero" && boolValue(tc.AgentCurrent) {
-				if effects[len(effects)-2].Kind != StatusEffectQueueCancel || effects[len(effects)-2].AgentID != "agent" || effects[len(effects)-2].Selector != "PING" {
+				if effects[len(effects)-2].Kind != StatusEffectQueueCancel || effects[len(effects)-2].AgentID != "manager" || effects[len(effects)-2].Selector != "sendPingRequest:" {
 					t.Fatalf("manager cancellation tuple=%+v", effects[len(effects)-2])
 				}
 			}
@@ -77,7 +79,7 @@ func TestReduceStatusHandlerMatchesApprovedContract(t *testing.T) {
 
 func TestReduceStatusHandlerPreservesUnresolvedDisconnectState(t *testing.T) {
 	state := StatusHandlerState{AgentID: "agent", AgentStatus: 23, HandlerPresent: true, Pending: map[string]struct{}{"uid": {}}}
-	got, effects := ReduceStatusHandler(state, StatusHandlerInput{Kind: StatusHandlerDisconnect, NewStatus: 0, Error: "disconnect"})
+	got, effects := ReduceStatusHandler(state, StatusHandlerInput{Kind: StatusHandlerDisconnect, NewStatus: 23, Error: "disconnect"})
 	if !reflect.DeepEqual(got.Pending, state.Pending) || !got.HandlerPresent {
 		t.Fatalf("disconnect invented cleanup: got=%+v", got)
 	}
@@ -93,16 +95,33 @@ func TestReduceStatusHandlerPreservesUnresolvedDisconnectState(t *testing.T) {
 	if effects[2].AgentID != "agent" || effects[2].Selector != "" {
 		t.Fatalf("disconnect owner tuple=%+v", effects[2])
 	}
+
+}
+
+func TestReduceStatusHandlerUsesManagerCancelTarget(t *testing.T) {
+	state := StatusHandlerState{AgentID: "carriage", ManagerID: "manager", Pending: map[string]struct{}{}}
+	_, effects := ReduceStatusHandler(state, StatusHandlerInput{Kind: StatusHandlerManagerStatus, CallbackAgent: "carriage", CallbackPresent: true, Status: 0})
+	if effects[len(effects)-2].AgentID != "manager" || effects[len(effects)-2].Selector != "sendPingRequest:" {
+		t.Fatalf("cancel target=%+v", effects[len(effects)-2])
+	}
 }
 
 func TestReduceStatusHandlerUsesStringCompletionIdentity(t *testing.T) {
 	state := StatusHandlerState{Pending: map[string]struct{}{"uid-a": {}}}
-	got, effects := ReduceStatusHandler(state, StatusHandlerInput{Kind: StatusHandlerPendingResponse, CompletionID: "uid-a", PacketPresent: true})
-	if _, ok := got.Pending["uid-a"]; ok || len(effects) != 3 || effects[1].CompletionID != "uid-a" || effects[2].CompletionID != "uid-a" || !effects[2].PacketPresent {
+	got, effects := ReduceStatusHandler(state, StatusHandlerInput{Kind: StatusHandlerPendingResponse, CompletionID: "uid-a", ResultPresent: true})
+	if _, ok := got.Pending["uid-a"]; ok || len(effects) != 3 || effects[1].CompletionID != "uid-a" || effects[2].CompletionID != "uid-a" || !effects[2].ResultPresent {
 		t.Fatalf("matched string completion got state=%v effects=%v", got.Pending, effects)
 	}
 	if _, ok := state.Pending["uid-a"]; !ok {
 		t.Fatal("input completion map was mutated")
+	}
+}
+
+func TestReduceStatusHandlerRoutesUnmatchedPacketTuple(t *testing.T) {
+	state := StatusHandlerState{DefaultHandler: true, Pending: map[string]struct{}{}}
+	_, effects := ReduceStatusHandler(state, StatusHandlerInput{Kind: StatusHandlerPendingResponse, CompletionID: "uid-missing", ResultPresent: true})
+	if len(effects) != 2 || effects[1].Kind != StatusEffectRouteDefault || effects[1].CompletionID != "uid-missing" || !effects[1].ResultPresent {
+		t.Fatalf("default route tuple=%+v", effects)
 	}
 }
 
