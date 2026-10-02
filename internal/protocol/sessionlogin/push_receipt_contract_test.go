@@ -55,7 +55,7 @@ func validatePushReceiptContract(c pushReceiptContract) error {
 	}
 	seen := map[string]bool{}
 	for _, tc := range c.Cases {
-		if tc.Name == "" || seen[tc.Name] || tc.ExpectedTag == nil || *tc.ExpectedTag != uint64(tc.PacketID) || seen[tc.Name] || len(tc.Expect) == 0 {
+		if tc.Name == "" || seen[tc.Name] || tc.ExpectedTag == nil || *tc.ExpectedTag != uint64(tc.PacketID) || len(tc.Expect) == 0 {
 			return fmt.Errorf("invalid case %q", tc.Name)
 		}
 		seen[tc.Name] = true
