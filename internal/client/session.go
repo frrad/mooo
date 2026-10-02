@@ -61,18 +61,20 @@ type lifecycleShutdown interface {
 // Session owns one authenticated carriage. A background reader dispatches
 // correlated responses and preserves unsolicited packets for the caller.
 type Session struct {
-	mu                 sync.Mutex
-	writeGateOnce      sync.Once
-	writeGate          chan struct{}
-	lifecycleMu        sync.Mutex
-	wire               *wireConn
-	nextID             uint32
-	closed             bool
-	closing            bool
-	pushes             chan loco.Packet
-	pending            map[uint32]chan requestResult
-	lifecycleScheduler lifecycleScheduler
-	lifecycleStopped   bool
+	mu                  sync.Mutex
+	writeGateOnce       sync.Once
+	writeGate           chan struct{}
+	lifecycleMu         sync.Mutex
+	wire                *wireConn
+	nextID              uint32
+	closed              bool
+	closing             bool
+	pushes              chan loco.Packet
+	pending             map[uint32]chan requestResult
+	pendingByUniqueID   map[string]chan requestResult
+	pendingUniqueIDByID map[uint32]string
+	lifecycleScheduler  lifecycleScheduler
+	lifecycleStopped    bool
 	// headerObserver is configured before readLoop starts and must not change
 	// while that loop is running.
 	headerObserver  func(loco.Header)
@@ -87,9 +89,11 @@ type Session struct {
 
 func newSession(scheduler lifecycleScheduler) *Session {
 	return &Session{
-		pending:            make(map[uint32]chan requestResult),
-		lifecycleScheduler: scheduler,
-		bootstrapDone:      true,
+		pending:             make(map[uint32]chan requestResult),
+		pendingByUniqueID:   make(map[string]chan requestResult),
+		pendingUniqueIDByID: make(map[uint32]string),
+		lifecycleScheduler:  scheduler,
+		bootstrapDone:       true,
 	}
 }
 
@@ -377,6 +381,14 @@ func (s *Session) requestRaw(ctx context.Context, id uint32, command string, bod
 	}
 	result := make(chan requestResult, 1)
 	s.pending[id] = result
+	if s.pendingByUniqueID == nil {
+		s.pendingByUniqueID = make(map[string]chan requestResult)
+	}
+	s.pendingByUniqueID[packetUniqueID(command, id)] = result
+	if s.pendingUniqueIDByID == nil {
+		s.pendingUniqueIDByID = make(map[uint32]string)
+	}
+	s.pendingUniqueIDByID[id] = packetUniqueID(command, id)
 	wire := s.wire
 	s.mu.Unlock()
 	s.queueCancelRequest()
@@ -499,6 +511,16 @@ func (s *Session) removePending(id uint32, expected chan requestResult) {
 	if s.pending[id] == expected {
 		delete(s.pending, id)
 	}
+	if s.pendingByUniqueID != nil {
+		if key := s.pendingUniqueIDByID[id]; key != "" && s.pendingByUniqueID[key] == expected {
+			delete(s.pendingByUniqueID, key)
+			delete(s.pendingUniqueIDByID, id)
+		}
+	}
+}
+
+func packetUniqueID(method string, id uint32) string {
+	return sessionlogin.FormatPacketUniqueID(method, id)
 }
 
 func (s *Session) readLoop() {
@@ -508,17 +530,10 @@ func (s *Session) readLoop() {
 			s.finishRead(err)
 			return
 		}
-		s.mu.Lock()
-		waiter := s.pending[packet.Header.PacketID]
-		if waiter != nil {
-			delete(s.pending, packet.Header.PacketID)
-		}
-		s.mu.Unlock()
-		if waiter != nil {
-			s.queueSchedule()
-			waiter <- requestResult{packet: packet}
+		if s.dispatchPacket(packet) {
 			continue
 		}
+		// dispatchPacket reports unsolicited packets through the normal push path.
 		s.mu.Lock()
 		if !s.bootstrapDone && s.bootstrapPushes != nil {
 			s.bootstrapPushes = append(s.bootstrapPushes, packet)
@@ -535,6 +550,27 @@ func (s *Session) readLoop() {
 			return
 		}
 	}
+}
+
+// dispatchPacket correlates by the packet header unique ID.
+func (s *Session) dispatchPacket(packet loco.Packet) bool {
+	s.mu.Lock()
+	key := packetUniqueID(packet.Header.Method, packet.Header.PacketID)
+	waiter := s.pendingByUniqueID[key]
+	if waiter != nil {
+		delete(s.pendingByUniqueID, key)
+		if s.pendingUniqueIDByID[packet.Header.PacketID] == key && s.pending[packet.Header.PacketID] == waiter {
+			delete(s.pending, packet.Header.PacketID)
+			delete(s.pendingUniqueIDByID, packet.Header.PacketID)
+		}
+	}
+	s.mu.Unlock()
+	if waiter == nil {
+		return false
+	}
+	s.queueSchedule()
+	waiter <- requestResult{packet: packet}
+	return true
 }
 
 func (s *Session) finishBootstrap() bool {
@@ -567,6 +603,8 @@ func (s *Session) finishRead(err error) {
 	shouldSchedule := !s.closing
 	pending := s.pending
 	s.pending = nil
+	s.pendingByUniqueID = nil
+	s.pendingUniqueIDByID = nil
 	pushes := s.pushes
 	s.mu.Unlock()
 	if shouldSchedule {

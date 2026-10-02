@@ -113,10 +113,12 @@ func TestSessionCloseWaitsForSelectedCompletionBeforeCancelling(t *testing.T) {
 	scheduler := &blockingPingScheduler{entered: make(chan struct{}), release: make(chan struct{})}
 	waiter := make(chan requestResult, 1)
 	session := &Session{
-		wire:               &wireConn{c: clientConn},
-		pushes:             make(chan loco.Packet, 1),
-		pending:            map[uint32]chan requestResult{100000000: waiter},
-		lifecycleScheduler: scheduler,
+		wire:                &wireConn{c: clientConn},
+		pushes:              make(chan loco.Packet, 1),
+		pending:             map[uint32]chan requestResult{100000000: waiter},
+		pendingByUniqueID:   map[string]chan requestResult{"PING.100000000": waiter},
+		pendingUniqueIDByID: map[uint32]string{100000000: "PING.100000000"},
+		lifecycleScheduler:  scheduler,
 	}
 	go session.readLoop()
 	defer func() { _ = clientConn.Close(); _ = serverConn.Close() }()
@@ -184,10 +186,12 @@ func TestSessionPingTransportCompletionSchedulesBeforePendingDelivery(t *testing
 	scheduler := &recordingPingScheduler{}
 	waiter := make(chan requestResult, 1)
 	session := &Session{
-		wire:               &wireConn{c: clientConn},
-		pushes:             make(chan loco.Packet, 1),
-		pending:            map[uint32]chan requestResult{100000000: waiter},
-		lifecycleScheduler: scheduler,
+		wire:                &wireConn{c: clientConn},
+		pushes:              make(chan loco.Packet, 1),
+		pending:             map[uint32]chan requestResult{100000000: waiter},
+		pendingByUniqueID:   map[string]chan requestResult{"PING.100000000": waiter},
+		pendingUniqueIDByID: map[uint32]string{100000000: "PING.100000000"},
+		lifecycleScheduler:  scheduler,
 	}
 	go session.readLoop()
 	defer func() { _ = clientConn.Close(); _ = serverConn.Close() }()
@@ -271,10 +275,12 @@ func TestSessionNonPingTransportCompletionSchedulesRearm(t *testing.T) {
 	scheduler := &recordingPingScheduler{}
 	waiter := make(chan requestResult, 1)
 	session := &Session{
-		wire:               &wireConn{c: clientConn},
-		pushes:             make(chan loco.Packet, 1),
-		pending:            map[uint32]chan requestResult{100000000: waiter},
-		lifecycleScheduler: scheduler,
+		wire:                &wireConn{c: clientConn},
+		pushes:              make(chan loco.Packet, 1),
+		pending:             map[uint32]chan requestResult{100000000: waiter},
+		pendingByUniqueID:   map[string]chan requestResult{"NOTIREAD.100000000": waiter},
+		pendingUniqueIDByID: map[uint32]string{100000000: "NOTIREAD.100000000"},
+		lifecycleScheduler:  scheduler,
 	}
 	go session.readLoop()
 	defer func() { _ = clientConn.Close(); _ = serverConn.Close() }()

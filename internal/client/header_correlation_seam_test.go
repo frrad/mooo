@@ -11,8 +11,7 @@ import (
 )
 
 // The observer is exercised through Session.readLoop, not a standalone map
-// lookup. Packet ID is the only correlation available at this seam; the source
-// unique-ID and timeout-tag mappings remain intentionally unresolved.
+// lookup. The validated header method and packet ID form the unique-ID key.
 func TestSessionHeaderObserverCorrelatesPendingPacketBeforeBody(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = clientConn.Close() }()
@@ -30,6 +29,8 @@ func TestSessionHeaderObserverCorrelatesPendingPacketBeforeBody(t *testing.T) {
 		pending: map[uint32]chan requestResult{
 			wantID: waiter,
 		},
+		pendingByUniqueID:   map[string]chan requestResult{"PUSH.100000123": waiter},
+		pendingUniqueIDByID: map[uint32]string{wantID: "PUSH.100000123"},
 	}
 	readDone := make(chan struct{})
 	t.Cleanup(func() {
@@ -96,6 +97,8 @@ func TestSessionHeaderObserverBodyEOFFailsWaiterOnce(t *testing.T) {
 		pending: map[uint32]chan requestResult{
 			wantID: waiter,
 		},
+		pendingByUniqueID:   map[string]chan requestResult{"PUSH.100000124": waiter},
+		pendingUniqueIDByID: map[uint32]string{wantID: "PUSH.100000124"},
 		headerObserver: func(header loco.Header) {
 			if header.PacketID == wantID {
 				observed <- struct{}{}
