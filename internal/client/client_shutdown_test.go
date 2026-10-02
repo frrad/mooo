@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -90,9 +91,18 @@ func TestClientShutdownRetainsOwnershipUntilSessionWorkerJoins(t *testing.T) {
 }
 
 func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
+	dir := t.TempDir()
+	leasePath := filepath.Join(dir, "profile.lock")
+	lease, err := acquireProfileLease(leasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
 	started := make(chan struct{})
 	release := make(chan struct{})
-	client := &Client{}
+	var releaseOnce sync.Once
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+	client := &Client{lease: lease}
 	client.dial = func(context.Context, authstate.State) (*Session, error) {
 		close(started)
 		<-release
@@ -106,12 +116,23 @@ func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
 		t.Fatal("dial did not start")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	err := client.Shutdown(ctx)
+	err = client.Shutdown(ctx)
 	cancel()
-	if err != nil {
-		t.Fatalf("shutdown while dial blocked: %v", err)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("shutdown while dial blocked error=%v, want deadline", err)
 	}
-	close(release)
+	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
+		t.Fatalf("lease after blocked shutdown error=%v, want %v", err, ErrProfileInUse)
+	}
+	// A blocked dial keeps ownership and makes the first shutdown incomplete.
+	// Use a short context so this assertion catches accidental early cleanup.
+	ctx, cancel = context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err = client.Shutdown(ctx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("second shutdown while dial blocked error=%v, want deadline", err)
+	}
+	releaseOnce.Do(func() { close(release) })
 	select {
 	case err := <-connectDone:
 		if !errors.Is(err, ErrClientClosed) {
@@ -120,6 +141,17 @@ func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("connect did not unwind after dial release")
 	}
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	if err := client.Shutdown(ctx); err != nil {
+		cancel()
+		t.Fatalf("shutdown after dial release: %v", err)
+	}
+	cancel()
+	otherLease, err := acquireProfileLease(leasePath)
+	if err != nil {
+		t.Fatalf("lease after confirmed connect shutdown: %v", err)
+	}
+	_ = otherLease.Close()
 }
 
 func TestClientShutdownContextDoesNotWaitForAnotherShutdown(t *testing.T) {
@@ -175,4 +207,49 @@ func TestClientShutdownContextDoesNotWaitForAnotherShutdown(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("first shutdown did not finish")
 	}
+}
+
+func TestClientCloseRetainsOwnershipThroughBlockedConnect(t *testing.T) {
+	dir := t.TempDir()
+	leasePath := filepath.Join(dir, "profile.lock")
+	lease, err := acquireProfileLease(leasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+	client := &Client{lease: lease, dial: func(context.Context, authstate.State) (*Session, error) {
+		close(started)
+		<-release
+		return &Session{}, nil
+	}}
+	connectDone := make(chan error, 1)
+	go func() { connectDone <- client.Connect(context.Background()) }()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("dial did not start")
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("close while dial blocked: %v", err)
+	}
+	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
+		t.Fatalf("lease after close during dial error=%v, want %v", err, ErrProfileInUse)
+	}
+	releaseOnce.Do(func() { close(release) })
+	select {
+	case err := <-connectDone:
+		if !errors.Is(err, ErrClientClosed) {
+			t.Fatalf("connect after close: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("connect did not unwind after dial release")
+	}
+	otherLease, err := acquireProfileLease(leasePath)
+	if err != nil {
+		t.Fatalf("lease after close cleanup: %v", err)
+	}
+	_ = otherLease.Close()
 }
