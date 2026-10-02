@@ -405,12 +405,13 @@ func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, c
 	<-watchDone
 	_ = wire.c.SetWriteDeadline(time.Time{})
 	if (ctxErr != nil || err != nil) && written > 0 {
-		_ = wire.close()
-		failure := err
-		if ctxErr != nil {
-			failure = ctxErr
+		s.mu.Lock()
+		if s.wire == wire {
+			s.closing = true
 		}
-		s.finishRead(failure)
+		s.mu.Unlock()
+		_ = wire.close()
+		s.stopLifecycle()
 	}
 	if ctxErr != nil {
 		return ctxErr
