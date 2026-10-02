@@ -73,13 +73,16 @@ type Session struct {
 	pending            map[uint32]chan requestResult
 	lifecycleScheduler lifecycleScheduler
 	lifecycleStopped   bool
-	initialChatData    []bson.Raw
-	userID             int64
-	appVersion         string
-	mediaDial          wireDialer
-	loginCursor        loginCursor
-	bootstrapDone      bool
-	bootstrapPushes    []loco.Packet
+	// headerObserver is configured before readLoop starts and must not change
+	// while that loop is running.
+	headerObserver  func(loco.Header)
+	initialChatData []bson.Raw
+	userID          int64
+	appVersion      string
+	mediaDial       wireDialer
+	loginCursor     loginCursor
+	bootstrapDone   bool
+	bootstrapPushes []loco.Packet
 }
 
 func newSession(scheduler lifecycleScheduler) *Session {
@@ -500,7 +503,7 @@ func (s *Session) removePending(id uint32, expected chan requestResult) {
 
 func (s *Session) readLoop() {
 	for {
-		packet, err := s.wire.read()
+		packet, err := s.wire.readWithHeaderObserver(s.headerObserver)
 		if err != nil {
 			s.finishRead(err)
 			return
