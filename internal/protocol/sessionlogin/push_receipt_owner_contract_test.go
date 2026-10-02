@@ -16,9 +16,11 @@ type pushReceiptOwnerContract struct {
 	Cases    []pushReceiptOwnerCase `json:"cases"`
 }
 type pushReceiptOwnerCase struct {
-	Name         string   `json:"name"`
-	AgentPresent bool     `json:"agent_present"`
-	Expect       []string `json:"expect"`
+	Name          string   `json:"name"`
+	AgentPresent  bool     `json:"agent_present"`
+	PingInterval  *float64 `json:"ping_interval_seconds"`
+	ExpectedDelay *float64 `json:"expected_schedule_delay_seconds"`
+	Expect        []string `json:"expect"`
 }
 
 var pushReceiptOwnerEffects = map[string]bool{"enqueue_cancel_ping": true, "inline_push_receipt": true, "enqueue_schedule_ping": true}
