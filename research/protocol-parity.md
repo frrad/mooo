@@ -265,8 +265,8 @@ least one official branch or storage effect remains unresolved.
 | Text send | Baseline mapped | No-retry behavior mapped | Message-ID lifecycle partial | Ambiguous delivery modeled | Strong baseline | Partial |
 | Photo transfer | Baseline mapped | Multi-stage flow mapped | Resume state partial | Ambiguous stage failures covered | Strong baseline | Partial |
 | Replies and reactions | Implemented subset mapped | Primary paths mapped | Revision/storage behavior partial | Some aggregate/detail paths mapped | Implemented subset covered | Partial |
-| Membership and chat changes | Inventory only | Missing | Missing | Missing | Minimal | Missing |
-| Chat info, members, member list | CHATINFO/MEMBER/MEMLIST models and wire keys mapped; GETMEM unreachable | Completion, batching, and INFOLINK deferral traced | Member/user upsert mapped; shared room upsert partial | Live key encoding and NEWMEM predicates open | None yet | Partial |
+| Membership and chat changes | DELMEM/NEWMEM/LEFT/CHGCHATST/CHGMETA/CHGMCMETA typed decoder subset implemented | CHGCHATST revision gate and bounded CHGMETA effect selection implemented; broader follow-ups partial | Official member removal and selected room mutations traced; client durable membership store missing | Completion failures, subtype consumers, and remaining chat-type guards open | Synthetic decoder and CHGCHATST/CHGMETA reducer coverage | Partial |
+| Chat info, members, member list | CHATINFO/MEMBER/MEMLIST models and wire keys implemented; GETMEM unreachable | Explicit one-shot APIs, MEMBER filtering/batching and stop-on-failure implemented; INFOLINK deferral traced but not implemented | Member/user upsert mapped; shared room upsert partial; client APIs do not persist room/member state | Live key encoding and NEWMEM predicates open | Synthetic wire/model decoding, null/absence, malformed identities, MEMBER batching and partial-result failure coverage | Partial |
 | Read receipts, typing, deletion | DECUNREAD, NOTIREAD, and SYNCMSG read-side effect path mapped | Mac markAsRead/read-all routes through SYNCMSG; CHATOFF is local teardown; no distinct wire requests found | Official DECUNREAD mutations traced; client persists successful SYNCMSG read watermarks separately from message commits | SYNCMSG is not semantically read-only; live NOTIREAD/read-side-effect mechanism and failure behavior remain unresolved | DECUNREAD parser coverage; bounded A/B observation; synthetic SYNCMSG success/failure and persistence coverage | Partial |
 | CHANGESVR/KICKOUT/reconnect | Commands and some reasons mapped | Manager delegation, pending-failure fan-out, and packet-ID lifecycle traced | Route clearing/reset ownership mapped; full durable recovery partial | Reconnect remains an explicit manager decision | Reducer plus lifecycle characterization, collision skipping, packet-ID wrap, and unauthenticated-KICKOUT coverage | Partial |
 
@@ -289,3 +289,13 @@ least one official branch or storage effect remains unresolved.
 The matrix is deliberately conservative. Live success demonstrates
 interoperability for one path; it does not by itself establish official-client
 parity.
+
+The implemented chat-metadata boundary is exercised by
+`internal/protocol/chatmeta/chatmeta_test.go` and
+`internal/client/chatmeta_test.go`. These tests establish model decoding and
+explicit request orchestration, including completed MEMBER batches returned
+with a later failure. They do not establish official database mutations,
+OpenChat link resolution, live response encodings, or automatic membership-push
+follow-ups. The membership decoder and reducer tests in
+`internal/protocol/events/` likewise protect only their reviewed contracts;
+selecting an effect does not prove that a durable consumer executes it.
