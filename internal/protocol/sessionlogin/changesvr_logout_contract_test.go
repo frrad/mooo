@@ -19,6 +19,7 @@ type changeSvrLogoutCase struct {
 	Name           string   `json:"name"`
 	CallbackMain   bool     `json:"callback_on_main_thread"`
 	ManagerPresent bool     `json:"manager_present"`
+	HasMoreTickets bool     `json:"has_more_ticket_addresses"`
 	Expected       []string `json:"expected_effects"`
 }
 
@@ -33,7 +34,7 @@ func loadChangeSvrLogoutContract(path string) (changeSvrLogoutContract, error) {
 	if err := dec.Decode(&contract); err != nil {
 		return contract, err
 	}
-	if contract.Status != "reviewed-static-unexecuted-runtime" || len(contract.Cases) != 3 {
+	if contract.Status != "reviewed-static-unexecuted-runtime" || len(contract.Cases) != 4 {
 		return contract, fmt.Errorf("invalid status=%q cases=%d", contract.Status, len(contract.Cases))
 	}
 	seen := map[string]bool{}
@@ -46,8 +47,14 @@ func loadChangeSvrLogoutContract(path string) (changeSvrLogoutContract, error) {
 		if !tc.CallbackMain {
 			want = []string{"dispatch_main_queue", "invoke_logout_for_change_server"}
 		}
-		if !tc.ManagerPresent {
-			want = []string{}
+		if tc.ManagerPresent {
+			want = append(want, "send_logout_for_change_server", "clear_carriage_address", "check_more_ticket_addresses")
+			if tc.HasMoreTickets {
+				want = append(want, "move_ticket_address_cursor")
+			}
+			want = append(want, "send_logout")
+		} else {
+			want = append(want, "send_logout_for_change_server_nil_receiver")
 		}
 		if !reflect.DeepEqual(tc.Expected, want) {
 			return contract, fmt.Errorf("effects=%v want=%v case=%q", tc.Expected, want, tc.Name)

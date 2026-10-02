@@ -8,19 +8,23 @@ the first object argument, the manager/request owner for this callback shape.
 It submits a block through a shared main-thread dispatch helper. On the main
 thread the helper invokes the block inline; off the main thread it dispatches
 the block to the main queue. The block sends `logoutForChangeServer` to the
-captured manager. Server-change payload parsing, session reset details, and
-observer effects are outside this traced slice.
+captured manager. The traced `logoutForChangeServer` body then calls
+`clearCarriageAddress`, checks `hasMoreTicketAddresses`, conditionally calls
+`moveTicketAddressCursor`, and sends `logout`. Server-change payload parsing,
+session reset details, and observer effects are outside this traced slice.
 
 The clean-room contract has two observed scheduling branches:
 
 * main-thread callback: invoke `logoutForChangeServer` inline on the captured
-  manager;
+  manager, then apply the ordered logout body;
 * non-main-thread callback: dispatch to the main queue, then invoke the same
-  selector on the captured manager.
+  selector on the captured manager and apply the ordered logout body.
 
-The block uses Objective-C message-send semantics. A nil captured manager has
-no observable logout effect under that dispatch; nil-manager lifecycle policy
-is otherwise untraced.
+The helper's scheduling and block invocation remain observable even when the
+captured manager is nil. The block then performs an Objective-C message send to
+the nil receiver, which is a no-op; consequently the logout body does not run.
+Whether the surrounding manager should recover after this nil-receiver path is
+untraced.
 
 ## Static provenance
 
@@ -31,3 +35,6 @@ is otherwise untraced.
   main-thread predicate and either invokes the block or dispatches it to the
   main queue.
 - Block selector: `logoutForChangeServer`.
+- Logout body IMP: `0x10151869c`; it invokes `clearCarriageAddress`, checks
+  `hasMoreTicketAddresses`, conditionally invokes `moveTicketAddressCursor`,
+  and sends `logout`.

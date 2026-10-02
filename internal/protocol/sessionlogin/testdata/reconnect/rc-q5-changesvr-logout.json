@@ -5,19 +5,29 @@
       "name": "main_thread_manager_invokes_inline",
       "callback_on_main_thread": true,
       "manager_present": true,
-      "expected_effects": ["invoke_logout_for_change_server_inline"]
+      "has_more_ticket_addresses": true,
+      "expected_effects": ["invoke_logout_for_change_server_inline", "send_logout_for_change_server", "clear_carriage_address", "check_more_ticket_addresses", "move_ticket_address_cursor", "send_logout"]
     },
     {
       "name": "background_thread_manager_dispatches_then_invokes",
       "callback_on_main_thread": false,
       "manager_present": true,
-      "expected_effects": ["dispatch_main_queue", "invoke_logout_for_change_server"]
+      "has_more_ticket_addresses": false,
+      "expected_effects": ["dispatch_main_queue", "invoke_logout_for_change_server", "send_logout_for_change_server", "clear_carriage_address", "check_more_ticket_addresses", "send_logout"]
     },
     {
-      "name": "nil_manager_message_has_no_effect",
+      "name": "background_nil_manager_still_dispatches_then_sends_nil",
       "callback_on_main_thread": false,
       "manager_present": false,
-      "expected_effects": []
+      "has_more_ticket_addresses": true,
+      "expected_effects": ["dispatch_main_queue", "invoke_logout_for_change_server", "send_logout_for_change_server_nil_receiver"]
+    },
+    {
+      "name": "main_nil_manager_invokes_then_sends_nil",
+      "callback_on_main_thread": true,
+      "manager_present": false,
+      "has_more_ticket_addresses": true,
+      "expected_effects": ["invoke_logout_for_change_server_inline", "send_logout_for_change_server_nil_receiver"]
     }
   ]
 }
