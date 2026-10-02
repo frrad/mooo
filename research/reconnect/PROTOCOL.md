@@ -6,7 +6,7 @@ RC-BIN-001 through RC-BIN-004.
 The manager exposes a configurable carriage ping interval and a method that
 constructs a zero-field `PING` request through the ordinary carriage request
 path. Three recovered manager callback paths read that interval and schedule a
-delayed invocation of the carriage ping method on the carriage target. A
+delayed invocation of the carriage ping method on the captured request-owner target. A
 paired callback cancels prior delayed invocations for that same target and
 selector. Request, completion, and push-receipt callers are traced; the broader
 admission gates and any traffic-based reset remain unresolved. The request completion is forwarded through the normal
@@ -49,9 +49,12 @@ to clear when the handler by-ref is installed; it is not an ongoing manager
 activity flag. External event labels for these numeric values are not
 established by this trace.
 
-The coordinator assigns a fallback ping interval of 180 seconds: any positive
-signed 32-bit configuration value is retained, while zero or negative values
-become 180. The interval setter, storage field, and delayed scheduling
+The traced configuration callback reads `fgPingItv` from the object returned by
+`getConfWifi`, whose static accessor is a signed 16-bit field, maps values below
+1 to 180 seconds, and passes the result to the manager interval setter. The
+setter stores the supplied value directly. The wire key, serialized presence and
+default rule, cache lifetime, and alternate
+configuration callers were not recovered. The interval storage field and delayed scheduling
 primitive are proven, and request/completion/push-receipt callers are traced;
 the broader admission gates that start or stop those callbacks remain
 unresolved. Timer creation/start gate outside those callers, timer stop gate,
