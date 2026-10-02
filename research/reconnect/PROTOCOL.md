@@ -1,6 +1,7 @@
 # Reconnect keep-alive and receive-timeout boundary
 
-Status: static handoff with explicit gaps, 2026-10-02. Evidence: RC-BIN-001.
+Status: static lifecycle supplement with explicit gaps, 2026-10-02. Evidence:
+RC-BIN-001 through RC-BIN-003.
 
 The manager exposes a configurable carriage ping interval and a method that
 constructs a zero-field `PING` request through the ordinary carriage request
@@ -12,6 +13,13 @@ remain untraced. The request completion is forwarded through the normal
 response wrapper; a successful reply does not expose any additional
 application state. The traced completion itself does not cancel a keep-alive
 timer.
+
+The concrete PING method allocates an empty carriage packet and submits it
+through the manager's ordinary carriage request path. That ordinary path
+queues a main-queue cancellation of any delayed PING invocation for the same
+carriage target before continuing with its normal request/error handling. Thus
+an outgoing carriage request suppresses an already queued delayed PING; the
+source chain does not prove that this path immediately re-arms the interval.
 
 The coordinator assigns a fallback ping interval of 180 seconds: any positive
 signed 32-bit configuration value is retained, while zero or negative values
@@ -44,7 +52,8 @@ body-read timeout behavior are likewise open.
 
 ## Transfer boundaries
 
-Observed: zero-field PING construction, ordinary carriage dispatch, interval
+Observed: zero-field PING construction through the ordinary carriage request
+path, cancellation of a queued delayed PING when that path is entered, interval
 read plus delayed PING scheduling, cancellation of a prior delayed PING for the
 same target and selector, completion wrapper (nil response calls the supplied
 completion with nil; non-nil response is wrapped before that call), delayed
