@@ -17,7 +17,11 @@ func TestSessionHeaderObserverCorrelatesPendingPacketBeforeBody(t *testing.T) {
 	defer func() { _ = serverConn.Close() }()
 	wantID := uint32(100000123)
 	waiter := make(chan requestResult, 1)
-	observed := make(chan bool, 1)
+	type observation struct {
+		pendingPresent bool
+		waiterEmpty    bool
+	}
+	observed := make(chan observation, 1)
 	session := &Session{
 		wire:   &wireConn{c: clientConn},
 		pushes: make(chan loco.Packet, 1),
@@ -25,13 +29,27 @@ func TestSessionHeaderObserverCorrelatesPendingPacketBeforeBody(t *testing.T) {
 			wantID: waiter,
 		},
 	}
+	readDone := make(chan struct{})
+	t.Cleanup(func() {
+		_ = serverConn.Close()
+		_ = clientConn.Close()
+		select {
+		case <-readDone:
+		case <-time.After(time.Second):
+			t.Errorf("session read loop did not stop during cleanup")
+		}
+	})
 	session.headerObserver = func(header loco.Header) {
 		session.mu.Lock()
 		_, present := session.pending[header.PacketID]
 		session.mu.Unlock()
-		observed <- present
+		select {
+		case <-waiter:
+			observed <- observation{pendingPresent: present, waiterEmpty: false}
+		default:
+			observed <- observation{pendingPresent: present, waiterEmpty: true}
+		}
 	}
-	readDone := make(chan struct{})
 	go func() {
 		session.readLoop()
 		close(readDone)
@@ -45,8 +63,8 @@ func TestSessionHeaderObserverCorrelatesPendingPacketBeforeBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	select {
-	case present := <-observed:
-		if !present {
+	case got := <-observed:
+		if !got.pendingPresent || !got.waiterEmpty {
 			t.Fatal("validated header did not correlate to pending packet ID")
 		}
 	case <-time.After(time.Second):
@@ -63,12 +81,75 @@ func TestSessionHeaderObserverCorrelatesPendingPacketBeforeBody(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("session did not deliver completed packet")
 	}
+}
+
+func TestSessionHeaderObserverBodyEOFFailsWaiterOnce(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	wantID := uint32(100000124)
+	waiter := make(chan requestResult, 1)
+	observed := make(chan struct{}, 1)
+	session := &Session{
+		wire:   &wireConn{c: clientConn},
+		pushes: make(chan loco.Packet, 1),
+		pending: map[uint32]chan requestResult{
+			wantID: waiter,
+		},
+		headerObserver: func(header loco.Header) {
+			if header.PacketID == wantID {
+				observed <- struct{}{}
+			}
+		},
+	}
+	readDone := make(chan struct{})
+	t.Cleanup(func() {
+		_ = serverConn.Close()
+		_ = clientConn.Close()
+		select {
+		case <-readDone:
+		case <-time.After(time.Second):
+			t.Errorf("session read loop did not stop during cleanup")
+		}
+	})
+	go func() {
+		session.readLoop()
+		close(readDone)
+	}()
+	header, err := (loco.Header{PacketID: wantID, Method: "PUSH", BodyLen: 4}).MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = serverConn.SetWriteDeadline(time.Now().Add(time.Second))
+	if _, err := serverConn.Write(header); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-observed:
+	case <-time.After(time.Second):
+		t.Fatal("header observer did not run")
+	}
+	if _, err := serverConn.Write([]byte("x")); err != nil {
+		t.Fatal(err)
+	}
 	if err := serverConn.Close(); err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case <-readDone:
+	case result := <-waiter:
+		if result.err == nil {
+			t.Fatal("body EOF completed waiter successfully")
+		}
 	case <-time.After(time.Second):
-		t.Fatal("session read loop did not stop after transport close")
+		t.Fatal("body EOF did not fail waiter")
+	}
+	select {
+	case result := <-waiter:
+		t.Fatalf("waiter received duplicate completion: %#v", result)
+	default:
+	}
+	session.mu.Lock()
+	pending := session.pending
+	session.mu.Unlock()
+	if pending != nil {
+		t.Fatalf("pending map after terminal body EOF=%#v, want nil", pending)
 	}
 }
