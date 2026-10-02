@@ -82,3 +82,49 @@ func TestPlanReceiveHeaderTimeoutRejectsMissingOwner(t *testing.T) {
 		t.Fatalf("missing owner got=%#v err=%v", got, err)
 	}
 }
+
+func TestPlanReceiveHeaderTimeoutApprovedAdmissionVectors(t *testing.T) {
+	type vector struct {
+		name, evidence string
+		input          ReceiveHeaderTimeoutInput
+		want           []string
+	}
+	allKinds := map[string]bool{
+		"no_enqueue": true, "read_timeout": true, "check_tag_nonnegative": true,
+		"queue_main": true, "reread_timeout": true, "perform_selector_after_delay": true,
+		"cancel_previous_perform": true, "owner_target": true, "fire_selector": true,
+		"wrapped_tag": true,
+	}
+	vectors := []vector{
+		{"positive timeout tag zero", "RC-BIN-010", ReceiveHeaderTimeoutInput{AdmissionTimeout: 20 * time.Second, EnableByte: 1, Owner: "agent", RequestTag: 0}, []string{"read_timeout", "check_tag_nonnegative", "queue_main", "reread_timeout", "perform_selector_after_delay", "owner_target", "fire_selector", "wrapped_tag"}},
+		{"positive timeout maximum signed tag", "RC-BIN-010", ReceiveHeaderTimeoutInput{AdmissionTimeout: 20 * time.Second, Owner: "agent", RequestTag: 1<<63 - 1}, []string{"read_timeout", "check_tag_nonnegative", "queue_main", "cancel_previous_perform", "owner_target", "fire_selector", "wrapped_tag"}},
+		{"zero timeout rejects zero tag", "RC-BIN-010", ReceiveHeaderTimeoutInput{Owner: "agent", RequestTag: 0}, []string{"no_enqueue"}},
+		{"negative timeout rejects zero tag", "RC-BIN-010", ReceiveHeaderTimeoutInput{AdmissionTimeout: -time.Second, Owner: "agent", RequestTag: 0}, []string{"no_enqueue"}},
+		{"positive timeout rejects minimum signed tag", "RC-BIN-010", ReceiveHeaderTimeoutInput{AdmissionTimeout: 20 * time.Second, Owner: "agent", RequestTag: -1 << 63}, []string{"no_enqueue"}},
+		{"enable rereads changed timeout", "RC-BIN-010", ReceiveHeaderTimeoutInput{AdmissionTimeout: 20 * time.Second, ExecutionTimeout: 7 * time.Second, EnableByte: 1, Owner: "agent", RequestTag: 1}, []string{"read_timeout", "check_tag_nonnegative", "queue_main", "reread_timeout", "perform_selector_after_delay", "owner_target", "fire_selector", "wrapped_tag"}},
+		{"disable false uses cancellation tuple", "RC-BIN-010", ReceiveHeaderTimeoutInput{AdmissionTimeout: 20 * time.Second, ExecutionTimeout: 7 * time.Second, Owner: "agent", RequestTag: 1}, []string{"read_timeout", "check_tag_nonnegative", "queue_main", "cancel_previous_perform", "owner_target", "fire_selector", "wrapped_tag"}},
+		{"enable byte two follows non-enable branch", "RC-BIN-010", ReceiveHeaderTimeoutInput{AdmissionTimeout: 20 * time.Second, ExecutionTimeout: 7 * time.Second, EnableByte: 2, Owner: "agent", RequestTag: 1}, []string{"read_timeout", "check_tag_nonnegative", "queue_main", "cancel_previous_perform", "owner_target", "fire_selector", "wrapped_tag"}},
+		{"execution timeout becomes zero", "RC-BIN-010", ReceiveHeaderTimeoutInput{AdmissionTimeout: 20 * time.Second, EnableByte: 1, Owner: "agent", RequestTag: 1}, []string{"read_timeout", "check_tag_nonnegative", "queue_main", "reread_timeout", "perform_selector_after_delay", "owner_target", "fire_selector", "wrapped_tag"}},
+	}
+	for _, tc := range vectors {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.evidence == "" {
+				t.Fatal("missing source evidence")
+			}
+			got, err := PlanReceiveHeaderTimeout(tc.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			kinds := make([]string, len(got))
+			for i, effect := range got {
+				if !allKinds[effect.Kind] {
+					t.Fatalf("unknown effect kind %q", effect.Kind)
+				}
+				kinds[i] = effect.Kind
+			}
+			if !reflect.DeepEqual(kinds, tc.want) {
+				t.Fatalf("effect kinds=%v want=%v", kinds, tc.want)
+			}
+		})
+	}
+}
