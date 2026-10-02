@@ -8,12 +8,14 @@ import (
 
 // InSegmentTimeoutTimer is the cancellation handle returned by the injected
 // relative clock.
+// Stop must not synchronously wait for the callback while the owner lock is held.
 type InSegmentTimeoutTimer interface{ Stop() bool }
 
 type InSegmentTimeoutClock interface {
 	AfterFunc(time.Duration, func()) InSegmentTimeoutTimer
 }
 
+// Enqueue records work and must not synchronously reenter the owner.
 type InSegmentTimeoutQueue interface{ Enqueue(func()) }
 
 type InSegmentTimeoutConfig interface{ InSegmentTimeout() time.Duration }
