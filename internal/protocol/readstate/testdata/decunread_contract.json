@@ -27,7 +27,9 @@
       },
       "activeMemberIds": [
         8
-      ]
+      ],
+      "countOfNewMessage": 4,
+      "mentionReplyPresent": true
     },
     "notice": {
       "chatId": 42,
@@ -37,7 +39,7 @@
     "inputs": {},
     "want": {
       "applied": true,
-      "mentionReplyPresent": false,
+      "mentionReplyPresent": true,
       "memberWatermarks": {
         "8": 12
       },
@@ -51,7 +53,8 @@
           "watermark": 12
         }
       ],
-      "activeMemberCount": 1
+      "activeMemberCount": 1,
+      "unreadCount": 4
     }
   },
   {
