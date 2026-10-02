@@ -44,7 +44,7 @@
       ]
     },
     {
-      "name": "recovered coordinator and socket defaults",
+      "name": "recovered coordinator and manager initializer values",
       "kind": "configuration",
       "ping_interval_min_seconds": 180,
       "connect_timeout_seconds": 15,
@@ -63,6 +63,8 @@
       "cases": [
         {"configured_seconds": 0, "stored_seconds": 180},
         {"configured_seconds": -1, "stored_seconds": 180},
+        {"configured_seconds": 1, "stored_seconds": 1},
+        {"configured_seconds": 179, "stored_seconds": 179},
         {"configured_seconds": 180, "stored_seconds": 180},
         {"configured_seconds": 181, "stored_seconds": 181}
       ]

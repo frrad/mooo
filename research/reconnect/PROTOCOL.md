@@ -14,8 +14,8 @@ duplicate scheduled pings.
 The timer is separate from packet receive processing. The traced coordinator timer compares elapsed time using Foundation's
 `timeIntervalSinceReferenceDate` wall/reference-date clock. This does not establish
 monotonic behavior, so wall-clock jumps remain an implementation concern. The
-coordinator assigns a 180-second minimum ping interval: its configuration value is
-used only when positive and greater than 180; otherwise 180 seconds is stored.
+coordinator assigns a fallback ping interval of 180 seconds: any positive signed
+32-bit configuration value is retained, while zero or negative values become 180.
 Timer creation/start gate, timer stop gate, and whether other traffic updates the
 last-ping timestamp were not reachable through direct call edges in the analyzed
 build. They remain gaps rather than defaults. A separate
@@ -32,9 +32,11 @@ cancelling a prior delayed timeout for the same target/selector. A timeout is
 therefore a carriage disconnect and consequently fails all pending callbacks
 through the already established disconnect fan-out.
 
-The socket constructor defaults recovered from the initializer are connect=15,
-receive-header=20, in-segment=10, and out-segment=10 seconds. These are constructor
-defaults; a higher-level override caller was not recovered. The complete
+The manager's booking/configuration initializer passes connect=15,
+receive-header=20, in-segment=10, and out-segment=10 seconds to its downstream
+configuration object. This proves the values at that call site, not that every
+socket construction uses them; later override or alternate-constructor behavior
+was not recovered. The complete
 arm/disarm call sites in the socket read loop and whether the timeout remains armed
 with no pending request were not proven. Per-request timeout semantics and
 body-read timeout behavior are likewise open.
@@ -45,7 +47,7 @@ Observed: zero-field PING construction, ordinary carriage dispatch, completion
 wrapper (nil response calls the supplied completion with nil; non-nil response is
 wrapped before that call), delayed receive-header timeout gated by positive timeout
 and request tag, timeout-to-disconnect, tag-driven header/body read callbacks,
-constructor timeout defaults, and reference-date elapsed-time comparison in the
+configuration values at the traced initializer, and reference-date elapsed-time comparison in the
 coordinator timer.
 
 Implementation decisions: represent PING scheduling with an injected clock and
