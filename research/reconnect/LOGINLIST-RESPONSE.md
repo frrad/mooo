@@ -4,9 +4,8 @@ Status: static source supplement, 2026-10-02. This continues the scoped
 LOGINLIST carriage chain and describes callback ordering only.
 
 For a non-nil transport packet, the callback first constructs a response
-wrapper and asks it for the login-success predicate. It writes an internal
-manager status on both predicate branches. The exact numeric status arguments
-were not recovered and remain intentionally unspecified.
+wrapper and asks it for the login-success predicate. It writes manager status `0x19` on the login-success branch and `0x18` on
+the non-success branch.
 
 On the login-success branch, route fields are copied from the manager's current
 state into its configuration/settings target in this order: carriage address
@@ -18,12 +17,13 @@ response packet. The non-success branch does not perform those route copies.
 
 After the route branch, the callback checks response success and end-of-list.
 Only when both predicates hold does it invoke the token-progress sequence:
-set the token-lock state, read the current token, update the token, read the
-blind token, and update the blind token. It then forwards the wrapper to the
+set token-lock state to `false`, read the current token, update the token, read
+the blind token, and update the blind token. It then forwards the wrapper to the
 supplied completion. A nil packet bypasses wrapper construction and forwards
 nil directly.
 
-Observed: wrapper-before-predicate ordering; status write on both branches;
+Observed: wrapper-before-predicate ordering; status `0x19` on login success and
+`0x18` otherwise;
 manager-state route-copy order on login success; success-plus-EOF token branch
 and its ordering; nil forwarding; and completion delivery after these effects.
 

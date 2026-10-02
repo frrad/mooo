@@ -179,7 +179,7 @@
       "status": "unexecuted",
       "expect": [
         "construct_response_wrapper",
-        "write_internal_status_unknown",
+        "write_internal_status_0x19",
         "copy_manager_carriage_host",
         "copy_manager_carriage_port",
         "copy_manager_last_host",
@@ -190,7 +190,6 @@
         "forward_wrapper"
       ],
       "remaining_gaps": [
-        "numeric_status_values",
         "setter_durability"
       ]
     },
@@ -203,12 +202,9 @@
       "status": "unexecuted",
       "expect": [
         "construct_response_wrapper",
-        "write_internal_status_unknown",
+        "write_internal_status_0x18",
         "skip_route_copies",
         "forward_wrapper"
-      ],
-      "remaining_gaps": [
-        "numeric_status_values"
       ]
     },
     {
@@ -221,7 +217,7 @@
       "expect": [
         "construct_response_wrapper",
         "route_branch",
-        "set_token_lock_state",
+        "set_token_lock_false",
         "read_token",
         "update_token",
         "read_blind_token",
