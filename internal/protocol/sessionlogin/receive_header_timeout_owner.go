@@ -16,6 +16,9 @@ type ReceiveHeaderTimeoutTimer interface {
 // ReceiveHeaderTimeoutClock creates relative timers. It does not choose an
 // initial admission policy or perform transport work.
 type ReceiveHeaderTimeoutClock interface {
+	// AfterFunc must not invoke fn synchronously on the calling stack. The owner
+	// registers the timer while holding its state lock; Stop must likewise not
+	// synchronously wait for fn while that lock is held.
 	AfterFunc(time.Duration, func()) ReceiveHeaderTimeoutTimer
 }
 
@@ -26,18 +29,19 @@ type ReceiveHeaderTimeoutQueue interface {
 	Enqueue(func())
 }
 
-// ReceiveHeaderTimeoutConfig supplies the two source-observed configuration
-// reads. ReceiveHeaderTimeout is read at admission and again inside the queued
-// operation; EnableByte is read only when that queued operation runs.
+// ReceiveHeaderTimeoutConfig supplies the source-observed timeout reads.
+// ReceiveHeaderTimeout is read at admission for the gate and again only for a
+// queued enable operation.
 type ReceiveHeaderTimeoutConfig interface {
 	ReceiveHeaderTimeout() time.Duration
-	EnableByte() byte
 }
 
 // ReceiveHeaderTimeoutOwner is a bounded, transport-independent owner for the
 // reviewed receive-header timeout effects. It models generation cancellation
-// and exact owner/selector/tag identity, but does not close sockets, mutate
-// pending maps, or select a production timer implementation.
+// and exact owner/selector/tag identity within one owner instance; operations
+// from another instance cannot cancel its scheduled entries. It does not
+// close sockets, mutate pending maps, or select a production timer
+// implementation.
 type ReceiveHeaderTimeoutOwner struct {
 	mu       sync.Mutex
 	clock    ReceiveHeaderTimeoutClock
@@ -61,12 +65,19 @@ func NewReceiveHeaderTimeoutOwner(clock ReceiveHeaderTimeoutClock, queue Receive
 	if clock == nil || queue == nil || config == nil || owner == "" || selector == "" || fire == nil {
 		return nil, fmt.Errorf("sessionlogin: incomplete receive-header timeout owner")
 	}
+	if selector != receiveHeaderTimeoutSelector {
+		return nil, fmt.Errorf("sessionlogin: unsupported receive-header timeout selector %q", selector)
+	}
 	return &ReceiveHeaderTimeoutOwner{clock: clock, queue: queue, config: config, owner: owner, selector: selector, fire: fire, timers: make(map[*receiveHeaderScheduled]struct{}), queued: make(map[uint64]int64)}, nil
 }
 
-// Arm performs the admission read and queues the second configuration read.
-// It returns false without enqueueing when the positive-timeout/tag gate fails.
-func (o *ReceiveHeaderTimeoutOwner) Arm(tag int64) (bool, error) {
+// Toggle captures the enable byte at admission, applies the shared positive
+// timeout/tag gate to both enable and disable, and enqueues the ordered work.
+// Queue implementations must preserve FIFO order: the owner intentionally
+// does not reorder pending toggles. A queued enable rereads the timeout before
+// scheduling. A queued disable only cancels already-scheduled selectors for
+// its exact tag.
+func (o *ReceiveHeaderTimeoutOwner) Toggle(enableByte byte, tag int64) (bool, error) {
 	if o == nil {
 		return false, fmt.Errorf("sessionlogin: nil receive-header timeout owner")
 	}
@@ -82,20 +93,29 @@ func (o *ReceiveHeaderTimeoutOwner) Arm(tag int64) (bool, error) {
 	id := o.nextID
 	o.queued[id] = tag
 	o.mu.Unlock()
-	o.queue.Enqueue(func() { o.applyQueued(id, tag) })
+	o.queue.Enqueue(func() { o.applyQueued(id, tag, enableByte == 1) })
 	return true, nil
 }
 
-func (o *ReceiveHeaderTimeoutOwner) applyQueued(id uint64, tag int64) {
-	executionDelay := o.config.ReceiveHeaderTimeout()
-	enable := o.config.EnableByte()
+func (o *ReceiveHeaderTimeoutOwner) applyQueued(id uint64, tag int64, enable bool) {
+	var executionDelay time.Duration
+	if enable {
+		executionDelay = o.config.ReceiveHeaderTimeout()
+	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.closed || o.queued[id] != tag {
+	queuedTag, ok := o.queued[id]
+	if o.closed || !ok || queuedTag != tag {
 		return
 	}
 	delete(o.queued, id)
-	if enable != 1 {
+	if !enable {
+		for entry := range o.timers {
+			if entry.tag == tag {
+				entry.timer.Stop()
+				delete(o.timers, entry)
+			}
+		}
 		return
 	}
 	entry := &receiveHeaderScheduled{tag: tag}
@@ -117,28 +137,6 @@ func (o *ReceiveHeaderTimeoutOwner) fireEntry(entry *receiveHeaderScheduled) {
 	fire := o.fire
 	o.mu.Unlock()
 	fire(entry.tag)
-}
-
-// Cancel applies only to the exact owner/selector/tag tuple. It invalidates
-// queued and timer work; an already-selected callback may still complete.
-func (o *ReceiveHeaderTimeoutOwner) Cancel(owner, selector string, tag int64) bool {
-	if o == nil || owner != o.owner || selector != o.selector || tag < 0 {
-		return false
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	for id, queuedTag := range o.queued {
-		if queuedTag == tag {
-			delete(o.queued, id)
-		}
-	}
-	for entry := range o.timers {
-		if entry.tag == tag {
-			entry.timer.Stop()
-			delete(o.timers, entry)
-		}
-	}
-	return true
 }
 
 // Close invalidates queued and future timer delivery. It does not invoke fire.
