@@ -1,0 +1,9 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "evidence": ["RC-BIN-034"],
+  "cases": [
+    {"name":"all_optional_error_fields_present","reason_code":7,"err_msg_present":true,"err_url_present":true,"err_url_label_present":true,"expect":["insert_reason_code","insert_err_msg","insert_err_url","insert_err_url_label","create_error_type_36","post_kicked_out_notification"]},
+    {"name":"missing_optional_error_fields","reason_code":0,"err_msg_present":false,"err_url_present":false,"err_url_label_present":false,"expect":["insert_reason_code","create_error_type_36","post_kicked_out_notification"]},
+    {"name":"only_message_present","reason_code":-1,"err_msg_present":true,"err_url_present":false,"err_url_label_present":false,"expect":["insert_reason_code","insert_err_msg","create_error_type_36","post_kicked_out_notification"]}
+  ]
+}
