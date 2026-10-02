@@ -37,7 +37,7 @@ last log ID, and last-seen log ID:
 - when the room's unread count is already zero, neither unread assignment nor
   mention/reply reset occurs; joined/archive refresh still follows.
 
-After either current-account branch, it sets `checkJoinedChatRoom` true and
+After either current-account branch, it sets the joined-check flag true and
 invokes archive-folder refresh. The member helper's per-member order is
 active-member addition (when needed), strictly-new watermark assignment (when
 needed), and then, if any member was added, the post-loop active-member
