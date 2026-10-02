@@ -127,6 +127,51 @@ func TestWireReadHeaderObserverPlainBodyEOFRunsOnce(t *testing.T) {
 	}
 }
 
+func TestWireReadHeaderObserverSequentialReadsOneCallbackEach(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
+	wire := &wireConn{c: clientConn}
+	first, err := (loco.Packet{Header: loco.Header{PacketID: 11, Method: "ONE"}, Body: []byte("a")}).MarshalBinary(64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := (loco.Packet{Header: loco.Header{PacketID: 12, Method: "TWO"}, Body: []byte("b")}).MarshalBinary(64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverDone := make(chan error, 1)
+	go func() {
+		_, writeErr := serverConn.Write(append(first, second...))
+		serverDone <- writeErr
+	}()
+	seen := make(chan loco.Header, 2)
+	got, err := wire.readWithHeaderObserver(func(header loco.Header) { seen <- header })
+	if err != nil || got.Header.PacketID != 11 || string(got.Body) != "a" {
+		t.Fatalf("first read=%#v err=%v", got, err)
+	}
+	got, err = wire.readWithHeaderObserver(nil)
+	if err != nil || got.Header.PacketID != 12 || string(got.Body) != "b" {
+		t.Fatalf("second read=%#v err=%v", got, err)
+	}
+	select {
+	case header := <-seen:
+		if header.PacketID != 11 {
+			t.Fatalf("observed header=%#v", header)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first observer callback missing")
+	}
+	select {
+	case header := <-seen:
+		t.Fatalf("nil observer unexpectedly produced callback: %#v", header)
+	default:
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWireReadHeaderObserverSecureRunsAfterAuthenticatedEnvelope(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = clientConn.Close() }()
