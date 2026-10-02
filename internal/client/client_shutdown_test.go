@@ -97,7 +97,7 @@ func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lease.Close()
+	defer func() { _ = lease.Close() }()
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var releaseOnce sync.Once

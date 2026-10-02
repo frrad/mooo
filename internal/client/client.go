@@ -52,6 +52,7 @@ type Client struct {
 	checkpoint       *continuity.Store
 	http             friends.Doer
 	session          *Session
+	cleanupSession   *Session
 	closed           bool
 	renewalAttempted bool
 	dial             func(context.Context, authstate.State) (*Session, error)
@@ -160,7 +161,7 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 			c.connectActive = false
 			close(c.connectDone)
 			c.connectDone = nil
-			if c.closePending && c.closed && c.session == nil {
+			if c.closePending && c.closed && c.session == nil && c.cleanupSession == nil {
 				checkpoint, lease = c.checkpoint, c.lease
 				c.checkpoint, c.lease, c.closePending = nil, nil, false
 			}
@@ -180,9 +181,7 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 			if checkpoint != nil {
 				if checkpointErr := checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
 					c.mu.Lock()
-					if c.closed {
-						c.session = session
-					}
+					c.cleanupSession = session
 					c.mu.Unlock()
 					_ = session.Close()
 					finish()
@@ -245,9 +244,7 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 		if checkpoint != nil {
 			if checkpointErr := checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
 				c.mu.Lock()
-				if c.closed {
-					c.session = session
-				}
+				c.cleanupSession = session
 				c.mu.Unlock()
 				_ = session.Close()
 				finish()
@@ -327,8 +324,9 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 	stream := make(chan events.Result, requestLimit)
 	c.pushConsumer = pushConsumerTyped
 	c.eventStream = stream
+	checkpoint := c.checkpoint
 	c.mu.Unlock()
-	go decodeEventStreamWithContinuity(raw, stream, c.checkpoint, c.queueCommit)
+	go decodeEventStreamWithContinuity(raw, stream, checkpoint, c.queueCommit)
 	return stream, nil
 }
 
@@ -555,7 +553,7 @@ func (c *Client) Close() error {
 		return nil
 	}
 	c.closed = true
-	session, checkpoint, lease := c.session, c.checkpoint, c.lease
+	session, cleanup, checkpoint, lease := c.session, c.cleanupSession, c.checkpoint, c.lease
 	if c.connectActive {
 		c.closePending = true
 		c.mu.Unlock()
@@ -565,6 +563,9 @@ func (c *Client) Close() error {
 	var err error
 	if session != nil {
 		err = session.Close()
+	}
+	if cleanup != nil && cleanup != session {
+		err = errors.Join(err, cleanup.Close())
 	}
 	if session != nil && checkpoint != nil {
 		err = errors.Join(err, checkpoint.MarkClean())
@@ -602,6 +603,9 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		c.shutdownDone = make(chan struct{})
 		c.closed = true
 		session := c.session
+		if session == nil {
+			session = c.cleanupSession
+		}
 		connectDone := c.connectDone
 		done := c.shutdownDone
 		c.mu.Unlock()
@@ -649,8 +653,9 @@ func (c *Client) Shutdown(ctx context.Context) error {
 			}
 		}
 		c.mu.Lock()
-		if c.session == session {
+		if c.session == session || c.cleanupSession == session {
 			c.session = nil
+			c.cleanupSession = nil
 			c.checkpoint = nil
 			c.lease = nil
 		}
