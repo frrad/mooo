@@ -46,7 +46,6 @@ type Client struct {
 	connectDone      chan struct{}
 	shutdownActive   bool
 	shutdownDone     chan struct{}
-	closePending     bool
 	state            authstate.State
 	store            *authstate.Store
 	checkpoint       *continuity.Store
@@ -157,23 +156,11 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 		c.mu.Unlock()
 
 		finish := func() {
-			var checkpoint *continuity.Store
-			var lease *profileLease
 			c.mu.Lock()
 			c.connectActive = false
 			close(c.connectDone)
 			c.connectDone = nil
-			if c.closePending && c.closed && c.session == nil && c.cleanupSession == nil {
-				checkpoint, lease = c.checkpoint, c.lease
-				c.checkpoint, c.lease, c.closePending = nil, nil, false
-			}
 			c.mu.Unlock()
-			if checkpoint != nil {
-				_ = checkpoint.MarkClean()
-			}
-			if lease != nil {
-				_ = lease.Close()
-			}
 		}
 		session, err := dial(ctx, state)
 		if err == nil {
@@ -391,20 +378,9 @@ func (c *Client) CommitEvent(event events.Event) error {
 		return ErrClientClosed
 	}
 	checkpoint := c.checkpoint
-	if c.commitActive == 0 {
-		c.commitDone = make(chan struct{})
-	}
-	c.commitActive++
+	endPersistence := c.beginPersistenceLocked()
 	c.mu.Unlock()
-	defer func() {
-		c.mu.Lock()
-		c.commitActive--
-		if c.commitActive == 0 {
-			close(c.commitDone)
-			c.commitDone = nil
-		}
-		c.mu.Unlock()
-	}()
+	defer endPersistence()
 	if checkpoint == nil {
 		return ErrProtocol
 	}
@@ -423,6 +399,42 @@ func (c *Client) CommitEvent(event events.Event) error {
 		}
 	}
 	return err
+}
+
+// beginPersistenceLocked marks a checkpoint operation admitted before the
+// caller releases Client.mu. Shutdown waits for all admitted operations before
+// releasing profile ownership.
+func (c *Client) beginPersistenceLocked() func() {
+	if c.commitActive == 0 {
+		c.commitDone = make(chan struct{})
+	}
+	c.commitActive++
+	return func() {
+		c.mu.Lock()
+		c.commitActive--
+		if c.commitActive == 0 {
+			close(c.commitDone)
+			c.commitDone = nil
+		}
+		c.mu.Unlock()
+	}
+}
+
+func (c *Client) checkpointWrite(fn func(*continuity.Store) error) error {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return ErrClientClosed
+	}
+	checkpoint := c.checkpoint
+	if checkpoint == nil {
+		c.mu.Unlock()
+		return ErrProtocol
+	}
+	endPersistence := c.beginPersistenceLocked()
+	c.mu.Unlock()
+	defer endPersistence()
+	return fn(checkpoint)
 }
 
 func (c *Client) queueCommit(chatID, logID int64) {
@@ -569,9 +581,11 @@ func (c *Client) Close() error {
 	}
 	c.closed = true
 	session, cleanup, checkpoint, lease := c.session, c.cleanupSession, c.checkpoint, c.lease
-	if c.connectActive {
-		c.closePending = true
+	if c.connectActive || c.commitActive > 0 {
 		c.mu.Unlock()
+		if session != nil {
+			return session.Close()
+		}
 		return nil
 	}
 	c.mu.Unlock()
@@ -617,13 +631,20 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		c.shutdownActive = true
 		c.shutdownDone = make(chan struct{})
 		c.closed = true
-		var session *Session
+		session := c.session
+		if session == nil {
+			session = c.cleanupSession
+		}
 		var checkpoint *continuity.Store
 		var lease *profileLease
 		connectDone := c.connectDone
 		commitDone := c.commitDone
 		done := c.shutdownDone
 		c.mu.Unlock()
+		var interruptErr error
+		if session != nil {
+			interruptErr = session.Close()
+		}
 
 		finish := func() {
 			c.mu.Lock()
@@ -640,7 +661,7 @@ func (c *Client) Shutdown(ctx context.Context) error {
 			case <-connectDone:
 			case <-ctx.Done():
 				finish()
-				return ctx.Err()
+				return errors.Join(interruptErr, ctx.Err())
 			}
 		}
 		if commitDone != nil {
@@ -648,7 +669,7 @@ func (c *Client) Shutdown(ctx context.Context) error {
 			case <-commitDone:
 			case <-ctx.Done():
 				finish()
-				return ctx.Err()
+				return errors.Join(interruptErr, ctx.Err())
 			}
 		}
 		c.mu.Lock()
@@ -661,7 +682,7 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		if session != nil {
 			if err := session.Shutdown(ctx); err != nil {
 				finish()
-				return err
+				return errors.Join(interruptErr, err)
 			}
 		}
 		if checkpoint != nil {
