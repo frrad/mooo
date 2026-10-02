@@ -31,12 +31,33 @@ continuity. The Matrix/Beeper bridge is not implemented yet.
 
 ## Development
 
-Requires Go 1.27 or later.
+Requires Go 1.27 or later and Make. The default development and CI backend is
+mautrix-go's pure-Go Olm implementation (`goolm`), which does not require the C
+libolm headers or library. The Make targets set the build tag automatically:
 
 ```sh
+make test # race-enabled tests; also the default for plain make
+make vet
+make build
+```
+
+`make check` also checks formatting, lint, and vulnerabilities; install
+`golangci-lint` and `govulncheck` first. Secret scanning remains a separate
+required pre-merge check, as in CI.
+
+For direct Go commands, set the tag once in the current shell while working on
+this repository (this also covers `go run` commands below):
+
+```sh
+export GOFLAGS="${GOFLAGS:+$GOFLAGS }-tags=goolm"
 go test ./...
 go vet ./...
 ```
+
+Go does not read repository-local default build tags from `go.mod`. Avoid
+`go env -w GOFLAGS=...` for this setup because it changes the user-wide Go
+defaults for other projects. Untagged commands select the dependency's C Olm
+backend and require an installed libolm development package.
 
 The lab CLI can create and inspect an offline, client-owned secondary-device
 identity. It never discovers or imports an official KakaoTalk profile:
