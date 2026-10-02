@@ -69,7 +69,6 @@ func ReduceDECUNREAD(input State, notice Notice, inputs Inputs) Transition {
 		return Transition{State: cloneState(input), Effects: []Effect{}}
 	}
 	out := cloneState(input)
-	out.ActiveMemberCount = len(out.ActiveMemberIDs)
 	effects := make([]Effect, 0, 8)
 	if notice.UserID == input.CurrentUserID {
 		if input.CountOfNewMessage > 0 {
@@ -139,7 +138,9 @@ func copyWatermarks(input map[int64]int64) map[int64]int64 {
 func cloneState(s State) State {
 	o := s
 	o.MemberWatermarks = copyWatermarks(s.MemberWatermarks)
-	o.ActiveMemberIDs = append([]int64(nil), s.ActiveMemberIDs...)
+	if s.ActiveMemberIDs != nil {
+		o.ActiveMemberIDs = append([]int64{}, s.ActiveMemberIDs...)
+	}
 	if s.BotIDs != nil {
 		o.BotIDs = make(map[int64]bool, len(s.BotIDs))
 		for id, bot := range s.BotIDs {

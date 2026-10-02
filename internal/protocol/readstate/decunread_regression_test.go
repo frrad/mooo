@@ -16,6 +16,14 @@ func TestDECUNREADMissingRoomPreservesSnapshot(t *testing.T) {
 	}
 }
 
+func TestDECUNREADExistingCountPreservedWithoutMemberAddition(t *testing.T) {
+	input := State{RoomExists: true, CurrentUserID: 7, CountOfNewMessage: 2, ActiveMemberIDs: []int64{7}, ActiveMemberCount: 9}
+	got := ReduceDECUNREAD(input, Notice{ChatID: 42, UserID: 7, Watermark: 1}, Inputs{})
+	if got.State.ActiveMemberCount != 9 {
+		t.Fatalf("active count = %d, want preserved 9", got.State.ActiveMemberCount)
+	}
+}
+
 func TestDECUNREADPositiveCurrentAtLastAlwaysResetsMention(t *testing.T) {
 	input := State{RoomExists: true, CurrentUserID: 7, CountOfNewMessage: 2, LastLogID: 100, ActiveMemberIDs: []int64{7}}
 	got := ReduceDECUNREAD(input, Notice{ChatID: 42, UserID: 7, Watermark: 100}, Inputs{})
