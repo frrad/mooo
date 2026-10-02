@@ -3,8 +3,10 @@ package client
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"testing"
 	"time"
 
@@ -40,6 +42,8 @@ func awaitHeaderReadError(t *testing.T, results <-chan error) error {
 
 func TestWireReadHeaderObserverPlainRunsBeforeBody(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
+	_ = clientConn.SetDeadline(time.Now().Add(time.Second))
+	_ = serverConn.SetDeadline(time.Now().Add(time.Second))
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 	wire := &wireConn{c: clientConn}
@@ -83,6 +87,8 @@ func TestWireReadHeaderObserverPlainRunsBeforeBody(t *testing.T) {
 
 func TestWireReadHeaderObserverPlainMalformedHeaderIsSilent(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
+	_ = clientConn.SetDeadline(time.Now().Add(time.Second))
+	_ = serverConn.SetDeadline(time.Now().Add(time.Second))
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 	wire := &wireConn{c: clientConn}
@@ -108,6 +114,8 @@ func TestWireReadHeaderObserverPlainMalformedHeaderIsSilent(t *testing.T) {
 
 func TestWireReadHeaderObserverPlainBodyEOFRunsOnce(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
+	_ = clientConn.SetDeadline(time.Now().Add(time.Second))
+	_ = serverConn.SetDeadline(time.Now().Add(time.Second))
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 	wire := &wireConn{c: clientConn}
@@ -285,5 +293,290 @@ func TestWireReadHeaderObserverSecureAuthFailureIsSilent(t *testing.T) {
 	case <-seen:
 		t.Fatal("observer ran after secure authentication failure")
 	default:
+	}
+}
+
+func TestWireReadHeaderObserverSecureCoalescedEnvelopePreservesOrder(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	_ = clientConn.SetDeadline(time.Now().Add(time.Second))
+	_ = serverConn.SetDeadline(time.Now().Add(time.Second))
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
+	key := bytes.Repeat([]byte{0x51}, loco.V3KeySize)
+	clientSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := &wireConn{c: clientConn, secure: clientSecure}
+	first, err := (loco.Packet{Header: loco.Header{PacketID: 7, Method: "ONE"}, Body: []byte("a")}).MarshalBinary(64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := (loco.Packet{Header: loco.Header{PacketID: 8, Method: "TWO"}, Body: []byte("b")}).MarshalBinary(64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := serverSecure.Encrypt(append(first, second...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverDone := make(chan error, 1)
+	go func() {
+		_, writeErr := serverConn.Write(envelope)
+		serverDone <- writeErr
+	}()
+	var events []string
+	got, err := wire.readWithHeaderObserver(func(header loco.Header) { events = append(events, "H"+header.Method) })
+	if err == nil {
+		events = append(events, "P"+got.Header.Method)
+	}
+	if err != nil || got.Header.PacketID != 7 {
+		t.Fatalf("first packet=%#v err=%v", got, err)
+	}
+	got, err = wire.readWithHeaderObserver(func(header loco.Header) { events = append(events, "H"+header.Method) })
+	if err == nil {
+		events = append(events, "P"+got.Header.Method)
+	}
+	if err != nil || got.Header.PacketID != 8 {
+		t.Fatalf("second packet=%#v err=%v", got, err)
+	}
+	if want := []string{"HONE", "PONE", "HTWO", "PTWO"}; !reflect.DeepEqual(events, want) {
+		t.Fatalf("events=%v want=%v", events, want)
+	}
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server write did not finish")
+	}
+}
+
+func TestWireReadHeaderObserverSecurePacketSplitAcrossEnvelopes(t *testing.T) {
+	for _, cut := range []int{10, loco.HeaderSize + 2} {
+		t.Run(fmt.Sprintf("cut-%d", cut), func(t *testing.T) {
+			clientConn, serverConn := net.Pipe()
+			_ = clientConn.SetDeadline(time.Now().Add(time.Second))
+			_ = serverConn.SetDeadline(time.Now().Add(time.Second))
+			defer func() { _ = clientConn.Close() }()
+			defer func() { _ = serverConn.Close() }()
+			key := bytes.Repeat([]byte{0x61}, loco.V3KeySize)
+			clientSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			serverSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wire := &wireConn{c: clientConn, secure: clientSecure}
+			frame, err := (loco.Packet{Header: loco.Header{PacketID: 17, Method: "SPLIT"}, Body: []byte("payload")}).MarshalBinary(64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			first, err := serverSecure.Encrypt(frame[:cut])
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := serverSecure.Encrypt(frame[cut:])
+			if err != nil {
+				t.Fatal(err)
+			}
+			serverDone := make(chan error, 1)
+			go func() {
+				if _, writeErr := serverConn.Write(first); writeErr != nil {
+					serverDone <- writeErr
+					return
+				}
+				_, writeErr := serverConn.Write(second)
+				serverDone <- writeErr
+			}()
+			seen := 0
+			got, err := wire.readWithHeaderObserver(func(header loco.Header) {
+				seen++
+				if header.PacketID != 17 {
+					t.Errorf("header=%#v", header)
+				}
+			})
+			if err != nil || got.Header.PacketID != 17 || string(got.Body) != "payload" || seen != 1 {
+				t.Fatalf("packet=%#v err=%v headers=%d", got, err, seen)
+			}
+			select {
+			case err := <-serverDone:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("server writes did not finish")
+			}
+		})
+	}
+}
+
+func TestWireReadHeaderObserverSecureAuthFailureAfterPartialPlaintextIsSilent(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	_ = clientConn.SetDeadline(time.Now().Add(time.Second))
+	_ = serverConn.SetDeadline(time.Now().Add(time.Second))
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
+	key := bytes.Repeat([]byte{0x71}, loco.V3KeySize)
+	clientSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := &wireConn{c: clientConn, secure: clientSecure}
+	frame, err := (loco.Packet{Header: loco.Header{PacketID: 19, Method: "AUTH"}, Body: []byte("payload")}).MarshalBinary(64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := serverSecure.Encrypt(frame[:10])
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := serverSecure.Encrypt(frame[10:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	second[len(second)-1] ^= 1
+	serverDone := make(chan error, 1)
+	go func() {
+		if _, writeErr := serverConn.Write(first); writeErr != nil {
+			serverDone <- writeErr
+			return
+		}
+		_, writeErr := serverConn.Write(second)
+		serverDone <- writeErr
+	}()
+	seen := 0
+	_, err = wire.readWithHeaderObserver(func(loco.Header) { seen++ })
+	if !errors.Is(err, loco.ErrInvalidSecureEnvelope) || seen != 0 {
+		t.Fatalf("err=%v headers=%d", err, seen)
+	}
+	select {
+	case writeErr := <-serverDone:
+		if writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server writes did not finish")
+	}
+}
+
+func TestWireReadHeaderObserverSecureZeroPrefixContinuesHeaderRead(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	_ = clientConn.SetDeadline(time.Now().Add(time.Second))
+	_ = serverConn.SetDeadline(time.Now().Add(time.Second))
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
+	key := bytes.Repeat([]byte{0x81}, loco.V3KeySize)
+	clientSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := &wireConn{c: clientConn, secure: clientSecure}
+	frame, err := (loco.Packet{Header: loco.Header{PacketID: 23, Method: "ZERO"}, Body: []byte("ok")}).MarshalBinary(64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := serverSecure.Encrypt(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverDone := make(chan error, 1)
+	go func() {
+		var zero [4]byte
+		if _, writeErr := serverConn.Write(zero[:]); writeErr != nil {
+			serverDone <- writeErr
+			return
+		}
+		_, writeErr := serverConn.Write(envelope)
+		serverDone <- writeErr
+	}()
+	seen := 0
+	packet, err := wire.readWithHeaderObserver(func(header loco.Header) {
+		seen++
+		if header.PacketID != 23 {
+			t.Errorf("header=%#v", header)
+		}
+	})
+	if err != nil || packet.Header.PacketID != 23 || string(packet.Body) != "ok" || seen != 1 {
+		t.Fatalf("packet=%#v err=%v headers=%d", packet, err, seen)
+	}
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server writer did not finish")
+	}
+}
+
+func TestWireReadHeaderObserverSecurePartialPlaintextEOF(t *testing.T) {
+	for _, cut := range []int{10, loco.HeaderSize + 2} {
+		t.Run(fmt.Sprintf("cut-%d", cut), func(t *testing.T) {
+			clientConn, serverConn := net.Pipe()
+			_ = clientConn.SetDeadline(time.Now().Add(time.Second))
+			_ = serverConn.SetDeadline(time.Now().Add(time.Second))
+			defer func() { _ = clientConn.Close() }()
+			defer func() { _ = serverConn.Close() }()
+			key := bytes.Repeat([]byte{0xA1}, loco.V3KeySize)
+			clientSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			serverSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wire := &wireConn{c: clientConn, secure: clientSecure}
+			frame, err := (loco.Packet{Header: loco.Header{PacketID: 29, Method: "EOF"}, Body: []byte("payload")}).MarshalBinary(64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			envelope, err := serverSecure.Encrypt(frame[:cut])
+			if err != nil {
+				t.Fatal(err)
+			}
+			serverDone := make(chan error, 1)
+			go func() {
+				_, writeErr := serverConn.Write(envelope)
+				_ = serverConn.Close()
+				serverDone <- writeErr
+			}()
+			seen := 0
+			_, readErr := wire.readWithHeaderObserver(func(loco.Header) { seen++ })
+			if !errors.Is(readErr, io.ErrUnexpectedEOF) {
+				t.Fatalf("read error=%v", readErr)
+			}
+			wantHeaders := 0
+			if cut >= loco.HeaderSize {
+				wantHeaders = 1
+			}
+			if seen != wantHeaders {
+				t.Fatalf("headers=%d want=%d", seen, wantHeaders)
+			}
+			select {
+			case writeErr := <-serverDone:
+				if writeErr != nil {
+					t.Fatal(writeErr)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("server write did not finish")
+			}
+		})
 	}
 }

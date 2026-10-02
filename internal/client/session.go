@@ -644,8 +644,9 @@ func (s *Session) Close() error {
 }
 
 type wireConn struct {
-	c      net.Conn
-	secure *loco.SecureV3
+	c        net.Conn
+	secure   *loco.SecureV3
+	producer *loco.Producer
 }
 
 func dialTLS(ctx context.Context, host string, port int) (*wireConn, error) {
@@ -721,13 +722,49 @@ func (w *wireConn) read() (loco.Packet, error) {
 // only after the authenticated envelope has been decrypted; the secure layer
 // does not expose plaintext header bytes earlier.
 func (w *wireConn) readWithHeaderObserver(observe func(loco.Header)) (loco.Packet, error) {
-	var plain []byte
-	if w.secure != nil {
+	// Plain transport retains the reviewed header-before-body boundary. Exact
+	// reads naturally preserve split headers/bodies and leave any coalesced
+	// following frame for the next call.
+	if w.secure == nil {
+		headerBytes := make([]byte, loco.HeaderSize)
+		if _, err := io.ReadFull(w.c, headerBytes); err != nil {
+			return loco.Packet{}, err
+		}
+		header, err := loco.ParseHeader(headerBytes, 0)
+		if err != nil {
+			return loco.Packet{}, err
+		}
+		if observe != nil {
+			observe(header)
+		}
+		body := make([]byte, int(header.BodyLen))
+		if _, err := io.ReadFull(w.c, body); err != nil {
+			return loco.Packet{}, err
+		}
+		return loco.Packet{Header: header, Body: body}, nil
+	}
+	if w.producer == nil {
+		w.producer = loco.NewProducer(0, 0)
+	}
+	for {
+		if packet, ok, err := w.producer.Next(observe); err != nil {
+			return loco.Packet{}, err
+		} else if ok {
+			return packet, nil
+		}
+
+		var plaintext []byte
 		prefix := make([]byte, 4)
 		if _, err := io.ReadFull(w.c, prefix); err != nil {
+			if errors.Is(err, io.EOF) && w.producer.Buffered() > 0 {
+				return loco.Packet{}, io.ErrUnexpectedEOF
+			}
 			return loco.Packet{}, err
 		}
 		n := binary.LittleEndian.Uint32(prefix)
+		if n == 0 {
+			continue
+		}
 		if n > loco.DefaultMaxCiphertext {
 			return loco.Packet{}, loco.ErrCiphertextTooLarge
 		}
@@ -737,44 +774,14 @@ func (w *wireConn) readWithHeaderObserver(observe func(loco.Header)) (loco.Packe
 			return loco.Packet{}, err
 		}
 		var err error
-		plain, err = w.secure.Decrypt(envelope)
+		plaintext, err = w.secure.Decrypt(envelope)
 		if err != nil {
 			return loco.Packet{}, err
 		}
-		if len(plain) < loco.HeaderSize {
-			return loco.Packet{}, ErrProtocol
-		}
-		header, err := loco.ParseHeader(plain[:loco.HeaderSize], 0)
-		if err != nil {
-			return loco.Packet{}, ErrProtocol
-		}
-		if observe != nil {
-			observe(header)
-		}
-	} else {
-		header := make([]byte, loco.HeaderSize)
-		if _, err := io.ReadFull(w.c, header); err != nil {
-			return loco.Packet{}, err
-		}
-		h, err := loco.ParseHeader(header, 0)
-		if err != nil {
-			return loco.Packet{}, err
-		}
-		if observe != nil {
-			observe(h)
-		}
-		plain = make([]byte, loco.HeaderSize+int(h.BodyLen))
-		copy(plain, header)
-		if _, err := io.ReadFull(w.c, plain[loco.HeaderSize:]); err != nil {
+		if err := w.producer.Append(plaintext); err != nil {
 			return loco.Packet{}, err
 		}
 	}
-	parser := loco.NewParser(0)
-	packets, err := parser.Feed(plain)
-	if err != nil || len(packets) != 1 {
-		return loco.Packet{}, ErrProtocol
-	}
-	return packets[0], nil
 }
 
 func checkin(ctx context.Context, hosts []string, ports []int, body []byte, dialers sessionDialers) (loco.Packet, *wireConn, error) {
