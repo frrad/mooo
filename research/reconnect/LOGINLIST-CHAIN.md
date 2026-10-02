@@ -26,9 +26,13 @@ that status check. The behavior of attempting transport with a nil agent while
 status is `0x17` remains untraced.
 
 The LOGINLIST transport completion forwards a nil response as nil. For a
-non-nil packet it creates a response wrapper. A login-success response updates
-carriage and voice-service route fields. Token and blind-token progress updates
-are additionally gated by the response success and end-of-list predicates.
+non-nil packet it creates a response wrapper. A login-success response enriches the response wrapper and settings state.
+The wrapper receives carriage host and port from the manager carriage address;
+the core settings object receives last-carriage host and port from that same
+address; and the wrapper receives voice-service IPv4 host, IPv6 host, and port
+from manager-owned voice-service values. Token and blind-token reads come from
+the wrapper and their progress updates are additionally gated by response
+success and end-of-list predicates.
 The supplied completion receives the resulting wrapper after those effects.
 
 Observed: login-status admission into LOGINLIST; request construction and
