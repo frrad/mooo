@@ -67,12 +67,14 @@ close. Its fake-clock tests exercise the real Session completion seam. No
 bootstrap admission, serialized configuration key, or official queue timing is
 claimed by this owner.
 
-The Go session integration chooses an explicit bootstrap boundary: after
-`LOGINLIST` and its bounded `LCHATLIST` completion have installed the session
-state, it starts the reader and arms the injected owner. The timer callback
-sends an empty BSON `PING` through the normal one-shot request path with a
-bounded context. This is a clean-room runtime decision and test seam; it does
-not assert that the official client uses the same first-admission point.
+The Go session integration binds the owner as soon as the authenticated
+carriage is available, before the first `LOGINLIST` request. Each successful
+LOGINLIST/LCHATLIST transport completion queues the next lifecycle action
+before that page is parsed and consumed. The owner callback remains gated until
+bootstrap state is installed and the single reader has started; it then sends
+an empty BSON `PING` through the normal one-shot request path with a bounded
+context. This is a clean-room runtime decision and test seam; it does not
+assert that the official client uses the same first-admission point.
 
 Untraced: exact OS queue execution timing, whether an already-eligible delayed
 invocation can run before a queued cancellation, global first-admission ordering

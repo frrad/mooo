@@ -45,6 +45,16 @@ func (c *queuedTimerClock) run(index int) {
 	}
 }
 
+func (c *queuedTimerClock) runLast() {
+	c.mu.Lock()
+	index := len(c.timers) - 1
+	c.mu.Unlock()
+	if index < 0 {
+		return
+	}
+	c.run(index)
+}
+
 func (c *queuedTimerClock) runEvenIfStopped(index int) {
 	c.mu.Lock()
 	t := c.timers[index]

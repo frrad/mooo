@@ -57,7 +57,7 @@ func TestConnectSessionArmsPingOnlyAfterLoginCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = session.Close() }()
-	clock.run(0)
+	clock.runLast()
 	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
 		backend.wait(t)
 	}
@@ -116,7 +116,10 @@ func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clock.run(0)
+	clock.mu.Lock()
+	timersBefore := len(clock.timers)
+	clock.mu.Unlock()
+	clock.runLast()
 	select {
 	case <-pingRead:
 	case <-time.After(time.Second):
@@ -146,8 +149,8 @@ func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
 	clock.mu.Lock()
 	timerCount := len(clock.timers)
 	clock.mu.Unlock()
-	if timerCount != 1 {
-		t.Fatalf("timer count after failed PING=%d, want 1", timerCount)
+	if timerCount != timersBefore {
+		t.Fatalf("timer count after failed PING=%d, want unchanged at %d", timerCount, timersBefore)
 	}
 	close(release)
 	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
