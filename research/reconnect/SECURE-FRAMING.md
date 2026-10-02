@@ -19,7 +19,9 @@ least 22 accumulated bytes before continuing. When no current header exists, it
 constructs one and conditionally invokes the header-production callback if the
 delegate responds to that selector. It then computes the body requirement from
 the parsed header and only invokes the complete-packet callback after the
-accumulated data covers that requirement. Thus header production precedes
+accumulated data covers that requirement. The producer reaches these callbacks
+through its delegate; the exact construction/assignment path for the agent's
+packet-producer field is outside the recovered chain. Thus header production precedes
 complete-packet production; timeout disarm is a separate downstream effect of
 header production when the packet identity guard matches, and is not asserted
 for every header or body.
