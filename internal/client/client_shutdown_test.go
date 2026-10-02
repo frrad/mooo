@@ -286,3 +286,44 @@ func TestClientCloseRetainsOwnershipThroughBlockedConnect(t *testing.T) {
 	}
 	_ = otherLease.Close()
 }
+
+func TestClientShutdownRetainsOwnershipForAdmittedCommit(t *testing.T) {
+	dir := t.TempDir()
+	leasePath := filepath.Join(dir, "profile.lock")
+	lease, err := acquireProfileLease(leasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lease.Close() }()
+	client := &Client{lease: lease}
+	commitDone := make(chan struct{})
+	client.mu.Lock()
+	client.commitActive = 1
+	client.commitDone = commitDone
+	client.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err = client.Shutdown(ctx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("shutdown during admitted commit error=%v, want deadline", err)
+	}
+	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
+		t.Fatalf("lease during admitted commit error=%v, want %v", err, ErrProfileInUse)
+	}
+	client.mu.Lock()
+	client.commitActive = 0
+	close(commitDone)
+	client.commitDone = nil
+	client.mu.Unlock()
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	if err := client.Shutdown(ctx); err != nil {
+		cancel()
+		t.Fatalf("shutdown after commit: %v", err)
+	}
+	cancel()
+	otherLease, err := acquireProfileLease(leasePath)
+	if err != nil {
+		t.Fatalf("lease after commit: %v", err)
+	}
+	_ = otherLease.Close()
+}
