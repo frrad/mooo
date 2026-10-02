@@ -19,15 +19,18 @@ preserve the observed fanout and ordering without assuming that this socket
 path clears its maps.
 
 A separate `failPendingRequestsWithError:` helper has a stronger, distinct
-contract. It enumerates the completion map with the supplied error, then calls
+contract. It enumerates the completion map with the supplied error (the helper
+does not itself impose the socket callback's `LocoAgent`/`-1` error shape), then calls
 `removeAllObjects` on the completion map and the packet-ID/unique-ID map, in
 that order. Its recognized caller is a separate Swift/manager disconnect path;
 that helper behavior must not be substituted for the LocoAgent socket callback.
 
 ## Static provenance
 
-The socket callback continuation is within the LocoAgent callback beginning at
-`0x101774348`; the disconnect branch's reviewed calls are `setStatus:error:` at
+The connect callback is the separate `-[LocoAgent socket:didConnectToHost:port:]`
+implementation at `0x101774348`. The reviewed disconnect callback is the distinct
+`-[LocoAgent socketDidDisconnect:withError:]` implementation at `0x101774714`;
+its reviewed calls are `setStatus:error:` at
 `0x101774910`, delayed-work cancellation at `0x101774920`, and pending-map
 enumeration at `0x101774930`. The pending callback block is supplied to that
 enumeration call and performs the nil-plus-error completion fanout.

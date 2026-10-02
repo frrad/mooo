@@ -16,16 +16,23 @@ type socketDisconnectFailureContract struct {
 }
 
 type socketDisconnectFailureCase struct {
-	Name             string   `json:"name"`
-	Kind             string   `json:"kind"`
-	Evidence         []string `json:"evidence"`
-	HandlerPresent   *bool    `json:"handler_present"`
-	PendingCount     *int     `json:"pending_count"`
-	ErrorDomain      string   `json:"error_domain"`
-	ErrorCode        *int     `json:"error_code"`
-	ErrorUserInfoNil *bool    `json:"error_userinfo_nil"`
-	Expect           []string `json:"expect"`
-	RemainingGaps    []string `json:"remaining_gaps"`
+	Name                           string   `json:"name"`
+	Kind                           string   `json:"kind"`
+	Evidence                       []string `json:"evidence"`
+	HandlerPresent                 *bool    `json:"handler_present"`
+	PendingCount                   *int     `json:"pending_count"`
+	ErrorDomain                    string   `json:"error_domain"`
+	ErrorCode                      *int     `json:"error_code"`
+	ErrorUserInfoNil               *bool    `json:"error_userinfo_nil"`
+	CompletionCalls                *int     `json:"completion_calls"`
+	SuppliedErrorDomain            string   `json:"supplied_error_domain"`
+	SuppliedErrorCode              *int     `json:"supplied_error_code"`
+	SuppliedErrorUserInfoNil       *bool    `json:"supplied_error_userinfo_nil"`
+	ExpectedFanoutErrorDomain      string   `json:"expected_fanout_error_domain"`
+	ExpectedFanoutErrorCode        *int     `json:"expected_fanout_error_code"`
+	ExpectedFanoutErrorUserInfoNil *bool    `json:"expected_fanout_error_userinfo_nil"`
+	Expect                         []string `json:"expect"`
+	RemainingGaps                  []string `json:"remaining_gaps"`
 }
 
 var socketDisconnectFailureKinds = map[string]bool{
@@ -90,9 +97,18 @@ func validateSocketDisconnectFailureContract(contract socketDisconnectFailureCon
 			if tc.HandlerPresent == nil || tc.PendingCount == nil || *tc.PendingCount < 0 || tc.ErrorDomain != "LocoAgent" || tc.ErrorCode == nil || *tc.ErrorCode != -1 || tc.ErrorUserInfoNil == nil || !*tc.ErrorUserInfoNil {
 				return fmt.Errorf("invalid socket disconnect inputs %q", tc.Name)
 			}
+			if tc.CompletionCalls == nil || *tc.CompletionCalls != *tc.PendingCount {
+				return fmt.Errorf("completion count does not match pending count %q", tc.Name)
+			}
+			if tc.ExpectedFanoutErrorDomain != tc.ErrorDomain || tc.ExpectedFanoutErrorCode == nil || *tc.ExpectedFanoutErrorCode != *tc.ErrorCode || tc.ExpectedFanoutErrorUserInfoNil == nil || *tc.ExpectedFanoutErrorUserInfoNil != *tc.ErrorUserInfoNil {
+				return fmt.Errorf("socket fanout error tuple mismatch %q", tc.Name)
+			}
 		case "helper-fanout-and-clear":
-			if tc.PendingCount == nil || *tc.PendingCount < 0 || tc.ErrorDomain != "LocoAgent" || tc.ErrorCode == nil || *tc.ErrorCode != -1 || tc.ErrorUserInfoNil == nil || !*tc.ErrorUserInfoNil {
+			if tc.PendingCount == nil || *tc.PendingCount < 0 || tc.SuppliedErrorDomain == "" || tc.SuppliedErrorCode == nil || tc.SuppliedErrorUserInfoNil == nil || tc.CompletionCalls == nil || *tc.CompletionCalls != *tc.PendingCount {
 				return fmt.Errorf("invalid helper inputs %q", tc.Name)
+			}
+			if tc.ExpectedFanoutErrorDomain != tc.SuppliedErrorDomain || tc.ExpectedFanoutErrorCode == nil || *tc.ExpectedFanoutErrorCode != *tc.SuppliedErrorCode || tc.ExpectedFanoutErrorUserInfoNil == nil || *tc.ExpectedFanoutErrorUserInfoNil != *tc.SuppliedErrorUserInfoNil {
+				return fmt.Errorf("helper fanout error tuple mismatch %q", tc.Name)
 			}
 		}
 	}
@@ -104,29 +120,31 @@ func TestSocketDisconnectFailureContractSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string][]string{
-		"socket-disconnect-handler-present": {
-			"set_status_zero_with_socket_error", "invoke_status_handler_before_cleanup",
-			"cancel_delayed_work_for_agent_target", "enumerate_pending_completion_map",
-			"fanout_nil_plus_locoagent_error",
-		},
-		"socket-disconnect-without-handler": {
-			"set_status_zero_with_socket_error", "no_status_handler_invocation",
-			"cancel_delayed_work_for_agent_target", "enumerate_pending_completion_map",
-			"fanout_nil_plus_locoagent_error",
-		},
-		"socket-disconnect-empty-pending-map": {
-			"set_status_zero_with_socket_error", "no_status_handler_invocation",
-			"cancel_delayed_work_for_agent_target", "enumerate_empty_pending_map",
-		},
-		"helper-clears-both-maps-after-fanout": {
-			"helper_enumerate_pending_map", "helper_fanout_supplied_error",
-			"helper_clear_completion_map", "helper_clear_packet_identity_map",
-		},
-	}
 	for _, tc := range contract.Cases {
-		if !reflect.DeepEqual(tc.Expect, want[tc.Name]) {
-			t.Fatalf("%s order=%v want=%v", tc.Name, tc.Expect, want[tc.Name])
+		var want []string
+		switch tc.Kind {
+		case "socket-disconnect-fanout", "socket-disconnect-empty":
+			want = []string{"set_status_zero_with_socket_error"}
+			if *tc.HandlerPresent {
+				want = append(want, "invoke_status_handler_before_cleanup")
+			} else {
+				want = append(want, "no_status_handler_invocation")
+			}
+			want = append(want, "cancel_delayed_work_for_agent_target")
+			if *tc.PendingCount == 0 {
+				want = append(want, "enumerate_empty_pending_map")
+			} else {
+				want = append(want, "enumerate_pending_completion_map", "fanout_nil_plus_locoagent_error")
+			}
+		case "helper-fanout-and-clear":
+			want = []string{"helper_enumerate_pending_map"}
+			if *tc.PendingCount > 0 {
+				want = append(want, "helper_fanout_supplied_error")
+			}
+			want = append(want, "helper_clear_completion_map", "helper_clear_packet_identity_map")
+		}
+		if !reflect.DeepEqual(tc.Expect, want) {
+			t.Fatalf("%s order=%v want=%v", tc.Name, tc.Expect, want)
 		}
 	}
 }
