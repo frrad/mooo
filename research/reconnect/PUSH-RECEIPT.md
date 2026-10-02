@@ -6,7 +6,8 @@ Status: reviewed static source contract, runtime unexecuted. Observation date:
 `sendPushReceipt:` first enqueues a block on the LocoAgent owner queue. The
 queued block reads the owner's execution-time status byte. Only status `3`
 continues to packet access: it reads the packet header and packet ID, derives
-the push-receipt request tag through `tagForPushReceiptPacketId:`, and invokes
+the push-receipt request tag numerically equal to the unsigned packet ID
+through `tagForPushReceiptPacketId:`, and invokes
 `sendPacket:tag:`. The tag helper forwards the unsigned 32-bit packet ID into
 its signed tag return domain; the contract therefore preserves values such as
 `4294967295` as numeric identity. Any other execution-time status exits without

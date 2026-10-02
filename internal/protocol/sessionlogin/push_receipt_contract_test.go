@@ -20,6 +20,7 @@ type pushReceiptCase struct {
 	Name            string   `json:"name"`
 	ExecutionStatus int      `json:"execution_status"`
 	PacketID        uint32   `json:"packet_id"`
+	ExpectedTag     *uint64  `json:"expected_tag"`
 	Expect          []string `json:"expect"`
 }
 
@@ -54,7 +55,7 @@ func validatePushReceiptContract(c pushReceiptContract) error {
 	}
 	seen := map[string]bool{}
 	for _, tc := range c.Cases {
-		if tc.Name == "" || seen[tc.Name] || len(tc.Expect) == 0 {
+		if tc.Name == "" || seen[tc.Name] || tc.ExpectedTag == nil || *tc.ExpectedTag != uint64(tc.PacketID) || seen[tc.Name] || len(tc.Expect) == 0 {
 			return fmt.Errorf("invalid case %q", tc.Name)
 		}
 		seen[tc.Name] = true
