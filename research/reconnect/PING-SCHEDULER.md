@@ -5,14 +5,15 @@ relative scheduler API and caller ordering; it does not claim to reproduce the
 OS queue's execution clock.
 
 The traced configuration callback reads `fgPingItv` from the object returned by
-`getConfWifi`, whose static accessor is a signed 16-bit field, converts it to a
+`getConfWifi`, whose static accessor is a signed 32-bit field, converts it to a
 signed integer, substitutes 180 seconds when
 the value is below 1, and passes the result to the manager interval setter.
 The manager setter stores the supplied interval directly; the below-one
 fallback belongs to this caller. This source mapping is specific to the traced
-callback; the serialized wire key, presence/default decoding, and cache lifetime
-remain untraced, and other booking paths are not assumed to consume the same
-configuration field. The scheduler
+callback. The model is archived in the shared defaults store under a key formed
+from `GETCONFWIFI:%@` and the profile hash input; a missing object returns no
+model. The archived field is signed 32-bit. Other booking paths are not assumed
+to consume the same configuration field. The scheduler
 reads the stored interval and invokes the captured request-owner target with
 `performSelector:withObject:afterDelay:`. The selector is the manager's PING
 method and the object argument is nil.

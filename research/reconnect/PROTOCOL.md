@@ -50,11 +50,12 @@ activity flag. External event labels for these numeric values are not
 established by this trace.
 
 The traced configuration callback reads `fgPingItv` from the object returned by
-`getConfWifi`, whose static accessor is a signed 16-bit field, maps values below
+`getConfWifi`, whose static accessor is a signed 32-bit field, maps values below
 1 to 180 seconds, and passes the result to the manager interval setter. The
-setter stores the supplied value directly. The wire key, serialized presence and
-default rule, cache lifetime, and alternate
-configuration callers were not recovered. The interval storage field and delayed scheduling
+setter stores the supplied value directly. The model is archived in the shared
+defaults store under a key formed from `GETCONFWIFI:%@` and the profile hash
+input; a missing object yields no model. Alternate configuration callers and any
+other defaulting outside this callback were not recovered. The interval storage field and delayed scheduling
 primitive are proven, and request/completion/push-receipt callers are traced;
 the broader admission gates that start or stop those callbacks remain
 unresolved. Timer creation/start gate outside those callers, timer stop gate,
