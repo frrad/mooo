@@ -38,7 +38,10 @@ frame is available; split bodies remain buffered for a later supply. The packet
 header decoder consumes the first 22 bytes as: unsigned 32-bit packet ID,
 unsigned 16-bit status, an 11-byte method slice converted through a NUL-terminated UTF-8 string
 constructor, an unsigned 8-bit body type, and an unsigned 32-bit body length. The producer compares accumulated
-length with 22 plus that body length. Short-input exception behavior, invalid UTF-8 handling, and embedded-NUL or
+length with 22 plus that body length. If the accumulated buffer is below 22,
+the reviewed method returns zero while retaining the partial buffer; the
+synthetic planner separately reports how many bytes remain before its next
+header decision. A partial body returns the remaining byte count. Short-input exception behavior, invalid UTF-8 handling, and embedded-NUL or
 unterminated method behavior remain untraced.
 
 These effects are implementation-neutral. A replacement may use a pure planner
