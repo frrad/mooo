@@ -5,14 +5,14 @@ initial carriage setup boundary and does not assign external names to internal
 status values.
 
 The manager's carriage-connect method constructs a new carriage-agent
-instance from the selected host, port, server mode, secure-layer mode, and
-the four timeout values. It disables fallback on that newly initialized
+instance from the selected host and port, hardcoded server type `3`,
+secure-layer type `1`, and the four timeout values. It disables fallback on that newly initialized
 agent, then installs the agent in the manager's carriage-agent slot. It obtains
 the default receive handler and installs a status-change callback with a
 zero-initialized by-reference latch. It writes
 internal status `0x15` and then calls the carriage `connect` method.
 
-That connect method body contains no direct delayed PING scheduling. Interval
+That manager carriage-connect method body contains no direct delayed PING scheduling. Interval
 scheduling is proven in ordinary request, request-completion, and
 fire-and-forget push-receipt paths; the ordering of the first such path relative
 to completion of carriage setup remains untraced. The request and push-receipt

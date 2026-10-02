@@ -14,7 +14,7 @@
   ],
   "cases": [
     {
-      "name": "initial carriage setup precedes first ping schedule",
+      "name": "manager carriage setup ordering",
       "kind": "lifecycle-order",
       "expect": [
         "construct_new_carriage_agent",
@@ -24,7 +24,7 @@
         "install_zero_latched_status_handler",
         "write_internal_status_0x15",
         "connect_carriage",
-        "no_direct_ping_schedule_in_connect_method_body"
+        "no_direct_ping_schedule_in_manager_carriage_connect_method_body"
       ],
       "remaining_gaps": [
         "external_status_labels",
