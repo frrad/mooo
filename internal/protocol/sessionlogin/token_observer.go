@@ -36,9 +36,6 @@ func ApplyTokenDirtyEvent(state *TokenDirtyState, event TokenDirtyEvent) ([]stri
 	if state == nil {
 		return nil, fmt.Errorf("sessionlogin: nil token dirty state")
 	}
-	if state.OriginalOld == nil {
-		state.OriginalOld = make(map[string]TokenDirtyValue)
-	}
 	if err := validateTokenDirtyField(event.Field); err != nil {
 		return nil, err
 	}
@@ -47,12 +44,18 @@ func ApplyTokenDirtyEvent(state *TokenDirtyState, event TokenDirtyEvent) ([]stri
 		if event.Old != (TokenDirtyValue{}) || event.Incoming != (TokenDirtyValue{}) {
 			return nil, fmt.Errorf("sessionlogin: initialization event carries observer values")
 		}
+		if state.OriginalOld == nil {
+			state.OriginalOld = make(map[string]TokenDirtyValue)
+		}
 		state.Dirty = true
 		state.Registered = true
-		return []string{"initialization_defaults", "dirty_true", "nest_registration"}, nil
+		return []string{"initialization_defaults", "initialization_decode", "dirty_true", "nest_registration", "observer_registration"}, nil
 	case "database":
 		if event.Old != (TokenDirtyValue{}) || event.Incoming != (TokenDirtyValue{}) {
 			return nil, fmt.Errorf("sessionlogin: initialization event carries observer values")
+		}
+		if state.OriginalOld == nil {
+			state.OriginalOld = make(map[string]TokenDirtyValue)
 		}
 		return []string{"initialization_decode", "observer_registration"}, nil
 	case "observer":
@@ -61,6 +64,9 @@ func ApplyTokenDirtyEvent(state *TokenDirtyState, event TokenDirtyEvent) ([]stri
 		}
 		if err := validateTokenDirtyValue(event.Field, event.Incoming); err != nil {
 			return nil, err
+		}
+		if state.OriginalOld == nil {
+			state.OriginalOld = make(map[string]TokenDirtyValue)
 		}
 		effects := []string{"observer_event_input"}
 		if tokenDirtyValuesEqual(event.Field, event.Old, event.Incoming) {
