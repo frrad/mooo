@@ -2,7 +2,7 @@ package sessionlogin
 
 import "time"
 
-const minPingInterval = 180 * time.Second
+const minPingIntervalSeconds int32 = 180
 
 type SocketTimeouts struct {
 	Connect, ReceiveHeader, InSegment, OutSegment time.Duration
@@ -12,13 +12,14 @@ func DefaultSocketTimeouts() SocketTimeouts {
 	return SocketTimeouts{Connect: 15 * time.Second, ReceiveHeader: 20 * time.Second, InSegment: 10 * time.Second, OutSegment: 10 * time.Second}
 }
 
-// PingInterval applies the recovered positive-greater-than-floor configuration
-// rule. Timer lifecycle and ownership remain outside this pure policy.
-func PingInterval(configured time.Duration) time.Duration {
-	if configured > minPingInterval {
-		return configured
+// PingInterval applies the recovered signed-seconds fallback: nonpositive
+// configuration selects 180 seconds, while every positive value is retained.
+// Timer lifecycle and ownership remain outside this pure policy.
+func PingInterval(configured int32) int32 {
+	if configured <= 0 {
+		return minPingIntervalSeconds
 	}
-	return minPingInterval
+	return configured
 }
 
 // ShouldArmReceiveHeaderTimeout is the recovered signed-tag and positive-timeout gate.

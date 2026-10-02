@@ -24,7 +24,7 @@ type reconnectVectors struct {
 			ConfiguredTimeout int64 `json:"configured_timeout_seconds"`
 			Arm               bool  `json:"arm"`
 		} `json:"cases"`
-		PingIntervalMin      *int64   `json:"ping_interval_min_seconds"`
+		PingIntervalDefault  *int64   `json:"ping_interval_default_seconds"`
 		ConnectTimeout       *int64   `json:"connect_timeout_seconds"`
 		ReceiveHeaderTimeout *int64   `json:"receive_header_timeout_seconds"`
 		InSegmentTimeout     *int64   `json:"in_segment_timeout_seconds"`
@@ -66,7 +66,7 @@ func TestReconnectPolicyVectors(t *testing.T) {
 				if defaults.Connect != duration(*tc.ConnectTimeout) || defaults.ReceiveHeader != duration(*tc.ReceiveHeaderTimeout) || defaults.InSegment != duration(*tc.InSegmentTimeout) || defaults.OutSegment != duration(*tc.OutSegmentTimeout) {
 					t.Fatalf("defaults=%#v", defaults)
 				}
-				if PingInterval(duration(*tc.PingIntervalMin)-time.Second) != duration(*tc.PingIntervalMin) || PingInterval(duration(*tc.PingIntervalMin)+time.Second) != duration(*tc.PingIntervalMin)+time.Second {
+				if PingInterval(int32(*tc.PingIntervalDefault)-1) != int32(*tc.PingIntervalDefault)-1 || PingInterval(int32(*tc.PingIntervalDefault)+1) != int32(*tc.PingIntervalDefault)+1 {
 					t.Fatal("ping floor mismatch")
 				}
 			default:
@@ -82,15 +82,12 @@ func TestReconnectPolicyVectors(t *testing.T) {
 
 func duration(v int64) time.Duration { return time.Duration(v) * time.Second }
 
-func TestPingIntervalFloorBoundaries(t *testing.T) {
-	for _, tc := range []struct{ configured, want time.Duration }{
-		{-time.Second, 180 * time.Second},
-		{0, 180 * time.Second},
-		{180 * time.Second, 180 * time.Second},
-		{181 * time.Second, 181 * time.Second},
+func TestPingIntervalFallbackBoundaries(t *testing.T) {
+	for _, tc := range []struct{ configured, want int32 }{
+		{-1, 180}, {0, 180}, {1, 1}, {179, 179}, {180, 180}, {181, 181},
 	} {
 		if got := PingInterval(tc.configured); got != tc.want {
-			t.Errorf("PingInterval(%s) = %s, want %s", tc.configured, got, tc.want)
+			t.Errorf("PingInterval(%d) = %d, want %d", tc.configured, got, tc.want)
 		}
 	}
 }
@@ -108,12 +105,5 @@ func TestReceiveHeaderTimeoutDomainBoundaries(t *testing.T) {
 	}
 	if ShouldArmReceiveHeaderTimeout(0, -time.Nanosecond) || ShouldArmReceiveHeaderTimeout(0, 0) {
 		t.Fatal("nonpositive timeout armed")
-	}
-}
-
-func TestPingIntervalPreservesFractionalPositiveValues(t *testing.T) {
-	configured := 180*time.Second + 500*time.Millisecond
-	if got := PingInterval(configured); got != configured {
-		t.Fatalf("PingInterval(%s) = %s, want exact configured duration", configured, got)
 	}
 }
