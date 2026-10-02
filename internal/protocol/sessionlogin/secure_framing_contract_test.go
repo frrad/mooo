@@ -19,14 +19,15 @@ type secureFrameCase struct {
 	ReadTag       int      `json:"read_tag"`
 	PrefixValue   *uint32  `json:"prefix_value"`
 	Accumulated   int      `json:"accumulated_bytes"`
+	BodyLength    int      `json:"body_length"`
 	HeaderPresent bool     `json:"current_header_present"`
 	HeaderCapable bool     `json:"delegate_supports_header"`
-	BodyComplete  bool     `json:"body_complete"`
+	PacketCapable bool     `json:"delegate_supports_packet"`
 	IdentityMatch bool     `json:"timeout_identity_matches"`
 	Expected      []string `json:"expected"`
 }
 
-var secureEffects = map[string]bool{"header_read_length_4": true, "header_read_length_22": true, "header_timeout_minus_one": true, "header_tag_zero": true, "header_prefix_zero": true, "header_prefix_nonzero": true, "read_header_again": true, "read_body_length": true, "supply_raw_data": true, "route_body": true, "decrypt_accumulated": true, "header_callback_if_supported": true, "complete_packet_callback_after_body": true, "header_before_complete_packet": true, "conditional_timeout_disarm_after_header": true}
+var secureEffects = map[string]bool{"header_read_length_4": true, "header_read_length_22": true, "header_timeout_minus_one": true, "header_tag_zero": true, "header_prefix_zero": true, "header_prefix_nonzero": true, "read_header_again": true, "read_body_length": true, "supply_raw_data": true, "route_body": true, "decrypt_accumulated": true, "header_callback_if_supported": true, "complete_packet_callback_after_body": true, "header_before_complete_packet": true, "conditional_timeout_disarm_after_header": true, "producer_loop_next_frame": true}
 
 func TestSecureFramingContractSchema(t *testing.T) {
 	b, e := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-secure-framing.json"))
@@ -39,7 +40,7 @@ func TestSecureFramingContractSchema(t *testing.T) {
 	if e = d.Decode(&v); e != nil {
 		t.Fatal(e)
 	}
-	if v.Status != "reviewed-static-unexecuted-runtime" || v.Question != "RC-Q5" || len(v.Cases) != 8 {
+	if v.Status != "reviewed-static-unexecuted-runtime" || v.Question != "RC-Q5" || len(v.Cases) != 10 {
 		t.Fatalf("header=%+v", v)
 	}
 	seen := map[string]bool{}
@@ -64,8 +65,8 @@ func TestSecureFramingContractSchema(t *testing.T) {
 			if x == "header_callback_if_supported" {
 				hasHeader = true
 			}
-			if x == "complete_packet_callback_after_body" && !c.BodyComplete {
-				t.Fatalf("complete callback without body: %s", c.Name)
+			if x == "complete_packet_callback_after_body" && (!c.PacketCapable || c.Accumulated < 22+c.BodyLength) {
+				t.Fatalf("complete callback preconditions missing: %s", c.Name)
 			}
 			if x == "conditional_timeout_disarm_after_header" && !c.IdentityMatch {
 				t.Fatalf("disarm without identity match: %s", c.Name)

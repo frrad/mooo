@@ -63,40 +63,72 @@
       "crypto_present": true,
       "read_tag": 2,
       "expected": [
-        "route_body"
+        "route_body",
+        "decrypt_accumulated",
+        "supply_raw_data"
       ]
     },
     {
-      "name": "producer header then complete packet",
+      "name": "producer header disarm precedes complete packet",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 30,
+      "body_length": 8,
+      "current_header_present": false,
+      "delegate_supports_header": true,
+      "delegate_supports_packet": true,
+      "timeout_identity_matches": true,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "header_callback_if_supported",
+        "conditional_timeout_disarm_after_header",
+        "complete_packet_callback_after_body",
+        "header_before_complete_packet"
+      ]
+    },
+    {
+      "name": "producer existing header waits for complete body",
       "crypto_present": false,
       "read_tag": 1,
       "accumulated_bytes": 22,
+      "body_length": 8,
+      "current_header_present": true,
+      "delegate_supports_packet": true,
+      "expected": [
+        "route_body",
+        "supply_raw_data"
+      ]
+    },
+    {
+      "name": "producer split body remains buffered",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 25,
+      "body_length": 8,
+      "current_header_present": true,
+      "delegate_supports_packet": true,
+      "expected": [
+        "route_body",
+        "supply_raw_data"
+      ]
+    },
+    {
+      "name": "producer loops over two complete frames",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 60,
+      "body_length": 8,
       "current_header_present": false,
       "delegate_supports_header": true,
-      "body_complete": true,
-      "timeout_identity_matches": true,
+      "delegate_supports_packet": true,
       "expected": [
         "route_body",
         "supply_raw_data",
         "header_callback_if_supported",
         "complete_packet_callback_after_body",
         "header_before_complete_packet",
-        "conditional_timeout_disarm_after_header"
-      ]
-    },
-    {
-      "name": "producer header waits for body",
-      "crypto_present": false,
-      "read_tag": 1,
-      "accumulated_bytes": 22,
-      "current_header_present": false,
-      "delegate_supports_header": true,
-      "body_complete": false,
-      "expected": [
-        "route_body",
-        "supply_raw_data",
-        "header_callback_if_supported",
-        "header_before_complete_packet"
+        "producer_loop_next_frame"
       ]
     }
   ]

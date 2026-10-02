@@ -19,15 +19,18 @@ least 22 accumulated bytes before continuing. When no current header exists, it
 constructs one and conditionally invokes the header-production callback if the
 delegate responds to that selector. It then computes the body requirement from
 the parsed header and only invokes the complete-packet callback after the
-accumulated data covers that requirement. The producer reaches these callbacks
+accumulated data covers that requirement. Both callback deliveries are guarded
+by the delegate's selector support. The producer reaches these callbacks
 through its delegate; the exact construction/assignment path for the agent's
 packet-producer field is outside the recovered chain. Thus header production precedes
 complete-packet production; timeout disarm is a separate downstream effect of
 header production when the packet identity guard matches, and is not asserted
 for every header or body.
 
-The meaning of the 4/22 lengths, the 32-bit value, producer return counts,
-delegate callback arguments, and callback error behavior remain untraced.
+The producer retains its accumulation buffer and loops while another complete
+frame is available; split bodies remain buffered for a later supply. The meaning
+of the 4/22 lengths, the 32-bit value, producer return counts, delegate callback
+arguments, and callback error behavior remain untraced.
 
 These effects are implementation-neutral. A replacement may use a pure planner
 with injected crypto-presence, tag, prefix value, and accumulated byte count;
