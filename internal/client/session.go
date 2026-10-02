@@ -47,7 +47,7 @@ func (e StatusError) Error() string { return fmt.Sprintf("client: %s status %d",
 // never creates a timer or chooses an initial keep-alive admission policy.
 type lifecycleScheduler interface {
 	// Queue methods only enqueue lifecycle work; they must not synchronously
-	// reenter Session or execute timer/network callbacks while Session.mu is held.
+	// reenter Session or execute timer/network callbacks while lifecycleMu is held.
 	queueCancel()
 	queueSchedule() bool
 }
