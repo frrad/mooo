@@ -2,7 +2,7 @@
 
 Status: reviewed static source supplement, 2026-10-02. This contract scopes the
 manager's installed status handler and the socket disconnect fanout that follows
-receive-timeout failure. It does not claim pending-map removal or queue timing.
+receive-timeout failure. It does not claim disconnect cleanup of the pending map or queue timing.
 
 `setStatus:error:` writes the agent's status byte from the supplied status and,
 when a status-change handler is installed, synchronously invokes that handler
@@ -12,11 +12,11 @@ handler. With no installed handler, the setter has no callback effect.
 The manager handler first compares the callback agent against the manager's
 current carriage agent. A stale-agent callback has no effects. For status `0`,
 it clears the manager's carriage-agent slot, writes internal status `0x1A` when
-the handler latch was already set or `0x16` otherwise, invokes the optional
+the handler latch was already set or `0x16` otherwise, invokes the supplied
 boolean callback with `false` only while the latch is clear, queues cancellation
 of the manager PING selector on the main queue, and clears the status-change
 handler. For status `3`, it writes internal status `0x17`, sets the per-handler
-latch only when clear, and invokes the optional callback with `true` only on
+latch only when clear, and invokes the supplied callback with `true` only on
 that transition. The latch is initialized clear when the handler is installed;
 it is not an ongoing activity flag. Numeric status labels remain untraced. The reviewed manager installer supplies a callback block, but whether a nil boolean callback is a supported installation state is not proven; vectors therefore make callback presence explicit.
 
