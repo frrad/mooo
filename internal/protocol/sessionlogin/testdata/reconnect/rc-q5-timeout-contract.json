@@ -1,22 +1,279 @@
 {
   "status": "reviewed-static-unexecuted-runtime",
-  "questions": ["RC-Q5"],
+  "questions": [
+    "RC-Q5"
+  ],
   "cases": [
-    {"name":"positive timeout tag zero","kind":"timeout-admission","evidence":["RC-BIN-010"],"timeout_seconds":20,"tag":0,"enable":true,"expect":["read_timeout","check_tag_nonnegative","queue_main"]},
-    {"name":"positive timeout maximum signed tag","kind":"timeout-admission","evidence":["RC-BIN-010"],"timeout_seconds":20,"tag":9223372036854775807,"enable":true,"expect":["queue_main"]},
-    {"name":"zero timeout rejects zero tag","kind":"timeout-admission","evidence":["RC-BIN-010"],"timeout_seconds":0,"tag":0,"enable":true,"expect":["no_enqueue"]},
-    {"name":"negative timeout rejects zero tag","kind":"timeout-admission","evidence":["RC-BIN-010"],"timeout_seconds":-1,"tag":0,"enable":true,"expect":["no_enqueue"]},
-    {"name":"positive timeout rejects minimum signed tag","kind":"timeout-admission","evidence":["RC-BIN-010"],"timeout_seconds":20,"tag":-9223372036854775808,"enable":true,"expect":["no_enqueue"]},
-    {"name":"enable rereads changed timeout","kind":"timeout-enable","evidence":["RC-BIN-010"],"timeout_seconds":20,"execution_timeout_seconds":7,"tag":1,"enable":true,"expect":["reread_timeout","perform_selector_after_delay_7","owner_target","fire_selector","wrapped_tag"]},
-    {"name":"disable false uses cancellation tuple","kind":"timeout-disable","evidence":["RC-BIN-010"],"timeout_seconds":20,"execution_timeout_seconds":7,"tag":1,"enable":false,"expect":["cancel_previous_perform","owner_target","fire_selector","wrapped_tag"]},
-    {"name":"enable byte two follows non-enable branch","kind":"timeout-disable","evidence":["RC-BIN-010"],"timeout_seconds":20,"execution_timeout_seconds":7,"tag":1,"enable_byte":2,"expect":["cancel_previous_perform","owner_target","fire_selector","wrapped_tag"]},
-    {"name":"disconnect fanout reviewed error","kind":"disconnect-fanout","evidence":["RC-BIN-011"],"expect":["set_status_zero","cancel_owner_delayed_work","enumerate_pending","completion_nil","error_domain_locoagent","error_code_minus_one","error_userinfo_nil"],"remaining_gaps":["pending_map_clear_or_replace","queue_race"]},
-    {"name":"matching stored unique id disarms","kind":"completion-disarm","evidence":["RC-BIN-012"],"packet_id":17,"stored_unique_id":"stored-id","incoming_unique_id":"stored-id","expect":["lookup_unsigned_packet_id","compare_stored_string_to_incoming_unique_id","derive_request_tag","disable_timeout"]},
-    {"name":"missing stored unique id does not disarm","kind":"completion-disarm","evidence":["RC-BIN-012"],"packet_id":17,"incoming_unique_id":"incoming-id","expect":["lookup_unsigned_packet_id","comparison_false","no_timeout_action"]},
-    {"name":"nonmatching stored unique id does not disarm","kind":"completion-disarm","evidence":["RC-BIN-012"],"packet_id":17,"stored_unique_id":"stored-id","incoming_unique_id":"other-id","expect":["lookup_unsigned_packet_id","comparison_false","no_timeout_action"]},
-    {"name":"status three sends completion then arms","kind":"packet-production","evidence":["RC-BIN-013"],"producer_status":3,"completion_present":true,"expect":["register_completion_by_unique_id","store_unique_id_by_packet_id","send_packet","arm_timeout"]},
-    {"name":"status three without completion still arms","kind":"packet-production","evidence":["RC-BIN-013"],"producer_status":3,"completion_present":false,"expect":["send_packet","arm_timeout"]},
-    {"name":"nonthree with completion forwards error and does not arm","kind":"packet-production","evidence":["RC-BIN-013"],"producer_status":2,"completion_present":true,"expect":["forward_error","no_timeout_arm"]},
-    {"name":"nonthree without completion has no callback or arm","kind":"packet-production","evidence":["RC-BIN-013"],"producer_status":2,"completion_present":false,"expect":["no_callback","no_timeout_arm"]}
+    {
+      "name": "positive timeout tag zero",
+      "kind": "timeout-admission",
+      "evidence": [
+        "RC-BIN-010"
+      ],
+      "timeout_seconds": 0.5,
+      "tag": 0,
+      "enable": true,
+      "expect": [
+        "read_timeout",
+        "check_tag_nonnegative",
+        "queue_main"
+      ]
+    },
+    {
+      "name": "positive timeout maximum signed tag",
+      "kind": "timeout-admission",
+      "evidence": [
+        "RC-BIN-010"
+      ],
+      "timeout_seconds": 20.0,
+      "tag": 9223372036854775807,
+      "enable": true,
+      "expect": [
+        "queue_main"
+      ]
+    },
+    {
+      "name": "zero timeout rejects zero tag",
+      "kind": "timeout-admission",
+      "evidence": [
+        "RC-BIN-010"
+      ],
+      "timeout_seconds": 0.0,
+      "tag": 0,
+      "enable": true,
+      "expect": [
+        "no_enqueue"
+      ]
+    },
+    {
+      "name": "negative timeout rejects zero tag",
+      "kind": "timeout-admission",
+      "evidence": [
+        "RC-BIN-010"
+      ],
+      "timeout_seconds": -0.5,
+      "tag": 0,
+      "enable": true,
+      "expect": [
+        "no_enqueue"
+      ]
+    },
+    {
+      "name": "positive timeout rejects minimum signed tag",
+      "kind": "timeout-admission",
+      "evidence": [
+        "RC-BIN-010"
+      ],
+      "timeout_seconds": 20.0,
+      "tag": -9223372036854775808,
+      "enable": true,
+      "expect": [
+        "no_enqueue"
+      ]
+    },
+    {
+      "name": "enable rereads changed timeout",
+      "kind": "timeout-enable",
+      "evidence": [
+        "RC-BIN-010"
+      ],
+      "timeout_seconds": 20.0,
+      "execution_timeout_seconds": 7.0,
+      "tag": 1,
+      "enable": true,
+      "expect": [
+        "reread_timeout",
+        "perform_selector_after_delay_7",
+        "owner_target",
+        "fire_selector",
+        "wrapped_tag"
+      ]
+    },
+    {
+      "name": "enable reread can schedule zero",
+      "kind": "timeout-enable",
+      "evidence": [
+        "RC-BIN-010"
+      ],
+      "timeout_seconds": 20.0,
+      "execution_timeout_seconds": 0.0,
+      "tag": 1,
+      "enable": true,
+      "expect": [
+        "reread_timeout",
+        "perform_selector_after_delay_0",
+        "owner_target",
+        "fire_selector",
+        "wrapped_tag"
+      ]
+    },
+    {
+      "name": "disable false uses cancellation tuple",
+      "kind": "timeout-disable",
+      "evidence": [
+        "RC-BIN-010"
+      ],
+      "timeout_seconds": 20.0,
+      "execution_timeout_seconds": 7.0,
+      "tag": 1,
+      "enable": false,
+      "expect": [
+        "cancel_previous_perform",
+        "owner_target",
+        "fire_selector",
+        "wrapped_tag"
+      ]
+    },
+    {
+      "name": "enable byte two follows non-enable branch",
+      "kind": "timeout-disable",
+      "evidence": [
+        "RC-BIN-010"
+      ],
+      "timeout_seconds": 20.0,
+      "execution_timeout_seconds": 7.0,
+      "tag": 1,
+      "enable_byte": 2,
+      "expect": [
+        "cancel_previous_perform",
+        "owner_target",
+        "fire_selector",
+        "wrapped_tag"
+      ]
+    },
+    {
+      "name": "disconnect fanout reviewed error",
+      "kind": "disconnect-fanout",
+      "evidence": [
+        "RC-BIN-011"
+      ],
+      "expect": [
+        "set_status_zero",
+        "invoke_status_handler_old_new_error",
+        "cancel_owner_delayed_work",
+        "enumerate_pending",
+        "completion_nil",
+        "error_domain_locoagent",
+        "error_code_minus_one",
+        "error_userinfo_nil"
+      ],
+      "remaining_gaps": [
+        "status_handler_pending_map_mutation",
+        "pending_map_clear_or_replace",
+        "queue_race"
+      ]
+    },
+    {
+      "name": "disable precondition rejects zero timeout",
+      "kind": "timeout-admission",
+      "evidence": [
+        "RC-BIN-010"
+      ],
+      "timeout_seconds": 0.0,
+      "tag": 1,
+      "enable": false,
+      "expect": [
+        "no_enqueue"
+      ]
+    },
+    {
+      "name": "matching stored unique id disarms",
+      "kind": "completion-disarm",
+      "evidence": [
+        "RC-BIN-012"
+      ],
+      "packet_id": 17,
+      "stored_unique_id": "stored-id",
+      "incoming_unique_id": "stored-id",
+      "expect": [
+        "lookup_unsigned_packet_id",
+        "compare_stored_string_to_incoming_unique_id",
+        "derive_request_tag",
+        "disable_timeout"
+      ]
+    },
+    {
+      "name": "missing stored unique id does not disarm",
+      "kind": "completion-disarm",
+      "evidence": [
+        "RC-BIN-012"
+      ],
+      "packet_id": 17,
+      "incoming_unique_id": "incoming-id",
+      "expect": [
+        "lookup_unsigned_packet_id",
+        "comparison_false",
+        "no_timeout_action"
+      ]
+    },
+    {
+      "name": "nonmatching stored unique id does not disarm",
+      "kind": "completion-disarm",
+      "evidence": [
+        "RC-BIN-012"
+      ],
+      "packet_id": 17,
+      "stored_unique_id": "stored-id",
+      "incoming_unique_id": "other-id",
+      "expect": [
+        "lookup_unsigned_packet_id",
+        "comparison_false",
+        "no_timeout_action"
+      ]
+    },
+    {
+      "name": "status three registers completion then sends and arms",
+      "kind": "packet-production",
+      "evidence": [
+        "RC-BIN-013"
+      ],
+      "producer_status": 3,
+      "completion_present": true,
+      "expect": [
+        "register_completion_by_unique_id",
+        "store_unique_id_by_packet_id",
+        "send_packet",
+        "arm_timeout"
+      ]
+    },
+    {
+      "name": "status three without completion still arms",
+      "kind": "packet-production",
+      "evidence": [
+        "RC-BIN-013"
+      ],
+      "producer_status": 3,
+      "completion_present": false,
+      "expect": [
+        "send_packet",
+        "arm_timeout"
+      ]
+    },
+    {
+      "name": "nonthree with completion forwards error and does not arm",
+      "kind": "packet-production",
+      "evidence": [
+        "RC-BIN-013"
+      ],
+      "producer_status": 2,
+      "completion_present": true,
+      "expect": [
+        "forward_error",
+        "no_timeout_arm"
+      ]
+    },
+    {
+      "name": "nonthree without completion has no callback or arm",
+      "kind": "packet-production",
+      "evidence": [
+        "RC-BIN-013"
+      ],
+      "producer_status": 2,
+      "completion_present": false,
+      "expect": [
+        "no_callback",
+        "no_timeout_arm"
+      ]
+    }
   ]
 }

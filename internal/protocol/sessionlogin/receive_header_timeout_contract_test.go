@@ -21,8 +21,8 @@ type receiveHeaderTimeoutCase struct {
 	Name                    string   `json:"name"`
 	Kind                    string   `json:"kind"`
 	Evidence                []string `json:"evidence"`
-	TimeoutSeconds          *int64   `json:"timeout_seconds"`
-	ExecutionTimeoutSeconds *int64   `json:"execution_timeout_seconds"`
+	TimeoutSeconds          *float64 `json:"timeout_seconds"`
+	ExecutionTimeoutSeconds *float64 `json:"execution_timeout_seconds"`
 	Tag                     *int64   `json:"tag"`
 	Enable                  *bool    `json:"enable"`
 	EnableByte              *uint8   `json:"enable_byte"`
@@ -56,7 +56,7 @@ func validateReceiveHeaderTimeoutContract(v receiveHeaderTimeoutContract) error 
 	if len(v.Questions) != 1 || v.Questions[0] != "RC-Q5" {
 		return fmt.Errorf("questions=%v", v.Questions)
 	}
-	if len(v.Cases) != 16 {
+	if len(v.Cases) != 18 {
 		return fmt.Errorf("cases=%d", len(v.Cases))
 	}
 	known := map[string]bool{"timeout-admission": true, "timeout-enable": true, "timeout-disable": true, "disconnect-fanout": true, "completion-disarm": true, "packet-production": true}
@@ -102,15 +102,15 @@ func TestReceiveHeaderTimeoutContractSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fanout := v.Cases[8]
-	if got := fanout.Expect; len(got) != 7 || got[4] != "error_domain_locoagent" || got[5] != "error_code_minus_one" || got[6] != "error_userinfo_nil" {
+	fanout := v.Cases[9]
+	if got := fanout.Expect; len(got) != 8 || got[5] != "error_domain_locoagent" || got[6] != "error_code_minus_one" || got[7] != "error_userinfo_nil" {
 		t.Fatalf("fanout=%v", got)
 	}
-	matching := v.Cases[9]
+	matching := v.Cases[11]
 	if matching.StoredUniqueID == nil || *matching.StoredUniqueID != *matching.IncomingUniqueID {
 		t.Fatalf("matching inputs=%v", matching)
 	}
-	if got := v.Cases[12].Expect; len(got) != 4 || got[0] != "register_completion_by_unique_id" || got[2] != "send_packet" || got[3] != "arm_timeout" {
+	if got := v.Cases[14].Expect; len(got) != 4 || got[0] != "register_completion_by_unique_id" || got[2] != "send_packet" || got[3] != "arm_timeout" {
 		t.Fatalf("producer order=%v", got)
 	}
 }

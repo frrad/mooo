@@ -26,7 +26,7 @@ socket delegate receives `(agent, socket, error)`, sets the agent status to
 and enumerates the agent's pending-completion map. Each enumerated completion
 is called with `(nil, NSError(domain="LocoAgent", code=-1,
 userInfo=nil))`. The reviewed handler does not explicitly clear the pending
-map; whether `setStatus:error:` mutates or replaces it is unresolved. The
+map; whether the installed status handler mutates or replaces it before enumeration is unresolved. The
 handler's POSIX-domain/code 60 or 32 logging branches are separate from the
 fanout and do not alter this contract. No socket-identity guard was observed
 in the reviewed handler.
