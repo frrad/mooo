@@ -30,6 +30,9 @@ type receiveHeaderTimeoutCase struct {
 	Enable                  *bool    `json:"enable"`
 	EnableByte              *uint8   `json:"enable_byte"`
 	PacketID                *uint32  `json:"packet_id"`
+	ExpectedTag             *int64   `json:"expected_tag"`
+	PacketMethod            *string  `json:"packet_method"`
+	ExpectedUniqueID        *string  `json:"expected_unique_id"`
 	StoredUniqueID          *string  `json:"stored_unique_id"`
 	IncomingUniqueID        *string  `json:"incoming_unique_id"`
 	ProducerStatus          *uint8   `json:"producer_status"`
@@ -52,7 +55,7 @@ func loadReceiveHeaderTimeoutContract(path string) (receiveHeaderTimeoutContract
 	return v, validateReceiveHeaderTimeoutContract(v)
 }
 
-var knownReceiveHeaderTimeoutEffect = map[string]bool{"read_timeout": true, "check_tag_nonnegative": true, "queue_main": true, "no_enqueue": true, "reread_timeout": true, "perform_selector_after_delay_0": true, "perform_selector_after_delay_7": true, "owner_target": true, "fire_selector": true, "wrapped_tag": true, "cancel_previous_perform": true, "write_status_byte_zero": true, "set_status_zero": true, "invoke_status_handler_old_new_error": true, "no_status_handler": true, "cancel_owner_delayed_work": true, "enumerate_pending": true, "completion_nil": true, "error_domain_locoagent": true, "error_code_minus_one": true, "error_userinfo_nil": true, "lookup_unsigned_packet_id": true, "compare_stored_string_to_incoming_unique_id": true, "derive_request_tag": true, "disable_timeout": true, "comparison_false": true, "no_timeout_action": true, "register_completion_by_unique_id": true, "store_unique_id_by_packet_id": true, "send_packet": true, "arm_timeout": true, "forward_error": true, "no_timeout_arm": true, "no_callback": true}
+var knownReceiveHeaderTimeoutEffect = map[string]bool{"read_timeout": true, "check_tag_nonnegative": true, "queue_main": true, "no_enqueue": true, "reread_timeout": true, "perform_selector_after_delay_0": true, "perform_selector_after_delay_7": true, "owner_target": true, "fire_selector": true, "wrapped_tag": true, "cancel_previous_perform": true, "write_status_byte_zero": true, "set_status_zero": true, "invoke_status_handler_old_new_error": true, "no_status_handler": true, "cancel_owner_delayed_work": true, "enumerate_pending": true, "completion_nil": true, "error_domain_locoagent": true, "error_code_minus_one": true, "error_userinfo_nil": true, "lookup_unsigned_packet_id": true, "compare_stored_string_to_incoming_unique_id": true, "derive_request_tag": true, "derive_request_tag_identity": true, "disable_timeout": true, "comparison_false": true, "no_timeout_action": true, "register_completion_by_unique_id": true, "store_unique_id_by_packet_id": true, "send_packet": true, "arm_timeout": true, "forward_error": true, "no_timeout_arm": true, "no_callback": true, "construct_unique_id": true}
 
 func validateReceiveHeaderTimeoutContract(v receiveHeaderTimeoutContract) error {
 	if v.Status != "reviewed-static-unexecuted-runtime" {
@@ -61,10 +64,10 @@ func validateReceiveHeaderTimeoutContract(v receiveHeaderTimeoutContract) error 
 	if len(v.Questions) != 1 || v.Questions[0] != "RC-Q5" {
 		return fmt.Errorf("questions=%v", v.Questions)
 	}
-	if len(v.Cases) != 19 {
+	if len(v.Cases) != 23 {
 		return fmt.Errorf("cases=%d", len(v.Cases))
 	}
-	known := map[string]bool{"timeout-admission": true, "timeout-enable": true, "timeout-disable": true, "disconnect-fanout": true, "completion-disarm": true, "packet-production": true}
+	known := map[string]bool{"timeout-admission": true, "timeout-enable": true, "timeout-disable": true, "disconnect-fanout": true, "completion-disarm": true, "packet-production": true, "unique-id-format": true}
 	seen := map[string]bool{}
 	for _, c := range v.Cases {
 		if c.Name == "" || seen[c.Name] {
@@ -75,7 +78,7 @@ func validateReceiveHeaderTimeoutContract(v receiveHeaderTimeoutContract) error 
 			return fmt.Errorf("invalid case %q", c.Name)
 		}
 		for _, id := range c.Evidence {
-			if id != "RC-BIN-010" && id != "RC-BIN-011" && id != "RC-BIN-012" && id != "RC-BIN-013" {
+			if id != "RC-BIN-010" && id != "RC-BIN-011" && id != "RC-BIN-012" && id != "RC-BIN-013" && id != "RC-BIN-022" {
 				return fmt.Errorf("unknown evidence %q", id)
 			}
 		}
@@ -116,9 +119,29 @@ func validateReceiveHeaderTimeoutContract(v receiveHeaderTimeoutContract) error 
 			if c.PacketID == nil || c.IncomingUniqueID == nil {
 				return fmt.Errorf("disarm inputs missing: %q", c.Name)
 			}
+			identity := false
+			for _, effect := range c.Expect {
+				if effect == "derive_request_tag_identity" {
+					identity = true
+				}
+			}
+			if identity && c.ExpectedTag == nil {
+				return fmt.Errorf("identity expected tag missing: %q", c.Name)
+			}
+			if identity && uint64(*c.ExpectedTag) != uint64(*c.PacketID) {
+				return fmt.Errorf("identity tag=%d packet=%d: %q", *c.ExpectedTag, *c.PacketID, c.Name)
+			}
 		case "packet-production":
 			if c.ProducerStatus == nil || c.CompletionPresent == nil {
 				return fmt.Errorf("producer inputs missing: %q", c.Name)
+			}
+		case "unique-id-format":
+			if c.PacketMethod == nil || c.PacketID == nil || c.ExpectedUniqueID == nil {
+				return fmt.Errorf("unique id inputs missing: %q", c.Name)
+			}
+			expected := fmt.Sprintf("%s.%d", *c.PacketMethod, *c.PacketID)
+			if *c.ExpectedUniqueID != expected {
+				return fmt.Errorf("unique id=%q expected=%q: %q", *c.ExpectedUniqueID, expected, c.Name)
 			}
 		}
 	}
@@ -138,7 +161,7 @@ func TestReceiveHeaderTimeoutContractSchema(t *testing.T) {
 	if matching.StoredUniqueID == nil || *matching.StoredUniqueID != *matching.IncomingUniqueID {
 		t.Fatalf("matching inputs=%v", matching)
 	}
-	if got := v.Cases[15].Expect; len(got) != 4 || got[0] != "register_completion_by_unique_id" || got[2] != "send_packet" || got[3] != "arm_timeout" {
+	if got := v.Cases[16].Expect; len(got) != 4 || got[0] != "register_completion_by_unique_id" || got[2] != "send_packet" || got[3] != "arm_timeout" {
 		t.Fatalf("producer order=%v", got)
 	}
 }

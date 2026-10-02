@@ -211,12 +211,32 @@
         "RC-BIN-012"
       ],
       "packet_id": 17,
+      "expected_tag": 17,
       "stored_unique_id": "stored-id",
       "incoming_unique_id": "stored-id",
       "expect": [
         "lookup_unsigned_packet_id",
         "compare_stored_string_to_incoming_unique_id",
         "derive_request_tag",
+        "derive_request_tag_identity",
+        "disable_timeout"
+      ]
+    },
+    {
+      "name": "maximum unsigned packet id maps identically to nonnegative tag",
+      "kind": "completion-disarm",
+      "evidence": [
+        "RC-BIN-012"
+      ],
+      "packet_id": 4294967295,
+      "expected_tag": 4294967295,
+      "stored_unique_id": "max-id",
+      "incoming_unique_id": "max-id",
+      "expect": [
+        "lookup_unsigned_packet_id",
+        "compare_stored_string_to_incoming_unique_id",
+        "derive_request_tag",
+        "derive_request_tag_identity",
         "disable_timeout"
       ]
     },
@@ -301,6 +321,45 @@
       "expect": [
         "no_callback",
         "no_timeout_arm"
+      ]
+    },
+    {
+      "name": "unique id formats LCHATLIST 0",
+      "kind": "unique-id-format",
+      "evidence": [
+        "RC-BIN-022"
+      ],
+      "packet_method": "LCHATLIST",
+      "packet_id": 0,
+      "expected_unique_id": "LCHATLIST.0",
+      "expect": [
+        "construct_unique_id"
+      ]
+    },
+    {
+      "name": "unique id formats PING 17",
+      "kind": "unique-id-format",
+      "evidence": [
+        "RC-BIN-022"
+      ],
+      "packet_method": "PING",
+      "packet_id": 17,
+      "expected_unique_id": "PING.17",
+      "expect": [
+        "construct_unique_id"
+      ]
+    },
+    {
+      "name": "unique id formats GETCONF 4294967295",
+      "kind": "unique-id-format",
+      "evidence": [
+        "RC-BIN-022"
+      ],
+      "packet_method": "GETCONF",
+      "packet_id": 4294967295,
+      "expected_unique_id": "GETCONF.4294967295",
+      "expect": [
+        "construct_unique_id"
       ]
     }
   ]
