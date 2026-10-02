@@ -225,6 +225,9 @@ func TestSessionCompletionArmsInjectedTimerOwner(t *testing.T) {
 	if err := session.Close(); err != nil {
 		t.Fatal(err)
 	}
+	if owner.queueSchedule() {
+		t.Fatal("queueSchedule accepted after Session.Close")
+	}
 }
 
 func TestSessionTerminalFinishShutsInjectedTimerOwner(t *testing.T) {
