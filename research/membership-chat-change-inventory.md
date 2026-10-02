@@ -155,7 +155,7 @@ separate strictly-newer MCM revision update, so a stale notice must not regress
 the shared chat-context revision but may still mutate its routed field. Hidden
 state sets the room pin to -1 and invokes unpin-from-all-folders; this does not
 prove folder membership deletion. Persistence and effect failure handling stay
-outside the pure reducer. Synthetic RED characterization is staged in
+outside the pure reducer. Synthetic reducer characterization is implemented in
 `internal/protocol/events/chgmcmmeta_transition_test.go`.
 
 ## Explicit gaps

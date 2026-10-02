@@ -105,7 +105,7 @@ func TestReduceChatMCMetaBooleanLabelsUseExactTrue(t *testing.T) {
 		{typ: "chat_hide", content: "1", want: false},
 	} {
 		t.Run(test.typ+"/"+test.content, func(t *testing.T) {
-			result := ReduceChatMCMeta(ChatMCMetaState{RoomExists: true}, ChatMCMetaChanged{
+			result := ReduceChatMCMeta(ChatMCMetaState{RoomExists: true, Favorite: true, Hidden: true}, ChatMCMetaChanged{
 				Type: test.typ, Content: test.content,
 			})
 			if result.State.Favorite != test.want && test.typ == "favorite" {
@@ -144,6 +144,14 @@ func TestReduceChatMCMetaUnknownTypeAdvancesOnlyNewerGlobalRevision(t *testing.T
 	result := ReduceChatMCMeta(state, ChatMCMetaChanged{Revision: 5, Type: "unproven", Content: "drop"})
 	if !result.Applied || result.State.GlobalRevision != 5 || result.State.Name != "keep" {
 		t.Fatalf("transition = %#v, want revision-only application", result)
+	}
+}
+
+func TestReduceChatMCMetaUnknownNonNewerVisibleRoomIsNoOp(t *testing.T) {
+	state := ChatMCMetaState{RoomExists: true, GlobalRevision: 4, Name: "keep", Pin: 8}
+	result := ReduceChatMCMeta(state, ChatMCMetaChanged{Revision: 3, Type: "unproven", Content: "drop"})
+	if result.Applied || result.Unpin || result.UnpinInAllFolders || result.State != state {
+		t.Fatalf("unknown stale visible transition = %#v, want unchanged no-op", result)
 	}
 }
 
