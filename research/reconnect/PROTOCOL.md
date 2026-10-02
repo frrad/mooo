@@ -53,9 +53,12 @@ The traced configuration callback reads `fgPingItv` from the object returned by
 `getConfWifi`, whose static accessor is a signed 32-bit field, maps values below
 1 to 180 seconds, and passes the result to the manager interval setter. The
 setter stores the supplied value directly. The model is archived in the shared
-defaults store under a key formed from `GETCONFWIFI:%@` and the profile hash
-input; a missing object yields no model. Alternate configuration callers and any
-other defaulting outside this callback were not recovered. The interval storage field and delayed scheduling
+defaults store under a key formed from `GETCONFWIFI:%@` and the hashed-user-ID input (the hash transform is not
+recovered); a missing object yields no model. The signed 32-bit width is an
+in-memory field observation only. Serialized wire type/presence/default/failure
+behavior and the producer response-to-setter edge remain untraced. Alternate
+configuration callers and any other defaulting outside this callback were not
+recovered. The interval storage field and delayed scheduling
 primitive are proven, and request/completion/push-receipt callers are traced;
 the broader admission gates that start or stop those callbacks remain
 unresolved. Timer creation/start gate outside those callers, timer stop gate,

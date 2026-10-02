@@ -11,8 +11,10 @@ the value is below 1, and passes the result to the manager interval setter.
 The manager setter stores the supplied interval directly; the below-one
 fallback belongs to this caller. This source mapping is specific to the traced
 callback. The model is archived in the shared defaults store under a key formed
-from `GETCONFWIFI:%@` and the profile hash input; a missing object returns no
-model. The archived field is signed 32-bit. Other booking paths are not assumed
+from `GETCONFWIFI:%@` and the hashed-user-ID input (the hash transform is not
+recovered); a missing object returns no model. The in-memory field is signed
+32-bit. Serialized wire type/presence/default/failure behavior and the producer
+response-to-setter edge remain untraced. Other booking paths are not assumed
 to consume the same configuration field. The scheduler
 reads the stored interval and invokes the captured request-owner target with
 `performSelector:withObject:afterDelay:`. The selector is the manager's PING
