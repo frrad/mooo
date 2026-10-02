@@ -123,9 +123,7 @@ fail pending requests once on timeout-disconnect; keep keep-alive and receive
 timeout ownership in the session supervisor rather than the wire parser.
 
 Untraced: timer lifecycle gates around the recovered scheduling callbacks,
-traffic reset policy, exact timeout error value, whether idle sessions arm the
-receive timeout, and whether configuration callers override the recovered
-defaults.
+traffic reset policy, whether idle sessions arm the receive timeout, whether `setStatus:error:` mutates or clears the pending map, and whether configuration callers override the recovered defaults.
 
 ## Synthetic vector status
 
