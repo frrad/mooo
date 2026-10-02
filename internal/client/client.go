@@ -42,6 +42,7 @@ const (
 // repeated.
 type Client struct {
 	mu               sync.Mutex
+	shutdownMu       sync.Mutex
 	state            authstate.State
 	store            *authstate.Store
 	checkpoint       *continuity.Store
@@ -441,6 +442,8 @@ func (c *Client) Close() error {
 	if c == nil {
 		return nil
 	}
+	c.shutdownMu.Lock()
+	defer c.shutdownMu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
@@ -459,4 +462,50 @@ func (c *Client) Close() error {
 		err = errors.Join(err, c.lease.Close())
 	}
 	return err
+}
+
+// Shutdown marks the Client closed, interrupts its Session without holding
+// Client.mu, and joins the Session worker before releasing checkpoint and
+// profile ownership. A deadline leaves ownership intact so the caller can
+// retry Shutdown after the worker becomes joinable.
+func (c *Client) Shutdown(ctx context.Context) error {
+	if c == nil {
+		return nil
+	}
+	if ctx == nil {
+		return ErrProtocol
+	}
+	c.shutdownMu.Lock()
+	defer c.shutdownMu.Unlock()
+
+	c.mu.Lock()
+	c.closed = true
+	session := c.session
+	checkpoint := c.checkpoint
+	lease := c.lease
+	c.mu.Unlock()
+
+	if session != nil {
+		if err := session.Shutdown(ctx); err != nil {
+			return err
+		}
+	}
+	if checkpoint != nil {
+		if err := checkpoint.MarkClean(); err != nil {
+			return err
+		}
+	}
+	if lease != nil {
+		if err := lease.Close(); err != nil {
+			return err
+		}
+	}
+	c.mu.Lock()
+	if c.session == session {
+		c.session = nil
+		c.checkpoint = nil
+		c.lease = nil
+	}
+	c.mu.Unlock()
+	return nil
 }
