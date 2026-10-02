@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/frrad/mooo/internal/authstate"
@@ -230,6 +231,37 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	if err != nil {
 		return nil, ErrBootstrap
 	}
+	if pingOptions.timeout <= 0 {
+		pingOptions.timeout = defaultPingRequestTimeout
+	}
+	var session *Session
+	var ready atomic.Bool
+	var owner lifecycleScheduler
+	if pingOptions.clock != nil && pingOptions.interval > 0 {
+		owner = newPingTimerOwner(pingOptions.clock, pingOptions.interval, func() {
+			if session == nil || !ready.Load() {
+				return
+			}
+			pingCtx, cancel := context.WithTimeout(context.Background(), pingOptions.timeout)
+			defer cancel()
+			if _, err := session.Request(pingCtx, "PING", []byte{5, 0, 0, 0, 0}); err != nil {
+				_ = session.Close()
+			}
+		})
+	}
+	session = newSession(owner)
+	session.wire = carriage
+	session.nextID = 2
+	session.pushes = make(chan loco.Packet, requestLimit)
+	session.userID = state.Credentials.UserID
+	session.appVersion = state.Identity.Metadata.AppVersion
+	session.mediaDial = dialers.secure
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = session.Close()
+		}
+	}()
 
 	chatIDs, maxIDs := resume.LoginCursors()
 	loginBody, err := (sessionlogin.LoginListRequest{
@@ -239,26 +271,23 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 		ChatIDs: chatIDs, MaxIDs: maxIDs, LastTokenID: resume.LastTokenID, LBK: resume.LBK,
 	}).MarshalBSON()
 	if err != nil {
-		_ = carriage.close()
 		return nil, ErrBootstrap
 	}
 	loginReply, _, err := carriage.request(2, "LOGINLIST", loginBody)
 	if err != nil {
-		_ = carriage.close()
 		return nil, ErrLogin
 	}
 	status, err := responseStatus(loginReply)
 	if err != nil {
-		_ = carriage.close()
 		return nil, ErrLogin
 	}
 	if !sessionlogin.ClassifyLoginStatus(status).Accepted() {
-		_ = carriage.close()
 		return nil, StatusError{Command: "LOGINLIST", Status: status}
 	}
-	chatData, nextID, pendingPushes, cursor, err := finishLoginSync(carriage, loginReply.Body, status, 3)
+	// Schedule the next lifecycle action before consuming the LOGINLIST page.
+	session.queueSchedule()
+	chatData, nextID, pendingPushes, cursor, err := finishLoginSyncWithCompletion(carriage, loginReply.Body, status, 3, session.queueSchedule)
 	if err != nil {
-		_ = carriage.close()
 		return nil, ErrLogin
 	}
 	cursor.replaceInventory = resume.LastTokenID == 0
@@ -266,43 +295,20 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	if len(pendingPushes) > pushBuffer {
 		pushBuffer = len(pendingPushes)
 	}
-	if pingOptions.timeout <= 0 {
-		pingOptions.timeout = defaultPingRequestTimeout
-	}
-	var session *Session
-	var owner lifecycleScheduler
-	if pingOptions.clock != nil && pingOptions.interval > 0 {
-		owner = newPingTimerOwner(pingOptions.clock, pingOptions.interval, func() {
-			if session == nil {
-				return
-			}
-			pingCtx, cancel := context.WithTimeout(context.Background(), pingOptions.timeout)
-			defer cancel()
-			if _, err := session.Request(pingCtx, "PING", []byte{5, 0, 0, 0, 0}); err != nil {
-				// A failed heartbeat leaves request/reply state ambiguous. Close the
-				// carriage so the normal terminal path can fan out and recover it;
-				// never silently leave a dead owner behind.
-				_ = session.Close()
-			}
-		})
-	}
-	session = newSession(owner)
-	session.wire = carriage
 	session.nextID = nextID
-	session.pushes = make(chan loco.Packet, pushBuffer)
+	if cap(session.pushes) < pushBuffer {
+		session.pushes = make(chan loco.Packet, pushBuffer)
+	}
 	session.initialChatData = chatData
-	session.userID = state.Credentials.UserID
-	session.appVersion = state.Identity.Metadata.AppVersion
-	session.mediaDial = dialers.secure
 	session.loginCursor = cursor
 	for _, packet := range pendingPushes {
 		session.pushes <- packet
 	}
 	_ = carriage.c.SetDeadline(time.Time{})
 	go session.readLoop()
-	if owner != nil {
-		session.queueSchedule()
-	}
+	ready.Store(true)
+	session.queueSchedule()
+	cleanup = false
 	return session, nil
 }
 
@@ -777,6 +783,10 @@ func endpoint(body []byte) (string, int, error) {
 }
 
 func finishLoginSync(wire *wireConn, first []byte, firstStatus int32, nextID uint32) ([]bson.Raw, uint32, []loco.Packet, loginCursor, error) {
+	return finishLoginSyncWithCompletion(wire, first, firstStatus, nextID, nil)
+}
+
+func finishLoginSyncWithCompletion(wire *wireConn, first []byte, firstStatus int32, nextID uint32, onCompletion func()) ([]bson.Raw, uint32, []loco.Packet, loginCursor, error) {
 	page := append(bson.Raw(nil), first...)
 	status := firstStatus
 	var chats []bson.Raw
@@ -819,6 +829,9 @@ func finishLoginSync(wire *wireConn, first []byte, firstStatus int32, nextID uin
 		}
 		reply, unsolicited, err := wire.request(nextID, "LCHATLIST", body)
 		nextID++
+		if onCompletion != nil {
+			onCompletion()
+		}
 		pushes = append(pushes, unsolicited...)
 		replyStatus, statusErr := responseStatus(reply)
 		if err != nil || statusErr != nil || (replyStatus != 0 && replyStatus != -310) {
