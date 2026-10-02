@@ -39,7 +39,7 @@ intent as an effect. This proposal intentionally leaves the timeline's source
 (monotonic uptime, wall clock, or process uptime) unresolved because the public
 questions do not establish it.
 
-The eventual effect should carry an explicit delay and generation, for example
+Method-specific time boundaries should remain explicit: `EndpointCache` already compares elapsed `time.Duration` uptime values; socket deadlines use absolute `time.Time`; reconnect backoff should carry a `time.Duration` delay without converting it to a wall-clock timestamp; and Foundation PING scheduling should use its recovered wall-clock basis. The eventual retry effect should carry an explicit delay and generation, for example
 `ScheduleRecovery{Generation, Delay}`. Applying that effect is the only place
 that may call `Timeline.Schedule`. A timer event with an old generation is
 rejected as stale, and cancellation is idempotent. No timer is owned by the
@@ -67,7 +67,8 @@ supervisor integration harness only after the full reconnect chain is reviewed.
 ## Open evidence gaps
 
 The public reconnect questions still do not establish the first retry delay,
-growth/reset rule, maximum attempts, timer clock, sleep/wake behavior, or
-reachability interaction. They also do not establish whether token renewal and
+growth/reset rule, maximum attempts, retry timer constructor/defaults, sleep/wake
+behavior, or reachability interaction. The retry clock is therefore unresolved
+separately from the already recovered Foundation PING wall-clock basis. They also do not establish whether token renewal and
 `-328` retry share a budget. Until those values are transferred as a reviewed
 contract, implementing a concrete timer or delay would be speculative.
