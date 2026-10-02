@@ -17,26 +17,26 @@ func TestSessionBootstrapReaderEOFClosesSession(t *testing.T) {
 	session.bootstrapDone = false
 	session.bootstrapPushes = make([]loco.Packet, 0)
 	session.pushes = make(chan loco.Packet, requestLimit)
-	go session.readLoop()
+	readerDone := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		session.readLoop()
+	}()
 	if err := serverConn.Close(); err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = clientConn.Close() }()
 
-	deadline := time.After(time.Second)
-	for {
-		session.mu.Lock()
-		closed := session.closed
-		session.mu.Unlock()
-		if closed {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("bootstrap EOF did not close the session")
-		default:
-			time.Sleep(time.Millisecond)
-		}
+	select {
+	case <-readerDone:
+	case <-time.After(time.Second):
+		t.Fatal("bootstrap EOF reader did not terminate")
+	}
+	session.mu.Lock()
+	closed := session.closed
+	session.mu.Unlock()
+	if !closed {
+		t.Fatal("bootstrap EOF did not close the session")
 	}
 	if session.finishBootstrap() {
 		t.Fatal("closed bootstrap session accepted handoff")
