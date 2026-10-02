@@ -37,7 +37,6 @@ type State struct {
 	RoomExists          bool
 	CurrentUserID       int64
 	CountOfNewMessage   int64
-	UnreadCount         int64
 	LastLogID           int64
 	LastSeenLogID       int64
 	MentionReplyPresent bool
@@ -66,34 +65,26 @@ type Transition struct {
 }
 
 func ReduceDECUNREAD(input State, notice Notice, inputs Inputs) Transition {
+	if !input.RoomExists {
+		return Transition{State: cloneState(input), Effects: []Effect{}}
+	}
 	out := cloneState(input)
 	out.ActiveMemberCount = len(out.ActiveMemberIDs)
-	out.UnreadCount = input.CountOfNewMessage
-	if input.UnreadCount != 0 {
-		out.UnreadCount = input.UnreadCount
-	}
-	if !input.RoomExists {
-		return Transition{State: out, Effects: []Effect{}}
-	}
-	effects := make([]Effect, 0, 7)
+	effects := make([]Effect, 0, 8)
 	if notice.UserID == input.CurrentUserID {
-		if out.UnreadCount > 0 {
+		if input.CountOfNewMessage > 0 {
 			if notice.Watermark < input.LastLogID {
 				lower := input.LastSeenLogID
 				if lower < notice.Watermark {
 					lower = notice.Watermark
 				}
-				// Query is first by contract; Inputs supplies its selected result.
 				effects = append(effects, Effect{Kind: "query_unread", ChatID: notice.ChatID, LowerBound: lower, ExcludedType: EligibleUnreadExcludedType, ExcludedStatus: EligibleUnreadExcludedStatus, AllowedScopes: []int32{1, 3}})
-				out.UnreadCount = inputs.EligibleUnreadCount
-				effects = append(effects, Effect{Kind: "set_unread", Count: out.UnreadCount})
+				out.CountOfNewMessage = inputs.EligibleUnreadCount
+				effects = append(effects, Effect{Kind: "set_unread", Count: out.CountOfNewMessage})
 			} else {
-				out.UnreadCount = 0
-				effects = append(effects, Effect{Kind: "clear_unread"})
-				if out.MentionReplyPresent {
-					out.MentionReplyPresent = false
-					effects = append(effects, Effect{Kind: "reset_mention_reply"})
-				}
+				out.CountOfNewMessage = 0
+				effects = append(effects, Effect{Kind: "clear_unread"}, Effect{Kind: "reset_mention_reply"})
+				out.MentionReplyPresent = false
 			}
 		}
 		effects = append(effects, Effect{Kind: "check_joined"}, Effect{Kind: "archive_refresh"})
@@ -102,22 +93,27 @@ func ReduceDECUNREAD(input State, notice Notice, inputs Inputs) Transition {
 		if out.MemberWatermarks == nil {
 			out.MemberWatermarks = make(map[int64]int64)
 		}
-		if !containsID(out.ActiveMemberIDs, notice.UserID) {
+		added := !containsID(out.ActiveMemberIDs, notice.UserID)
+		if added {
 			out.ActiveMemberIDs = append(out.ActiveMemberIDs, notice.UserID)
 			effects = append(effects, Effect{Kind: "active_member_add", UserID: notice.UserID})
-			effects = append(effects, Effect{Kind: "active_member_count", Count: int64(len(out.ActiveMemberIDs))})
 		}
-		out.ActiveMemberCount = len(out.ActiveMemberIDs)
 		old, ok := out.MemberWatermarks[notice.UserID]
-		if !ok || notice.Watermark > old {
+		changedWatermark := !ok || notice.Watermark > old
+		if changedWatermark {
 			out.MemberWatermarks[notice.UserID] = notice.Watermark
 			effects = append(effects, Effect{Kind: "member_watermark", UserID: notice.UserID, Watermark: notice.Watermark})
 		}
+		if added {
+			out.ActiveMemberCount = len(out.ActiveMemberIDs)
+			effects = append(effects, Effect{Kind: "active_member_count", Count: int64(out.ActiveMemberCount)}, Effect{Kind: "active_member_projection_refresh"})
+		}
+		if changedWatermark {
+			effects = append(effects, Effect{Kind: "member_watermark_maintenance", UserID: notice.UserID})
+		}
 	}
-	out.CountOfNewMessage = out.UnreadCount
 	return Transition{State: out, Applied: true, Effects: effects}
 }
-
 func helperSuppressed(s State, userID int64) bool {
 	return len(s.ActiveMemberIDs) == 0 || (s.RoomType == 3 && s.Frozen) || s.BotIDs[userID]
 }
@@ -144,9 +140,11 @@ func cloneState(s State) State {
 	o := s
 	o.MemberWatermarks = copyWatermarks(s.MemberWatermarks)
 	o.ActiveMemberIDs = append([]int64(nil), s.ActiveMemberIDs...)
-	o.BotIDs = make(map[int64]bool, len(s.BotIDs))
-	for id, bot := range s.BotIDs {
-		o.BotIDs[id] = bot
+	if s.BotIDs != nil {
+		o.BotIDs = make(map[int64]bool, len(s.BotIDs))
+		for id, bot := range s.BotIDs {
+			o.BotIDs[id] = bot
+		}
 	}
 	return o
 }

@@ -86,18 +86,24 @@ func TestDECUNREADContractVectors(t *testing.T) {
 				CountOfNewMessage: fixture.State.CountOfNewMessage, LastLogID: fixture.State.LastLogID,
 				LastSeenLogID: fixture.State.LastSeenLogID, MentionReplyPresent: fixture.State.MentionReplyPresent,
 				MemberWatermarks: fixture.State.MemberWatermarks, ActiveMemberIDs: fixture.State.ActiveMemberIDs,
-				BotIDs: fixture.State.BotIDs, RoomType: fixture.State.RoomType, Frozen: fixture.State.Frozen,
+				ActiveMemberCount: intValue(fixture.State.ActiveMemberCount),
+				BotIDs:            fixture.State.BotIDs, RoomType: fixture.State.RoomType, Frozen: fixture.State.Frozen,
 			}
 			beforeMembers := cloneWatermarks(state.MemberWatermarks)
 			beforeActive := append([]int64(nil), state.ActiveMemberIDs...)
 			beforeBots := cloneBots(state.BotIDs)
 			got := ReduceDECUNREAD(state, Notice{ChatID: fixture.Notice.ChatID, UserID: fixture.Notice.UserID, Watermark: fixture.Notice.Watermark}, inputs)
+			if fixture.Name == "missing room" || fixture.Name == "bot member is suppressed by helper guard" || fixture.Name == "frozen room type three suppresses helper" || fixture.Name == "non-current member" {
+				if !reflect.DeepEqual(got.State, state) && fixture.Name != "non-current member" {
+					t.Fatalf("guarded state changed: got %#v want %#v", got.State, state)
+				}
+			}
 			if !reflect.DeepEqual(state.MemberWatermarks, beforeMembers) || !reflect.DeepEqual(state.ActiveMemberIDs, beforeActive) || !reflect.DeepEqual(state.BotIDs, beforeBots) {
 				t.Fatalf("input member watermarks mutated: got %#v, want %#v", state.MemberWatermarks, beforeMembers)
 			}
-			if got.Applied != fixture.Want.Applied || got.State.UnreadCount != expectedUnread(fixture.Want.UnreadCount, fixture.State.CountOfNewMessage) ||
+			if got.Applied != fixture.Want.Applied || got.State.CountOfNewMessage != expectedUnread(fixture.Want.UnreadCount, fixture.State.CountOfNewMessage) ||
 				got.State.MentionReplyPresent != fixture.Want.MentionReplyPresent ||
-				got.State.ActiveMemberCount != wantInt(fixture.Want.ActiveMemberCount) {
+				got.State.ActiveMemberCount != expectedCount(fixture.Want.ActiveMemberCount, state.ActiveMemberCount) {
 				t.Fatalf("state result = %#v, want applied=%v unread=%v mention-present=%v", got, fixture.Want.Applied, fixture.Want.UnreadCount, fixture.Want.MentionReplyPresent)
 			}
 			if !reflect.DeepEqual(got.State.MemberWatermarks, fixture.Want.MemberWatermarks) || !reflect.DeepEqual(got.State.ActiveMemberIDs, fixture.Want.ActiveMemberIDs) {
@@ -140,9 +146,16 @@ func cloneWatermarks(input map[int64]int64) map[int64]int64 {
 	return output
 }
 
-func wantInt(value *int) int {
+func intValue(value *int) int {
 	if value == nil {
 		return 0
+	}
+	return *value
+}
+
+func expectedCount(value *int, initial int) int {
+	if value == nil {
+		return initial
 	}
 	return *value
 }
