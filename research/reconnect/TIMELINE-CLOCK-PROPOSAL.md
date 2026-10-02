@@ -28,17 +28,18 @@ type RetryTimer interface {
     Events() <-chan RetryTimerEvent
     Cancel()
 }
-type RetryTimerEvent struct { Generation uint64 }
+type RetryTimerEvent struct { Generation, Token uint64 }
 ```
 
 `Events` is the observable delivery path: the owner reads one event and would
-need a future reducer event (for example `RecoveryTimerFired{Generation}`) because
-no such event is currently accepted by `ReduceRecovery`. The timer callback never
-calls login or mutates reducer state. `Cancel` is idempotent and closes or drains
-the event stream according to the scheduler contract, so a cancelled timer
-cannot admit a retry. A deterministic fake scheduler can retain due times,
-advance explicitly, deliver exactly one event at due time, and verify cancelled
-or stale generations without sleeping.
+need a future reducer event (for example `RecoveryTimerFired{Generation,Token}`)
+because no such event is currently accepted by `ReduceRecovery`. The timer
+callback never calls login or mutates reducer state. `Cancel` is idempotent, but
+queued events may race with cancellation; the owner must validate the active
+generation and opaque token before injecting the future event. A deterministic
+fake scheduler can retain due times, advance explicitly, deliver exactly one
+event at due time, and verify cancelled or stale generation/token pairs without
+sleeping.
 
 This is deliberately retry-only. `EndpointCache` keeps its existing elapsed
 `time.Duration` uptime input. Socket deadlines continue to use absolute
