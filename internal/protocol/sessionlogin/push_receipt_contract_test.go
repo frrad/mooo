@@ -25,11 +25,11 @@ type pushReceiptCase struct {
 }
 
 var pushReceiptEffects = map[string]bool{
-	"enqueue_owner_queue":          true,
-	"read_execution_status":        true,
-	"derive_unsigned_packet_tag":   true,
-	"send_packet_with_derived_tag": true,
-	"no_packet_send":               true,
+	"enqueue_owner_queue":                true,
+	"read_execution_status":              true,
+	"derive_negated_unsigned_packet_tag": true,
+	"send_packet_with_derived_tag":       true,
+	"no_packet_send":                     true,
 }
 
 func loadPushReceiptContract(path string) (pushReceiptContract, error) {

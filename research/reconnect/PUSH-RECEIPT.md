@@ -25,6 +25,6 @@ or terminal KICKOUT/CHANGESVR handling. Those are separate source chains.
   then obtains `packet`, `header`, and `packetId` before deriving the tag and
   calling `sendPacket:tag:`.
 - `tagForPushReceiptPacketId:` metadata and IMP: `0x101773658`, type
-  `q20@0:8I16`; its body forwards to that selector without another guard.
+  `q20@0:8I16`; its body returns the signed negation of the uint32 argument.
 - The fixture is input-derived and validates queue admission, execution-time
   status, and packet-tag identity. Runtime queue races remain unexecuted.
