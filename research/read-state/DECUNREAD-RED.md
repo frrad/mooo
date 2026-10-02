@@ -10,7 +10,7 @@ A missing room returns an unchanged copied snapshot and `Applied=false`. For an
 existing room, current-account room side-effects run before member handling even
 when the member watermark is stale or equal. When the watermark is below the
 last log, the first effect is a `query_unread` descriptor with
-`lowerBound=max(watermark,lastSeenLogID)` and literals `type!=3`, `status!=5`,
+`lowerBound=max(watermark,lastSeenLogID)` and literals `type!=10001`, `status!=5`,
 `scope in {1,3}`; its selected count is then assigned. At or above the last log,
 a positive unread count emits clear-unread and reset-mention-reply effects
 unconditionally, followed by joined/archive refresh. Non-current notices

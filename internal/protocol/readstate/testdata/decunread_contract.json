@@ -149,7 +149,7 @@
           "kind": "query_unread",
           "chatId": 42,
           "lowerBound": 98,
-          "excludedType": 3,
+          "excludedType": 10001,
           "excludedStatus": 5,
           "allowedScopes": [
             1,
@@ -326,7 +326,7 @@
           "kind": "query_unread",
           "chatId": 42,
           "lowerBound": 90,
-          "excludedType": 3,
+          "excludedType": 10001,
           "excludedStatus": 5,
           "allowedScopes": [
             1,
@@ -386,7 +386,7 @@
           "kind": "query_unread",
           "chatId": 42,
           "lowerBound": 90,
-          "excludedType": 3,
+          "excludedType": 10001,
           "excludedStatus": 5,
           "allowedScopes": [
             1,

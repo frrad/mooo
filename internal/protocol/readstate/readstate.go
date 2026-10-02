@@ -3,7 +3,7 @@
 package readstate
 
 const (
-	EligibleUnreadExcludedType   int32 = 3
+	EligibleUnreadExcludedType   int32 = 10001
 	EligibleUnreadExcludedStatus int32 = 5
 )
 
