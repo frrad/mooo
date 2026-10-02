@@ -151,7 +151,6 @@
         "set_status_zero",
         "write_status_byte_zero",
         "invoke_status_handler_old_new_error",
-        "invoke_status_handler_old_new_error",
         "cancel_owner_delayed_work",
         "enumerate_pending",
         "completion_nil",

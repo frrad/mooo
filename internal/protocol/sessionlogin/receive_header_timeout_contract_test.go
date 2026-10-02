@@ -131,7 +131,7 @@ func TestReceiveHeaderTimeoutContractSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	fanout := v.Cases[9]
-	if got := fanout.Expect; len(got) != 10 || got[7] != "error_domain_locoagent" || got[8] != "error_code_minus_one" || got[9] != "error_userinfo_nil" {
+	if got := fanout.Expect; len(got) != 9 || got[6] != "error_domain_locoagent" || got[7] != "error_code_minus_one" || got[8] != "error_userinfo_nil" {
 		t.Fatalf("fanout=%v", got)
 	}
 	matching := v.Cases[12]
