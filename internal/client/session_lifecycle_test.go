@@ -263,7 +263,7 @@ func TestSessionMalformedHeaderFailsPendingExactlyOnce(t *testing.T) {
 	waiter := make(chan requestResult, 1)
 	session.pending[100000000] = waiter
 	go session.readLoop()
-	defer func() { _ = serverConn.Close() }()
+	defer func() { _ = clientConn.Close(); _ = serverConn.Close() }()
 	if _, err := serverConn.Write(make([]byte, loco.HeaderSize)); err != nil {
 		t.Fatal(err)
 	}
@@ -274,6 +274,14 @@ func TestSessionMalformedHeaderFailsPendingExactlyOnce(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("malformed header did not fail pending request")
+	}
+	select {
+	case _, ok := <-session.pushes:
+		if ok {
+			t.Fatal("push stream yielded a value after malformed header")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reader did not close push stream after malformed header")
 	}
 	select {
 	case result := <-waiter:
