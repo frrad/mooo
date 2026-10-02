@@ -17,11 +17,12 @@ manager-installed status handler in the traced carriage setup is the callback
 block at `0x10151f174`. Its reviewed status-zero branch cancels the manager ping
 selector and its status-three branch updates the manager's one-shot latch and
 callback; that body does not access the agent's `+0x28` completion map or `+0x30`
-packet-ID map. It does invoke its captured caller-completion block before the
-latch update, so that block can still mutate pending state indirectly. The
-fixture's pending count is the map size at enumeration after this handler step,
-not an assumed pre-handler count. Other status-handler installation paths and
-any handler supplied by another caller remain untraced. Therefore a clean
+packet-ID map. Its status-zero branch may invoke its captured caller-completion
+block before delayed cancellation, so that block can still mutate pending state
+indirectly. The fixture's pending count is the map size at enumeration after
+this handler step, not an assumed pre-handler count. Other status-handler
+installation paths and any handler supplied by another caller remain untraced.
+Therefore a clean
 implementation must preserve the observed fanout and ordering without assuming
 that this socket path clears its maps.
 
