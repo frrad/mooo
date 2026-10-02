@@ -51,6 +51,9 @@ func TestSelectTokenHelperEffectsRejectsUnknownContextAndBlindWidth(t *testing.T
 	if got, err := SelectTokenHelperEffects("token", 1, 2, false, false, "future_context"); err == nil || got != nil {
 		t.Fatalf("unknown context got effects=%v err=%v", got, err)
 	}
+	if got, err := SelectTokenHelperEffects("token", 2, 2, false, false, "future_context"); err == nil || got != nil {
+		t.Fatalf("unknown context on no-op got effects=%v err=%v", got, err)
+	}
 	for _, tc := range [][2]int64{{(-1 << 31) - 1, 0}, {0, 1 << 31}, {1 << 31, 1 << 31}} {
 		if got, err := SelectTokenHelperEffects("blind", tc[0], tc[1], false, false, ""); err == nil || got != nil {
 			t.Fatalf("out-of-range blind cursors %v got effects=%v err=%v", tc, got, err)

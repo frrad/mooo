@@ -17,6 +17,11 @@ func SelectTokenHelperEffects(kind string, current, incoming int64, existingLoss
 	if kind == "blind" && (current < minSigned32 || current > maxSigned32 || incoming < minSigned32 || incoming > maxSigned32) {
 		return nil, fmt.Errorf("sessionlogin: blind cursor outside signed-32 range")
 	}
+	switch nestedContext {
+	case "", "missing", "missing_queue", "current_queue", "other_queue":
+	default:
+		return nil, fmt.Errorf("sessionlogin: unknown nested context %q", nestedContext)
+	}
 	if kind == "token" && current < 0 && incoming == 0 {
 		return nil, ErrTokenCursorAssertion
 	}
@@ -34,8 +39,6 @@ func SelectTokenHelperEffects(kind string, current, incoming int64, existingLoss
 		effects = append(effects, "dispatch_context_block", "wrap_write_operation", "invoke_block")
 	case "":
 		effects = append(effects, "open_nested_context", "dispatch_context_block")
-	default:
-		return nil, fmt.Errorf("sessionlogin: unknown nested context %q", nestedContext)
 	}
 	if kind == "token" {
 		if existingLossCheckPositive {
