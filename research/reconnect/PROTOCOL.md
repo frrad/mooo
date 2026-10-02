@@ -1,15 +1,15 @@
 # Reconnect keep-alive and receive-timeout boundary
 
 Status: static lifecycle supplement with explicit gaps, 2026-10-02. Evidence:
-RC-BIN-001 through RC-BIN-003.
+RC-BIN-001 through RC-BIN-004.
 
 The manager exposes a configurable carriage ping interval and a method that
 constructs a zero-field `PING` request through the ordinary carriage request
 path. Three recovered manager callback paths read that interval and schedule a
 delayed invocation of the carriage ping method on the carriage target. A
 paired callback cancels prior delayed invocations for that same target and
-selector. The entry/exit gates for those callbacks and any traffic-based reset
-remain untraced. The request completion is forwarded through the normal
+selector. Request, completion, and push-receipt callers are traced; the broader
+admission gates and any traffic-based reset remain unresolved. The request completion is forwarded through the normal
 response wrapper; a successful reply does not expose any additional
 application state. The traced completion itself does not cancel a keep-alive
 timer.
