@@ -1,6 +1,6 @@
 # DECUNREAD state transition
 
-Status: static clean-room contract, 2026-10-02. Evidence: private `decunread-chain`, `decunread-block`, and `decunread-consumers` reports.
+Status: static clean-room contract, 2026-10-02. Evidence: RS-BIN-021 through RS-BIN-023 in [`EVIDENCE.md`](EVIDENCE.md).
 
 For an inbound `DECUNREAD(chatId, userId, watermark)`, the official callback first
 looks up the existing room by `chatId`. A missing room ends the callback with no
@@ -40,8 +40,9 @@ last log ID, and last-seen log ID:
 After either current-account branch, it sets `checkJoinedChatRoom` true and
 invokes archive-folder refresh. The member helper's per-member order is
 active-member addition (when needed), strictly-new watermark assignment (when
-needed), and then the post-loop active-member count/projection refresh. A changed
-watermark finally schedules the delayed maintenance follow-up. The traced
+needed), and then, if any member was added, the post-loop active-member
+count/projection refresh. A changed watermark finally schedules the delayed
+maintenance follow-up. The traced
 storage helper submits one watermark/member pair through the bulk update API;
 this contract does not claim transaction atomicity.
 
