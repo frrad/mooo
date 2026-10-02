@@ -101,12 +101,15 @@ body-read timeout behavior are likewise open.
 The reviewed status-3 packet-send path allocates the next packet and derives its
 tag. When a completion exists, it registers the completion by packet unique ID
 and the packet-ID-to-unique-ID association before invoking the send path. The
-send path obtains packet data, encrypts it, submits the encrypted bytes to the
-socket with write timeout `-1` and the packet ID tag, and then enables the
-out-segment timeout. The enclosing status-3 producer block then arms the
-receive-header timeout after `sendPacket` returns; these are distinct toggles.
-A status other than 3 forwards a producer error to a
-present completion and does not send or arm the receive-header timeout. The
+send path obtains packet data and invokes the encryption helper. With no crypto
+object, that helper returns the original data; with crypto, it prefixes the
+encrypted output with its four-byte length and appends the ciphertext. The send
+path then submits the resulting bytes to the socket with write timeout `-1` and
+the packet ID tag, and enables the out-segment timeout. The enclosing status-3
+producer block then arms the receive-header timeout after `sendPacket` returns;
+these are distinct toggles. A status other than 3 forwards nil packet plus a
+producer error to a present completion and performs no packet allocation, send,
+or receive-header arm; with no completion it has no callback effect. The
 write completion, partial-write behavior, packet serialization fields, and
 producer error identity remain untraced.
 

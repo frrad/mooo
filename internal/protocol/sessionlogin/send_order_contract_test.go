@@ -24,21 +24,22 @@ type sendOrderCase struct {
 }
 
 var knownSendOrderEffect = map[string]bool{
-	"allocate_packet":                true,
-	"derive_packet_tag":              true,
-	"register_completion_by_uid":     true,
-	"register_packet_uid":            true,
-	"send_packet":                    true,
-	"packet_data":                    true,
-	"encrypt_packet_data":            true,
-	"socket_write_timeout_minus_one": true,
-	"enable_out_segment_timeout":     true,
-	"forward_nil_packet":             true,
-	"forward_producer_error":         true,
-	"no_completion_callback":         true,
-	"no_send":                        true,
-	"no_receive_timeout_arm":         true,
-	"arm_receive_header_timeout":     true,
+	"allocate_packet":                 true,
+	"derive_packet_tag":               true,
+	"register_completion_by_uid":      true,
+	"register_packet_uid":             true,
+	"send_packet":                     true,
+	"packet_data":                     true,
+	"encrypt_packet_data_prefixed":    true,
+	"encrypt_packet_data_passthrough": true,
+	"socket_write_timeout_minus_one":  true,
+	"enable_out_segment_timeout":      true,
+	"forward_nil_packet":              true,
+	"forward_producer_error":          true,
+	"no_completion_callback":          true,
+	"no_send":                         true,
+	"no_receive_timeout_arm":          true,
+	"arm_receive_header_timeout":      true,
 }
 
 func loadSendOrderContract(path string) (sendOrderContract, error) {
@@ -69,15 +70,19 @@ func loadSendOrderContract(path string) (sendOrderContract, error) {
 				return v, fmt.Errorf("unknown effect %q", effect)
 			}
 		}
-		if !c.CryptoPresent {
-			return v, fmt.Errorf("crypto scope must be explicit supported path: %q", c.Name)
-		}
-		want := []string{"allocate_packet", "derive_packet_tag"}
+		want := []string{}
 		if c.ProducerStatus == 3 {
+			want = append(want, "allocate_packet", "derive_packet_tag")
 			if c.Completion {
 				want = append(want, "register_completion_by_uid", "register_packet_uid")
 			}
-			want = append(want, "send_packet", "packet_data", "encrypt_packet_data", "socket_write_timeout_minus_one", "enable_out_segment_timeout", "arm_receive_header_timeout")
+			want = append(want, "send_packet", "packet_data")
+			if c.CryptoPresent {
+				want = append(want, "encrypt_packet_data_prefixed")
+			} else {
+				want = append(want, "encrypt_packet_data_passthrough")
+			}
+			want = append(want, "socket_write_timeout_minus_one", "enable_out_segment_timeout", "arm_receive_header_timeout")
 		} else if c.Completion {
 			want = append(want, "forward_nil_packet", "forward_producer_error", "no_receive_timeout_arm")
 		} else {

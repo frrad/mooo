@@ -13,7 +13,7 @@
         "register_packet_uid",
         "send_packet",
         "packet_data",
-        "encrypt_packet_data",
+        "encrypt_packet_data_prefixed",
         "socket_write_timeout_minus_one",
         "enable_out_segment_timeout",
         "arm_receive_header_timeout"
@@ -24,16 +24,16 @@
       ]
     },
     {
-      "name": "status three fire and forget still arms out timeout",
+      "name": "status three crypto absent passes packet data through",
       "producer_status": 3,
       "completion_present": false,
-      "crypto_present": true,
+      "crypto_present": false,
       "expected_effects": [
         "allocate_packet",
         "derive_packet_tag",
         "send_packet",
         "packet_data",
-        "encrypt_packet_data",
+        "encrypt_packet_data_passthrough",
         "socket_write_timeout_minus_one",
         "enable_out_segment_timeout",
         "arm_receive_header_timeout"
@@ -48,8 +48,6 @@
       "completion_present": true,
       "crypto_present": true,
       "expected_effects": [
-        "allocate_packet",
-        "derive_packet_tag",
         "forward_nil_packet",
         "forward_producer_error",
         "no_receive_timeout_arm"
@@ -64,8 +62,6 @@
       "completion_present": false,
       "crypto_present": true,
       "expected_effects": [
-        "allocate_packet",
-        "derive_packet_tag",
         "no_completion_callback",
         "no_send",
         "no_receive_timeout_arm"
