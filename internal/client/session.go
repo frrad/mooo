@@ -89,6 +89,10 @@ type Session struct {
 	pendingUniqueIDByID    map[uint32]string
 	lifecycleScheduler     lifecycleScheduler
 	lifecycleStopped       bool
+	// outSegmentSubmitter is opt-in and must be bound to wire before use. The
+	// default Session path remains synchronous until producer/status readiness
+	// supplies this adapter explicitly.
+	outSegmentSubmitter *sessionlogin.OutSegmentSubmitter
 	// headerObserver is configured before readLoop starts and must not change
 	// while that loop is running.
 	headerObserver             func(loco.Header)
@@ -418,7 +422,15 @@ func (s *Session) requestRaw(ctx context.Context, id uint32, command string, bod
 	s.mu.Unlock()
 	preparedTimeout := s.prepareReceiveHeaderTimeout(command, id)
 	s.queueCancelRequest()
-	if err := s.writeRequest(ctx, wire, id, command, body); err != nil {
+	writeResult := func(writeOutcome sessionlogin.OutSegmentWriteResult) {
+		if writeOutcome.Err != nil && !errors.Is(writeOutcome.Err, context.Canceled) {
+			s.abortReceiveHeaderTimeout(preparedTimeout)
+			if s.failPending(id, result, writeOutcome.Err) {
+				return
+			}
+		}
+	}
+	if err := s.writeRequestWithResult(ctx, wire, id, command, body, writeResult); err != nil {
 		s.abortReceiveHeaderTimeout(preparedTimeout)
 		s.removePending(id, result)
 		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, err)
@@ -431,6 +443,7 @@ func (s *Session) requestRaw(ctx context.Context, id uint32, command string, bod
 		}
 		return outcome.packet, nil
 	case <-ctx.Done():
+		s.abortReceiveHeaderTimeout(preparedTimeout)
 		s.removePending(id, result)
 		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, ctx.Err())
 	}
@@ -460,6 +473,10 @@ func (s *Session) allocateRequestIDLocked() (uint32, error) {
 }
 
 func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, command string, body []byte) error {
+	return s.writeRequestWithResult(ctx, wire, id, command, body, nil)
+}
+
+func (s *Session) writeRequestWithResult(ctx context.Context, wire *wireConn, id uint32, command string, body []byte, onResult func(sessionlogin.OutSegmentWriteResult)) error {
 	raw, err := (loco.Packet{Header: loco.Header{PacketID: id, Method: command, BodyType: loco.BodyTypeBSON}, Body: body}).MarshalBinary(0)
 	if err != nil {
 		return err
@@ -470,18 +487,33 @@ func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, c
 			return err
 		}
 	}
+	s.mu.Lock()
+	submitter := s.outSegmentSubmitter
+	s.mu.Unlock()
+	if submitter != nil {
+		return submitter.SubmitWithResult(ctx, raw, onResult)
+	}
+	_, err = s.writeRawPayload(ctx, wire, raw)
+	return err
+}
+
+func (s *Session) writeRawPayload(ctx context.Context, wire *wireConn, raw []byte) (int, error) {
+	return s.writeRawPayloadProgress(ctx, wire, raw, nil)
+}
+
+func (s *Session) writeRawPayloadProgress(ctx context.Context, wire *wireConn, raw []byte, progress func(int, error)) (int, error) {
 	if err := s.acquireWrite(ctx); err != nil {
-		return err
+		return 0, err
 	}
 	defer s.releaseWrite()
 	if err := ctx.Err(); err != nil {
-		return err
+		return 0, err
 	}
 	s.mu.Lock()
 	closed := s.closed || s.closing || s.wire != wire
 	s.mu.Unlock()
 	if closed {
-		return ErrClosed
+		return 0, ErrClosed
 	}
 	stop := make(chan struct{})
 	watchDone := make(chan struct{})
@@ -493,7 +525,29 @@ func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, c
 		case <-stop:
 		}
 	}()
-	written, err := writeAllCount(wire.c, raw)
+	written := 0
+	remaining := raw
+	var err error
+	for len(remaining) > 0 {
+		var n int
+		n, err = wire.c.Write(remaining)
+		partial := false
+		if n > 0 {
+			written += n
+			partial = n < len(remaining)
+			remaining = remaining[n:]
+		}
+		if progress != nil && (partial || err != nil) {
+			progress(n, err)
+		}
+		if err != nil {
+			break
+		}
+		if n <= 0 {
+			err = fmt.Errorf("zero-byte write")
+			break
+		}
+	}
 	ctxErr := ctx.Err()
 	close(stop)
 	<-watchDone
@@ -511,9 +565,9 @@ func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, c
 		s.stopLifecycle()
 	}
 	if ctxErr != nil {
-		return ctxErr
+		return written, ctxErr
 	}
-	return err
+	return written, err
 }
 
 func (s *Session) acquireWrite(ctx context.Context) error {
@@ -545,6 +599,25 @@ func (s *Session) removePending(id uint32, expected chan requestResult) {
 			delete(s.pendingUniqueIDByID, id)
 		}
 	}
+}
+
+func (s *Session) failPending(id uint32, expected chan requestResult, err error) bool {
+	s.mu.Lock()
+	result, ok := s.pending[id]
+	if !ok || result != expected {
+		s.mu.Unlock()
+		return false
+	}
+	if ok {
+		delete(s.pending, id)
+		if key := s.pendingUniqueIDByID[id]; key != "" && s.pendingByUniqueID[key] == result {
+			delete(s.pendingByUniqueID, key)
+			delete(s.pendingUniqueIDByID, id)
+		}
+	}
+	s.mu.Unlock()
+	result <- requestResult{err: err}
+	return true
 }
 
 func packetUniqueID(method string, id uint32) string {
@@ -614,8 +687,19 @@ func (s *Session) abortReceiveHeaderTimeout(token *receiveHeaderTimeoutToken) {
 	if token == nil {
 		return
 	}
+	var controller receiveHeaderTimeoutController
+	committed := false
 	s.receiveHeaderTimeoutMu.Lock()
 	if current, ok := s.receiveHeaderTimeoutState[token.packetID]; ok && current == token {
+		committed = current.committed
+		s.mu.Lock()
+		controller = s.receiveHeaderTimeout
+		s.mu.Unlock()
+		if committed && controller != nil {
+			// Keep the timeout-state mutex held while enqueueing cancellation so
+			// an old request cannot cancel a replacement with the same ID.
+			_, _ = controller.Toggle(0, int64(token.packetID))
+		}
 		delete(s.receiveHeaderTimeoutState, token.packetID)
 	}
 	s.receiveHeaderTimeoutMu.Unlock()
@@ -754,6 +838,7 @@ func (s *Session) finishRead(err error) {
 	s.pendingByUniqueID = nil
 	s.pendingUniqueIDByID = nil
 	pushes := s.pushes
+	submitter := s.outSegmentSubmitter
 	s.mu.Unlock()
 	if shouldSchedule {
 		for range pending {
@@ -763,6 +848,9 @@ func (s *Session) finishRead(err error) {
 	s.stopLifecycle()
 	s.closeReceiveHeaderTimeout()
 	s.resetReceiveHeaderTimeout()
+	if submitter != nil {
+		submitter.Close()
+	}
 	for _, waiter := range pending {
 		waiter <- requestResult{err: err}
 	}
@@ -782,18 +870,46 @@ func (s *Session) Close() error {
 	}
 	s.closing = true
 	wire := s.wire
+	submitter := s.outSegmentSubmitter
 	if wire == nil {
 		s.closed = true
 		s.mu.Unlock()
 		s.stopLifecycle()
 		s.closeReceiveHeaderTimeout()
+		if submitter != nil {
+			submitter.Close()
+		}
 		return nil
 	}
 	s.mu.Unlock()
 	s.stopLifecycle()
 	s.closeReceiveHeaderTimeout()
 	s.resetReceiveHeaderTimeout()
+	if submitter != nil {
+		submitter.Close()
+	}
 	return wire.close()
+}
+
+// Shutdown interrupts the Session and then joins the opt-in asynchronous
+// submission worker. Callers must not invoke Shutdown from a submission
+// callback; callback-side Close remains interrupt-only to avoid self-join.
+func (s *Session) Shutdown(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	if ctx == nil {
+		return context.Canceled
+	}
+	closeErr := s.Close()
+	s.mu.Lock()
+	submitter := s.outSegmentSubmitter
+	s.mu.Unlock()
+	var waitErr error
+	if submitter != nil {
+		waitErr = submitter.Wait(ctx)
+	}
+	return errors.Join(closeErr, waitErr)
 }
 
 type wireConn struct {
