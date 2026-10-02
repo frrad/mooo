@@ -285,6 +285,31 @@
         "read_fgPingItv",
         "set_ping_interval_180"
       ]
+    },
+    {
+      "name": "missing scalar config key decodes zero before caller fallback",
+      "kind": "schedule-config",
+      "input": {
+        "fgPingItv": "missing"
+      },
+      "expect": [
+        "decode_scalar_zero",
+        "caller_fallback_interval_180"
+      ],
+      "remaining_gaps": [
+        "producer_response_mapping"
+      ]
+    },
+    {
+      "name": "ports remains object-valued during config archive round-trip",
+      "kind": "schedule-config",
+      "expect": [
+        "decode_ports_object",
+        "encode_ports_object"
+      ],
+      "remaining_gaps": [
+        "ports_schema"
+      ]
     }
   ]
 }

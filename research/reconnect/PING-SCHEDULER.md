@@ -26,6 +26,19 @@ This target/selector/object tuple is the cancellation identity. Cancellation is
 queued on the main queue by request, push-receipt, and status-zero
 callers; queued cancellation is not synchronous with the caller.
 
+The cached model is `LocoConnInfo`. Its coder path decodes each scalar
+configuration property through `decodeObjectForKey:` followed by integer coercion;
+there is no recovered coder-error branch. A missing scalar object therefore
+reaches the scalar default of zero, while the `ports` object is decoded without
+scalar coercion and may remain absent. Encoding writes scalar properties as
+integer-number objects and writes `ports` as an object. The reviewed scalar keys
+include `bgKeepItv`, `bgReconnItv`, `bgPingItv`, `fgPingItv`, `encType`,
+`connTimeout`, `recvHeaderTimeout`, `inSegTimeout`, `outSegTimeout`, and
+`blockSendBufSize`; `ports` is the object-valued key. The booking response
+callback chain that supplies or writes this model was not connected to the setter
+by a direct call edge, so response-field mapping and producer failure policy
+remain separate gaps.
+
 The PING method allocates an empty packet and enters the carriage request path.
 For an ordinary request, the path queues cancellation before its carriage-agent
 admission and transport dispatch. A normal transport completion queues a new

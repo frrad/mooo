@@ -14,6 +14,17 @@ response wrapper; a successful reply does not expose any additional
 application state. The traced completion itself does not cancel a keep-alive
 timer.
 
+The cached configuration model is `LocoConnInfo`. Its coder path decodes scalar
+properties with object lookup followed by integer coercion; absent scalar keys
+therefore become zero through nil integer conversion, and no coder-error branch
+was recovered. The `ports` property remains object-valued. Encoding uses integer
+number objects for scalar fields and the object directly for `ports`. The reviewed
+scalar keys are `bgKeepItv`, `bgReconnItv`, `bgPingItv`, `fgPingItv`, `encType`,
+`connTimeout`, `recvHeaderTimeout`, `inSegTimeout`, `outSegTimeout`, and
+`blockSendBufSize`. The booking response callback has no direct setter edge in
+the recovered call graph, so response-field mapping and producer failure policy
+remain open.
+
 The concrete PING method allocates an empty carriage packet and submits it
 through the manager's ordinary carriage request path. That ordinary path
 queues a main-queue cancellation of any delayed PING invocation for the same
