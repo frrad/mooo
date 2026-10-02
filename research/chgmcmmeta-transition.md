@@ -50,8 +50,9 @@ hidden was caused by the current notice or was already present.
 
 `Applied`, copied state ownership, and atomic commit are implementation-facing
 decisions for the clean-room reducer, not claims about official return values.
-The proposed reducer reports `Applied` when either a known route changed a
-field, the incoming revision advanced, or hidden cleanup effects were selected.
+The proposed reducer reports `Applied` when either a known route selected a
+field assignment (even if the value is unchanged), the incoming revision
+advanced, or hidden cleanup effects were selected.
 Thus an existing hidden room can be `Applied` even for an unknown route with a
 non-newer revision, because pin cleanup and both unpin effects are mutations.
 Missing rooms remain no-op transitions. A caller should commit the returned

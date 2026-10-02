@@ -85,6 +85,14 @@ func TestReduceChatMCMetaEqualRevisionStillAppliesKnownRoute(t *testing.T) {
 	}
 }
 
+func TestReduceChatMCMetaDuplicateKnownRouteReportsAppliedWithoutStateChange(t *testing.T) {
+	state := ChatMCMetaState{RoomExists: true, GlobalRevision: 9, Name: "same", Pin: 8}
+	result := ReduceChatMCMeta(state, ChatMCMetaChanged{Revision: 9, Type: "name", Content: "same"})
+	if !result.Applied || result.State != state || result.Unpin || result.UnpinInAllFolders {
+		t.Fatalf("duplicate transition = %#v, want applied assignment with unchanged state", result)
+	}
+}
+
 func TestReduceChatMCMetaEmptyImageFieldsReplaceExistingValues(t *testing.T) {
 	state := ChatMCMetaState{RoomExists: true, ImageURL: "old", FullImageURL: "old-full"}
 	result := ReduceChatMCMeta(state, ChatMCMetaChanged{Type: "imagePath"})
