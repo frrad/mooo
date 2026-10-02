@@ -28,3 +28,12 @@ copied, and nil map/slice shapes are preserved.
 matching chat ID, positive log ID strictly greater than the lower bound, type
 other than 10001, status other than 5, and scope 1 or 3. This helper is independent
 of the reducer's selected query-result boundary.
+
+## Public contract and provenance
+
+This reducer contract is grounded in the public clean-room dossier:
+
+- [`DECUNREAD.md`](DECUNREAD.md) records the observed protocol boundary and
+  explicitly separates traced behavior from integration gaps.
+- [`EVIDENCE.md`](EVIDENCE.md) records the sanitized evidence and provenance
+  supporting the contract and its synthetic vectors.
