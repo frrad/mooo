@@ -11,7 +11,8 @@
     "RC-BIN-003",
     "RC-BIN-004",
     "RC-BIN-005",
-    "RC-BIN-006"
+    "RC-BIN-006",
+    "RC-BIN-007"
   ],
   "cases": [
     {
@@ -168,6 +169,62 @@
         "exact_errors",
         "nil_agent_status_0x17"
       ]
+    },
+    {
+      "name": "LOGINLIST success copies manager routes in order",
+      "kind": "completion-forwarding",
+      "evidence": [
+        "RC-BIN-007"
+      ],
+      "status": "unexecuted",
+      "expect": [
+        "construct_response_wrapper",
+        "write_internal_status_0x19",
+        "copy_wrapper_carriage_host",
+        "copy_wrapper_carriage_port",
+        "copy_settings_last_carriage_host",
+        "copy_settings_last_carriage_port",
+        "copy_wrapper_vss_ipv4_host",
+        "copy_wrapper_vss_ipv6_host",
+        "copy_wrapper_vss_ipv4_port",
+        "forward_wrapper"
+      ],
+      "remaining_gaps": [
+        "setter_durability"
+      ]
+    },
+    {
+      "name": "LOGINLIST non-success skips route copies",
+      "kind": "completion-forwarding",
+      "evidence": [
+        "RC-BIN-007"
+      ],
+      "status": "unexecuted",
+      "expect": [
+        "construct_response_wrapper",
+        "write_internal_status_0x18",
+        "skip_route_copies",
+        "forward_wrapper"
+      ]
+    },
+    {
+      "name": "LOGINLIST success EOF advances tokens after route branch",
+      "kind": "completion-forwarding",
+      "evidence": [
+        "RC-BIN-007"
+      ],
+      "status": "unexecuted",
+      "expect": [
+        "construct_response_wrapper",
+        "route_branch",
+        "set_token_lock_false",
+        "read_wrapper_last_token",
+        "update_token",
+        "read_wrapper_last_blind_token",
+        "update_blind_token",
+        "forward_wrapper"
+      ],
+      "predicate": "response_success_and_eof_independent_of_login_success"
     }
   ]
 }
