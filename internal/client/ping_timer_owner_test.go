@@ -1,8 +1,10 @@
 package client
 
 import (
+	"errors"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,35 +14,33 @@ import (
 
 type queuedTimer struct {
 	fn      func()
-	stopped bool
+	stopped atomic.Bool
 }
 
 type queuedTimerClock struct {
 	mu     sync.Mutex
 	timers []*queuedTimer
+	delays []time.Duration
 }
 
-func (c *queuedTimerClock) AfterFunc(_ time.Duration, fn func()) timerHandle {
+func (c *queuedTimerClock) AfterFunc(delay time.Duration, fn func()) timerHandle {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	t := &queuedTimer{fn: fn}
 	c.timers = append(c.timers, t)
+	c.delays = append(c.delays, delay)
 	return t
 }
 
 func (t *queuedTimer) Stop() bool {
-	if t.stopped {
-		return false
-	}
-	t.stopped = true
-	return true
+	return t.stopped.CompareAndSwap(false, true)
 }
 
 func (c *queuedTimerClock) run(index int) {
 	c.mu.Lock()
 	t := c.timers[index]
 	c.mu.Unlock()
-	if !t.stopped {
+	if !t.stopped.Load() {
 		t.fn()
 	}
 }
@@ -66,6 +66,21 @@ func TestPingTimerOwnerSchedulesAndFiresThroughRelativeClock(t *testing.T) {
 }
 
 func TestRealtimePingTimerOwnerUsesInjectedInterval(t *testing.T) {
+	clock := &queuedTimerClock{}
+	owner := newPingTimerOwner(clock, time.Hour, func() {})
+	if !owner.queueSchedule() {
+		t.Fatal("queueSchedule rejected realtime owner")
+	}
+	clock.mu.Lock()
+	delay := clock.delays[0]
+	clock.mu.Unlock()
+	if delay != time.Hour {
+		t.Fatalf("delay=%s want=%s", delay, time.Hour)
+	}
+	owner.shutdown()
+}
+
+func TestRealtimePingTimerOwnerAdapterCanBeStopped(t *testing.T) {
 	owner := newRealtimePingTimerOwner(time.Hour, func() {})
 	if !owner.queueSchedule() {
 		t.Fatal("queueSchedule rejected realtime owner")
@@ -81,7 +96,7 @@ func TestPingTimerOwnerCancelInvalidatesQueuedGeneration(t *testing.T) {
 		t.Fatal("queueSchedule rejected open owner")
 	}
 	owner.queueCancel()
-	clock.run(0)
+	clock.runEvenIfStopped(0)
 	if fired != 0 {
 		t.Fatalf("fired=%d want=0", fired)
 	}
@@ -162,7 +177,7 @@ func TestPingTimerOwnerCloseIsIdempotentAndSuppressesFutureWork(t *testing.T) {
 	if owner.queueSchedule() {
 		t.Fatal("queueSchedule accepted closed owner")
 	}
-	clock.run(0)
+	clock.runEvenIfStopped(0)
 	if fired != 0 {
 		t.Fatalf("fired=%d want=0", fired)
 	}
@@ -209,5 +224,29 @@ func TestSessionCompletionArmsInjectedTimerOwner(t *testing.T) {
 	}
 	if err := session.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSessionTerminalFinishShutsInjectedTimerOwner(t *testing.T) {
+	clock := &queuedTimerClock{}
+	fired := make(chan struct{}, 1)
+	owner := newPingTimerOwner(clock, time.Second, func() { fired <- struct{}{} })
+	session := &Session{
+		pushes:             make(chan loco.Packet, 1),
+		pending:            make(map[uint32]chan requestResult),
+		lifecycleScheduler: owner,
+	}
+	if !owner.queueSchedule() {
+		t.Fatal("queueSchedule rejected open owner")
+	}
+	session.finishRead(errors.New("synthetic terminal disconnect"))
+	if owner.queueSchedule() {
+		t.Fatal("queueSchedule accepted after terminal finish")
+	}
+	clock.runEvenIfStopped(0)
+	select {
+	case <-fired:
+		t.Fatal("terminal owner delivered a stale timer callback")
+	default:
 	}
 }
