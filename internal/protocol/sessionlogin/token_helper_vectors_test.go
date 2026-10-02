@@ -2,6 +2,7 @@ package sessionlogin
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,15 +79,21 @@ func TestTokenHelperUnresolvedVectorsSchema(t *testing.T) {
 		"context_failure_behavior_unresolved": true, "durable_commit_unresolved": true, "reset_policy_unresolved": true,
 	}
 	for _, vector := range got.Vectors {
-		if vector.Execution == "unresolved" {
-			continue
-		}
 		if vector.Name == "negative token to zero is typed assertion error" {
-			_, err := SelectTokenHelperEffects(vector.Kind, *vector.Current, *vector.Incoming, vector.ExistingLossCheckPositive, vector.ExistingTokenEqualsLossCheck, vector.NestedContext)
-			if err == nil {
+			if vector.Current == nil || vector.Incoming == nil {
+				t.Fatalf("%q: assertion vector requires current and incoming", vector.Name)
+			}
+			effects, err := SelectTokenHelperEffects(vector.Kind, *vector.Current, *vector.Incoming, vector.ExistingLossCheckPositive, vector.ExistingTokenEqualsLossCheck, vector.NestedContext)
+			if !errors.Is(err, ErrTokenCursorAssertion) || effects != nil {
 				t.Fatalf("%q: expected typed assertion error", vector.Name)
 			}
 			continue
+		}
+		if vector.Execution == "unresolved" {
+			continue
+		}
+		if vector.Current == nil || vector.Incoming == nil {
+			t.Fatalf("%q: implemented vector requires current and incoming", vector.Name)
 		}
 		gotEffects, err := SelectTokenHelperEffects(vector.Kind, *vector.Current, *vector.Incoming, vector.ExistingLossCheckPositive, vector.ExistingTokenEqualsLossCheck, vector.NestedContext)
 		if err != nil {
@@ -98,6 +105,11 @@ func TestTokenHelperUnresolvedVectorsSchema(t *testing.T) {
 			}
 			if !validEffects[expected] {
 				t.Fatalf("%q: unknown expected effect %q", vector.Name, expected)
+			}
+		}
+		for _, expected := range vector.Expect {
+			if expected == "perform_blind_write" {
+				expected = "set_blind"
 			}
 			found := false
 			for i, effect := range gotEffects {

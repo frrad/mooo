@@ -2,12 +2,20 @@ package sessionlogin
 
 import "fmt"
 
+const (
+	minSigned32 = -1 << 31
+	maxSigned32 = 1<<31 - 1
+)
+
 // SelectTokenHelperEffects returns the ordered clean-room intents for the
 // reviewed token-helper boundary. It performs no nested-context work, writes,
 // commits, or profile/reset handling.
 func SelectTokenHelperEffects(kind string, current, incoming int64, existingLossCheckPositive, existingTokenEqualsLossCheck bool, nestedContext string) ([]string, error) {
 	if kind != "token" && kind != "blind" {
 		return nil, fmt.Errorf("sessionlogin: unknown token helper kind %q", kind)
+	}
+	if kind == "blind" && (current < minSigned32 || current > maxSigned32 || incoming < minSigned32 || incoming > maxSigned32) {
+		return nil, fmt.Errorf("sessionlogin: blind cursor outside signed-32 range")
 	}
 	if kind == "token" && current < 0 && incoming == 0 {
 		return nil, ErrTokenCursorAssertion
@@ -24,8 +32,10 @@ func SelectTokenHelperEffects(kind string, current, incoming int64, existingLoss
 		effects = append(effects, "dispatch_context_block", "invoke_block_inline")
 	case "other_queue":
 		effects = append(effects, "dispatch_context_block", "wrap_write_operation", "invoke_block")
-	default:
+	case "":
 		effects = append(effects, "open_nested_context", "dispatch_context_block")
+	default:
+		return nil, fmt.Errorf("sessionlogin: unknown nested context %q", nestedContext)
 	}
 	if kind == "token" {
 		if existingLossCheckPositive {
