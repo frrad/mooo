@@ -248,6 +248,16 @@ signed int32 `revision`, and opaque string fields `type`, `content`,
 `imageUrl`, and `fullImageUrl`. Its manager path is room-existence-gated and
 can advance an MCM revision plus room pin/folder state; those effects and
 unproven type labels remain outside the decoder.
+The post-decoder ordering is now bounded: the room consumer compares `type`
+with the exact labels `name`, `favorite`, `imagePath`, `chat_hide`, and
+`chat_category`, applies the matching field mutation, and only then does the
+manager compare and advance the separate MCM revision. A stale notice therefore
+cannot regress the revision but may still mutate its routed field; hidden state
+sets pin to -1 and emits unpin-from-all-folders effects without claiming folder
+membership deletion.
+The implementation-neutral reducer contract is in
+[`chgmcmmeta-transition.md`](chgmcmmeta-transition.md), with synthetic reducer
+coverage now implemented.
 
 ## Current parity matrix
 
