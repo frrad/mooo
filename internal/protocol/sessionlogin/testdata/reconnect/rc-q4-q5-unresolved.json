@@ -10,7 +10,8 @@
     "RC-BIN-002",
     "RC-BIN-003",
     "RC-BIN-004",
-    "RC-BIN-005"
+    "RC-BIN-005",
+    "RC-BIN-006"
   ],
   "cases": [
     {
@@ -145,6 +146,27 @@
       ],
       "remaining_gaps": [
         "push-receipt response/failure semantics"
+      ]
+    },
+    {
+      "name": "LOGINLIST ordinary carriage chain ordering",
+      "kind": "loginlist-chain",
+      "evidence": [
+        "RC-BIN-006"
+      ],
+      "status": "unexecuted",
+      "expect": [
+        "write_manager_status_0x18",
+        "queue_ping_cancel_before_admission_dispatch",
+        "completion_queue_ping_schedule_before_loginlist_callback",
+        "nil_forward_or_wrapper",
+        "success_eof_token_progress"
+      ],
+      "remaining_gaps": [
+        "queue_execution_timing",
+        "response_wrapper_mapping",
+        "exact_errors",
+        "nil_agent_status_0x17"
       ]
     }
   ]
