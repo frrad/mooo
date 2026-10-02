@@ -6,11 +6,11 @@ Status: reviewed static source contract, runtime unexecuted. Observation date:
 `sendPushReceipt:` first enqueues a block on the LocoAgent owner queue. The
 queued block reads the owner's execution-time status byte. Only status `3`
 continues to packet access: it reads the packet header and packet ID, derives
-the push-receipt request tag numerically equal to the unsigned packet ID
-through `tagForPushReceiptPacketId:`, and invokes
-`sendPacket:tag:`. The tag helper forwards the unsigned 32-bit packet ID into
-its signed tag return domain; the contract therefore preserves values such as
-`4294967295` as numeric identity. Any other execution-time status exits without
+the push-receipt request tag as the signed negation of the unsigned packet ID
+through `tagForPushReceiptPacketId:`, and invokes `sendPacket:tag:`. Packet ID
+`17` therefore yields tag `-17`, while packet ID `4294967295` yields
+`-4294967295`.
+Any other execution-time status exits without
 packet send. The status is read when the queued block runs, so admission and
 execution can observe different status values.
 
@@ -27,4 +27,4 @@ or terminal KICKOUT/CHANGESVR handling. Those are separate source chains.
 - `tagForPushReceiptPacketId:` metadata and IMP: `0x101773658`, type
   `q20@0:8I16`; its body returns the signed negation of the uint32 argument.
 - The fixture is input-derived and validates queue admission, execution-time
-  status, and packet-tag identity. Runtime queue races remain unexecuted.
+  status, and signed-negated packet-tag identity. Runtime queue races remain unexecuted.
