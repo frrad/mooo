@@ -1,0 +1,60 @@
+{
+  "questions": [
+    "RC-Q4",
+    "RC-Q5"
+  ],
+  "evidence": [
+    "RC-BIN-001"
+  ],
+  "cases": [
+    {
+      "name": "keep-alive uses an empty PING body",
+      "kind": "wire-shape",
+      "expect_client": {
+        "method": "PING",
+        "body": {}
+      }
+    },
+    {
+      "name": "timeout disconnects carriage and fails pending callbacks once",
+      "kind": "failure-order",
+      "expect": [
+        "disconnect",
+        "fan_out_pending_error_once",
+        "clear_pending"
+      ]
+    },
+    {
+      "name": "PING completion forwards nil failure and wraps a nonnil reply",
+      "kind": "completion-forwarding",
+      "expect": [
+        "nil_reply -> completion(nil)",
+        "reply -> construct_response_wrapper -> completion(wrapper)"
+      ]
+    },
+    {
+      "name": "receive-header timeout predicate accepts nonnegative signed tags",
+      "kind": "timeout-predicate",
+      "cases": [
+        {"tag": 0, "configured_timeout_seconds": 20, "arm": true},
+        {"tag": 42, "configured_timeout_seconds": 20, "arm": true},
+        {"tag": -1, "configured_timeout_seconds": 20, "arm": false},
+        {"tag": 42, "configured_timeout_seconds": 0, "arm": false}
+      ]
+    },
+    {
+      "name": "recovered coordinator and socket defaults",
+      "kind": "configuration",
+      "ping_interval_min_seconds": 180,
+      "connect_timeout_seconds": 15,
+      "receive_header_timeout_seconds": 20,
+      "in_segment_timeout_seconds": 10,
+      "out_segment_timeout_seconds": 10,
+      "remaining_gaps": [
+        "timer lifecycle",
+        "traffic reset",
+        "idle timeout scope"
+      ]
+    }
+  ]
+}
