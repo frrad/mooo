@@ -502,12 +502,6 @@ func (s *Session) readLoop() {
 	for {
 		packet, err := s.wire.read()
 		if err != nil {
-			s.mu.Lock()
-			bootstrapComplete := !s.bootstrapDone && s.bootstrapPushes != nil && len(s.pending) == 0
-			s.mu.Unlock()
-			if bootstrapComplete {
-				return
-			}
 			s.finishRead(err)
 			return
 		}

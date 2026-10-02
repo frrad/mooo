@@ -75,6 +75,16 @@ func (b *scriptedBackend) wait(t *testing.T) {
 	}
 }
 
+func holdBackendOpen() backendStep {
+	return func(server *wireConn) error {
+		_, err := server.read()
+		if err != nil {
+			return nil
+		}
+		return errors.New("unexpected request while holding backend open")
+	}
+}
+
 func expectRequest(method string, check func(bson.Raw) error, reply bson.D) backendStep {
 	return func(server *wireConn) error {
 		request, err := server.read()
@@ -217,9 +227,21 @@ func scriptedLoginAttempt(t *testing.T, expectedToken string, loginReply bson.D)
 	checkin := newScriptedBackend(t, false, expectRequest("CHECKIN", nil, statusDocument(
 		bson.E{Key: "host", Value: "carriage.invalid"}, bson.E{Key: "port", Value: int32(995)},
 	)))
-	carriage := newScriptedBackend(t, true, expectRequest("LOGINLIST", func(raw bson.Raw) error {
+	steps := []backendStep{expectRequest("LOGINLIST", func(raw bson.Raw) error {
 		return requireString(raw, "oauthToken", expectedToken)
-	}, loginReply))
+	}, loginReply)}
+	accepted := false
+	for _, field := range loginReply {
+		if field.Key == "status" {
+			status, ok := field.Value.(int32)
+			accepted = ok && (status == 0 || status == -305 || status == -310)
+			break
+		}
+	}
+	if accepted {
+		steps = append(steps, holdBackendOpen())
+	}
+	carriage := newScriptedBackend(t, true, steps...)
 	dialers := sessionDialers{
 		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			switch host {
@@ -277,7 +299,7 @@ func TestScriptedBackendResumedLoginUsesDurableCursors(t *testing.T) {
 		bson.E{Key: "eof", Value: true},
 		bson.E{Key: "lastTokenId", Value: int64(91)},
 		bson.E{Key: "lbk", Value: int32(8)},
-	)))
+	)), holdBackendOpen())
 	dialers := sessionDialers{
 		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			switch host {
@@ -308,6 +330,7 @@ func TestScriptedBackendResumedLoginUsesDurableCursors(t *testing.T) {
 	if session.loginCursor.lastTokenID == nil || *session.loginCursor.lastTokenID != 91 || session.loginCursor.lbk == nil || *session.loginCursor.lbk != 8 {
 		t.Fatalf("login cursor = %#v", session.loginCursor)
 	}
+	_ = session.Close()
 	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
 		backend.wait(t)
 	}
@@ -341,6 +364,7 @@ func TestScriptedBackendPartialLChatListKeepsDeltasWithoutAdvancingGlobalCursor(
 			{Key: "delChatIds", Value: bson.A{int64(42)}},
 			{Key: "eof", Value: false},
 		}),
+		holdBackendOpen(),
 	)
 	dialers := sessionDialers{
 		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
@@ -374,6 +398,7 @@ func TestScriptedBackendPartialLChatListKeepsDeltasWithoutAdvancingGlobalCursor(
 	if session.loginCursor.lastTokenID != nil || session.loginCursor.lbk != nil {
 		t.Fatalf("partial page advanced global cursor: %#v", session.loginCursor)
 	}
+	_ = session.Close()
 	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
 		backend.wait(t)
 	}
@@ -400,6 +425,7 @@ func TestScriptedBackendLoginAlreadyCurrentDoesNotPageOrAdvanceGlobalCursor(t *t
 	if session.loginCursor.lastTokenID != nil || session.loginCursor.lbk != nil {
 		t.Fatalf("already-current response advanced global cursor: %#v", session.loginCursor)
 	}
+	_ = session.Close()
 	for _, backend := range backends {
 		backend.wait(t)
 	}
@@ -741,9 +767,6 @@ func TestScriptedBackendExpiredTokenRenewsThenLogsInOnce(t *testing.T) {
 	if err := api.Connect(ctx); err != nil {
 		t.Fatal(err)
 	}
-	for _, backend := range append(firstBackends, secondBackends...) {
-		backend.wait(t)
-	}
 	if renewals != 1 || loginAttempts != 2 {
 		t.Fatalf("renewals=%d login attempts=%d, want 1 and 2", renewals, loginAttempts)
 	}
@@ -759,6 +782,10 @@ func TestScriptedBackendExpiredTokenRenewsThenLogsInOnce(t *testing.T) {
 	}
 	if renewals != 1 || loginAttempts != 2 {
 		t.Fatal("repeated Connect renewed or logged in again")
+	}
+	_ = api.Close()
+	for _, backend := range append(firstBackends, secondBackends...) {
+		backend.wait(t)
 	}
 }
 
