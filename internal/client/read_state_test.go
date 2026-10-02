@@ -113,6 +113,29 @@ func TestClientMarkReadSkipsPersistedWatermark(t *testing.T) {
 	}
 }
 
+func TestClientMarkReadSkipsOlderPersistedWatermark(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitReadWatermark(42, 99); err != nil {
+		t.Fatal(err)
+	}
+	api, err := newClient(reusableTestState(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api.checkpoint = checkpoint
+	dials := 0
+	api.dial = func(context.Context, authstate.State) (*Session, error) {
+		dials++
+		return nil, errors.New("unexpected dial")
+	}
+	if _, err := api.MarkRead(context.Background(), 42, 98); err != nil {
+		t.Fatal(err)
+	}
+	if dials != 0 || checkpoint.ReadWatermark(42) != 99 {
+		t.Fatalf("dials=%d watermark=%d, want no request and preserved watermark 99", dials, checkpoint.ReadWatermark(42))
+	}
+}
+
 func TestClientMarkReadSkipsWatermarkAfterCheckpointReopen(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o700); err != nil {
@@ -207,6 +230,25 @@ func TestClientSyncMessagesFailureDoesNotRecordReadSideEffect(t *testing.T) {
 	}
 	if got := checkpoint.ReadWatermark(42); got != 0 {
 		t.Fatalf("failed SYNCMSG read watermark = %d, want zero", got)
+	}
+	backend.wait(t)
+}
+
+func TestClientSyncMessagesDoesNotRegressReadWatermark(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitReadWatermark(42, 100); err != nil {
+		t.Fatal(err)
+	}
+	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", nil, statusDocument(
+		bson.E{Key: "chatLogs", Value: bson.A{}},
+	)))
+	api := testContinuityClient(t, checkpoint, backend)
+	_, err := api.SyncMessages(context.Background(), syncmsg.Request{ChatID: 42, Cur: 98, Max: 99, Count: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := checkpoint.ReadWatermark(42); got != 100 {
+		t.Fatalf("read watermark = %d, want existing higher value 100", got)
 	}
 	backend.wait(t)
 }
