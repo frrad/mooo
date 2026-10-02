@@ -32,15 +32,19 @@ rejection queues cancellation but does not enter this completion wrapper and
 therefore does not queue its re-arm. The no-completion request path queues
 cancellation, invokes the ordinary request method, and then queues scheduling.
 
-A separate status callback is guarded by request-owner identity. Its observed
+A separate status callback compares the callback's carriage-agent argument
+against the request owner's current carriage agent; stale-agent callbacks have
+no effects. Its observed
 numeric branches are parameter `0` and parameter `3`. Parameter `0` clears the
 carriage-agent slot, writes internal status `0x1A` when the prior connection
-flag was set or `0x16` otherwise, invokes the supplied boolean callback with
-`false` only on the previously-unset path, queues PING cancellation, and then
+handler latch was set or `0x16` otherwise, invokes the supplied boolean
+callback with `false` only while that per-handler latch is still clear, queues PING cancellation, and then
 clears the agent's status-change handler. Parameter `3` writes internal status
-`0x17`, sets the connection flag only when previously unset, and invokes the
-supplied callback with `true` only on that transition. External event labels
-for these numeric values are not established by this trace.
+`0x17`, sets the per-handler latch only when previously clear, and invokes the
+supplied callback with `true` only on that transition. The latch is initialized
+to clear when the handler by-ref is installed; it is not an ongoing manager
+activity flag. External event labels for these numeric values are not
+established by this trace.
 
 The coordinator assigns a fallback ping interval of 180 seconds: any positive
 signed 32-bit configuration value is retained, while zero or negative values

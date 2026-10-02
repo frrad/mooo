@@ -140,23 +140,27 @@
       "kind": "lifecycle-order",
       "status": 0,
       "expect": [
+        "compare_current_carriage_agent",
         "clear_carriage_agent",
         "write_internal_status_0x1a_or_0x16",
-        "gate_false_callback_on_prior_flag",
+        "gate_false_callback_on_clear_handler_latch",
         "queue_ping_cancel_on_main",
         "clear_status_change_handler"
-      ]
+      ],
+      "latch_initial": "clear_at_handler_installation"
     },
     {
       "name": "numeric three status writes connected state",
       "kind": "lifecycle-order",
       "status": 3,
       "expect": [
+        "compare_current_carriage_agent",
         "write_internal_status_0x17",
-        "set_connection_flag_if_unset",
-        "gate_true_callback_on_prior_flag"
+        "set_handler_latch_if_clear",
+        "gate_true_callback_on_clear_handler_latch"
       ],
-      "status_label": "untraced"
+      "status_label": "untraced",
+      "latch_initial": "clear_at_handler_installation"
     },
     {
       "name": "ordinary carriage request queues ping cancellation",
