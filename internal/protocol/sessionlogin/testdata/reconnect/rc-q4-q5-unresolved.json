@@ -9,9 +9,29 @@
     "RC-BIN-001",
     "RC-BIN-002",
     "RC-BIN-003",
-    "RC-BIN-004"
+    "RC-BIN-004",
+    "RC-BIN-005"
   ],
   "cases": [
+    {
+      "name": "manager carriage setup ordering",
+      "kind": "lifecycle-order",
+      "expect": [
+        "construct_new_carriage_agent",
+        "disable_fallback_on_new_carriage_agent",
+        "install_new_carriage_agent",
+        "install_default_receive_handler",
+        "install_zero_latched_status_handler",
+        "write_internal_status_0x15",
+        "connect_carriage",
+        "no_direct_ping_schedule_in_manager_carriage_connect_method_body"
+      ],
+      "remaining_gaps": [
+        "external_status_labels",
+        "additional_scheduler_admission",
+        "first_schedule_relative_to_connect_completion"
+      ]
+    },
     {
       "name": "keep-alive uses an empty PING body",
       "kind": "wire-shape",
