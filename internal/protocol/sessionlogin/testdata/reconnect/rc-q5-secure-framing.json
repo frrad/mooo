@@ -84,8 +84,13 @@
         "header_callback_if_supported",
         "conditional_timeout_disarm_after_header",
         "complete_packet_callback_after_body",
-        "header_before_complete_packet"
-      ]
+        "decode_packet_id_u32",
+        "decode_status_u16",
+        "decode_method_utf8_11",
+        "decode_body_type_u8",
+        "decode_body_length_u32"
+      ],
+      "delegate_is_agent": true
     },
     {
       "name": "producer existing header waits for complete body",
@@ -98,7 +103,9 @@
       "expected": [
         "route_body",
         "supply_raw_data"
-      ]
+      ],
+      "expected_remaining_bytes": 14,
+      "expected_current_header_present": true
     },
     {
       "name": "producer split body remains buffered",
@@ -111,7 +118,9 @@
       "expected": [
         "route_body",
         "supply_raw_data"
-      ]
+      ],
+      "expected_remaining_bytes": 5,
+      "expected_current_header_present": true
     },
     {
       "name": "producer loops over two complete frames",
@@ -122,13 +131,81 @@
       "current_header_present": false,
       "delegate_supports_header": true,
       "delegate_supports_packet": true,
+      "expected_remaining_bytes": 0,
+      "expected_current_header_present": false,
+      "timeout_identity_matches": false,
       "expected": [
         "route_body",
         "supply_raw_data",
         "header_callback_if_supported",
         "complete_packet_callback_after_body",
-        "header_before_complete_packet",
-        "producer_loop_next_frame"
+        "header_callback_if_supported",
+        "complete_packet_callback_after_body",
+        "producer_loop_next_frame",
+        "decode_packet_id_u32",
+        "decode_status_u16",
+        "decode_method_utf8_11",
+        "decode_body_type_u8",
+        "decode_body_length_u32"
+      ],
+      "body_lengths": [
+        8,
+        8
+      ]
+    },
+    {
+      "name": "producer header callback absent delegate",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 30,
+      "body_length": 8,
+      "current_header_present": false,
+      "delegate_supports_header": false,
+      "delegate_supports_packet": true,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "complete_packet_callback_after_body",
+        "decode_packet_id_u32",
+        "decode_status_u16",
+        "decode_method_utf8_11",
+        "decode_body_type_u8",
+        "decode_body_length_u32"
+      ]
+    },
+    {
+      "name": "producer packet callback absent delegate",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 30,
+      "body_length": 8,
+      "current_header_present": false,
+      "delegate_supports_header": true,
+      "delegate_supports_packet": false,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "header_callback_if_supported",
+        "decode_packet_id_u32",
+        "decode_status_u16",
+        "decode_method_utf8_11",
+        "decode_body_type_u8",
+        "decode_body_length_u32"
+      ]
+    },
+    {
+      "name": "producer below minimum retains partial buffer",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 10,
+      "body_length": 8,
+      "current_header_present": false,
+      "delegate_supports_header": true,
+      "delegate_supports_packet": true,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "buffer_retained_below_minimum"
       ]
     }
   ]
