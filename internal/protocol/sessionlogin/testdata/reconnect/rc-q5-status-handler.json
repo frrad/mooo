@@ -134,7 +134,7 @@
       ]
     },
     {
-      "name": "weak send and strong timeout captures remain separate",
+      "name": "weak and strong captures originate from one receiver",
       "kind": "owner-capture",
       "evidence": [
         "RC-BIN-017"
@@ -142,10 +142,10 @@
       "expect": [
         "weak_send_capture",
         "strong_timeout_capture",
-        "no_identity_equality_proof"
+        "same_receiver_capture"
       ],
       "remaining_gaps": [
-        "creator_identity_dataflow"
+        "capture_lifetime_and_in_body_identity_comparison"
       ]
     },
     {

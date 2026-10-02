@@ -32,10 +32,12 @@ untraced. The manager status handler itself has no pending-map access.
 For an ordinary packet response, the producer consumer gets the packet header unique ID, then looks it up in the pending-completion map. A match removes that completion entry before invoking it with `(packet, nil)`. A miss routes the packet to the default receive handler when one exists; with no default handler, that fallback has no callback effect in the reviewed body.
 
 The producer's packet-send block carries a weak send/status object and a
-separate strong timeout-scheduling object. The reviewed block does not compare
-them, and its creator does not expose enough source to prove they always
-refer to one instance. An independent implementation must preserve this as an
-identity gap rather than silently collapsing the captures.
+separate strong timeout-scheduling object. The creator initializes both captures
+from the same receiver: the weak capture is copied from the creator receiver and
+the strong capture is stored from that same receiver alongside the completion
+block. The block body still does not perform an identity comparison; the
+implementation should preserve the two capture lifetimes while retaining the
+observed same-receiver provenance.
 
 Implementation decisions are to expose ordered status/fanout effects, make
 handler absence explicit, and choose pending-map cleanup and queue-race policy

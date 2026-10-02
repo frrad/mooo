@@ -213,6 +213,8 @@ func formatStatusHandlerEffects(effects []StatusHandlerEffect) []string {
 			output = append(output, "strong_timeout_capture")
 		case StatusEffectNoIdentityProof:
 			output = append(output, "no_identity_equality_proof")
+		case StatusEffectSameReceiverCapture:
+			output = append(output, "same_receiver_capture")
 		case StatusEffectLookupCompletion:
 			output = append(output, "lookup_completion_by_unique_id")
 		case StatusEffectRemoveCompletion:

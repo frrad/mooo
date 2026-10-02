@@ -59,6 +59,7 @@ const (
 	StatusEffectWeakSendCapture
 	StatusEffectStrongTimeoutCapture
 	StatusEffectNoIdentityProof
+	StatusEffectSameReceiverCapture
 	StatusEffectLookupCompletion
 	StatusEffectRemoveCompletion
 	StatusEffectInvokeCompletion
@@ -175,7 +176,7 @@ func ReduceStatusHandler(state StatusHandlerState, input StatusHandlerInput) (St
 		return state, []StatusHandlerEffect{
 			{Kind: StatusEffectWeakSendCapture},
 			{Kind: StatusEffectStrongTimeoutCapture},
-			{Kind: StatusEffectNoIdentityProof},
+			{Kind: StatusEffectSameReceiverCapture},
 		}
 
 	case StatusHandlerPendingResponse:
