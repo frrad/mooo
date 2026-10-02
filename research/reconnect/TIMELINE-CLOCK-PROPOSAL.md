@@ -16,34 +16,41 @@ Bridge connector tests currently use real deadlines for lifecycle assertions.
 
 ## Bounded interface proposal
 
-The supervisor should receive a timeline dependency at construction rather than
-calling `time.Now`, `time.After`, or `time.Sleep` directly. The smallest useful
-boundary is:
+The supervisor should receive a retry scheduler dependency at construction rather
+than calling `time.After` or `time.Sleep` directly. Keep this interface separate
+from the other time domains:
 
 ```go
-type Timeline interface {
-    Now() time.Duration
-    Schedule(delay time.Duration, generation uint64) TimerHandle
+type RetryScheduler interface {
+    ScheduleRetry(delay time.Duration, generation uint64) RetryTimer
 }
-type TimerHandle interface {
+type RetryTimer interface {
+    Events() <-chan RetryTimerEvent
     Cancel()
 }
+type RetryTimerEvent struct { Generation uint64 }
 ```
 
-`Now` is an elapsed timeline value supplied by the owner. `Schedule` returns a
-handle that can be cancelled on success, terminal action, shutdown, or a newer
-generation. The timer callback must inject a typed `RecoveryTimerFired{Generation}`
-event into the reducer; it must not call login or mutate state itself. The
-reducer remains usable without a timeline by continuing to emit a schedule
-intent as an effect. This proposal intentionally leaves the timeline's source
-(monotonic uptime, wall clock, or process uptime) unresolved because the public
-questions do not establish it.
+`Events` is the observable delivery path: the owner reads one event and injects
+`RecoveryTimerFired{Generation}` into `ReduceRecovery`; the timer callback never
+calls login or mutates reducer state. `Cancel` is idempotent and closes or drains
+the event stream according to the scheduler contract, so a cancelled timer
+cannot admit a retry. A deterministic fake scheduler can retain due times,
+advance explicitly, deliver exactly one event at due time, and verify cancelled
+or stale generations without sleeping.
 
-Method-specific time boundaries should remain explicit: `EndpointCache` already compares elapsed `time.Duration` uptime values; socket deadlines use absolute `time.Time`; reconnect backoff should carry a `time.Duration` delay without converting it to a wall-clock timestamp; and Foundation PING scheduling should use its recovered wall-clock basis. The eventual retry effect should carry an explicit delay and generation, for example
-`ScheduleRecovery{Generation, Delay}`. Applying that effect is the only place
-that may call `Timeline.Schedule`. A timer event with an old generation is
-rejected as stale, and cancellation is idempotent. No timer is owned by the
-carriage layer.
+This is deliberately retry-only. `EndpointCache` keeps its existing elapsed
+`time.Duration` uptime input. Socket deadlines continue to use absolute
+`time.Time` at the transport boundary. The already recovered Foundation PING
+keep-alive uses its separate wall-clock timer owner. None of those clocks should
+be hidden behind a single `Now` method or converted into retry timestamps.
+
+The reducer remains usable without a scheduler by emitting a schedule intent as
+data. The eventual effect should carry an explicit retry delay and generation,
+for example `ScheduleRecovery{Generation, Delay}`. Applying that effect is the
+only place allowed to call `RetryScheduler.ScheduleRetry`. The constructor's
+scheduler/default delay remains an integration decision pending public source
+vectors.
 
 ## Synthetic conformance cases
 
