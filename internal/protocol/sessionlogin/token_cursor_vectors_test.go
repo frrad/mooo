@@ -91,11 +91,18 @@ func TestTokenCursorUnresolvedVectorsSchema(t *testing.T) {
 				wantLBK = true
 			case "token_assertion_abort_observed":
 				wantAssertion = true
+			case "no_token_update_selected", "no_lbk_update_selected", "no_update_selected":
+				// Explicit negative effects are validated by the final booleans.
+			default:
+				t.Fatalf("%q: unknown effect %q", vector.Name, effect)
 			}
 		}
 		if wantAssertion {
 			if !errors.Is(err, ErrTokenCursorAssertion) {
 				t.Fatalf("%q: expected assertion error", vector.Name)
+			}
+			if selection != (TokenCursorSelection{}) {
+				t.Fatalf("%q: assertion selection=%+v want zero selection", vector.Name, selection)
 			}
 			continue
 		}
