@@ -2,7 +2,7 @@ package sessionlogin
 
 import "time"
 
-const minPingIntervalSeconds int32 = 180
+const defaultPingIntervalSeconds int32 = 180
 
 type SocketTimeouts struct {
 	Connect, ReceiveHeader, InSegment, OutSegment time.Duration
@@ -18,7 +18,7 @@ func RecoveredManagerTimeouts() SocketTimeouts {
 // Timer lifecycle and ownership remain outside this pure policy.
 func PingInterval(configured int32) int32 {
 	if configured <= 0 {
-		return minPingIntervalSeconds
+		return defaultPingIntervalSeconds
 	}
 	return configured
 }
