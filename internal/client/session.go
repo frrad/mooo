@@ -62,7 +62,8 @@ type lifecycleShutdown interface {
 // correlated responses and preserves unsolicited packets for the caller.
 type Session struct {
 	mu                 sync.Mutex
-	writeMu            sync.Mutex
+	writeGateOnce      sync.Once
+	writeGate          chan struct{}
 	lifecycleMu        sync.Mutex
 	wire               *wireConn
 	nextID             uint32
@@ -316,7 +317,7 @@ func (s *Session) Request(ctx context.Context, command string, body []byte) (loc
 	s.mu.Unlock()
 	s.queueCancelRequest()
 
-	if err := s.writeRequest(wire, id, command, body); err != nil {
+	if err := s.writeRequest(ctx, wire, id, command, body); err != nil {
 		s.removePending(id, result)
 		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, err)
 	}
@@ -364,7 +365,7 @@ func (s *Session) allocateRequestIDLocked() (uint32, error) {
 	}
 }
 
-func (s *Session) writeRequest(wire *wireConn, id uint32, command string, body []byte) error {
+func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, command string, body []byte) error {
 	raw, err := (loco.Packet{Header: loco.Header{PacketID: id, Method: command, BodyType: loco.BodyTypeBSON}, Body: body}).MarshalBinary(0)
 	if err != nil {
 		return err
@@ -375,9 +376,67 @@ func (s *Session) writeRequest(wire *wireConn, id uint32, command string, body [
 			return err
 		}
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	return writeAll(wire.c, raw)
+	if err := s.acquireWrite(ctx); err != nil {
+		return err
+	}
+	defer s.releaseWrite()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	closed := s.closed || s.closing || s.wire != wire
+	s.mu.Unlock()
+	if closed {
+		return ErrClosed
+	}
+	stop := make(chan struct{})
+	watchDone := make(chan struct{})
+	go func() {
+		defer close(watchDone)
+		select {
+		case <-ctx.Done():
+			_ = wire.c.SetWriteDeadline(time.Now())
+		case <-stop:
+		}
+	}()
+	written, err := writeAllCount(wire.c, raw)
+	ctxErr := ctx.Err()
+	close(stop)
+	<-watchDone
+	_ = wire.c.SetWriteDeadline(time.Time{})
+	// A cancellation after the complete frame was written must not tear down
+	// an otherwise reusable carriage. A write error after any bytes have been
+	// sent leaves framing ambiguous and requires fail-closed cleanup.
+	if err != nil && written > 0 {
+		s.mu.Lock()
+		if s.wire == wire {
+			s.closing = true
+		}
+		s.mu.Unlock()
+		_ = wire.close()
+		s.stopLifecycle()
+	}
+	if ctxErr != nil {
+		return ctxErr
+	}
+	return err
+}
+
+func (s *Session) acquireWrite(ctx context.Context) error {
+	s.writeGateOnce.Do(func() {
+		s.writeGate = make(chan struct{}, 1)
+		s.writeGate <- struct{}{}
+	})
+	select {
+	case <-s.writeGate:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *Session) releaseWrite() {
+	s.writeGate <- struct{}{}
 }
 
 func (s *Session) removePending(id uint32, expected chan requestResult) {
