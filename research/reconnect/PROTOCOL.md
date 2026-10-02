@@ -98,6 +98,16 @@ arm/disarm call sites in the socket read loop and whether the timeout remains ar
 with no pending request were not proven. Per-request timeout semantics and
 body-read timeout behavior are likewise open.
 
+The reviewed status-3 packet-send path allocates the next packet and derives its
+tag. When a completion exists, it registers the completion by packet unique ID
+and the packet-ID-to-unique-ID association before invoking the send path. The
+send path obtains packet data, encrypts it, submits the encrypted bytes to the
+socket with write timeout `-1` and the packet ID tag, and then enables the
+out-segment timeout. A status other than 3 forwards a producer error to a
+present completion and does not send or arm the receive-header timeout. The
+write completion, partial-write behavior, packet serialization fields, and
+producer error identity remain untraced.
+
 ## Transfer boundaries
 
 Observed: zero-field PING construction through the ordinary carriage request
