@@ -107,8 +107,8 @@ exponential backoff between failed auth attempts, no rapid reconnects after
 
 The RC-Q4/Q5 dossier supplies unwired data and policy inputs only. Before
 claiming implementation parity, the pure policy runner must have executable
-vectors for ping interval inputs 0, negative, 180, and 181 seconds;
-reference-date elapsed-time comparisons; nil and non-nil PING completions;
+vectors for ping interval inputs 0, negative, 1, 179, 180, and 181 seconds;
+clock-source provenance before any clock-specific elapsed-time comparisons; nil and non-nil PING completions;
 receive-header timeout values 0 and positive; signed tags -1, 0, and positive;
 timeout arm, cancel, delayed fire, and disconnect ordering; and the unresolved
 idle/no-pending case. The current JSON vectors are status `unexecuted`; they

@@ -58,7 +58,7 @@
       ]
     },
     {
-      "name": "ping interval floor boundary",
+      "name": "ping interval fallback boundary",
       "kind": "configuration",
       "cases": [
         {"configured_seconds": 0, "stored_seconds": 180},

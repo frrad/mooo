@@ -47,8 +47,9 @@ and request tag, timeout-to-disconnect, tag-driven header/body read callbacks,
 configuration values at the traced initializer, and the separate HTTP helper's
 Foundation-clock `/ping` chain as an excluded path.
 
-Implementation decisions: represent PING scheduling with an injected clock and
-make wall-clock behavior explicit until a stronger source is recovered;
+Implementation decisions: represent PING scheduling with an injected clock only
+after the LOCO clock source is proven; keep the LOCO clock source explicitly
+unknown while it remains untraced;
 fail pending requests once on timeout-disconnect; keep keep-alive and receive
 timeout ownership in the session supervisor rather than the wire parser.
 
