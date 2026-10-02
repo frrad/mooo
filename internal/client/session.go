@@ -671,6 +671,15 @@ func (w *wireConn) request(id uint32, method string, body []byte) (loco.Packet, 
 }
 
 func (w *wireConn) read() (loco.Packet, error) {
+	return w.readWithHeaderObserver(nil)
+}
+
+// readWithHeaderObserver preserves read's packet/error behavior while exposing
+// the point at which a validated LOCO header is available. Plain transport
+// invokes the observer before reading the body. Secure transport invokes it
+// only after the authenticated envelope has been decrypted; the secure layer
+// does not expose plaintext header bytes earlier.
+func (w *wireConn) readWithHeaderObserver(observe func(loco.Header)) (loco.Packet, error) {
 	var plain []byte
 	if w.secure != nil {
 		prefix := make([]byte, 4)
@@ -691,6 +700,16 @@ func (w *wireConn) read() (loco.Packet, error) {
 		if err != nil {
 			return loco.Packet{}, err
 		}
+		if len(plain) < loco.HeaderSize {
+			return loco.Packet{}, ErrProtocol
+		}
+		header, err := loco.ParseHeader(plain[:loco.HeaderSize], 0)
+		if err != nil {
+			return loco.Packet{}, ErrProtocol
+		}
+		if observe != nil {
+			observe(header)
+		}
 	} else {
 		header := make([]byte, loco.HeaderSize)
 		if _, err := io.ReadFull(w.c, header); err != nil {
@@ -699,6 +718,9 @@ func (w *wireConn) read() (loco.Packet, error) {
 		h, err := loco.ParseHeader(header, 0)
 		if err != nil {
 			return loco.Packet{}, err
+		}
+		if observe != nil {
+			observe(h)
 		}
 		plain = make([]byte, loco.HeaderSize+int(h.BodyLen))
 		copy(plain, header)
