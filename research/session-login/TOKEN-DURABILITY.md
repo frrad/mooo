@@ -56,3 +56,10 @@ The companion vector file describes cases for an implementation-owned model
 runner. Cases marked `observed` constrain only the reviewed selection and dirty
 ordering. Cases marked `unresolved` must remain explicit until the missing
 consumer or failure chain is independently traced.
+
+The clean-room `ApplyTokenDirtyEvent` model executes the observed initialization
+and observer cases from the companion vectors in memory. It copies each recorded
+old scalar and overwrites that field's prior value on every changed callback.
+Automatic notification delivery, transaction/save ordering, commit results,
+storage errors, rollback, retry, and reset/restart behavior remain unresolved;
+the helper does not claim durable persistence.

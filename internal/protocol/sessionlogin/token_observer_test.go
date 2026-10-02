@@ -95,6 +95,9 @@ func TestApplyTokenDirtyEventObservedVectors(t *testing.T) {
 		event := TokenDirtyEvent{Initialization: vector.Initialization, Field: vector.Field}
 		if vector.Old != nil || vector.Incoming != nil {
 			event.Initialization = "observer"
+			if vector.Old == nil || vector.Incoming == nil {
+				t.Fatalf("%q: observer vector requires old and incoming values", vector.Name)
+			}
 			if vector.Field == "lastBlindToken" {
 				if vector.Old == nil || vector.Incoming == nil || *vector.Old < -1<<31 || *vector.Old > 1<<31-1 || *vector.Incoming < -1<<31 || *vector.Incoming > 1<<31-1 {
 					t.Fatalf("%q: invalid blind vector values", vector.Name)
