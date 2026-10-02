@@ -156,8 +156,11 @@ func TestOutSegmentTimeoutOwnerDisablePreservesLaterQueuedEnable(t *testing.T) {
 	}
 	queue.runNext()
 	queue.runNext()
-	if len(clock.timers) != 2 || !clock.timers[0].stopped || clock.timers[1].stopped {
-		t.Fatalf("timers=%d stopped=[%t %t]", len(clock.timers), clock.timers[0].stopped, clock.timers[1].stopped)
+	if len(clock.timers) != 2 {
+		t.Fatalf("timers=%d want 2", len(clock.timers))
+	}
+	if !clock.timers[0].stopped || clock.timers[1].stopped {
+		t.Fatalf("stopped=[%t %t]", clock.timers[0].stopped, clock.timers[1].stopped)
 	}
 	clock.timers[0].runEvenIfStopped()
 	clock.timers[1].runEvenIfStopped()
@@ -294,6 +297,8 @@ func TestOutSegmentTimeoutOwnerCanonicalToggleVectors(t *testing.T) {
 			var fired int
 			owner := newTestOutOwner(t, config, clock, queue, &fired)
 			if tc.Callback == "partial" || tc.Callback == "complete" {
+				// These vectors exercise only the reviewed Disable primitive;
+				// didWrite/socket callback behavior remains outside this owner.
 				if _, err := owner.Toggle(1); err != nil {
 					t.Fatal(err)
 				}
