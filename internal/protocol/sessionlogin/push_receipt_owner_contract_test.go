@@ -16,11 +16,18 @@ type pushReceiptOwnerContract struct {
 	Cases    []pushReceiptOwnerCase `json:"cases"`
 }
 type pushReceiptOwnerCase struct {
-	Name          string   `json:"name"`
-	AgentPresent  bool     `json:"agent_present"`
-	PingInterval  *float64 `json:"ping_interval_seconds"`
-	ExpectedDelay *float64 `json:"expected_schedule_delay_seconds"`
-	Expect        []string `json:"expect"`
+	Name              string   `json:"name"`
+	AgentPresent      bool     `json:"agent_present"`
+	PingInterval      *float64 `json:"ping_interval_seconds"`
+	ExpectedDelay     *float64 `json:"expected_schedule_delay_seconds"`
+	CancelTarget      string   `json:"cancel_target"`
+	InlineTarget      string   `json:"inline_target"`
+	ScheduleTarget    string   `json:"schedule_target"`
+	CancelSelector    string   `json:"cancel_selector"`
+	ScheduleSelector  string   `json:"schedule_selector"`
+	CancelObjectNil   bool     `json:"cancel_object_nil"`
+	ScheduleObjectNil bool     `json:"schedule_object_nil"`
+	Expect            []string `json:"expect"`
 }
 
 var pushReceiptOwnerEffects = map[string]bool{"enqueue_cancel_ping": true, "inline_push_receipt": true, "enqueue_schedule_ping": true}
@@ -46,7 +53,9 @@ func validatePushReceiptOwnerContract(c pushReceiptOwnerContract) error {
 		return fmt.Errorf("header")
 	}
 	for _, tc := range c.Cases {
-		if tc.Name == "" || !tc.AgentPresent || tc.PingInterval == nil || tc.ExpectedDelay == nil || *tc.PingInterval != *tc.ExpectedDelay {
+		if tc.Name == "" || !tc.AgentPresent || tc.PingInterval == nil || tc.ExpectedDelay == nil || *tc.PingInterval != *tc.ExpectedDelay ||
+			tc.CancelTarget != "manager_request_owner" || tc.InlineTarget != "carriage_agent" || tc.ScheduleTarget != "manager_request_owner" ||
+			tc.CancelSelector != "sendPingRequest:" || tc.ScheduleSelector != "sendPingRequest:" || !tc.CancelObjectNil || !tc.ScheduleObjectNil {
 			return fmt.Errorf("invalid case %q", tc.Name)
 		}
 		for _, e := range tc.Expect {
