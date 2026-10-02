@@ -65,12 +65,12 @@ func ApplyTokenDirtyEvent(state *TokenDirtyState, event TokenDirtyEvent) ([]stri
 		if err := validateTokenDirtyValue(event.Field, event.Incoming); err != nil {
 			return nil, err
 		}
-		if state.OriginalOld == nil {
-			state.OriginalOld = make(map[string]TokenDirtyValue)
-		}
 		effects := []string{"observer_event_input"}
 		if tokenDirtyValuesEqual(event.Field, event.Old, event.Incoming) {
 			return append(effects, "no_changed_field_delta"), nil
+		}
+		if state.OriginalOld == nil {
+			state.OriginalOld = make(map[string]TokenDirtyValue)
 		}
 		state.OriginalOld[event.Field] = cloneTokenDirtyValue(event.Field, event.Old)
 		state.Dirty = true

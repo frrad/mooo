@@ -126,6 +126,10 @@ func TestApplyTokenDirtyEventObservedVectors(t *testing.T) {
 }
 
 func TestApplyTokenDirtyEventEqualObserverLeavesStateUnchanged(t *testing.T) {
+	nilState := &TokenDirtyState{}
+	if _, err := ApplyTokenDirtyEvent(nilState, TokenDirtyEvent{Initialization: "observer", Field: "lastTokenId", Old: i64(5), Incoming: i64(5)}); err != nil || nilState.OriginalOld != nil || nilState.Dirty || nilState.Registered {
+		t.Fatalf("equal observer mutated nil state: %+v err=%v", nilState, err)
+	}
 	state := &TokenDirtyState{OriginalOld: map[string]TokenDirtyValue{"lastTokenId": i64(3)}}
 	before := *state
 	beforeMap := map[string]TokenDirtyValue{"lastTokenId": i64(3)}
