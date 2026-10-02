@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,6 +15,16 @@ import (
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/sessionlogin"
 )
+
+type shutdownErrorConn struct {
+	net.Conn
+	err error
+}
+
+func (c *shutdownErrorConn) Close() error {
+	_ = c.Conn.Close()
+	return c.err
+}
 
 func TestClientShutdownRetainsOwnershipUntilSessionWorkerJoins(t *testing.T) {
 	dir := t.TempDir()
@@ -204,7 +215,19 @@ func TestClientShutdownContextDoesNotWaitForAnotherShutdown(t *testing.T) {
 	}
 	client := &Client{session: session}
 	firstDone := make(chan error, 1)
-	go func() { firstDone <- client.Shutdown(context.Background()) }()
+	firstFinished := make(chan struct{})
+	t.Cleanup(func() {
+		conn.Release()
+		select {
+		case <-firstFinished:
+		case <-time.After(time.Second):
+			t.Errorf("first shutdown did not finish during cleanup")
+		}
+	})
+	go func() {
+		defer close(firstFinished)
+		firstDone <- client.Shutdown(context.Background())
+	}()
 	deadline := time.After(time.Second)
 	for {
 		client.mu.Lock()
@@ -288,6 +311,62 @@ func TestClientCloseRetainsOwnershipThroughBlockedConnect(t *testing.T) {
 	_ = otherLease.Close()
 }
 
+func TestClientShutdownPreservesSessionInterruptError(t *testing.T) {
+	left, right := net.Pipe()
+	defer func() { _ = right.Close() }()
+	want := errors.New("transport close sentinel")
+	session := newSession(nil)
+	session.wire = &wireConn{c: &shutdownErrorConn{Conn: left, err: want}}
+	client := &Client{session: session}
+	err := client.Shutdown(context.Background())
+	if !errors.Is(err, want) {
+		t.Fatalf("Shutdown error=%v, want %v", err, want)
+	}
+}
+
+func TestClientShutdownJoinsNormalAndCleanupSessions(t *testing.T) {
+	makeBlocked := func(id int64) (*Session, *stuckWriteConn) {
+		conn := &stuckWriteConn{release: make(chan struct{}), entered: make(chan struct{})}
+		session := newSession(nil)
+		session.wire = &wireConn{c: conn}
+		clock, queue := &clientOutClock{}, &clientOutQueue{}
+		owner, err := sessionlogin.NewOutSegmentTimeoutOwner(clock, queue, clientOutConfig{timeout: time.Second}, "agent", sessionlogin.OutSegmentTimeoutSelector, func() {})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.installOutSegmentSubmitter(session.wire, owner, func(sessionlogin.OutSegmentWriteResult) {}); err != nil {
+			t.Fatal(err)
+		}
+		if err := session.writeRequest(context.Background(), session.wire, uint32(id), "PING", nil); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-conn.entered:
+		case <-time.After(time.Second):
+			t.Fatal("blocked worker did not start")
+		}
+		return session, conn
+	}
+	primary, primaryConn := makeBlocked(41)
+	cleanup, cleanupConn := makeBlocked(42)
+	t.Cleanup(func() { primaryConn.Release(); cleanupConn.Release() })
+	client := &Client{session: primary, cleanupSession: cleanup}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err := client.Shutdown(ctx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Shutdown error=%v, want deadline", err)
+	}
+	primaryConn.Release()
+	cleanupConn.Release()
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	if err := client.Shutdown(ctx); err != nil {
+		cancel()
+		t.Fatalf("joined Shutdown: %v", err)
+	}
+	cancel()
+}
+
 func TestClientShutdownRetainsOwnershipForAdmittedCommit(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o700); err != nil {
@@ -346,8 +425,13 @@ func TestClientShutdownRetainsOwnershipForAdmittedCommit(t *testing.T) {
 		t.Fatalf("lease during admitted commit error=%v, want %v", err, ErrProfileInUse)
 	}
 	release()
-	if err := <-commitResult; err != nil {
-		t.Fatalf("CommitEvent: %v", err)
+	select {
+	case err := <-commitResult:
+		if err != nil {
+			t.Fatalf("CommitEvent: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("CommitEvent did not complete")
 	}
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
 	if err := client.Shutdown(ctx); err != nil {
