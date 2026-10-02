@@ -28,8 +28,8 @@ type statusHandlerCase struct {
 	RemainingGaps  []string `json:"remaining_gaps"`
 }
 
-var statusHandlerKinds = map[string]bool{"status-setter": true, "manager-status-zero": true, "manager-status-three": true, "manager-status-gate": true, "disconnect-fanout-order": true, "owner-capture": true}
-var statusHandlerEffects = map[string]bool{"write_status_byte": true, "invoke_handler_agent_old_new_error": true, "no_handler_callback": true, "compare_current_agent": true, "clear_agent_slot": true, "write_status_0x16": true, "write_status_0x1a": true, "callback_false": true, "no_false_callback": true, "queue_ping_cancel": true, "clear_status_handler": true, "write_status_0x17": true, "set_latch": true, "callback_true": true, "no_latch_write": true, "no_true_callback": true, "no_effects": true, "cancel_owner_delayed_work": true, "enumerate_pending": true, "fanout_each_nil_locoagent_error": true, "weak_send_capture": true, "strong_timeout_capture": true, "no_identity_equality_proof": true}
+var statusHandlerKinds = map[string]bool{"status-setter": true, "manager-status-zero": true, "manager-status-three": true, "manager-status-gate": true, "disconnect-fanout-order": true, "owner-capture": true, "pending-response": true}
+var statusHandlerEffects = map[string]bool{"write_status_byte": true, "invoke_handler_agent_old_new_error": true, "no_handler_callback": true, "compare_current_agent": true, "clear_agent_slot": true, "write_status_0x16": true, "write_status_0x1a": true, "callback_false": true, "no_false_callback": true, "queue_ping_cancel": true, "clear_status_handler": true, "write_status_0x17": true, "set_latch": true, "callback_true": true, "no_latch_write": true, "no_true_callback": true, "no_effects": true, "cancel_owner_delayed_work": true, "enumerate_pending": true, "fanout_each_nil_locoagent_error": true, "weak_send_capture": true, "strong_timeout_capture": true, "no_identity_equality_proof": true, "lookup_completion_by_unique_id": true, "remove_completion_before_callback": true, "invoke_completion_packet_nil_error": true, "route_unmatched_to_default_handler": true}
 
 func loadStatusHandlerContract(path string) (statusHandlerContract, error) {
 	body, err := os.ReadFile(path)
@@ -48,7 +48,7 @@ func validateStatusHandlerContract(v statusHandlerContract) error {
 	if v.Status != "reviewed-static-unexecuted-runtime" || len(v.Questions) != 1 || v.Questions[0] != "RC-Q5" {
 		return fmt.Errorf("header mismatch")
 	}
-	if len(v.Cases) != 9 {
+	if len(v.Cases) != 11 {
 		return fmt.Errorf("cases=%d", len(v.Cases))
 	}
 	seen := map[string]bool{}
@@ -58,7 +58,7 @@ func validateStatusHandlerContract(v statusHandlerContract) error {
 		}
 		seen[c.Name] = true
 		for _, id := range c.Evidence {
-			if id < "RC-BIN-014" || id > "RC-BIN-017" {
+			if id < "RC-BIN-014" || id > "RC-BIN-018" {
 				return fmt.Errorf("evidence=%q", id)
 			}
 		}
@@ -85,6 +85,10 @@ func validateStatusHandlerContract(v statusHandlerContract) error {
 				return fmt.Errorf("fanout inputs")
 			}
 		case "owner-capture":
+		case "pending-response":
+			if c.PendingCount == nil || c.HandlerPresent == nil {
+				return fmt.Errorf("pending response inputs")
+			}
 		}
 	}
 	return nil

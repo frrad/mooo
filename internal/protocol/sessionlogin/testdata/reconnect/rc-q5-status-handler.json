@@ -10,6 +10,8 @@
     {"name":"status three repeated transition","kind":"manager-status-three","evidence":["RC-BIN-015"],"agent_current":true,"latch_initial":true,"expect":["compare_current_agent","write_status_0x17","no_latch_write","no_true_callback"]},
     {"name":"stale agent status callback","kind":"manager-status-gate","evidence":["RC-BIN-015"],"agent_current":false,"expect":["compare_current_agent","no_effects"]},
     {"name":"disconnect fanout after optional handler","kind":"disconnect-fanout-order","evidence":["RC-BIN-016"],"handler_present":true,"pending_count":2,"expect":["write_status_byte","invoke_handler_agent_old_new_error","cancel_owner_delayed_work","enumerate_pending","fanout_each_nil_locoagent_error"],"remaining_gaps":["handler_pending_map_mutation","pending_map_clear_or_replace","queue_race"]},
-    {"name":"weak send and strong timeout captures remain separate","kind":"owner-capture","evidence":["RC-BIN-017"],"expect":["weak_send_capture","strong_timeout_capture","no_identity_equality_proof"],"remaining_gaps":["creator_identity_dataflow"]}
+    {"name":"weak send and strong timeout captures remain separate","kind":"owner-capture","evidence":["RC-BIN-017"],"expect":["weak_send_capture","strong_timeout_capture","no_identity_equality_proof"],"remaining_gaps":["creator_identity_dataflow"]},
+    {"name":"matched response removes completion before callback","kind":"pending-response","evidence":["RC-BIN-018"],"handler_present":true,"pending_count":1,"expect":["lookup_completion_by_unique_id","remove_completion_before_callback","invoke_completion_packet_nil_error"]},
+    {"name":"unmatched response routes to default handler","kind":"pending-response","evidence":["RC-BIN-018"],"handler_present":true,"pending_count":0,"expect":["lookup_completion_by_unique_id","route_unmatched_to_default_handler"]}
   ]
 }
