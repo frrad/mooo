@@ -383,6 +383,12 @@ func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, c
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	s.mu.Lock()
+	closed := s.closed || s.closing || s.wire != wire
+	s.mu.Unlock()
+	if closed {
+		return ErrClosed
+	}
 	stop := make(chan struct{})
 	watchDone := make(chan struct{})
 	go func() {

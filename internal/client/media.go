@@ -115,13 +115,13 @@ func writeAllCount(conn interface{ Write([]byte) (int, error) }, data []byte) (i
 	written := 0
 	for len(data) > 0 {
 		n, err := conn.Write(data)
+		written += n
 		if err != nil {
 			return written, err
 		}
 		if n <= 0 {
 			return written, fmt.Errorf("zero-byte write")
 		}
-		written += n
 		data = data[n:]
 	}
 	return written, nil
