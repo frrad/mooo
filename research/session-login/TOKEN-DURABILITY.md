@@ -11,11 +11,12 @@ non-null integer columns with default zero values. Versioned schema migrations
 carry both token columns by name.
 
 The generic model initializer receives field values, a nest, and a database
-flag. It creates the field metadata and changed-fields map, decodes incoming
-values through the model's field decoder, and enumerates field metadata to
-register the model as an observer for each property key. For a non-database
-object it applies field defaults, marks the object dirty, and registers the
-object with the nest's changed-object registry. The initializer's schema loader
+flag. It creates the field metadata and changed-fields map. For a
+non-database object it first enumerates metadata defaults, then decodes supplied
+field values through the model's field decoder. It next marks the object dirty
+and registers it with the nest's changed-object registry. Finally, for both
+database-loaded and new objects, it enumerates field metadata and registers the
+model as an observer for each property key. The initializer's schema loader
 validates field names against Objective-C properties before building the
 per-class field map.
 
