@@ -1,11 +1,8 @@
 package sessionlogin
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -92,44 +89,10 @@ func TestPlanReceiveHeaderTimeoutRejectsMissingOwner(t *testing.T) {
 }
 
 func TestPlanReceiveHeaderTimeoutApprovedVectors(t *testing.T) {
-	type vectorCase struct {
-		Name              string   `json:"name"`
-		Kind              string   `json:"kind"`
-		Evidence          []string `json:"evidence"`
-		TimeoutSeconds    *float64 `json:"timeout_seconds"`
-		ExecutionTimeout  *float64 `json:"execution_timeout_seconds"`
-		Tag               *int64   `json:"tag"`
-		Enable            *bool    `json:"enable"`
-		EnableByte        *byte    `json:"enable_byte"`
-		Expect            []string `json:"expect"`
-		RemainingGaps     []string `json:"remaining_gaps"`
-		PacketID          *uint32  `json:"packet_id"`
-		StoredUniqueID    string   `json:"stored_unique_id"`
-		IncomingUniqueID  string   `json:"incoming_unique_id"`
-		ProducerStatus    *int32   `json:"producer_status"`
-		CompletionPresent *bool    `json:"completion_present"`
-		HandlerPresent    *bool    `json:"handler_present"`
-		NewStatus         *int32   `json:"new_status"`
-		OldStatus         *int32   `json:"old_status"`
-	}
-	var vectors struct {
-		Status    string       `json:"status"`
-		Questions []string     `json:"questions"`
-		Cases     []vectorCase `json:"cases"`
-	}
-	body, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-timeout-contract.json"))
+	vectors, err := loadReceiveHeaderTimeoutContract(filepath.Join("testdata", "reconnect", "rc-q5-timeout-contract.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&vectors); err != nil {
-		t.Fatal(err)
-	}
-	if vectors.Status != "reviewed-static-unexecuted-runtime" || len(vectors.Cases) < 8 {
-		t.Fatalf("unexpected timeout vector status/cases: %q/%d", vectors.Status, len(vectors.Cases))
-	}
-	known := map[string]bool{"no_enqueue": true, "read_timeout": true, "check_tag_nonnegative": true, "queue_main": true, "reread_timeout": true, "perform_selector_after_delay": true, "cancel_previous_perform": true, "owner_target": true, "fire_selector": true, "wrapped_tag": true}
 	for _, tc := range vectors.Cases {
 		if tc.Kind != "timeout-admission" && tc.Kind != "timeout-enable" && tc.Kind != "timeout-disable" {
 			continue
@@ -143,14 +106,14 @@ func TestPlanReceiveHeaderTimeoutApprovedVectors(t *testing.T) {
 				t.Fatal(conversionErr)
 			}
 			input := ReceiveHeaderTimeoutInput{AdmissionTimeout: admission, Owner: "agent", RequestTag: *tc.Tag}
-			if tc.ExecutionTimeout != nil {
-				input.ExecutionTimeout, conversionErr = timeoutVectorDuration(tc.ExecutionTimeout)
+			if tc.ExecutionTimeoutSeconds != nil {
+				input.ExecutionTimeout, conversionErr = timeoutVectorDuration(tc.ExecutionTimeoutSeconds)
 				if conversionErr != nil {
 					t.Fatal(conversionErr)
 				}
 			}
 			if tc.EnableByte != nil {
-				input.EnableByte = *tc.EnableByte
+				input.EnableByte = byte(*tc.EnableByte)
 			} else if tc.Enable != nil && *tc.Enable {
 				input.EnableByte = 1
 			}
@@ -163,26 +126,27 @@ func TestPlanReceiveHeaderTimeoutApprovedVectors(t *testing.T) {
 				if strings.HasPrefix(sourceExpected, "perform_selector_after_delay_") {
 					expected = "perform_selector_after_delay"
 				}
-				if !known[expected] {
+				if !knownReceiveHeaderTimeoutEffect[expected] && !strings.HasPrefix(sourceExpected, "perform_selector_after_delay_") {
 					t.Fatalf("unknown source effect %q", sourceExpected)
 				}
 				found := false
 				for i, effect := range got {
-					if effect.Kind == expected {
-						if strings.HasPrefix(sourceExpected, "perform_selector_after_delay_") {
-							seconds, parseErr := strconv.ParseFloat(strings.TrimPrefix(sourceExpected, "perform_selector_after_delay_"), 64)
-							expectedDelay, delayErr := timeoutVectorDuration(&seconds)
-							if parseErr != nil || delayErr != nil || effect.Delay != expectedDelay {
-								continue
-							}
-						}
-						if err := assertTimeoutVectorEffect(sourceExpected, effect, tc.Tag); err != nil {
-							t.Fatal(err)
-						}
-						got = got[i+1:]
-						found = true
-						break
+					if effect.Kind != expected {
+						continue
 					}
+					if strings.HasPrefix(sourceExpected, "perform_selector_after_delay_") {
+						seconds, parseErr := strconv.ParseFloat(strings.TrimPrefix(sourceExpected, "perform_selector_after_delay_"), 64)
+						expectedDelay, delayErr := timeoutVectorDuration(&seconds)
+						if parseErr != nil || delayErr != nil || effect.Delay != expectedDelay {
+							continue
+						}
+					}
+					if err := assertTimeoutVectorEffect(sourceExpected, effect, tc.Tag); err != nil {
+						t.Fatal(err)
+					}
+					got = got[i+1:]
+					found = true
+					break
 				}
 				if !found {
 					t.Fatalf("expected ordered source effect %q in %#v", expected, got)
@@ -200,10 +164,34 @@ func timeoutVectorDuration(seconds *float64) (time.Duration, error) {
 		return 0, fmt.Errorf("timeout vector duration must be finite: %v", *seconds)
 	}
 	nanos := *seconds * float64(time.Second)
-	if nanos < -float64(1<<63) || nanos > float64(1<<63-1) {
+	const durationLimit = float64(1 << 63)
+	if nanos < -durationLimit || nanos >= durationLimit {
 		return 0, fmt.Errorf("timeout vector duration overflows time.Duration: %v seconds", *seconds)
 	}
-	return time.Duration(math.Round(nanos)), nil
+	rounded := math.Round(nanos)
+	if rounded < -durationLimit || rounded >= durationLimit {
+		return 0, fmt.Errorf("timeout vector duration overflows time.Duration after rounding: %v seconds", *seconds)
+	}
+	return time.Duration(rounded), nil
+}
+
+func TestTimeoutVectorDurationUsesNearestNanosecondAndRejectsOverflow(t *testing.T) {
+	for _, tc := range []struct {
+		seconds float64
+		want    time.Duration
+	}{
+		{seconds: 1.25e-9, want: time.Nanosecond},
+		{seconds: 1.75e-9, want: 2 * time.Nanosecond},
+	} {
+		got, err := timeoutVectorDuration(&tc.seconds)
+		if err != nil || got != tc.want {
+			t.Fatalf("timeoutVectorDuration(%v)=%v,%v want %v,nil", tc.seconds, got, err, tc.want)
+		}
+	}
+	overflow := float64(1<<63) / float64(time.Second)
+	if _, err := timeoutVectorDuration(&overflow); err == nil {
+		t.Fatalf("timeoutVectorDuration(%v) accepted time.Duration overflow", overflow)
+	}
 }
 
 func assertTimeoutVectorEffect(sourceExpected string, effect ReceiveHeaderTimeoutEffect, tag *int64) error {
