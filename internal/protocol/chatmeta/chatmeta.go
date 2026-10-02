@@ -482,8 +482,12 @@ func DecodeMemberResponse(body []byte) (MemberResponse, error) {
 	}
 	var response MemberResponse
 	var err error
-	if response.ChatID, _, err = int64Field(raw, "chatId"); err != nil {
+	var ok bool
+	if response.ChatID, ok, err = int64Field(raw, "chatId"); err != nil {
 		return MemberResponse{}, err
+	}
+	if !ok || response.ChatID <= 0 {
+		return MemberResponse{}, fmt.Errorf("%w: member response chat id", ErrInvalidResponse)
 	}
 	value, ok, err := lookup(raw, "members")
 	if err != nil {

@@ -463,6 +463,8 @@ func TestDecodeMemberResponseFailsClosed(t *testing.T) {
 		name string
 		body bson.D
 	}{
+		{name: "missing chat id", body: bson.D{{Key: "members", Value: bson.A{}}}},
+		{name: "non-positive chat id", body: bson.D{{Key: "chatId", Value: int64(0)}, {Key: "members", Value: bson.A{}}}},
 		{name: "members wrong type", body: bson.D{{Key: "members", Value: "x"}}},
 		{name: "member not a document", body: bson.D{{Key: "members", Value: bson.A{int64(7)}}}},
 		{name: "member missing user id", body: bson.D{{Key: "members", Value: bson.A{bson.D{{Key: "nickName", Value: "x"}}}}}},
