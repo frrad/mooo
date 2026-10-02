@@ -1,0 +1,15 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "questions": ["RC-Q5"],
+  "cases": [
+    {"name":"set status with handler invokes synchronously","kind":"status-setter","evidence":["RC-BIN-014"],"handler_present":true,"old_status":23,"new_status":0,"expect":["write_status_byte","invoke_handler_agent_old_new_error"]},
+    {"name":"set status without handler has no callback","kind":"status-setter","evidence":["RC-BIN-014"],"handler_present":false,"old_status":23,"new_status":0,"expect":["write_status_byte","no_handler_callback"]},
+    {"name":"status zero clear latch ordering","kind":"manager-status-zero","evidence":["RC-BIN-015"],"agent_current":true,"latch_initial":false,"expect":["compare_current_agent","clear_agent_slot","write_status_0x16","callback_false","queue_ping_cancel","clear_status_handler"]},
+    {"name":"status zero set latch ordering","kind":"manager-status-zero","evidence":["RC-BIN-015"],"agent_current":true,"latch_initial":true,"expect":["compare_current_agent","clear_agent_slot","write_status_0x1a","no_false_callback","queue_ping_cancel","clear_status_handler"]},
+    {"name":"status three first transition","kind":"manager-status-three","evidence":["RC-BIN-015"],"agent_current":true,"latch_initial":false,"expect":["compare_current_agent","write_status_0x17","set_latch","callback_true"]},
+    {"name":"status three repeated transition","kind":"manager-status-three","evidence":["RC-BIN-015"],"agent_current":true,"latch_initial":true,"expect":["compare_current_agent","write_status_0x17","no_latch_write","no_true_callback"]},
+    {"name":"stale agent status callback","kind":"manager-status-gate","evidence":["RC-BIN-015"],"agent_current":false,"expect":["compare_current_agent","no_effects"]},
+    {"name":"disconnect fanout after optional handler","kind":"disconnect-fanout-order","evidence":["RC-BIN-016"],"handler_present":true,"pending_count":2,"expect":["write_status_byte","invoke_handler_agent_old_new_error","cancel_owner_delayed_work","enumerate_pending","fanout_each_nil_locoagent_error"],"remaining_gaps":["handler_pending_map_mutation","pending_map_clear_or_replace","queue_race"]},
+    {"name":"weak send and strong timeout captures remain separate","kind":"owner-capture","evidence":["RC-BIN-017"],"expect":["weak_send_capture","strong_timeout_capture","no_identity_equality_proof"],"remaining_gaps":["creator_identity_dataflow"]}
+  ]
+}
