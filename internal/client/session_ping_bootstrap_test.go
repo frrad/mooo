@@ -122,10 +122,32 @@ func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("PING request was not written")
 	}
-	// The timeout returns the callback's Request without needing a server reply.
-	time.Sleep(50 * time.Millisecond)
-	if err := session.Close(); err != nil {
-		t.Fatal(err)
+	// The timeout closes the ambiguous carriage through the normal terminal
+	// path, without leaving a pending request or rearming the owner.
+	deadline := time.After(time.Second)
+	for {
+		session.mu.Lock()
+		closed := session.closed
+		pending := len(session.pending)
+		session.mu.Unlock()
+		if closed {
+			if pending != 0 {
+				t.Fatalf("pending callbacks after timeout=%d, want 0", pending)
+			}
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timeout did not close session")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	clock.mu.Lock()
+	timerCount := len(clock.timers)
+	clock.mu.Unlock()
+	if timerCount != 1 {
+		t.Fatalf("timer count after failed PING=%d, want 1", timerCount)
 	}
 	close(release)
 	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {

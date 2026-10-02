@@ -278,7 +278,12 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 			}
 			pingCtx, cancel := context.WithTimeout(context.Background(), pingOptions.timeout)
 			defer cancel()
-			_, _ = session.Request(pingCtx, "PING", []byte{5, 0, 0, 0, 0})
+			if _, err := session.Request(pingCtx, "PING", []byte{5, 0, 0, 0, 0}); err != nil {
+				// A failed heartbeat leaves request/reply state ambiguous. Close the
+				// carriage so the normal terminal path can fan out and recover it;
+				// never silently leave a dead owner behind.
+				_ = session.Close()
+			}
 		})
 	}
 	session = newSession(owner)
