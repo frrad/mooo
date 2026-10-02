@@ -147,6 +147,17 @@ chat-type guards, and downstream notification semantics remain open. The
 decoder therefore exposes only the six model fields and performs no room or
 revision mutation.
 
+The bounded post-decoder transition contract is recorded in
+[`chgmcmmeta-transition.md`](chgmcmmeta-transition.md). It models the observed
+wire labels (`name`, `favorite`, `imagePath`, `chat_hide`, and
+`chat_category`) and ordering explicitly: a field mutation is evaluated before the
+separate strictly-newer MCM revision update, so a stale notice must not regress
+the shared chat-context revision but may still mutate its routed field. Hidden
+state sets the room pin to -1 and invokes unpin-from-all-folders; this does not
+prove folder membership deletion. Persistence and effect failure handling stay
+outside the pure reducer. Synthetic RED characterization is staged in
+`internal/protocol/events/chgmcmmeta_transition_test.go`.
+
 ## Explicit gaps
 
 The following layers remain unproven for `DELMEM`; this slice adds only a
