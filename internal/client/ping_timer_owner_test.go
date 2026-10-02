@@ -45,6 +45,13 @@ func (c *queuedTimerClock) run(index int) {
 	}
 }
 
+func (c *queuedTimerClock) runEvenIfStopped(index int) {
+	c.mu.Lock()
+	t := c.timers[index]
+	c.mu.Unlock()
+	t.fn()
+}
+
 func TestPingTimerOwnerSchedulesAndFiresThroughRelativeClock(t *testing.T) {
 	clock := &queuedTimerClock{}
 	var fired int
@@ -56,6 +63,14 @@ func TestPingTimerOwnerSchedulesAndFiresThroughRelativeClock(t *testing.T) {
 	if fired != 1 {
 		t.Fatalf("fired=%d want=1", fired)
 	}
+}
+
+func TestRealtimePingTimerOwnerUsesInjectedInterval(t *testing.T) {
+	owner := newRealtimePingTimerOwner(time.Hour, func() {})
+	if !owner.queueSchedule() {
+		t.Fatal("queueSchedule rejected realtime owner")
+	}
+	owner.shutdown()
 }
 
 func TestPingTimerOwnerCancelInvalidatesQueuedGeneration(t *testing.T) {
@@ -76,16 +91,62 @@ func TestPingTimerOwnerRejectsStaleTimerAfterReschedule(t *testing.T) {
 	clock := &queuedTimerClock{}
 	var fired int
 	owner := newPingTimerOwner(clock, time.Second, func() { fired++ })
-	if !owner.queueSchedule() || !owner.queueSchedule() {
-		t.Fatal("queueSchedule rejected open owner")
+	if !owner.queueSchedule() {
+		t.Fatal("first queueSchedule rejected open owner")
 	}
-	clock.run(0)
+	if !owner.queueSchedule() {
+		t.Fatal("second queueSchedule rejected open owner")
+	}
+	clock.runEvenIfStopped(0)
 	if fired != 0 {
 		t.Fatalf("stale timer fired=%d want=0", fired)
 	}
 	clock.run(1)
 	if fired != 1 {
 		t.Fatalf("current timer fired=%d want=1", fired)
+	}
+}
+
+func TestPingTimerOwnerDeliversSelectedCallbackOnceAcrossShutdown(t *testing.T) {
+	clock := &queuedTimerClock{}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	owner := newPingTimerOwner(clock, time.Second, func() {
+		close(started)
+		<-release
+		close(finished)
+	})
+	if !owner.queueSchedule() {
+		t.Fatal("queueSchedule rejected open owner")
+	}
+	go clock.runEvenIfStopped(0)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timer callback did not start")
+	}
+	owner.shutdown()
+	close(release)
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("selected callback did not complete")
+	}
+	clock.runEvenIfStopped(0)
+}
+
+func TestPingTimerOwnerCurrentCallbackIsOneShot(t *testing.T) {
+	clock := &queuedTimerClock{}
+	var fired int
+	owner := newPingTimerOwner(clock, time.Second, func() { fired++ })
+	if !owner.queueSchedule() {
+		t.Fatal("queueSchedule rejected open owner")
+	}
+	clock.runEvenIfStopped(0)
+	clock.runEvenIfStopped(0)
+	if fired != 1 {
+		t.Fatalf("fired=%d want=1", fired)
 	}
 }
 
