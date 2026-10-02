@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/continuity"
 	"github.com/frrad/mooo/internal/protocol/sessionlogin"
 )
@@ -86,4 +87,92 @@ func TestClientShutdownRetainsOwnershipUntilSessionWorkerJoins(t *testing.T) {
 		t.Fatalf("lease after confirmed shutdown: %v", err)
 	}
 	_ = otherLease.Close()
+}
+
+func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	client := &Client{}
+	client.dial = func(context.Context, authstate.State) (*Session, error) {
+		close(started)
+		<-release
+		return &Session{}, nil
+	}
+	connectDone := make(chan error, 1)
+	go func() { connectDone <- client.Connect(context.Background()) }()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("dial did not start")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err := client.Shutdown(ctx)
+	cancel()
+	if err != nil {
+		t.Fatalf("shutdown while dial blocked: %v", err)
+	}
+	close(release)
+	select {
+	case err := <-connectDone:
+		if !errors.Is(err, ErrClientClosed) {
+			t.Fatalf("connect after shutdown: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("connect did not unwind after dial release")
+	}
+}
+
+func TestClientShutdownContextDoesNotWaitForAnotherShutdown(t *testing.T) {
+	conn := &stuckWriteConn{release: make(chan struct{}), entered: make(chan struct{})}
+	session := newSession(nil)
+	session.wire = &wireConn{c: conn}
+	clock := &clientOutClock{}
+	queue := &clientOutQueue{}
+	owner, err := sessionlogin.NewOutSegmentTimeoutOwner(clock, queue, clientOutConfig{timeout: time.Second}, "agent", sessionlogin.OutSegmentTimeoutSelector, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.installOutSegmentSubmitter(session.wire, owner, func(sessionlogin.OutSegmentWriteResult) {}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.writeRequest(context.Background(), session.wire, 42, "PING", nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-conn.entered:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not enter blocked write")
+	}
+	client := &Client{session: session}
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- client.Shutdown(context.Background()) }()
+	deadline := time.After(time.Second)
+	for {
+		client.mu.Lock()
+		active := client.shutdownActive
+		client.mu.Unlock()
+		if active {
+			break
+		}
+		select {
+		case <-time.After(time.Millisecond):
+		case <-deadline:
+			t.Fatal("first shutdown did not start")
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err = client.Shutdown(ctx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("second shutdown error=%v, want deadline", err)
+	}
+	conn.Release()
+	select {
+	case err := <-firstDone:
+		if err != nil {
+			t.Fatalf("first shutdown: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first shutdown did not finish")
+	}
 }
