@@ -12,7 +12,8 @@
     "RC-BIN-004",
     "RC-BIN-005",
     "RC-BIN-006",
-    "RC-BIN-007"
+    "RC-BIN-007",
+    "RC-BIN-008"
   ],
   "cases": [
     {
@@ -225,6 +226,65 @@
         "forward_wrapper"
       ],
       "predicate": "response_success_and_eof_independent_of_login_success"
+    },
+    {
+      "name": "relative PING scheduler identity",
+      "kind": "schedule-primitive",
+      "expect": [
+        "read_ping_interval",
+        "perform_selector_after_relative_delay",
+        "target_request_owner",
+        "selector_ping",
+        "object_nil"
+      ],
+      "remaining_gaps": [
+        "os_queue_execution_clock"
+      ]
+    },
+    {
+      "name": "queued cancellation uses same scheduler identity",
+      "kind": "lifecycle-order",
+      "expect": [
+        "queue_cancel_on_main",
+        "target_request_owner",
+        "selector_ping",
+        "object_nil"
+      ],
+      "ordering_boundary": "cancellation is queued and may race already eligible delayed work"
+    },
+    {
+      "name": "status zero cancels without rearming",
+      "kind": "lifecycle-order",
+      "status": 0,
+      "expect": [
+        "queue_ping_cancel_on_main",
+        "clear_status_handler",
+        "no_ping_schedule"
+      ]
+    },
+    {
+      "name": "fgPingItv positive config reaches interval setter",
+      "kind": "schedule-config",
+      "input": {
+        "fgPingItv": 181
+      },
+      "expect": [
+        "read_getConfWifi",
+        "read_fgPingItv",
+        "set_ping_interval_181"
+      ]
+    },
+    {
+      "name": "fgPingItv zero or negative uses callback fallback",
+      "kind": "schedule-config",
+      "input": {
+        "fgPingItv": "zero_or_negative"
+      },
+      "expect": [
+        "read_getConfWifi",
+        "read_fgPingItv",
+        "set_ping_interval_180"
+      ]
     }
   ]
 }
