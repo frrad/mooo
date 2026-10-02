@@ -31,7 +31,7 @@ last log ID, and last-seen log ID:
   logId > 0 AND logId > ? AND type != ? AND status != ? AND scope IN (?, ?)`;
   the callback supplies the chat ID and clamped lower bound as signed 64-bit
   numbers. The remaining NSNumber arguments are fixed integer constants: excluded
-  message type `3`, excluded status `5`, and allowed scopes `1` and `3`.
+  message type `10001`, excluded status `5`, and allowed scopes `1` and `3`.
 - when the room's unread count is positive but `watermark >= lastLogId`, it sets
   unread count to zero and invokes mention/reply reset;
 - when the room's unread count is already zero, neither unread assignment nor
