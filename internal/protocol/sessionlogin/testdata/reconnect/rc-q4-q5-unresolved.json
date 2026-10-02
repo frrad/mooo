@@ -13,7 +13,8 @@
     "RC-BIN-005",
     "RC-BIN-006",
     "RC-BIN-007",
-    "RC-BIN-008"
+    "RC-BIN-008",
+    "RC-BIN-009"
   ],
   "cases": [
     {
@@ -298,6 +299,9 @@
       ],
       "remaining_gaps": [
         "producer_response_mapping"
+      ],
+      "evidence": [
+        "RC-BIN-009"
       ]
     },
     {
@@ -309,6 +313,9 @@
       ],
       "remaining_gaps": [
         "ports_schema"
+      ],
+      "evidence": [
+        "RC-BIN-009"
       ]
     }
   ]
