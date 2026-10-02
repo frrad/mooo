@@ -47,9 +47,11 @@ supplied completion receives the producer's error and the header timeout is not
 armed; with no completion there is no callback effect. A separate completion-side helper looks up the unsigned packet ID in the
 agent's packet map. That map stores the request unique-id string as its value.
 Both this helper and the ordinary response consumer obtain the comparison value
-from the packet's `header` object's `uniqueId` accessor. The reviewed layer does
-not establish how that header object is decoded from wire bytes, nor whether a
-secure-prefix read precedes this accessor; those are separate integration gaps.
+from the packet's `header` object's `uniqueId` accessor. The accessor constructs
+its value as the packet method and unsigned packet ID formatted with the exact
+`"%@.%@"` template. The reviewed layer does not establish how that header
+object is decoded from wire bytes, nor whether a secure-prefix read precedes this
+accessor; those are separate integration gaps.
 The helper disarms only when that stored string equals the incoming packet
 unique-id; missing or nonmatching values produce no timeout action. Equality
 then derives the request tag by that packet-ID identity mapping and disables that exact timeout. No generic

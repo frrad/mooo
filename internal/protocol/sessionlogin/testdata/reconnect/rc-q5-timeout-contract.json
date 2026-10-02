@@ -218,6 +218,7 @@
         "lookup_unsigned_packet_id",
         "compare_stored_string_to_incoming_unique_id",
         "derive_request_tag",
+        "derive_request_tag_identity",
         "disable_timeout"
       ]
     },
