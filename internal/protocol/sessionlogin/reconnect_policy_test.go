@@ -73,3 +73,26 @@ func TestPingIntervalFloorBoundaries(t *testing.T) {
 		}
 	}
 }
+
+func TestReceiveHeaderTimeoutDomainBoundaries(t *testing.T) {
+	for _, tag := range []int64{0, 1, 1<<63 - 1} {
+		if !ShouldArmReceiveHeaderTimeout(tag, time.Nanosecond) {
+			t.Errorf("tag %d with positive timeout did not arm", tag)
+		}
+	}
+	for _, tag := range []int64{-1, -1 << 63} {
+		if ShouldArmReceiveHeaderTimeout(tag, time.Nanosecond) {
+			t.Errorf("tag %d with positive timeout armed", tag)
+		}
+	}
+	if ShouldArmReceiveHeaderTimeout(0, -time.Nanosecond) || ShouldArmReceiveHeaderTimeout(0, 0) {
+		t.Fatal("nonpositive timeout armed")
+	}
+}
+
+func TestPingIntervalPreservesFractionalPositiveValues(t *testing.T) {
+	configured := 180*time.Second + 500*time.Millisecond
+	if got := PingInterval(configured); got != configured {
+		t.Fatalf("PingInterval(%s) = %s, want exact configured duration", configured, got)
+	}
+}
