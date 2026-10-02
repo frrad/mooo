@@ -2,11 +2,102 @@
   "status": "reviewed-static-unexecuted-runtime",
   "question": "RC-Q5",
   "cases": [
-    {"name":"crypto header zero loops header","crypto_present":true,"read_tag":0,"prefix_value":0,"expected":["header_read_length_4","header_timeout_minus_one","header_tag_zero","header_prefix_zero","read_header_again"]},
-    {"name":"crypto header nonzero enters body","crypto_present":true,"read_tag":0,"prefix_value":1,"expected":["header_read_length_4","header_timeout_minus_one","header_tag_zero","header_prefix_nonzero","read_body_length"]},
-    {"name":"plain header supplies producer","crypto_present":false,"read_tag":0,"expected":["header_read_length_22","header_timeout_minus_one","header_tag_zero","supply_raw_data"]},
-    {"name":"body crypto decrypts before producer","crypto_present":true,"read_tag":1,"expected":["route_body","decrypt_accumulated","supply_raw_data"]},
-    {"name":"body plain supplies producer","crypto_present":false,"read_tag":1,"expected":["route_body","supply_raw_data"]},
-    {"name":"other tag routes body","crypto_present":true,"read_tag":2,"expected":["route_body"]}
+    {
+      "name": "crypto header zero loops header",
+      "crypto_present": true,
+      "read_tag": 0,
+      "prefix_value": 0,
+      "expected": [
+        "header_read_length_4",
+        "header_timeout_minus_one",
+        "header_tag_zero",
+        "header_prefix_zero",
+        "read_header_again"
+      ]
+    },
+    {
+      "name": "crypto header nonzero enters body",
+      "crypto_present": true,
+      "read_tag": 0,
+      "prefix_value": 1,
+      "expected": [
+        "header_read_length_4",
+        "header_timeout_minus_one",
+        "header_tag_zero",
+        "header_prefix_nonzero",
+        "read_body_length"
+      ]
+    },
+    {
+      "name": "plain header supplies producer",
+      "crypto_present": false,
+      "read_tag": 0,
+      "expected": [
+        "header_read_length_22",
+        "header_timeout_minus_one",
+        "header_tag_zero",
+        "supply_raw_data"
+      ]
+    },
+    {
+      "name": "body crypto decrypts before producer",
+      "crypto_present": true,
+      "read_tag": 1,
+      "expected": [
+        "route_body",
+        "decrypt_accumulated",
+        "supply_raw_data"
+      ]
+    },
+    {
+      "name": "body plain supplies producer",
+      "crypto_present": false,
+      "read_tag": 1,
+      "expected": [
+        "route_body",
+        "supply_raw_data"
+      ]
+    },
+    {
+      "name": "other tag routes body",
+      "crypto_present": true,
+      "read_tag": 2,
+      "expected": [
+        "route_body"
+      ]
+    },
+    {
+      "name": "producer header then complete packet",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 22,
+      "current_header_present": false,
+      "delegate_supports_header": true,
+      "body_complete": true,
+      "timeout_identity_matches": true,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "header_callback_if_supported",
+        "complete_packet_callback_after_body",
+        "header_before_complete_packet",
+        "conditional_timeout_disarm_after_header"
+      ]
+    },
+    {
+      "name": "producer header waits for body",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 22,
+      "current_header_present": false,
+      "delegate_supports_header": true,
+      "body_complete": false,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "header_callback_if_supported",
+        "header_before_complete_packet"
+      ]
+    }
   ]
 }
