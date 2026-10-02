@@ -214,6 +214,83 @@ func TestSessionMembersReturnsCompletedBatchesWithLaterFailure(t *testing.T) {
 	backend.wait(t)
 }
 
+func TestSessionMembersReturnsCompletedBatchesWhenLaterTransportCloses(t *testing.T) {
+	ids := make([]int64, 0, 501)
+	for id := int64(2); id <= 502; id++ {
+		ids = append(ids, id)
+	}
+	requests := 0
+	backend := newScriptedBackend(t, false,
+		expectRequest("MEMBER", nil, statusDocument(
+			bson.E{Key: "chatId", Value: int64(42)},
+			bson.E{Key: "members", Value: bson.A{bson.D{{Key: "userId", Value: int64(2)}}}},
+		)),
+		disconnectAfterRequest("MEMBER", &requests),
+	)
+	session := testMetadataSession(backend, 1)
+
+	members, err := session.Members(context.Background(), 42, ids)
+	if err == nil {
+		t.Fatal("Members unexpectedly succeeded after transport close")
+	}
+	if len(members) != 1 || members[0].UserID != 2 {
+		t.Fatalf("members = %#v, want completed first batch", members)
+	}
+	backend.wait(t)
+	if requests != 1 {
+		t.Fatalf("failed-batch requests = %d, want 1", requests)
+	}
+}
+
+func TestSessionMembersReturnsCompletedBatchesWhenLaterResponseIsMalformed(t *testing.T) {
+	ids := make([]int64, 0, 501)
+	for id := int64(2); id <= 502; id++ {
+		ids = append(ids, id)
+	}
+	requests := 0
+	backend := newScriptedBackend(t, false,
+		expectRequest("MEMBER", nil, statusDocument(
+			bson.E{Key: "chatId", Value: int64(42)},
+			bson.E{Key: "members", Value: bson.A{bson.D{{Key: "userId", Value: int64(2)}}}},
+		)),
+		expectRequest("MEMBER", func(bson.Raw) error { requests++; return nil }, statusDocument(
+			bson.E{Key: "chatId", Value: int64(42)},
+			bson.E{Key: "members", Value: "malformed"},
+		)),
+	)
+	session := testMetadataSession(backend, 1)
+
+	members, err := session.Members(context.Background(), 42, ids)
+	if err == nil {
+		t.Fatal("Members unexpectedly succeeded with malformed second response")
+	}
+	if len(members) != 1 || members[0].UserID != 2 {
+		t.Fatalf("members = %#v, want completed first batch", members)
+	}
+	backend.wait(t)
+	if requests != 1 {
+		t.Fatalf("malformed-batch requests = %d, want 1", requests)
+	}
+}
+
+func TestSessionMembersRejectsPartialStatusWithoutRetry(t *testing.T) {
+	requests := 0
+	backend := newScriptedBackend(t, false, expectRequest("MEMBER", func(bson.Raw) error {
+		requests++
+		return nil
+	}, bson.D{{Key: "status", Value: int32(-310)}}))
+	session := testMetadataSession(backend, 1)
+
+	var status StatusError
+	if _, err := session.Members(context.Background(), 42, []int64{7}); !errors.As(err, &status) || status.Status != -310 {
+		t.Fatalf("Members error = %v, want StatusError(-310)", err)
+	}
+	backend.wait(t)
+	if requests != 1 {
+		t.Fatalf("requests = %d, want exactly one", requests)
+	}
+}
+
 func TestSessionMemberListSendsChatIDAndToken(t *testing.T) {
 	backend := newScriptedBackend(t, false, expectRequest("MEMLIST", func(raw bson.Raw) error {
 		if err := requireExactKeys(raw, "chatId", "token"); err != nil {
@@ -238,4 +315,26 @@ func TestSessionMemberListSendsChatIDAndToken(t *testing.T) {
 		t.Fatalf("response = %#v, want %#v", response, want)
 	}
 	backend.wait(t)
+}
+
+func TestSessionMemberListRejectsNonzeroStatusExactlyOnce(t *testing.T) {
+	for _, statusCode := range []int32{1, -310} {
+		t.Run(fmt.Sprintf("status-%d", statusCode), func(t *testing.T) {
+			requests := 0
+			backend := newScriptedBackend(t, false, expectRequest("MEMLIST", func(bson.Raw) error {
+				requests++
+				return nil
+			}, bson.D{{Key: "status", Value: statusCode}}))
+			session := testMetadataSession(backend, 1)
+
+			var status StatusError
+			if _, err := session.MemberList(context.Background(), 42, 3); !errors.As(err, &status) || status.Status != statusCode {
+				t.Fatalf("MemberList error = %v, want StatusError(%d)", err, statusCode)
+			}
+			backend.wait(t)
+			if requests != 1 {
+				t.Fatalf("requests = %d, want exactly one", requests)
+			}
+		})
+	}
 }
