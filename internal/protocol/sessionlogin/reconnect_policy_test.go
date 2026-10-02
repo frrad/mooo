@@ -62,7 +62,7 @@ func TestReconnectPolicyVectors(t *testing.T) {
 					}
 				}
 			case "configuration":
-				defaults := DefaultSocketTimeouts()
+				defaults := RecoveredManagerTimeouts()
 				if defaults.Connect != duration(*tc.ConnectTimeout) || defaults.ReceiveHeader != duration(*tc.ReceiveHeaderTimeout) || defaults.InSegment != duration(*tc.InSegmentTimeout) || defaults.OutSegment != duration(*tc.OutSegmentTimeout) {
 					t.Fatalf("defaults=%#v", defaults)
 				}
@@ -105,5 +105,14 @@ func TestReceiveHeaderTimeoutDomainBoundaries(t *testing.T) {
 	}
 	if ShouldArmReceiveHeaderTimeout(0, -time.Nanosecond) || ShouldArmReceiveHeaderTimeout(0, 0) {
 		t.Fatal("nonpositive timeout armed")
+	}
+}
+
+func TestPingIntervalSigned32Domain(t *testing.T) {
+	if got := PingInterval(-1 << 31); got != 180 {
+		t.Fatalf("minimum int32 config = %d, want 180", got)
+	}
+	if got := PingInterval(1<<31 - 1); got != 1<<31-1 {
+		t.Fatalf("maximum int32 config = %d, want unchanged", got)
 	}
 }

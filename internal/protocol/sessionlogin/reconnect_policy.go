@@ -8,7 +8,8 @@ type SocketTimeouts struct {
 	Connect, ReceiveHeader, InSegment, OutSegment time.Duration
 }
 
-func DefaultSocketTimeouts() SocketTimeouts {
+// RecoveredManagerTimeouts returns manager configuration values observed in the booking initializer.
+func RecoveredManagerTimeouts() SocketTimeouts {
 	return SocketTimeouts{Connect: 15 * time.Second, ReceiveHeader: 20 * time.Second, InSegment: 10 * time.Second, OutSegment: 10 * time.Second}
 }
 
