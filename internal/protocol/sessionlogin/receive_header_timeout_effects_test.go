@@ -3,6 +3,8 @@ package sessionlogin
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -94,8 +96,8 @@ func TestPlanReceiveHeaderTimeoutApprovedVectors(t *testing.T) {
 		Name              string   `json:"name"`
 		Kind              string   `json:"kind"`
 		Evidence          []string `json:"evidence"`
-		TimeoutSeconds    *int64   `json:"timeout_seconds"`
-		ExecutionTimeout  *int64   `json:"execution_timeout_seconds"`
+		TimeoutSeconds    *float64 `json:"timeout_seconds"`
+		ExecutionTimeout  *float64 `json:"execution_timeout_seconds"`
 		Tag               *int64   `json:"tag"`
 		Enable            *bool    `json:"enable"`
 		EnableByte        *byte    `json:"enable_byte"`
@@ -106,6 +108,9 @@ func TestPlanReceiveHeaderTimeoutApprovedVectors(t *testing.T) {
 		IncomingUniqueID  string   `json:"incoming_unique_id"`
 		ProducerStatus    *int32   `json:"producer_status"`
 		CompletionPresent *bool    `json:"completion_present"`
+		HandlerPresent    *bool    `json:"handler_present"`
+		NewStatus         *int32   `json:"new_status"`
+		OldStatus         *int32   `json:"old_status"`
 	}
 	var vectors struct {
 		Status    string       `json:"status"`
@@ -133,9 +138,16 @@ func TestPlanReceiveHeaderTimeoutApprovedVectors(t *testing.T) {
 			if len(tc.Evidence) == 0 || tc.TimeoutSeconds == nil || tc.Tag == nil {
 				t.Fatal("missing source evidence or admission fields")
 			}
-			input := ReceiveHeaderTimeoutInput{AdmissionTimeout: time.Duration(*tc.TimeoutSeconds) * time.Second, Owner: "agent", RequestTag: *tc.Tag}
+			admission, conversionErr := timeoutVectorDuration(tc.TimeoutSeconds)
+			if conversionErr != nil {
+				t.Fatal(conversionErr)
+			}
+			input := ReceiveHeaderTimeoutInput{AdmissionTimeout: admission, Owner: "agent", RequestTag: *tc.Tag}
 			if tc.ExecutionTimeout != nil {
-				input.ExecutionTimeout = time.Duration(*tc.ExecutionTimeout) * time.Second
+				input.ExecutionTimeout, conversionErr = timeoutVectorDuration(tc.ExecutionTimeout)
+				if conversionErr != nil {
+					t.Fatal(conversionErr)
+				}
 			}
 			if tc.EnableByte != nil {
 				input.EnableByte = *tc.EnableByte
@@ -148,7 +160,7 @@ func TestPlanReceiveHeaderTimeoutApprovedVectors(t *testing.T) {
 			}
 			for _, expected := range tc.Expect {
 				sourceExpected := expected
-				if sourceExpected == "perform_selector_after_delay_7" {
+				if strings.HasPrefix(sourceExpected, "perform_selector_after_delay_") {
 					expected = "perform_selector_after_delay"
 				}
 				if !known[expected] {
@@ -158,10 +170,14 @@ func TestPlanReceiveHeaderTimeoutApprovedVectors(t *testing.T) {
 				for i, effect := range got {
 					if effect.Kind == expected {
 						if strings.HasPrefix(sourceExpected, "perform_selector_after_delay_") {
-							seconds, parseErr := strconv.ParseInt(strings.TrimPrefix(sourceExpected, "perform_selector_after_delay_"), 10, 64)
-							if parseErr != nil || effect.Delay != time.Duration(seconds)*time.Second {
+							seconds, parseErr := strconv.ParseFloat(strings.TrimPrefix(sourceExpected, "perform_selector_after_delay_"), 64)
+							expectedDelay, delayErr := timeoutVectorDuration(&seconds)
+							if parseErr != nil || delayErr != nil || effect.Delay != expectedDelay {
 								continue
 							}
+						}
+						if err := assertTimeoutVectorEffect(sourceExpected, effect, tc.Tag); err != nil {
+							t.Fatal(err)
 						}
 						got = got[i+1:]
 						found = true
@@ -174,4 +190,44 @@ func TestPlanReceiveHeaderTimeoutApprovedVectors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func timeoutVectorDuration(seconds *float64) (time.Duration, error) {
+	if seconds == nil {
+		return 0, nil
+	}
+	if math.IsNaN(*seconds) || math.IsInf(*seconds, 0) {
+		return 0, fmt.Errorf("timeout vector duration must be finite: %v", *seconds)
+	}
+	nanos := *seconds * float64(time.Second)
+	if nanos < -float64(1<<63) || nanos > float64(1<<63-1) {
+		return 0, fmt.Errorf("timeout vector duration overflows time.Duration: %v seconds", *seconds)
+	}
+	return time.Duration(math.Round(nanos)), nil
+}
+
+func assertTimeoutVectorEffect(sourceExpected string, effect ReceiveHeaderTimeoutEffect, tag *int64) error {
+	switch {
+	case strings.HasPrefix(sourceExpected, "perform_selector_after_delay_"):
+		if effect.Owner != "agent" || effect.Target != receiveHeaderTimeoutSelector || tag == nil || effect.Tag != *tag {
+			return fmt.Errorf("%s has incomplete owner/target/tag tuple: %#v", sourceExpected, effect)
+		}
+	case sourceExpected == "cancel_previous_perform":
+		if effect.Owner != "agent" || effect.Target != receiveHeaderTimeoutSelector || tag == nil || effect.Tag != *tag {
+			return fmt.Errorf("%s has incomplete owner/target/tag tuple: %#v", sourceExpected, effect)
+		}
+	case sourceExpected == "owner_target":
+		if effect.Owner != "agent" || effect.Target != "" {
+			return fmt.Errorf("owner_target has unexpected tuple: %#v", effect)
+		}
+	case sourceExpected == "fire_selector":
+		if effect.Target != receiveHeaderTimeoutSelector {
+			return fmt.Errorf("fire_selector target=%q want %q", effect.Target, receiveHeaderTimeoutSelector)
+		}
+	case sourceExpected == "wrapped_tag":
+		if tag == nil || effect.Tag != *tag {
+			return fmt.Errorf("wrapped_tag=%d want %v", effect.Tag, tag)
+		}
+	}
+	return nil
 }
