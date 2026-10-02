@@ -7,7 +7,7 @@ outside the observed contract.
 
 The timeout helper is an owner method receiving an enable flag and a signed
 request tag. It first reads the owner's `receiveHeaderTimeout` value and
-requires both a positive timeout and a nonnegative signed 64-bit tag. A failed
+requires both a positive timeout and a nonnegative signed 64-bit tag. The producer's request-tag helper is an identity return of the packet identifier: its unsigned 32-bit input is zero-extended into the signed tag domain, so packet IDs remain nonnegative. A failed
 gate performs no main-queue enqueue. A passing gate enqueues work on the main
 queue with a weak owner. The queued work compares the enable byte to exactly
 `true` (`1`). On enable it rereads `receiveHeaderTimeout` from the captured
@@ -46,9 +46,13 @@ invoke the supplied completion immediately. If the owner status is not 3, a
 supplied completion receives the producer's error and the header timeout is not
 armed; with no completion there is no callback effect. A separate completion-side helper looks up the unsigned packet ID in the
 agent's packet map. That map stores the request unique-id string as its value.
+Both this helper and the ordinary response consumer obtain the comparison value
+from the packet's `header` object's `uniqueId` accessor. The reviewed layer does
+not establish how that header object is decoded from wire bytes, nor whether a
+secure-prefix read precedes this accessor; those are separate integration gaps.
 The helper disarms only when that stored string equals the incoming packet
 unique-id; missing or nonmatching values produce no timeout action. Equality
-then derives the request tag and disables that exact timeout. No generic
+then derives the request tag by that packet-ID identity mapping and disables that exact timeout. No generic
 read-loop or idle transition was found to arm or disarm this helper. Header
 timeout behavior is therefore distinct from socket read/in-segment timeout
 handling.

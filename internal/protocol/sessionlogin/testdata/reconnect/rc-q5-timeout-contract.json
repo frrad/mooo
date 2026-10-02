@@ -221,6 +221,23 @@
       ]
     },
     {
+      "name": "maximum unsigned packet id maps identically to nonnegative tag",
+      "kind": "completion-disarm",
+      "evidence": [
+        "RC-BIN-012"
+      ],
+      "packet_id": 4294967295,
+      "stored_unique_id": "max-id",
+      "incoming_unique_id": "max-id",
+      "expect": [
+        "lookup_unsigned_packet_id",
+        "compare_stored_string_to_incoming_unique_id",
+        "derive_request_tag",
+        "derive_request_tag_identity",
+        "disable_timeout"
+      ]
+    },
+    {
       "name": "missing stored unique id does not disarm",
       "kind": "completion-disarm",
       "evidence": [
