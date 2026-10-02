@@ -11,6 +11,33 @@ import (
 	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
+type headerReadResult struct {
+	packet loco.Packet
+	err    error
+}
+
+func awaitHeaderReadResult(t *testing.T, results <-chan headerReadResult) headerReadResult {
+	t.Helper()
+	select {
+	case result := <-results:
+		return result
+	case <-time.After(time.Second):
+		t.Fatal("wire read did not finish")
+		return headerReadResult{}
+	}
+}
+
+func awaitHeaderReadError(t *testing.T, results <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-results:
+		return err
+	case <-time.After(time.Second):
+		t.Fatal("wire read did not finish")
+		return nil
+	}
+}
+
 func TestWireReadHeaderObserverPlainRunsBeforeBody(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = clientConn.Close() }()
@@ -21,16 +48,10 @@ func TestWireReadHeaderObserverPlainRunsBeforeBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	headerSeen := make(chan loco.Header, 1)
-	result := make(chan struct {
-		packet loco.Packet
-		err    error
-	}, 1)
+	result := make(chan headerReadResult, 1)
 	go func() {
 		got, readErr := wire.readWithHeaderObserver(func(header loco.Header) { headerSeen <- header })
-		result <- struct {
-			packet loco.Packet
-			err    error
-		}{got, readErr}
+		result <- headerReadResult{got, readErr}
 	}()
 	if _, err := serverConn.Write(packet[:loco.HeaderSize-1]); err != nil {
 		t.Fatal(err)
@@ -54,7 +75,7 @@ func TestWireReadHeaderObserverPlainRunsBeforeBody(t *testing.T) {
 	if _, err := serverConn.Write(packet[loco.HeaderSize:]); err != nil {
 		t.Fatal(err)
 	}
-	got := <-result
+	got := awaitHeaderReadResult(t, result)
 	if got.err != nil || string(got.packet.Body) != "body" {
 		t.Fatalf("read result=%#v", got)
 	}
@@ -75,7 +96,7 @@ func TestWireReadHeaderObserverPlainMalformedHeaderIsSilent(t *testing.T) {
 	if _, err := serverConn.Write(header); err != nil {
 		t.Fatal(err)
 	}
-	if err := <-result; !errors.Is(err, loco.ErrInvalidMethod) {
+	if err := awaitHeaderReadError(t, result); !errors.Is(err, loco.ErrInvalidMethod) {
 		t.Fatalf("read error=%v, want invalid method", err)
 	}
 	select {
@@ -109,7 +130,7 @@ func TestWireReadHeaderObserverPlainBodyEOFRunsOnce(t *testing.T) {
 	if err := serverConn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := <-result; !errors.Is(err, io.ErrUnexpectedEOF) {
+	if err := awaitHeaderReadError(t, result); !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("read error=%v, want unexpected EOF", err)
 	}
 	select {
@@ -167,7 +188,7 @@ func TestWireReadHeaderObserverSequentialReadsOneCallbackEach(t *testing.T) {
 		t.Fatalf("nil observer unexpectedly produced callback: %#v", header)
 	default:
 	}
-	if err := <-serverDone; err != nil {
+	if err := awaitHeaderReadError(t, serverDone); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -220,7 +241,7 @@ func TestWireReadHeaderObserverSecureRunsAfterAuthenticatedEnvelope(t *testing.T
 	case <-time.After(time.Second):
 		t.Fatal("secure header observer did not run")
 	}
-	if err := <-result; err != nil {
+	if err := awaitHeaderReadError(t, result); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -257,7 +278,7 @@ func TestWireReadHeaderObserverSecureAuthFailureIsSilent(t *testing.T) {
 	if _, err := io.Copy(serverConn, bytes.NewReader(envelope)); err != nil {
 		t.Fatal(err)
 	}
-	if err := <-result; !errors.Is(err, loco.ErrInvalidSecureEnvelope) {
+	if err := awaitHeaderReadError(t, result); !errors.Is(err, loco.ErrInvalidSecureEnvelope) {
 		t.Fatalf("read error=%v, want secure auth failure", err)
 	}
 	select {
