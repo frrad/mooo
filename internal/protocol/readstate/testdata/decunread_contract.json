@@ -462,6 +462,163 @@
     }
   },
   {
+    "name": "current positive unread bot helper suppressed",
+    "state": {
+      "roomExists": true,
+      "currentUserId": 7,
+      "countOfNewMessage": 3,
+      "lastLogId": 100,
+      "lastSeenLogId": 98,
+      "mentionReplyPresent": true,
+      "activeMemberIds": [
+        7
+      ],
+      "activeMemberCount": 1,
+      "botIds": {
+        "7": true
+      },
+      "memberWatermarks": {
+        "7": 90
+      }
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 7,
+      "watermark": 100
+    },
+    "inputs": {
+      "eligibleUnreadCount": 8
+    },
+    "want": {
+      "applied": true,
+      "unreadCount": 0,
+      "mentionReplyPresent": false,
+      "memberWatermarks": {
+        "7": 90
+      },
+      "activeMemberIds": [
+        7
+      ],
+      "activeMemberCount": 1,
+      "effects": [
+        {
+          "kind": "clear_unread"
+        },
+        {
+          "kind": "reset_mention_reply"
+        },
+        {
+          "kind": "check_joined"
+        },
+        {
+          "kind": "archive_refresh"
+        }
+      ]
+    }
+  },
+  {
+    "name": "current positive unread frozen helper suppressed",
+    "state": {
+      "roomExists": true,
+      "currentUserId": 7,
+      "countOfNewMessage": 3,
+      "lastLogId": 100,
+      "lastSeenLogId": 98,
+      "mentionReplyPresent": true,
+      "activeMemberIds": [
+        7
+      ],
+      "activeMemberCount": 1,
+      "roomType": 3,
+      "frozen": true,
+      "memberWatermarks": {
+        "7": 90
+      }
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 7,
+      "watermark": 100
+    },
+    "inputs": {
+      "eligibleUnreadCount": 8
+    },
+    "want": {
+      "applied": true,
+      "unreadCount": 0,
+      "mentionReplyPresent": false,
+      "memberWatermarks": {
+        "7": 90
+      },
+      "activeMemberIds": [
+        7
+      ],
+      "activeMemberCount": 1,
+      "effects": [
+        {
+          "kind": "clear_unread"
+        },
+        {
+          "kind": "reset_mention_reply"
+        },
+        {
+          "kind": "check_joined"
+        },
+        {
+          "kind": "archive_refresh"
+        }
+      ]
+    }
+  },
+  {
+    "name": "current positive unread empty active helper suppressed",
+    "state": {
+      "roomExists": true,
+      "currentUserId": 7,
+      "countOfNewMessage": 3,
+      "lastLogId": 100,
+      "lastSeenLogId": 98,
+      "mentionReplyPresent": true,
+      "activeMemberIds": [],
+      "activeMemberCount": 4,
+      "memberWatermarks": {
+        "7": 90
+      }
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 7,
+      "watermark": 100
+    },
+    "inputs": {
+      "eligibleUnreadCount": 8
+    },
+    "want": {
+      "applied": true,
+      "unreadCount": 0,
+      "mentionReplyPresent": false,
+      "memberWatermarks": {
+        "7": 90
+      },
+      "activeMemberIds": [],
+      "activeMemberCount": 4,
+      "effects": [
+        {
+          "kind": "clear_unread"
+        },
+        {
+          "kind": "reset_mention_reply"
+        },
+        {
+          "kind": "check_joined"
+        },
+        {
+          "kind": "archive_refresh"
+        }
+      ]
+    }
+  },
+  {
     "name": "bot member is suppressed by helper guard",
     "state": {
       "roomExists": true,

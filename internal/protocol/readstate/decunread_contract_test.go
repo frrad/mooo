@@ -91,7 +91,7 @@ func TestDECUNREADContractVectors(t *testing.T) {
 				BotIDs:            fixture.State.BotIDs, RoomType: fixture.State.RoomType, Frozen: fixture.State.Frozen,
 			}
 			beforeMembers := cloneWatermarks(state.MemberWatermarks)
-			beforeActive := append([]int64(nil), state.ActiveMemberIDs...)
+			beforeActive := cloneIDs(state.ActiveMemberIDs)
 			beforeBots := cloneBots(state.BotIDs)
 			got := ReduceDECUNREAD(state, Notice{ChatID: fixture.Notice.ChatID, UserID: fixture.Notice.UserID, Watermark: fixture.Notice.Watermark}, inputs)
 			if fixture.Want.PreserveSnapshot && !reflect.DeepEqual(got.State, state) {
@@ -164,6 +164,13 @@ func expectedUnread(value *int64, initial int64) int64 {
 		return initial
 	}
 	return *value
+}
+
+func cloneIDs(input []int64) []int64 {
+	if input == nil {
+		return nil
+	}
+	return append([]int64{}, input...)
 }
 
 func cloneBots(input map[int64]bool) map[int64]bool {
