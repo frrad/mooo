@@ -3,6 +3,7 @@ package sessionlogin
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -46,8 +47,8 @@ func TestReconnectPolicyVectors(t *testing.T) {
 	if err := decoder.Decode(&vectors); err != nil {
 		t.Fatal(err)
 	}
-	if len(vectors.Cases) == 0 {
-		t.Fatal("pure policy vector file contains no cases")
+	if err := validateReconnectPolicyVectors(vectors); err != nil {
+		t.Fatal(err)
 	}
 	executed := 0
 	for _, tc := range vectors.Cases {
@@ -87,6 +88,71 @@ func TestReconnectPolicyVectors(t *testing.T) {
 	}
 	if executed != len(vectors.Cases) {
 		t.Fatalf("executed %d of %d pure policy cases", executed, len(vectors.Cases))
+	}
+}
+
+func validateReconnectPolicyVectors(v reconnectVectors) error {
+	if len(v.Cases) == 0 {
+		return fmt.Errorf("pure policy vector file contains no cases")
+	}
+	for _, tc := range v.Cases {
+		if len(tc.Evidence) == 0 {
+			return fmt.Errorf("case %q has no evidence IDs", tc.Name)
+		}
+		switch tc.Kind {
+		case "timeout-predicate":
+			if len(tc.Subcases) == 0 {
+				return fmt.Errorf("case %q has no timeout subcases", tc.Name)
+			}
+		case "configuration":
+			if len(tc.Subcases) > 0 {
+				continue
+			}
+			if tc.PingIntervalFallback == nil || tc.ConnectTimeout == nil || tc.ReceiveHeaderTimeout == nil || tc.InSegmentTimeout == nil || tc.OutSegmentTimeout == nil {
+				return fmt.Errorf("case %q is missing configuration values", tc.Name)
+			}
+		default:
+			return fmt.Errorf("unsupported pure policy kind %q", tc.Kind)
+		}
+	}
+	return nil
+}
+
+func TestReconnectPolicySchemaValidation(t *testing.T) {
+	unknown := []byte(`{"questions":[],"evidence":[],"cases":[{"name":"x","kind":"configuration","evidence":["RC-BIN-001"],"unexpected":true}]}`)
+	decoder := json.NewDecoder(bytes.NewReader(unknown))
+	decoder.DisallowUnknownFields()
+	var vectors reconnectVectors
+	if err := decoder.Decode(&vectors); err == nil {
+		t.Fatal("unknown vector field accepted")
+	}
+	missing := reconnectVectors{Cases: []struct {
+		Name              string   `json:"name"`
+		Kind              string   `json:"kind"`
+		Evidence          []string `json:"evidence"`
+		Tag               *int64   `json:"tag"`
+		ConfiguredTimeout *int64   `json:"configured_timeout_seconds"`
+		Arm               *bool    `json:"arm"`
+		Subcases          []struct {
+			Tag               int64 `json:"tag"`
+			ConfiguredTimeout int64 `json:"configured_timeout_seconds"`
+			Arm               bool  `json:"arm"`
+			ConfiguredSeconds int32 `json:"configured_seconds"`
+			StoredSeconds     int32 `json:"stored_seconds"`
+		} `json:"cases"`
+		PingIntervalFallback *int64   `json:"ping_interval_fallback_seconds"`
+		ConnectTimeout       *int64   `json:"connect_timeout_seconds"`
+		ReceiveHeaderTimeout *int64   `json:"receive_header_timeout_seconds"`
+		InSegmentTimeout     *int64   `json:"in_segment_timeout_seconds"`
+		OutSegmentTimeout    *int64   `json:"out_segment_timeout_seconds"`
+		RemainingGaps        []string `json:"remaining_gaps"`
+	}{{Name: "missing", Kind: "configuration", Evidence: []string{"RC-BIN-001"}}}}
+	if err := validateReconnectPolicyVectors(missing); err == nil {
+		t.Fatal("missing configuration values accepted")
+	}
+	missing.Cases[0].Kind = "future-kind"
+	if err := validateReconnectPolicyVectors(missing); err == nil {
+		t.Fatal("unsupported policy kind accepted")
 	}
 }
 
