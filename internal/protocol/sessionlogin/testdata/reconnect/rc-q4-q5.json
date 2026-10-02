@@ -46,7 +46,7 @@
     {
       "name": "recovered coordinator and manager initializer values",
       "kind": "configuration",
-      "ping_interval_min_seconds": 180,
+      "ping_interval_fallback_seconds": 180,
       "connect_timeout_seconds": 15,
       "receive_header_timeout_seconds": 20,
       "in_segment_timeout_seconds": 10,
