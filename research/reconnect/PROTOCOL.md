@@ -24,13 +24,18 @@ queued even when the request-owner status check takes the early failure path.
 The source chain does not prove that this path immediately re-arms the
 interval.
 
-The traced status-forwarding callback also posts interval-based PING scheduling
-to the main queue before forwarding the status event. Its disconnect-status
-branch performs disconnect bookkeeping and then posts the matching PING
-cancellation; its connected-status branch updates the active flag. These
-status transitions therefore establish scheduling and cancellation triggers,
-while the exact status admission predicate and any re-arm after a PING reply
-remain open.
+The traced request-completion callback posts interval-based PING scheduling to
+the main queue before forwarding either packet or error arguments to the
+supplied completion. The callback has no nil/error predicate in this wrapper,
+so both completion forms follow the same ordering. A request-owner status
+rejection queues cancellation but does not enter this completion wrapper and
+therefore does not queue its re-arm. The no-completion request path queues
+cancellation, invokes the ordinary request method, and then queues scheduling.
+
+A separate status callback is guarded by request-owner identity. Its observed
+numeric branches are status `0` (disconnect bookkeeping followed by queued
+PING cancellation) and status `3` (active-flag update); their external labels
+are not established by this trace.
 
 The coordinator assigns a fallback ping interval of 180 seconds: any positive
 signed 32-bit configuration value is retained, while zero or negative values
@@ -65,11 +70,12 @@ body-read timeout behavior are likewise open.
 
 Observed: zero-field PING construction through the ordinary carriage request
 path, queued cancellation of a delayed PING for the same request owner when
-that path is entered (including its early failure path), status
-forwarding that queues interval-based scheduling before its handler, disconnect
-status queuing cancellation after disconnect bookkeeping, interval read plus
-delayed PING scheduling, cancellation of a prior delayed PING for the same
-target and selector, completion wrapper (nil response calls the supplied
+that path is entered (including its early failure path), request completion
+that queues interval-based scheduling before forwarding packet/error arguments,
+no-completion request ordering of cancel -> request -> schedule, the separate
+numeric status `0` and `3` branches, interval read plus delayed PING scheduling,
+cancellation of a prior delayed PING for the same target and selector,
+completion wrapper (nil response calls the supplied
 completion with nil; non-nil response is wrapped before that call), delayed
 receive-header timeout gated by positive timeout and request tag,
 timeout-to-disconnect, tag-driven header/body read callbacks, configuration

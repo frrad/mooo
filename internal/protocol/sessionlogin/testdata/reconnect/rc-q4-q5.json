@@ -90,25 +90,52 @@
       ]
     },
     {
-      "name": "status forwarding queues ping scheduling before handler",
+      "name": "request completion queues ping scheduling before callback",
       "kind": "lifecycle-order",
       "expect": [
         "queue_ping_schedule_on_main",
-        "forward_status_event"
+        "forward_packet_or_error_to_completion"
       ],
       "remaining_gaps": [
-        "status admission predicate",
         "clock source",
-        "reply rearm"
+        "queue execution race"
       ]
     },
     {
-      "name": "disconnect status queues ping cancellation after bookkeeping",
+      "name": "request status rejection queues cancellation without completion rearm",
       "kind": "lifecycle-order",
+      "expect": [
+        "queue_ping_cancel_on_main",
+        "early_request_error",
+        "no_completion_callback_rearm"
+      ]
+    },
+    {
+      "name": "no-completion request orders cancel request schedule",
+      "kind": "lifecycle-order",
+      "expect": [
+        "queue_ping_cancel_on_main",
+        "ordinary_request",
+        "queue_ping_schedule_on_main"
+      ]
+    },
+    {
+      "name": "numeric disconnect status queues ping cancellation after bookkeeping",
+      "kind": "lifecycle-order",
+      "status": 0,
       "expect": [
         "disconnect_bookkeeping",
         "queue_ping_cancel_on_main"
       ]
+    },
+    {
+      "name": "numeric active status updates active flag",
+      "kind": "lifecycle-order",
+      "status": 3,
+      "expect": [
+        "set_active_flag"
+      ],
+      "status_label": "untraced"
     },
     {
       "name": "ordinary carriage request queues ping cancellation",
