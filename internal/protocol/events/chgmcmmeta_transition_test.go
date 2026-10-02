@@ -77,6 +77,22 @@ func TestReduceChatMCMetaCategoryAndImageCanClearValues(t *testing.T) {
 	}
 }
 
+func TestReduceChatMCMetaEqualRevisionStillAppliesKnownRoute(t *testing.T) {
+	state := ChatMCMetaState{RoomExists: true, GlobalRevision: 9, Name: "old"}
+	result := ReduceChatMCMeta(state, ChatMCMetaChanged{Revision: 9, Type: "name", Content: "new"})
+	if !result.Applied || result.State.GlobalRevision != 9 || result.State.Name != "new" {
+		t.Fatalf("equal-revision transition = %#v, want routed field with revision 9", result)
+	}
+}
+
+func TestReduceChatMCMetaEmptyImageFieldsReplaceExistingValues(t *testing.T) {
+	state := ChatMCMetaState{RoomExists: true, ImageURL: "old", FullImageURL: "old-full"}
+	result := ReduceChatMCMeta(state, ChatMCMetaChanged{Type: "imagePath"})
+	if !result.Applied || result.State.ImageURL != "" || result.State.FullImageURL != "" {
+		t.Fatalf("empty-image transition = %#v, want both URLs cleared", result)
+	}
+}
+
 func TestReduceChatMCMetaBooleanLabelsUseExactTrue(t *testing.T) {
 	for _, test := range []struct {
 		typ     string
@@ -134,7 +150,7 @@ func TestReduceChatMCMetaUnknownTypeAdvancesOnlyNewerGlobalRevision(t *testing.T
 func TestReduceChatMCMetaPreexistingHiddenRoomStillUnpinsOnNonNewerUnknown(t *testing.T) {
 	state := ChatMCMetaState{RoomExists: true, GlobalRevision: 4, Hidden: true, Pin: 8}
 	result := ReduceChatMCMeta(state, ChatMCMetaChanged{Revision: 3, Type: "unproven"})
-	if result.Applied || result.State.GlobalRevision != 4 || result.State.Pin != -1 ||
+	if !result.Applied || result.State.GlobalRevision != 4 || result.State.Pin != -1 ||
 		!result.Unpin || !result.UnpinInAllFolders {
 		t.Fatalf("transition = %#v, want unchanged revision plus hidden cleanup", result)
 	}
