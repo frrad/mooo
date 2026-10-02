@@ -99,6 +99,11 @@ func (o *InSegmentTimeoutOwner) fire(entry *inSegmentTimer) {
 	}
 	delete(o.timers, entry)
 	o.closed = true
+	clear(o.queued)
+	for other := range o.timers {
+		other.timer.Stop()
+		delete(o.timers, other)
+	}
 	disconnect := o.disconn
 	o.mu.Unlock()
 	disconnect()
