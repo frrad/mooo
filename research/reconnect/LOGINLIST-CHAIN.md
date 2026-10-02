@@ -30,9 +30,9 @@ non-nil packet it creates a response wrapper. A login-success response enriches 
 The wrapper receives carriage host and port from the manager carriage address;
 the core settings object receives last-carriage host and port from that same
 address; and the wrapper receives voice-service IPv4 host, IPv6 host, and port
-from manager-owned voice-service values. Token and blind-token reads come from
-the wrapper and their progress updates are additionally gated by response
-success and end-of-list predicates.
+from manager-owned voice-service values. Independently of the login-success
+branch, token and blind-token reads come from the wrapper and their progress
+updates are gated by response success and end-of-list predicates.
 The supplied completion receives the resulting wrapper after those effects.
 
 Observed: login-status admission into LOGINLIST; request construction and
