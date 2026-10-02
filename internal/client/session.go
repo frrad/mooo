@@ -73,6 +73,7 @@ type Session struct {
 	pending            map[uint32]chan requestResult
 	lifecycleScheduler lifecycleScheduler
 	lifecycleStopped   bool
+	headerObserver     func(loco.Header)
 	initialChatData    []bson.Raw
 	userID             int64
 	appVersion         string
@@ -500,7 +501,7 @@ func (s *Session) removePending(id uint32, expected chan requestResult) {
 
 func (s *Session) readLoop() {
 	for {
-		packet, err := s.wire.read()
+		packet, err := s.wire.readWithHeaderObserver(s.headerObserver)
 		if err != nil {
 			s.finishRead(err)
 			return
