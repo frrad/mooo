@@ -82,3 +82,10 @@ behavior, or reachability interaction. The retry clock is therefore unresolved
 separately from the excluded Foundation HTTP `/ping` timer. They also do not establish whether token renewal and
 `-328` retry share a budget. Until those values are transferred as a reviewed
 contract, implementing a concrete timer or delay would be speculative.
+
+## Source boundary
+
+The recovered reconnect facts and their provenance are recorded in the
+[public protocol dossier](PROTOCOL.md) and [evidence ledger](EVIDENCE.md).
+This proposal uses only the documented scheduling primitive; timer ownership,
+clock choice, and lifecycle gates remain open until those gaps are resolved.
