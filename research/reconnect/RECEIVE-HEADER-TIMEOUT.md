@@ -5,8 +5,8 @@ receive-header delayed selector and its failure handoff. It deliberately keeps
 socket read timeouts, OS queue execution timing, and pending-map mutation
 outside the observed contract.
 
-The timeout helper receives a timeout value, an owner, an enable flag, and a
-signed request tag. It first reads the owner's `receiveHeaderTimeout` value and
+The timeout helper is an owner method receiving an enable flag and a signed
+request tag. It first reads the owner's `receiveHeaderTimeout` value and
 requires both a positive timeout and a nonnegative signed 64-bit tag. A failed
 gate performs no main-queue enqueue. A passing gate enqueues work on the main
 queue with a weak owner. The queued work compares the enable byte to exactly
@@ -32,11 +32,16 @@ fanout and do not alter this contract. No socket-identity guard was observed
 in the reviewed handler.
 
 The packet producer arms the receive-header timeout only on its status-3
-send path after deriving the packet tag and sending the packet. If the owner
-status is not 3, a supplied completion receives the producer's error and the
-header timeout is not armed. A separate completion-side helper disarms only
-when the pending packet found by unsigned packet ID has a matching unique ID;
-it then derives the request tag and disables that exact timeout. No generic
+send path. When a completion exists, it first registers that completion in the
+agent's unique-id map and stores the unique-id string in the packet-id map; it
+then sends the packet and arms the timeout. A successful status-3 path does not
+invoke the supplied completion immediately. If the owner status is not 3, a
+supplied completion receives the producer's error and the header timeout is not
+armed; with no completion there is no callback effect. A separate completion-side helper looks up the unsigned packet ID in the
+agent's packet map. That map stores the request unique-id string as its value.
+The helper disarms only when that stored string equals the incoming packet
+unique-id; missing or nonmatching values produce no timeout action. Equality
+then derives the request tag and disables that exact timeout. No generic
 read-loop or idle transition was found to arm or disarm this helper. Header
 timeout behavior is therefore distinct from socket read/in-segment timeout
 handling.
