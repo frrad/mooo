@@ -21,11 +21,13 @@ through a weak capture; owner lifetime and main-queue races remain gaps.
 disconnects its owner. The callback's downstream error/fanout behavior is
 covered by the separate socket-disconnect contract.
 
-The read state machine uses this timeout as a socket read timeout: tag 1 disables
-it before `didReadBody:`, while the read-length path obtains the configured value
-and passes it to `readDataWithTimeout:tag:`. The exact external socket timeout
-queue behavior and partial-read retry/error policy remain outside this bounded
-contract.
+The LocoAgent read callbacks use this timeout as a socket read timeout: its
+partial-read callback at `0x101774a3c` and complete-read callback at
+`0x101774b3c` disable the in-segment timeout for nonzero tags before the next
+read/body transition. The separate TrailerAgent-family callbacks around
+`0x1015f9654`/`0x1015f9688` are deliberately outside this contract. The exact
+external socket timeout queue behavior and partial-read retry/error policy
+remain outside this bounded contract.
 
 ## Static provenance
 
@@ -35,10 +37,10 @@ contract.
   `disconnect` on the owner.
 - The queue block is `0x101775088`; its enable/disable branch and exact selector
   tuple are visible there.
-- LocoAgent read callbacks: partial-read disable at `0x1015f9654`, tag dispatch
-  at `0x1015f9688`, corresponding callbacks at `0x101774a3c` and
-  `0x101774b3c`; read-length timeout reads/calls are in the `0x1015f9fac` to
-  `0x1015fa008` range.
+- LocoAgent class metadata maps the in-segment toggle and fire methods to the
+  LocoAgent method table; the same table maps callbacks at `0x101774a3c` and
+  `0x101774b3c` to LocoAgent. The separate TrailerAgent-family methods around
+  `0x1015f9654`/`0x1015f9688` were excluded after class verification.
 
 The fixture is a strict characterization of the reviewed admission, reread,
 queue, cancellation, and terminal-disconnect behavior. It does not claim a
