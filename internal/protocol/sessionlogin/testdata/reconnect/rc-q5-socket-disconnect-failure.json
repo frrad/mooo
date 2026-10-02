@@ -21,7 +21,7 @@
         "enumerate_pending_completion_map",
         "fanout_nil_plus_locoagent_error"
       ],
-      "remaining_gaps": ["indirect_handler_map_mutation", "socket_queue_race"]
+      "remaining_gaps": ["non_manager_handler_map_mutation", "socket_queue_race"]
     },
     {
       "name": "socket-disconnect-without-handler",

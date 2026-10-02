@@ -12,9 +12,13 @@ pending-completion map, and invokes each completion with a nil result and the
 reviewed `NSError` shape `domain="LocoAgent"`, code `-1`, and nil user info.
 An empty pending map produces no completion calls.
 
-The callback does not show a direct clear of either pending map. The installed
-status handler can have indirect effects before enumeration, but its mutation of
-pending state is not established here. Therefore a clean implementation must
+The callback does not show a direct clear of either pending map. The
+manager-installed status handler in the traced carriage setup is the callback
+block at `0x10151f174`. Its reviewed status-zero branch cancels the manager ping
+selector and its status-three branch updates the manager's one-shot latch and
+callback; that body does not access the agent's `+0x28` completion map or `+0x30`
+packet-ID map. Other status-handler installation paths and any handler supplied
+by another caller remain untraced. Therefore a clean implementation must
 preserve the observed fanout and ordering without assuming that this socket
 path clears its maps.
 
