@@ -1,0 +1,54 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "questions": ["RC-Q5"],
+  "cases": [
+    {
+      "name": "positive timeout and nonnegative signed tag admit main enqueue",
+      "kind": "timeout-admission",
+      "evidence": ["RC-BIN-010"],
+      "timeout_seconds": 20,
+      "tag": 0,
+      "expect": ["read_timeout", "check_tag_nonnegative", "queue_main"]
+    },
+    {
+      "name": "negative tag or nonpositive timeout does not enqueue",
+      "kind": "timeout-admission",
+      "evidence": ["RC-BIN-010"],
+      "timeout_seconds": 0,
+      "tag": -1,
+      "expect": ["no_enqueue"]
+    },
+    {
+      "name": "enable rereads timeout and schedules exact owner selector tag tuple",
+      "kind": "timeout-enable",
+      "evidence": ["RC-BIN-010"],
+      "expect": ["reread_timeout", "perform_selector_after_delay", "owner_target", "fire_selector", "wrapped_tag"]
+    },
+    {
+      "name": "disable cancels exact owner selector tag tuple",
+      "kind": "timeout-disable",
+      "evidence": ["RC-BIN-010"],
+      "expect": ["cancel_previous_perform", "owner_target", "fire_selector", "wrapped_tag"]
+    },
+    {
+      "name": "timeout disconnect fanout uses reviewed error",
+      "kind": "disconnect-fanout",
+      "evidence": ["RC-BIN-011"],
+      "expect": ["set_status_zero", "cancel_owner_delayed_work", "enumerate_pending", "completion_nil", "error_domain_locoagent", "error_code_minus_one", "error_userinfo_nil"],
+      "remaining_gaps": ["pending_map_clear_or_replace", "queue_race"]
+    },
+    {
+      "name": "matching packet completion disarms header timeout",
+      "kind": "completion-disarm",
+      "evidence": ["RC-BIN-012"],
+      "expect": ["lookup_unsigned_packet_id", "compare_unique_id", "derive_request_tag", "disable_timeout"],
+      "remaining_gaps": ["nonmatching_completion_policy"]
+    },
+    {
+      "name": "status non3 producer failure does not arm timeout",
+      "kind": "packet-production",
+      "evidence": ["RC-BIN-013"],
+      "expect": ["forward_error_if_completion", "no_timeout_arm"]
+    }
+  ]
+}
