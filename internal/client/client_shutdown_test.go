@@ -306,8 +306,20 @@ func TestClientShutdownRetainsOwnershipForAdmittedCommit(t *testing.T) {
 	client := &Client{lease: lease, checkpoint: checkpoint, pendingCommits: map[int64][]int64{42: {100}}}
 	client.commitMu.Lock()
 	commitResult := make(chan error, 1)
+	commitFinished := make(chan struct{})
+	var releaseCommit sync.Once
+	release := func() { releaseCommit.Do(func() { client.commitMu.Unlock() }) }
+	t.Cleanup(func() {
+		release()
+		select {
+		case <-commitFinished:
+		case <-time.After(time.Second):
+			t.Errorf("CommitEvent did not finish during cleanup")
+		}
+	})
 	go func() {
 		commitResult <- client.CommitEvent(events.TextMessage{ChatID: 42, LogID: 100})
+		close(commitFinished)
 	}()
 	deadline := time.After(time.Second)
 	for {
@@ -320,7 +332,7 @@ func TestClientShutdownRetainsOwnershipForAdmittedCommit(t *testing.T) {
 		select {
 		case <-time.After(time.Millisecond):
 		case <-deadline:
-			client.commitMu.Unlock()
+			release()
 			t.Fatal("CommitEvent did not enter persistence gate")
 		}
 	}
@@ -333,7 +345,7 @@ func TestClientShutdownRetainsOwnershipForAdmittedCommit(t *testing.T) {
 	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
 		t.Fatalf("lease during admitted commit error=%v, want %v", err, ErrProfileInUse)
 	}
-	client.commitMu.Unlock()
+	release()
 	if err := <-commitResult; err != nil {
 		t.Fatalf("CommitEvent: %v", err)
 	}
