@@ -26,6 +26,18 @@ func (c *shutdownErrorConn) Close() error {
 	return c.err
 }
 
+func cleanupShutdownSession(t *testing.T, session *Session, release func()) {
+	t.Helper()
+	t.Cleanup(func() {
+		release()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := session.Shutdown(ctx); err != nil {
+			t.Errorf("session cleanup: %v", err)
+		}
+	})
+}
+
 func TestClientShutdownRetainsOwnershipUntilSessionWorkerJoins(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o700); err != nil {
@@ -52,6 +64,7 @@ func TestClientShutdownRetainsOwnershipUntilSessionWorkerJoins(t *testing.T) {
 
 	session := newSession(nil)
 	session.wire = &wireConn{c: conn}
+	cleanupShutdownSession(t, session, conn.Release)
 	clock := &clientOutClock{}
 	queue := &clientOutQueue{}
 	owner, err := sessionlogin.NewOutSegmentTimeoutOwner(clock, queue, clientOutConfig{timeout: time.Second}, "agent", sessionlogin.OutSegmentTimeoutSelector, func() {})
@@ -109,7 +122,7 @@ func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = lease.Close() }()
+	t.Cleanup(func() { _ = lease.Close() })
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var releaseOnce sync.Once
@@ -117,6 +130,7 @@ func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
 	lateConn := &stuckWriteConn{release: make(chan struct{}), entered: make(chan struct{})}
 	lateSession := newSession(nil)
 	lateSession.wire = &wireConn{c: lateConn}
+	cleanupShutdownSession(t, lateSession, lateConn.Release)
 	clock := &clientOutClock{}
 	queue := &clientOutQueue{}
 	owner, err := sessionlogin.NewOutSegmentTimeoutOwner(clock, queue, clientOutConfig{timeout: time.Second}, "agent", sessionlogin.OutSegmentTimeoutSelector, func() {})
@@ -137,7 +151,25 @@ func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
 		return lateSession, nil
 	}
 	connectDone := make(chan error, 1)
-	go func() { connectDone <- client.Connect(context.Background()) }()
+	connectFinished := make(chan struct{})
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(release) })
+		lateConn.Release()
+		select {
+		case <-connectFinished:
+		case <-time.After(time.Second):
+			t.Error("connect did not finish during cleanup")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := client.Shutdown(ctx); err != nil {
+			t.Errorf("client cleanup: %v", err)
+		}
+	})
+	go func() {
+		defer close(connectFinished)
+		connectDone <- client.Connect(context.Background())
+	}()
 	select {
 	case <-started:
 	case <-time.After(time.Second):
@@ -196,6 +228,7 @@ func TestClientShutdownContextDoesNotWaitForAnotherShutdown(t *testing.T) {
 	conn := &stuckWriteConn{release: make(chan struct{}), entered: make(chan struct{})}
 	session := newSession(nil)
 	session.wire = &wireConn{c: conn}
+	cleanupShutdownSession(t, session, conn.Release)
 	clock := &clientOutClock{}
 	queue := &clientOutQueue{}
 	owner, err := sessionlogin.NewOutSegmentTimeoutOwner(clock, queue, clientOutConfig{timeout: time.Second}, "agent", sessionlogin.OutSegmentTimeoutSelector, func() {})
@@ -277,7 +310,24 @@ func TestClientCloseRetainsOwnershipThroughBlockedConnect(t *testing.T) {
 		return &Session{}, nil
 	}}
 	connectDone := make(chan error, 1)
-	go func() { connectDone <- client.Connect(context.Background()) }()
+	connectFinished := make(chan struct{})
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(release) })
+		select {
+		case <-connectFinished:
+		case <-time.After(time.Second):
+			t.Error("connect did not finish during cleanup")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := client.Shutdown(ctx); err != nil {
+			t.Errorf("client cleanup: %v", err)
+		}
+	})
+	go func() {
+		defer close(connectFinished)
+		connectDone <- client.Connect(context.Background())
+	}()
 	select {
 	case <-started:
 	case <-time.After(time.Second):
@@ -325,39 +375,56 @@ func TestClientShutdownPreservesSessionInterruptError(t *testing.T) {
 }
 
 func TestClientShutdownJoinsNormalAndCleanupSessions(t *testing.T) {
-	makeBlocked := func(id int64) (*Session, *stuckWriteConn) {
-		conn := &stuckWriteConn{release: make(chan struct{}), entered: make(chan struct{})}
-		session := newSession(nil)
-		session.wire = &wireConn{c: conn}
-		clock, queue := &clientOutClock{}, &clientOutQueue{}
-		owner, err := sessionlogin.NewOutSegmentTimeoutOwner(clock, queue, clientOutConfig{timeout: time.Second}, "agent", sessionlogin.OutSegmentTimeoutSelector, func() {})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := session.installOutSegmentSubmitter(session.wire, owner, func(sessionlogin.OutSegmentWriteResult) {}); err != nil {
-			t.Fatal(err)
-		}
-		if err := session.writeRequest(context.Background(), session.wire, uint32(id), "PING", nil); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case <-conn.entered:
-		case <-time.After(time.Second):
-			t.Fatal("blocked worker did not start")
-		}
-		return session, conn
+	leasePath := filepath.Join(t.TempDir(), "profile.lock")
+	lease, err := acquireProfileLease(leasePath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	primary, primaryConn := makeBlocked(41)
-	cleanup, cleanupConn := makeBlocked(42)
-	t.Cleanup(func() { primaryConn.Release(); cleanupConn.Release() })
-	client := &Client{session: primary, cleanupSession: cleanup}
+	t.Cleanup(func() { _ = lease.Close() })
+	cleanupConn := &stuckWriteConn{release: make(chan struct{}), entered: make(chan struct{})}
+	cleanup := newSession(nil)
+	cleanup.wire = &wireConn{c: cleanupConn}
+	cleanupShutdownSession(t, cleanup, cleanupConn.Release)
+	clock, queue := &clientOutClock{}, &clientOutQueue{}
+	owner, err := sessionlogin.NewOutSegmentTimeoutOwner(clock, queue, clientOutConfig{timeout: time.Second}, "agent", sessionlogin.OutSegmentTimeoutSelector, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cleanup.installOutSegmentSubmitter(cleanup.wire, owner, func(sessionlogin.OutSegmentWriteResult) {}); err != nil {
+		t.Fatal(err)
+	}
+	// The primary is already joinable. Only the retained cleanup worker can
+	// force a deadline, so this catches accidentally joining just the primary.
+	client := &Client{session: newSession(nil), cleanupSession: cleanup, lease: lease}
+	t.Cleanup(func() {
+		cleanupConn.Release()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := client.Shutdown(ctx); err != nil {
+			t.Errorf("client cleanup: %v", err)
+		}
+	})
+	if err := cleanup.writeRequest(context.Background(), cleanup.wire, 42, "PING", nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-cleanupConn.entered:
+	case <-time.After(time.Second):
+		t.Fatal("retained worker did not start")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	err := client.Shutdown(ctx)
+	err = client.Shutdown(ctx)
 	cancel()
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Shutdown error=%v, want deadline", err)
 	}
-	primaryConn.Release()
+	otherLease, err := acquireProfileLease(leasePath)
+	if otherLease != nil {
+		_ = otherLease.Close()
+	}
+	if !errors.Is(err, ErrProfileInUse) {
+		t.Fatalf("lease before retained worker joins=%v, want %v", err, ErrProfileInUse)
+	}
 	cleanupConn.Release()
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
 	if err := client.Shutdown(ctx); err != nil {
@@ -365,6 +432,11 @@ func TestClientShutdownJoinsNormalAndCleanupSessions(t *testing.T) {
 		t.Fatalf("joined Shutdown: %v", err)
 	}
 	cancel()
+	otherLease, err = acquireProfileLease(leasePath)
+	if err != nil {
+		t.Fatalf("lease after both sessions joined: %v", err)
+	}
+	_ = otherLease.Close()
 }
 
 func TestClientShutdownRetainsOwnershipForAdmittedCommit(t *testing.T) {
@@ -377,7 +449,7 @@ func TestClientShutdownRetainsOwnershipForAdmittedCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = lease.Close() }()
+	t.Cleanup(func() { _ = lease.Close() })
 	checkpoint, err := continuity.Open(filepath.Join(dir, "continuity"))
 	if err != nil {
 		t.Fatal(err)
