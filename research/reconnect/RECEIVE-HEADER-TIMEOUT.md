@@ -35,9 +35,11 @@ socket-identity guard was observed in the reviewed handler.
 
 The packet producer arms the receive-header timeout only on its status-3
 send path. Its block carries a weak agent reference and a separate strong
-scheduling-owner capture; the reviewed instructions do not prove those captures
-always refer to the same object, so an implementation must preserve the
-observed ownership boundary rather than infer identity. When a completion exists, it first registers that completion in the
+scheduling-owner capture. The creator initializes both from the same request
+owner; block copying retains the request and scheduling-owner fields and copies
+the weak field, while disposal releases/destroys those fields. The invoke body
+performs no identity comparison, so preserve the distinct capture lifetimes
+while retaining the same-owner creation fact. When a completion exists, it first registers that completion in the
 agent's unique-id map and stores the unique-id string in the packet-id map; it
 then sends the packet and arms the timeout. A successful status-3 path does not
 invoke the supplied completion immediately. If the owner status is not 3, a
