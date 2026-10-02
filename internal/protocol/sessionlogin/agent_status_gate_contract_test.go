@@ -29,10 +29,9 @@ type agentStatusGateCase struct {
 }
 
 var knownAgentStatusGateEffect = map[string]bool{
-	"set_agent_status_2":                       true,
-	"start_tls":                                true,
-	"create_v2sl_crypto":                       true,
-	"write_v2sl_handshake":                     true,
+	"set_agent_status_2": true,
+	"start_tls":          true,
+	"create_v2sl_crypto": true,
 	"write_v2sl_handshake_timeout_minus1_tag0": true,
 	"set_agent_status_3":                       true,
 	"read_header":                              true,
@@ -76,7 +75,7 @@ func loadAgentStatusGateContract(path string) (agentStatusGateContract, error) {
 			if tc.SecureLayerType == nil {
 				return contract, fmt.Errorf("connect case missing secure layer type %q", tc.Name)
 			}
-			if tc.ExecutionStatus != nil || tc.AdmissionStatus != 3 {
+			if tc.ExecutionStatus != nil {
 				return contract, fmt.Errorf("invalid connect status inputs %q", tc.Name)
 			}
 			want = []string{"set_agent_status_2"}
@@ -97,7 +96,7 @@ func loadAgentStatusGateContract(path string) (agentStatusGateContract, error) {
 				if tc.HandshakeTimeout == nil || *tc.HandshakeTimeout != -1 || tc.HandshakeTag == nil || *tc.HandshakeTag != 0 {
 					return contract, fmt.Errorf("invalid V2SL handshake inputs %q", tc.Name)
 				}
-				want = append(want, "create_v2sl_crypto", "write_v2sl_handshake", "write_v2sl_handshake_timeout_minus1_tag0")
+				want = append(want, "create_v2sl_crypto", "write_v2sl_handshake_timeout_minus1_tag0")
 			default:
 				// The callback has no setup branch for values other than 1 and 2.
 			}
@@ -106,11 +105,11 @@ func loadAgentStatusGateContract(path string) (agentStatusGateContract, error) {
 			if tc.SecureLayerType != nil {
 				return contract, fmt.Errorf("producer case has connect-only secure input %q", tc.Name)
 			}
-			want = []string{"status_gate_reads_execution_status"}
-			executionStatus := tc.AdmissionStatus
-			if tc.ExecutionStatus != nil {
-				executionStatus = *tc.ExecutionStatus
+			if tc.ExecutionStatus == nil {
+				return contract, fmt.Errorf("producer case missing execution status %q", tc.Name)
 			}
+			want = []string{"status_gate_reads_execution_status"}
+			executionStatus := *tc.ExecutionStatus
 			if executionStatus == 3 {
 				want = append(want, "status_gate_allows_packet_allocation", "status_gate_allows_send", "status_gate_allows_receive_timeout_arm")
 			} else {

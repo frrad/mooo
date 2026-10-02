@@ -45,7 +45,6 @@
       "expected_effects": [
         "set_agent_status_2",
         "create_v2sl_crypto",
-        "write_v2sl_handshake",
         "write_v2sl_handshake_timeout_minus1_tag0",
         "set_agent_status_3",
         "read_header"
@@ -73,7 +72,8 @@
         "runtime_queue_order",
         "external_status_labels"
       ],
-      "admission_status": 3
+      "admission_status": 3,
+      "execution_status": 3
     },
     {
       "name": "producer-exec-status-two",
@@ -90,7 +90,8 @@
         "producer_error_identity",
         "external_status_labels"
       ],
-      "admission_status": 2
+      "admission_status": 2,
+      "execution_status": 2
     },
     {
       "name": "producer-queued-three-now-zero",
@@ -125,7 +126,8 @@
         "producer_error_identity",
         "external_status_labels"
       ],
-      "admission_status": 0
+      "admission_status": 0,
+      "execution_status": 0
     },
     {
       "name": "connect-secure-layer-3-no-setup",
