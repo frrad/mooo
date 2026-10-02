@@ -1,0 +1,38 @@
+{
+  "status": "unexecuted",
+  "reason": "wire and lifecycle behavior requires separate source-backed integration harness",
+  "questions": [
+    "RC-Q4",
+    "RC-Q5"
+  ],
+  "evidence": [
+    "RC-BIN-001"
+  ],
+  "cases": [
+    {
+      "name": "keep-alive uses an empty PING body",
+      "kind": "wire-shape",
+      "expect_client": {
+        "method": "PING",
+        "body": {}
+      }
+    },
+    {
+      "name": "timeout disconnects carriage and fails pending callbacks once",
+      "kind": "failure-order",
+      "expect": [
+        "disconnect",
+        "fan_out_pending_error_once",
+        "clear_pending"
+      ]
+    },
+    {
+      "name": "PING completion forwards nil failure and wraps a nonnil reply",
+      "kind": "completion-forwarding",
+      "expect": [
+        "nil_reply -> completion(nil)",
+        "reply -> construct_response_wrapper -> completion(wrapper)"
+      ]
+    }
+  ]
+}

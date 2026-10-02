@@ -63,3 +63,12 @@ Untraced: timer lifecycle gates around the recovered scheduling callbacks,
 traffic reset policy, exact timeout error value, whether idle sessions arm the
 receive timeout, and whether configuration callers override the recovered
 defaults.
+
+## Synthetic vector status
+
+The executable pure-policy vectors are in
+`internal/protocol/sessionlogin/testdata/reconnect/rc-q4-q5.json`; the loader
+rejects unknown fields and fails on unsupported pure-policy kinds. Wire-shape,
+completion-forwarding, and disconnect/failure-order vectors remain separate and
+explicitly unexecuted in
+`internal/protocol/sessionlogin/testdata/reconnect/rc-q4-q5-unresolved.json`.

@@ -1,6 +1,7 @@
 package sessionlogin
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,7 +10,9 @@ import (
 )
 
 type reconnectVectors struct {
-	Cases []struct {
+	Questions []string `json:"questions"`
+	Evidence  []string `json:"evidence"`
+	Cases     []struct {
 		Name              string `json:"name"`
 		Kind              string `json:"kind"`
 		Tag               *int64 `json:"tag"`
@@ -20,11 +23,12 @@ type reconnectVectors struct {
 			ConfiguredTimeout int64 `json:"configured_timeout_seconds"`
 			Arm               bool  `json:"arm"`
 		} `json:"cases"`
-		PingIntervalMin      *int64 `json:"ping_interval_min_seconds"`
-		ConnectTimeout       *int64 `json:"connect_timeout_seconds"`
-		ReceiveHeaderTimeout *int64 `json:"receive_header_timeout_seconds"`
-		InSegmentTimeout     *int64 `json:"in_segment_timeout_seconds"`
-		OutSegmentTimeout    *int64 `json:"out_segment_timeout_seconds"`
+		PingIntervalMin      *int64   `json:"ping_interval_min_seconds"`
+		ConnectTimeout       *int64   `json:"connect_timeout_seconds"`
+		ReceiveHeaderTimeout *int64   `json:"receive_header_timeout_seconds"`
+		InSegmentTimeout     *int64   `json:"in_segment_timeout_seconds"`
+		OutSegmentTimeout    *int64   `json:"out_segment_timeout_seconds"`
+		RemainingGaps        []string `json:"remaining_gaps"`
 	} `json:"cases"`
 }
 
@@ -34,8 +38,13 @@ func TestReconnectPolicyVectors(t *testing.T) {
 		t.Fatal(err)
 	}
 	var vectors reconnectVectors
-	if err := json.Unmarshal(body, &vectors); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&vectors); err != nil {
 		t.Fatal(err)
+	}
+	if len(vectors.Cases) != 2 {
+		t.Fatalf("pure policy case count = %d, want 2", len(vectors.Cases))
 	}
 	for _, tc := range vectors.Cases {
 		t.Run(tc.Name, func(t *testing.T) {
@@ -54,6 +63,8 @@ func TestReconnectPolicyVectors(t *testing.T) {
 				if PingInterval(duration(*tc.PingIntervalMin)-time.Second) != duration(*tc.PingIntervalMin) || PingInterval(duration(*tc.PingIntervalMin)+time.Second) != duration(*tc.PingIntervalMin)+time.Second {
 					t.Fatal("ping floor mismatch")
 				}
+			default:
+				t.Fatalf("unsupported pure policy kind %q", tc.Kind)
 			}
 		})
 	}
