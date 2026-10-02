@@ -30,6 +30,7 @@ type receiveHeaderTimeoutCase struct {
 	Enable                  *bool    `json:"enable"`
 	EnableByte              *uint8   `json:"enable_byte"`
 	PacketID                *uint32  `json:"packet_id"`
+	ExpectedTag             *int64   `json:"expected_tag"`
 	StoredUniqueID          *string  `json:"stored_unique_id"`
 	IncomingUniqueID        *string  `json:"incoming_unique_id"`
 	ProducerStatus          *uint8   `json:"producer_status"`
@@ -116,6 +117,12 @@ func validateReceiveHeaderTimeoutContract(v receiveHeaderTimeoutContract) error 
 			if c.PacketID == nil || c.IncomingUniqueID == nil {
 				return fmt.Errorf("disarm inputs missing: %q", c.Name)
 			}
+			identity := false
+			for _, effect := range c.Expect {
+				if effect == "derive_request_tag_identity" { identity = true }
+			}
+			if identity && c.ExpectedTag == nil { return fmt.Errorf("identity expected tag missing: %q", c.Name) }
+			if identity && uint64(*c.ExpectedTag) != uint64(*c.PacketID) { return fmt.Errorf("identity tag=%d packet=%d: %q", *c.ExpectedTag, *c.PacketID, c.Name) }
 		case "packet-production":
 			if c.ProducerStatus == nil || c.CompletionPresent == nil {
 				return fmt.Errorf("producer inputs missing: %q", c.Name)

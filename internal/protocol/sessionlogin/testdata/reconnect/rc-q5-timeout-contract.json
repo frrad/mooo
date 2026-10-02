@@ -211,6 +211,7 @@
         "RC-BIN-012"
       ],
       "packet_id": 17,
+      "expected_tag": 17,
       "stored_unique_id": "stored-id",
       "incoming_unique_id": "stored-id",
       "expect": [
@@ -227,6 +228,7 @@
         "RC-BIN-012"
       ],
       "packet_id": 4294967295,
+      "expected_tag": 4294967295,
       "stored_unique_id": "max-id",
       "incoming_unique_id": "max-id",
       "expect": [
