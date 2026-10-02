@@ -21,13 +21,23 @@ through a weak capture; owner lifetime and main-queue races remain gaps.
 disconnects its owner. The callback's downstream error/fanout behavior is
 covered by the separate socket-disconnect contract.
 
-The LocoAgent read callbacks use this timeout as a socket read timeout: its
-partial-read callback at `0x101774a3c` and complete-read callback at
-`0x101774b3c` disable the in-segment timeout for nonzero tags before the next
-read/body transition. The separate TrailerAgent-family callbacks around
-`0x1015f9654`/`0x1015f9688` are deliberately outside this contract. The exact
-external socket timeout queue behavior and partial-read retry/error policy
-remain outside this bounded contract.
+This is a delayed in-segment watchdog, separate from the socket read timeout. The
+LocoAgent `readHeader` path requests socket data with timeout `-1.0`, length 4
+when V2SL crypto is present or 22 otherwise, and tag 0. A nonzero header
+length selects a body read using that length, socket timeout `-1.0`, and tag 1;
+the body-read path enables the in-segment watchdog after scheduling that read.
+Its partial-read
+callback at `0x101774a3c` leaves tag-zero reads alone; for a nonzero tag it
+queues `toggleInSegmentTimeout:NO` followed by `toggleInSegmentTimeout:YES`,
+resetting the watchdog for continued body progress. Its complete-read callback
+at `0x101774b3c` routes tag zero to header handling; for a nonzero tag it first
+queues the disable operation, invokes `didReadBody:`, and then starts the next
+`readHeader` operation. Body handling decrypts through the V2SL object when
+present and supplies the resulting data to the packet producer; without crypto
+it supplies the original data. The exact decrypted length interpretation,
+packet-producer return values, and socket partial-read retry/error policy remain
+outside this bounded contract. The separate TrailerAgent-family callbacks
+around `0x1015f9654`/`0x1015f9688` are deliberately excluded.
 
 ## Static provenance
 
@@ -42,6 +52,7 @@ remain outside this bounded contract.
   `0x101774b3c` to LocoAgent. The separate TrailerAgent-family methods around
   `0x1015f9654`/`0x1015f9688` were excluded after class verification.
 
-The fixture is a strict characterization of the reviewed admission, reread,
-queue, cancellation, and terminal-disconnect behavior. It does not claim a
-runtime timer implementation or socket error policy.
+The fixtures are strict characterizations of the reviewed admission, reread,
+queue, cancellation, terminal-disconnect, and LocoAgent read-routing behavior.
+They do not claim a runtime timer implementation, decrypted wire-field
+interpretation, or socket error policy.
