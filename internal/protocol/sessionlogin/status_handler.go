@@ -105,6 +105,9 @@ func ReduceStatusHandler(state StatusHandlerState, input StatusHandlerInput) (St
 		if state.AgentID == "" || input.CallbackAgent == "" || state.AgentID != input.CallbackAgent {
 			return state, append(effects, StatusHandlerEffect{Kind: StatusEffectNoEffects})
 		}
+		if state.ManagerID == "" {
+			return state, append(effects, StatusHandlerEffect{Kind: StatusEffectInvalidInput})
+		}
 		switch input.Status {
 		case 0:
 			if !input.CallbackPresent {
@@ -177,6 +180,9 @@ func ReduceStatusHandler(state StatusHandlerState, input StatusHandlerInput) (St
 
 	case StatusHandlerPendingResponse:
 		effects := []StatusHandlerEffect{{Kind: StatusEffectLookupCompletion}}
+		if input.CompletionID == "" || !input.ResultPresent {
+			return state, append(effects, StatusHandlerEffect{Kind: StatusEffectInvalidInput})
+		}
 		if input.CompletionID != "" {
 			if _, ok := state.Pending[input.CompletionID]; ok {
 				delete(state.Pending, input.CompletionID)

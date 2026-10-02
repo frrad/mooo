@@ -133,6 +133,27 @@ func TestReduceStatusHandlerRejectsNilManagerCallback(t *testing.T) {
 	}
 }
 
+func TestReduceStatusHandlerRejectsMissingManagerTarget(t *testing.T) {
+	state := StatusHandlerState{AgentID: "carriage", Pending: map[string]struct{}{}}
+	got, effects := ReduceStatusHandler(state, StatusHandlerInput{Kind: StatusHandlerManagerStatus, CallbackAgent: "carriage", CallbackPresent: true, Status: 0})
+	if !reflect.DeepEqual(got, state) || len(effects) != 2 || effects[1].Kind != StatusEffectInvalidInput {
+		t.Fatalf("missing manager target accepted: state=%+v effects=%+v", got, effects)
+	}
+}
+
+func TestReduceStatusHandlerRejectsInvalidPendingResponse(t *testing.T) {
+	state := StatusHandlerState{DefaultHandler: true, Pending: map[string]struct{}{"uid": {}}}
+	for _, input := range []StatusHandlerInput{
+		{Kind: StatusHandlerPendingResponse, CompletionID: "uid"},
+		{Kind: StatusHandlerPendingResponse, ResultPresent: true},
+	} {
+		got, effects := ReduceStatusHandler(state, input)
+		if !reflect.DeepEqual(got, state) || len(effects) != 2 || effects[1].Kind != StatusEffectInvalidInput {
+			t.Fatalf("invalid response accepted: input=%+v state=%+v effects=%+v", input, got, effects)
+		}
+	}
+}
+
 func formatStatusHandlerEffects(effects []StatusHandlerEffect) []string {
 	output := make([]string, 0, len(effects))
 	for _, effect := range effects {
