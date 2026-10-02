@@ -112,6 +112,16 @@ bounded effect-selection reducer gates. CHGMCMETA tracing and the chat-metadata 
 separate follow-up work, while persistence, failure behavior, and other
 unresolved effects stay outside this slice until their contracts are reviewed.
 
+The reconnect owner is progressing through the same boundary. The current
+feature branch has a deterministic, injected relative timer owner with
+generation invalidation and terminal shutdown, exercised through the real
+Session completion seam. Remaining runtime work is explicit: connect the owner
+at the production Session constructor, decide and test the post-LOGINLIST
+bootstrap admission point, cover push-receipt cancellation/scheduling, and
+preserve shutdown generation guards through terminal fan-out. Mapping the
+serialized ping configuration key and claiming official queue timing remain
+separate evidence gaps.
+
 ## Phase 4 — Matrix/Beeper bridge
 
 Execution follows [`research/bridge/PLAN.md`](research/bridge/PLAN.md).

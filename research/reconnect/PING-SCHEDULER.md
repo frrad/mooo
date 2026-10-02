@@ -60,6 +60,13 @@ not a claim about the official client's internal clock. Preserve queued
 cancellation and scheduling as ordered events; allow an explicit scheduler
 implementation to define execution races.
 
+The client now has a deterministic injected owner implementing that decision.
+It replaces one relative timer by generation, rejects stale deliveries after
+cancellation or rescheduling, and permanently shuts down on terminal session
+close. Its fake-clock tests exercise the real Session completion seam. No
+bootstrap admission, serialized configuration key, or official queue timing is
+claimed by this owner.
+
 Untraced: exact OS queue execution timing, whether an already-eligible delayed
 invocation can run before a queued cancellation, global first-admission ordering
 among concurrent traffic, and any alternate scheduler caller outside the

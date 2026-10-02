@@ -43,13 +43,19 @@ type StatusError struct {
 func (e StatusError) Error() string { return fmt.Sprintf("client: %s status %d", e.Command, e.Status) }
 
 // lifecycleScheduler is an injected owner seam for the reviewed carriage
-// request lifecycle. Implementations enqueue cancellation/scheduling; Session
+// request lifecycle. Implementations must only enqueue cancellation/scheduling;
+// they must not synchronously reenter Session or execute timer/network
+// callbacks. Session calls these methods while holding lifecycleMu. Session
 // never creates a timer or chooses an initial keep-alive admission policy.
 type lifecycleScheduler interface {
 	// Queue methods only enqueue lifecycle work; they must not synchronously
 	// reenter Session or execute timer/network callbacks while lifecycleMu is held.
 	queueCancel()
 	queueSchedule() bool
+}
+
+type lifecycleShutdown interface {
+	shutdown()
 }
 
 // Session owns one authenticated carriage. A background reader dispatches
@@ -110,6 +116,9 @@ func (s *Session) stopLifecycle() {
 	s.lifecycleStopped = true
 	if s.lifecycleScheduler != nil {
 		s.lifecycleScheduler.queueCancel()
+		if owner, ok := s.lifecycleScheduler.(lifecycleShutdown); ok {
+			owner.shutdown()
+		}
 	}
 }
 
