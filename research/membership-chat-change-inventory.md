@@ -93,11 +93,42 @@ The `CHGMETA` unsolicited model carries signed int64 `chatId` and a nested
 
 The handler delegates the notice to the manager. The manager schedules a
 database block for the chat room. Static control flow branches on the metadata
-subtype and performs revision/content comparisons before invoking downstream
-room or calendar consumers; one helper requests a typed metadata refresh using
-the chat ID. Exact persistence keys, optional fields, subtype meanings,
-chat-type guards, and failure reporting remain open, so the decoder preserves
-the raw metadata fields without implementing those effects.
+subtype and performs a proven revision comparison in one branch before
+invoking downstream room or calendar consumers; one helper requests a typed
+metadata refresh using the chat ID. Content remains opaque at this boundary.
+Exact persistence keys, optional fields, subtype meanings, chat-type guards,
+and failure reporting remain open, so the decoder preserves the raw metadata
+fields without implementing those effects.
+
+### CHGMETA persistence boundary
+
+The traced database callback first extracts the notice `chatId`, looks up the
+room, and returns without downstream work when that room is absent. For an
+existing room it wraps the nested `meta` object in a one-element collection and
+calls the room's metadata merge helper before the subtype-specific branches.
+The helper's stored keys, replacement-versus-merge details, and write-failure
+contract are not exposed by this trace and remain deliberately unspecified.
+
+The observed numeric subtype `14` then checks the room's open-link metadata
+feature and, when an existing open-link metadata record is present, compares
+the incoming `meta.revision` to the stored record's revision. The open-link
+update is skipped for `incoming <= stored` and is requested only for a strictly
+newer revision. The generic metadata merge still precedes this comparison;
+the stale/equal rule applies to the open-link refresh, not to the generic merge
+call. Numeric subtypes `3` and `15` reach calendar synchronization only when
+the room reports the team-chat guard. Numeric subtype `21` reaches a separate
+chat-bot/member consumer path when its nested bot information is available;
+its exact collection shape and persistence effects are not part of this
+bounded reducer contract.
+
+The synthetic reducer characterization in
+`internal/protocol/events/chgmeta_transition_test.go` encodes only the proven
+room-existence gate, the strict subtype-14 open-link revision comparison, and
+the subtype-3/15 team-chat guard. It preserves the numeric values as opaque
+integers and does not infer content equality, merge keys, subtype labels,
+transaction rollback, completion errors, or UI ordering. The static callback
+contains a database `performBlock:completion:` boundary, but no explicit
+error/completion interpretation was recovered.
 
 ## CHGMCMETA bounded metadata trace
 
