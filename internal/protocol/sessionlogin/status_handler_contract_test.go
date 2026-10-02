@@ -32,7 +32,7 @@ type statusHandlerCase struct {
 }
 
 var statusHandlerKinds = map[string]bool{"status-setter": true, "manager-status-zero": true, "manager-status-three": true, "manager-status-gate": true, "disconnect-fanout-order": true, "owner-capture": true, "pending-response": true}
-var statusHandlerEffects = map[string]bool{"write_status_byte": true, "invoke_handler_agent_old_new_error": true, "no_handler_callback": true, "compare_current_agent": true, "clear_agent_slot": true, "write_status_0x16": true, "write_status_0x1a": true, "callback_false": true, "no_false_callback": true, "queue_ping_cancel": true, "clear_status_handler": true, "write_status_0x17": true, "set_latch": true, "callback_true": true, "no_latch_write": true, "no_true_callback": true, "no_effects": true, "cancel_owner_delayed_work": true, "enumerate_pending": true, "fanout_each_nil_locoagent_error": true, "weak_send_capture": true, "strong_timeout_capture": true, "no_identity_equality_proof": true, "lookup_completion_by_unique_id": true, "remove_completion_before_callback": true, "invoke_completion_packet_nil_error": true, "route_unmatched_to_default_handler": true, "no_default_handler": true}
+var statusHandlerEffects = map[string]bool{"write_status_byte": true, "invoke_handler_agent_old_new_error": true, "no_handler_callback": true, "compare_current_agent": true, "clear_agent_slot": true, "write_status_0x16": true, "write_status_0x1a": true, "callback_false": true, "no_false_callback": true, "queue_ping_cancel": true, "clear_status_handler": true, "write_status_0x17": true, "set_latch": true, "callback_true": true, "no_latch_write": true, "no_true_callback": true, "no_effects": true, "cancel_owner_delayed_work": true, "enumerate_pending": true, "fanout_each_nil_locoagent_error": true, "weak_send_capture": true, "strong_timeout_capture": true, "same_receiver_capture": true, "lookup_completion_by_unique_id": true, "remove_completion_before_callback": true, "invoke_completion_packet_nil_error": true, "route_unmatched_to_default_handler": true, "no_default_handler": true}
 
 func loadStatusHandlerContract(path string) (statusHandlerContract, error) {
 	body, err := os.ReadFile(path)
@@ -110,7 +110,7 @@ func TestStatusHandlerContractSchema(t *testing.T) {
 	if got := v.Cases[7].Expect; len(got) != 5 || got[1] != "invoke_handler_agent_old_new_error" || got[3] != "enumerate_pending" {
 		t.Fatalf("order=%v", got)
 	}
-	if got := v.Cases[8].RemainingGaps; len(got) != 1 || got[0] != "creator_identity_dataflow" {
+	if got := v.Cases[8].Expect; len(got) != 3 || got[2] != "same_receiver_capture" {
 		t.Fatalf("gaps=%v", got)
 	}
 }
