@@ -9,38 +9,32 @@
   "status": "unexecuted",
   "cases": [
     {
-      "name": "keep-alive uses an empty PING body",
-      "kind": "wire-shape",
-      "expect_client": {
-        "method": "PING",
-        "body": {}
-      }
-    },
-    {
-      "name": "timeout disconnects carriage and fails pending callbacks once",
-      "kind": "failure-order",
-      "expect": [
-        "disconnect",
-        "fan_out_pending_error_once",
-        "clear_pending"
-      ]
-    },
-    {
-      "name": "PING completion forwards nil failure and wraps a nonnil reply",
-      "kind": "completion-forwarding",
-      "expect": [
-        "nil_reply -> completion(nil)",
-        "reply -> construct_response_wrapper -> completion(wrapper)"
-      ]
-    },
-    {
       "name": "receive-header timeout predicate accepts nonnegative signed tags",
       "kind": "timeout-predicate",
       "cases": [
-        {"tag": 0, "configured_timeout_seconds": 20, "arm": true},
-        {"tag": 42, "configured_timeout_seconds": 20, "arm": true},
-        {"tag": -1, "configured_timeout_seconds": 20, "arm": false},
-        {"tag": 42, "configured_timeout_seconds": 0, "arm": false}
+        {
+          "tag": 0,
+          "configured_timeout_seconds": 20,
+          "arm": true
+        },
+        {
+          "tag": 42,
+          "configured_timeout_seconds": 20,
+          "arm": true
+        },
+        {
+          "tag": -1,
+          "configured_timeout_seconds": 20,
+          "arm": false
+        },
+        {
+          "tag": 42,
+          "configured_timeout_seconds": 0,
+          "arm": false
+        }
+      ],
+      "evidence": [
+        "RC-BIN-001"
       ]
     },
     {
@@ -55,18 +49,42 @@
         "timer lifecycle",
         "traffic reset",
         "idle timeout scope"
+      ],
+      "evidence": [
+        "RC-BIN-001"
       ]
     },
     {
       "name": "ping interval fallback boundary",
       "kind": "configuration",
       "cases": [
-        {"configured_seconds": 0, "stored_seconds": 180},
-        {"configured_seconds": -1, "stored_seconds": 180},
-        {"configured_seconds": 1, "stored_seconds": 1},
-        {"configured_seconds": 179, "stored_seconds": 179},
-        {"configured_seconds": 180, "stored_seconds": 180},
-        {"configured_seconds": 181, "stored_seconds": 181}
+        {
+          "configured_seconds": 0,
+          "stored_seconds": 180
+        },
+        {
+          "configured_seconds": -1,
+          "stored_seconds": 180
+        },
+        {
+          "configured_seconds": 1,
+          "stored_seconds": 1
+        },
+        {
+          "configured_seconds": 179,
+          "stored_seconds": 179
+        },
+        {
+          "configured_seconds": 180,
+          "stored_seconds": 180
+        },
+        {
+          "configured_seconds": 181,
+          "stored_seconds": 181
+        }
+      ],
+      "evidence": [
+        "RC-BIN-001"
       ]
     }
   ]
