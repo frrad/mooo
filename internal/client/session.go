@@ -704,7 +704,7 @@ func (w *wireConn) request(id uint32, method string, body []byte) (loco.Packet, 
 		if err != nil {
 			return loco.Packet{}, unsolicited, err
 		}
-		if packet.Header.PacketID == id {
+		if packet.Header.PacketID == id && packet.Header.Method == method {
 			return packet, unsolicited, nil
 		}
 		unsolicited = append(unsolicited, packet)
