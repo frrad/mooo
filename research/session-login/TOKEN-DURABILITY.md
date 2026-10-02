@@ -12,16 +12,17 @@ carry both token columns by name.
 
 The generic model initializer receives field values, a nest, and a database
 flag. It creates the field metadata and changed-fields map. For a
-non-database object it first enumerates metadata defaults, then decodes supplied
-field values through the model's field decoder. It next marks the object dirty
-and registers it with the nest's changed-object registry. Finally, for both
-database-loaded and new objects, it enumerates field metadata and registers the
-model as an observer for each property key. The initializer's schema loader
+non-database object it first enumerates metadata defaults. Both new and
+database-loaded objects then decode supplied field values through the model's
+field decoder. A new object next becomes dirty and registers with the nest's
+changed-object registry. Finally, both paths enumerate field metadata and
+register the model as an observer for each property key. The initializer's schema loader
 validates field names against Objective-C properties before building the
 per-class field map.
 
 The observer callback reads the old and new values from the change dictionary.
-When they differ, it records the changed field and sets the model dirty. The
+When they differ, it records the original old value keyed by the changed key
+path, sets the model dirty, and then registers the model with the nest. The
 model's `lastTokenId` setter is a direct signed 64-bit store; the dirty effect
 comes from the surrounding observer path. No direct setter-to-nest call was
 observed. The binary contains no class implementation of

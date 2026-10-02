@@ -10,12 +10,12 @@
       "execution": "observed"
     },
     {
-      "name": "observer event with changed blind token records delta",
+      "name": "observer event with changed blind token records old value",
       "initialization": "non_database",
       "field": "lastBlindToken",
       "old": 7,
       "incoming": 8,
-      "expect": ["observer_event_input", "changed_field_recorded", "dirty_true"],
+      "expect": ["observer_event_input", "old_value_recorded", "dirty_true", "nest_registration"],
       "execution": "observed"
     },
     {
@@ -28,12 +28,21 @@
       "execution": "observed"
     },
     {
-      "name": "database-loaded initializer registration boundary",
+      "name": "database-loaded observer event re-registers changed object",
       "initialization": "database",
       "field": "lastTokenId",
       "old": 41,
       "incoming": 42,
-      "expect": ["decode_and_observe_path", "nest_registration_unresolved"],
+      "expect": ["observer_event_input", "old_value_recorded", "dirty_true", "nest_registration"],
+      "execution": "observed"
+    },
+    {
+      "name": "automatic notification delivery policy remains unresolved",
+      "initialization": "database",
+      "field": "lastTokenId",
+      "old": 41,
+      "incoming": 42,
+      "expect": ["setter_notification_delivery_unresolved"],
       "execution": "unresolved"
     },
     {

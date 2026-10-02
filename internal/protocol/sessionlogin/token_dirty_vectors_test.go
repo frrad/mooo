@@ -43,7 +43,7 @@ func TestTokenDirtyVectorsSchema(t *testing.T) {
 	if got.Status != "observed model dirty path; durable consumer unresolved" {
 		t.Fatalf("status = %q", got.Status)
 	}
-	if len(got.Vectors) != 6 {
+	if len(got.Vectors) != 7 {
 		t.Fatalf("vector count = %d", len(got.Vectors))
 	}
 	seen := make(map[string]bool, len(got.Vectors))
@@ -64,9 +64,10 @@ func TestTokenDirtyVectorsSchema(t *testing.T) {
 	}
 	for _, name := range []string{
 		"new model initialization registers changed object",
-		"observer event with changed blind token records delta",
+		"observer event with changed blind token records old value",
 		"observer event with equal token has no changed field delta",
-		"database-loaded initializer registration boundary",
+		"database-loaded observer event re-registers changed object",
+		"automatic notification delivery policy remains unresolved",
 		"dirty transaction save and commit result",
 		"exception rollback and rethrow",
 	} {
