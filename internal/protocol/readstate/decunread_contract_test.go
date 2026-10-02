@@ -26,6 +26,7 @@ type decUnreadStateJSON struct {
 	MentionReplyPresent bool            `json:"mentionReplyPresent"`
 	MemberWatermarks    map[int64]int64 `json:"memberWatermarks"`
 	ActiveMemberIDs     []int64         `json:"activeMemberIds"`
+	ActiveMemberCount   *int            `json:"activeMemberCount"`
 	BotIDs              map[int64]bool  `json:"botIds"`
 	RoomType            int32           `json:"roomType"`
 	Frozen              bool            `json:"frozen"`
@@ -52,12 +53,15 @@ type decUnreadWantJSON struct {
 }
 
 type decUnreadEffectJSON struct {
-	Kind       string `json:"kind"`
-	ChatID     int64  `json:"chatId,omitempty"`
-	UserID     int64  `json:"userId,omitempty"`
-	Watermark  int64  `json:"watermark,omitempty"`
-	Count      int64  `json:"count,omitempty"`
-	LowerBound int64  `json:"lowerBound,omitempty"`
+	Kind           string  `json:"kind"`
+	ChatID         int64   `json:"chatId,omitempty"`
+	UserID         int64   `json:"userId,omitempty"`
+	Watermark      int64   `json:"watermark,omitempty"`
+	Count          int64   `json:"count,omitempty"`
+	LowerBound     int64   `json:"lowerBound,omitempty"`
+	ExcludedType   int32   `json:"excludedType,omitempty"`
+	ExcludedStatus int32   `json:"excludedStatus,omitempty"`
+	AllowedScopes  []int32 `json:"allowedScopes,omitempty"`
 }
 
 func TestDECUNREADContractVectors(t *testing.T) {
@@ -85,12 +89,15 @@ func TestDECUNREADContractVectors(t *testing.T) {
 				BotIDs: fixture.State.BotIDs, RoomType: fixture.State.RoomType, Frozen: fixture.State.Frozen,
 			}
 			beforeMembers := cloneWatermarks(state.MemberWatermarks)
+			beforeActive := append([]int64(nil), state.ActiveMemberIDs...)
+			beforeBots := cloneBots(state.BotIDs)
 			got := ReduceDECUNREAD(state, Notice{ChatID: fixture.Notice.ChatID, UserID: fixture.Notice.UserID, Watermark: fixture.Notice.Watermark}, inputs)
-			if !reflect.DeepEqual(state.MemberWatermarks, beforeMembers) {
+			if !reflect.DeepEqual(state.MemberWatermarks, beforeMembers) || !reflect.DeepEqual(state.ActiveMemberIDs, beforeActive) || !reflect.DeepEqual(state.BotIDs, beforeBots) {
 				t.Fatalf("input member watermarks mutated: got %#v, want %#v", state.MemberWatermarks, beforeMembers)
 			}
-			if got.Applied != fixture.Want.Applied || got.State.UnreadCount != wantInt64(fixture.Want.UnreadCount) ||
-				got.State.MentionReplyPresent != fixture.Want.MentionReplyPresent {
+			if got.Applied != fixture.Want.Applied || got.State.UnreadCount != expectedUnread(fixture.Want.UnreadCount, fixture.State.CountOfNewMessage) ||
+				got.State.MentionReplyPresent != fixture.Want.MentionReplyPresent ||
+				got.State.ActiveMemberCount != wantInt(fixture.Want.ActiveMemberCount) {
 				t.Fatalf("state result = %#v, want applied=%v unread=%v mention-present=%v", got, fixture.Want.Applied, fixture.Want.UnreadCount, fixture.Want.MentionReplyPresent)
 			}
 			if !reflect.DeepEqual(got.State.MemberWatermarks, fixture.Want.MemberWatermarks) || !reflect.DeepEqual(got.State.ActiveMemberIDs, fixture.Want.ActiveMemberIDs) {
@@ -133,9 +140,27 @@ func cloneWatermarks(input map[int64]int64) map[int64]int64 {
 	return output
 }
 
-func wantInt64(value *int64) int64 {
+func wantInt(value *int) int {
 	if value == nil {
 		return 0
 	}
 	return *value
+}
+
+func expectedUnread(value *int64, initial int64) int64 {
+	if value == nil {
+		return initial
+	}
+	return *value
+}
+
+func cloneBots(input map[int64]bool) map[int64]bool {
+	if input == nil {
+		return nil
+	}
+	output := make(map[int64]bool, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
 }

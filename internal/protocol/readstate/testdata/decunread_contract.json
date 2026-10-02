@@ -1,65 +1,445 @@
 [
   {
     "name": "missing room",
-    "state": {"roomExists": false, "currentUserId": 7},
-    "notice": {"chatId": 42, "userId": 7, "watermark": 99},
+    "state": {
+      "roomExists": false,
+      "currentUserId": 7
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 7,
+      "watermark": 99
+    },
     "inputs": {},
-    "want": {"applied": false, "mentionReplyPresent": false, "effects": []}
+    "want": {
+      "applied": false,
+      "mentionReplyPresent": false,
+      "effects": []
+    }
   },
   {
     "name": "non-current member",
-    "state": {"roomExists": true, "currentUserId": 7, "memberWatermarks": {"8": 10}},
-    "notice": {"chatId": 42, "userId": 8, "watermark": 12},
+    "state": {
+      "roomExists": true,
+      "currentUserId": 7,
+      "memberWatermarks": {
+        "8": 10
+      },
+      "activeMemberIds": [
+        8
+      ]
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 8,
+      "watermark": 12
+    },
     "inputs": {},
-    "want": {"applied": true, "mentionReplyPresent": false, "memberWatermarks": {"8": 12}, "activeMemberIds": [8], "effects": [{"kind": "member_watermark", "userId": 8, "watermark": 12}]}
+    "want": {
+      "applied": true,
+      "mentionReplyPresent": false,
+      "memberWatermarks": {
+        "8": 12
+      },
+      "activeMemberIds": [
+        8
+      ],
+      "effects": [
+        {
+          "kind": "member_watermark",
+          "userId": 8,
+          "watermark": 12
+        }
+      ],
+      "activeMemberCount": 1
+    }
+  },
+  {
+    "name": "inactive stale member adds projection without watermark write",
+    "state": {
+      "roomExists": true,
+      "currentUserId": 7,
+      "activeMemberIds": [
+        7
+      ],
+      "memberWatermarks": {
+        "8": 10
+      }
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 8,
+      "watermark": 9
+    },
+    "inputs": {},
+    "want": {
+      "applied": true,
+      "mentionReplyPresent": false,
+      "memberWatermarks": {
+        "8": 10
+      },
+      "activeMemberIds": [
+        7,
+        8
+      ],
+      "activeMemberCount": 2,
+      "effects": [
+        {
+          "kind": "active_member_add",
+          "userId": 8
+        },
+        {
+          "kind": "active_member_count",
+          "count": 2
+        }
+      ]
+    }
   },
   {
     "name": "current below last log",
-    "state": {"roomExists": true, "currentUserId": 7, "countOfNewMessage": 3, "lastLogId": 100, "lastSeenLogId": 98, "memberWatermarks": {"7": 90}},
-    "notice": {"chatId": 42, "userId": 7, "watermark": 95},
-    "inputs": {"eligibleUnreadCount": 2},
-    "want": {"applied": true, "unreadCount": 2, "mentionReplyPresent": false, "memberWatermarks": {"7": 95}, "activeMemberIds": [7], "effects": [{"kind": "query_unread", "chatId": 42, "lowerBound": 98}, {"kind": "set_unread", "count": 2}, {"kind": "check_joined"}, {"kind": "archive_refresh"}, {"kind": "member_watermark", "userId": 7, "watermark": 95}]}
+    "state": {
+      "roomExists": true,
+      "currentUserId": 7,
+      "countOfNewMessage": 3,
+      "lastLogId": 100,
+      "lastSeenLogId": 98,
+      "memberWatermarks": {
+        "7": 90
+      },
+      "activeMemberIds": [
+        7
+      ]
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 7,
+      "watermark": 95
+    },
+    "inputs": {
+      "eligibleUnreadCount": 2
+    },
+    "want": {
+      "applied": true,
+      "unreadCount": 2,
+      "mentionReplyPresent": false,
+      "memberWatermarks": {
+        "7": 95
+      },
+      "activeMemberIds": [
+        7
+      ],
+      "effects": [
+        {
+          "kind": "query_unread",
+          "chatId": 42,
+          "lowerBound": 98,
+          "excludedType": 3,
+          "excludedStatus": 5,
+          "allowedScopes": [
+            1,
+            3
+          ]
+        },
+        {
+          "kind": "set_unread",
+          "count": 2
+        },
+        {
+          "kind": "check_joined"
+        },
+        {
+          "kind": "archive_refresh"
+        },
+        {
+          "kind": "member_watermark",
+          "userId": 7,
+          "watermark": 95
+        }
+      ],
+      "activeMemberCount": 1
+    }
   },
   {
     "name": "current at last log",
-    "state": {"roomExists": true, "currentUserId": 7, "countOfNewMessage": 3, "lastLogId": 100, "lastSeenLogId": 98, "mentionReplyPresent": true},
-    "notice": {"chatId": 42, "userId": 7, "watermark": 100},
-    "inputs": {"eligibleUnreadCount": 9},
-    "want": {"applied": true, "unreadCount": 0, "mentionReplyPresent": false, "memberWatermarks": {"7": 100}, "activeMemberIds": [7], "effects": [{"kind": "clear_unread"}, {"kind": "reset_mention_reply"}, {"kind": "check_joined"}, {"kind": "archive_refresh"}, {"kind": "member_watermark", "userId": 7, "watermark": 100}]}
+    "state": {
+      "roomExists": true,
+      "currentUserId": 7,
+      "countOfNewMessage": 3,
+      "lastLogId": 100,
+      "lastSeenLogId": 98,
+      "mentionReplyPresent": true,
+      "activeMemberIds": [
+        7
+      ]
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 7,
+      "watermark": 100
+    },
+    "inputs": {
+      "eligibleUnreadCount": 9
+    },
+    "want": {
+      "applied": true,
+      "unreadCount": 0,
+      "mentionReplyPresent": false,
+      "memberWatermarks": {
+        "7": 100
+      },
+      "activeMemberIds": [
+        7
+      ],
+      "effects": [
+        {
+          "kind": "clear_unread"
+        },
+        {
+          "kind": "reset_mention_reply"
+        },
+        {
+          "kind": "check_joined"
+        },
+        {
+          "kind": "archive_refresh"
+        },
+        {
+          "kind": "member_watermark",
+          "userId": 7,
+          "watermark": 100
+        }
+      ],
+      "activeMemberCount": 1
+    }
   },
   {
     "name": "current with zero old unread",
-    "state": {"roomExists": true, "currentUserId": 7, "lastLogId": 100, "mentionReplyPresent": true},
-    "notice": {"chatId": 42, "userId": 7, "watermark": 90},
-    "inputs": {"eligibleUnreadCount": 5},
-    "want": {"applied": true, "unreadCount": 0, "mentionReplyPresent": true, "memberWatermarks": {"7": 90}, "activeMemberIds": [7], "effects": [{"kind": "check_joined"}, {"kind": "archive_refresh"}, {"kind": "member_watermark", "userId": 7, "watermark": 90}]}
+    "state": {
+      "roomExists": true,
+      "currentUserId": 7,
+      "lastLogId": 100,
+      "mentionReplyPresent": true,
+      "activeMemberIds": [
+        7
+      ]
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 7,
+      "watermark": 90
+    },
+    "inputs": {
+      "eligibleUnreadCount": 5
+    },
+    "want": {
+      "applied": true,
+      "unreadCount": 0,
+      "mentionReplyPresent": true,
+      "memberWatermarks": {
+        "7": 90
+      },
+      "activeMemberIds": [
+        7
+      ],
+      "effects": [
+        {
+          "kind": "check_joined"
+        },
+        {
+          "kind": "archive_refresh"
+        },
+        {
+          "kind": "member_watermark",
+          "userId": 7,
+          "watermark": 90
+        }
+      ],
+      "activeMemberCount": 1
+    }
   },
   {
     "name": "current stale member watermark still routes room effects",
-    "state": {"roomExists": true, "currentUserId": 7, "countOfNewMessage": 2, "lastLogId": 100, "lastSeenLogId": 90, "memberWatermarks": {"7": 100}},
-    "notice": {"chatId": 42, "userId": 7, "watermark": 89},
-    "inputs": {"eligibleUnreadCount": 1},
-    "want": {"applied": true, "unreadCount": 1, "mentionReplyPresent": false, "memberWatermarks": {"7": 100}, "activeMemberIds": [], "effects": [{"kind": "query_unread", "chatId": 42, "lowerBound": 90}, {"kind": "set_unread", "count": 1}, {"kind": "check_joined"}, {"kind": "archive_refresh"}]}
+    "state": {
+      "roomExists": true,
+      "currentUserId": 7,
+      "countOfNewMessage": 2,
+      "lastLogId": 100,
+      "lastSeenLogId": 90,
+      "memberWatermarks": {
+        "7": 100
+      },
+      "activeMemberIds": [
+        7
+      ]
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 7,
+      "watermark": 89
+    },
+    "inputs": {
+      "eligibleUnreadCount": 1
+    },
+    "want": {
+      "applied": true,
+      "unreadCount": 1,
+      "mentionReplyPresent": false,
+      "memberWatermarks": {
+        "7": 100
+      },
+      "activeMemberIds": [
+        7
+      ],
+      "effects": [
+        {
+          "kind": "query_unread",
+          "chatId": 42,
+          "lowerBound": 90,
+          "excludedType": 3,
+          "excludedStatus": 5,
+          "allowedScopes": [
+            1,
+            3
+          ]
+        },
+        {
+          "kind": "set_unread",
+          "count": 1
+        },
+        {
+          "kind": "check_joined"
+        },
+        {
+          "kind": "archive_refresh"
+        }
+      ],
+      "activeMemberCount": 1
+    }
   },
   {
     "name": "current equal member watermark still routes room effects",
-    "state": {"roomExists": true, "currentUserId": 7, "countOfNewMessage": 2, "lastLogId": 100, "lastSeenLogId": 90, "memberWatermarks": {"7": 90}},
-    "notice": {"chatId": 42, "userId": 7, "watermark": 90},
-    "inputs": {"eligibleUnreadCount": 1},
-    "want": {"applied": true, "unreadCount": 1, "mentionReplyPresent": false, "memberWatermarks": {"7": 90}, "activeMemberIds": [], "effects": [{"kind": "query_unread", "chatId": 42, "lowerBound": 90}, {"kind": "set_unread", "count": 1}, {"kind": "check_joined"}, {"kind": "archive_refresh"}]}
+    "state": {
+      "roomExists": true,
+      "currentUserId": 7,
+      "countOfNewMessage": 2,
+      "lastLogId": 100,
+      "lastSeenLogId": 90,
+      "memberWatermarks": {
+        "7": 90
+      },
+      "activeMemberIds": [
+        7
+      ]
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 7,
+      "watermark": 90
+    },
+    "inputs": {
+      "eligibleUnreadCount": 1
+    },
+    "want": {
+      "applied": true,
+      "unreadCount": 1,
+      "mentionReplyPresent": false,
+      "memberWatermarks": {
+        "7": 90
+      },
+      "activeMemberIds": [
+        7
+      ],
+      "effects": [
+        {
+          "kind": "query_unread",
+          "chatId": 42,
+          "lowerBound": 90,
+          "excludedType": 3,
+          "excludedStatus": 5,
+          "allowedScopes": [
+            1,
+            3
+          ]
+        },
+        {
+          "kind": "set_unread",
+          "count": 1
+        },
+        {
+          "kind": "check_joined"
+        },
+        {
+          "kind": "archive_refresh"
+        }
+      ],
+      "activeMemberCount": 1
+    }
   },
   {
     "name": "bot member is suppressed by helper guard",
-    "state": {"roomExists": true, "currentUserId": 7, "activeMemberIds": [8], "botIds": {"8": true}, "memberWatermarks": {"8": 10}},
-    "notice": {"chatId": 42, "userId": 8, "watermark": 12},
+    "state": {
+      "roomExists": true,
+      "currentUserId": 7,
+      "activeMemberIds": [
+        8
+      ],
+      "botIds": {
+        "8": true
+      },
+      "memberWatermarks": {
+        "8": 10
+      }
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 8,
+      "watermark": 12
+    },
     "inputs": {},
-    "want": {"applied": true, "mentionReplyPresent": false, "memberWatermarks": {"8": 10}, "activeMemberIds": [8], "effects": []}
+    "want": {
+      "applied": true,
+      "mentionReplyPresent": false,
+      "memberWatermarks": {
+        "8": 10
+      },
+      "activeMemberIds": [
+        8
+      ],
+      "effects": [],
+      "activeMemberCount": 1
+    }
   },
   {
     "name": "frozen room type three suppresses helper",
-    "state": {"roomExists": true, "currentUserId": 7, "roomType": 3, "frozen": true, "activeMemberIds": [8], "memberWatermarks": {"8": 10}},
-    "notice": {"chatId": 42, "userId": 8, "watermark": 12},
+    "state": {
+      "roomExists": true,
+      "currentUserId": 7,
+      "roomType": 3,
+      "frozen": true,
+      "activeMemberIds": [
+        8
+      ],
+      "memberWatermarks": {
+        "8": 10
+      }
+    },
+    "notice": {
+      "chatId": 42,
+      "userId": 8,
+      "watermark": 12
+    },
     "inputs": {},
-    "want": {"applied": true, "mentionReplyPresent": false, "memberWatermarks": {"8": 10}, "activeMemberIds": [8], "effects": []}
+    "want": {
+      "applied": true,
+      "mentionReplyPresent": false,
+      "memberWatermarks": {
+        "8": 10
+      },
+      "activeMemberIds": [
+        8
+      ],
+      "effects": [],
+      "activeMemberCount": 1
+    }
   }
 ]

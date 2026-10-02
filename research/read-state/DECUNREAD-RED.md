@@ -1,29 +1,27 @@
-# DECUNREAD reducer RED handoff
+# DECUNREAD reducer contract
 
-This is an implementation-neutral contract proposal for independent review.
-The executable characterization is intentionally RED: the production reducer
-and effect types are absent until the member-watermark and bulk-update review
-is complete.
+The clean-room reducer accepts a copied durable room/member snapshot, one decoded
+`DECUNREAD` notice, and the selected unread-query result. It returns a planned
+snapshot plus ordered typed effects. It does not persist state, issue requests,
+or claim that a planned member-watermark write was accepted.
 
-The proposed pure API accepts a durable room/member snapshot, one decoded
-`DECUNREAD` notice, and query inputs. It returns a copied snapshot plus an
-ordered list of typed effects. Input maps are borrowed read-only and must not
-be mutated. A member-watermark effect is a planned write; the reducer does not
-claim that storage accepted it.
+A missing room is not applied. For an existing room, current-account room
+side-effects run before member handling even when the member watermark is stale
+or equal. When the watermark is below the last log, the first effect is a
+`query_unread` descriptor with `lowerBound=max(watermark,lastSeenLogID)` and
+literals `type!=3`, `status!=5`, `scope in {1,3}`; its selected count is then
+assigned. At or above the last log, unread state is cleared. Joined/archive
+refresh effects follow the unread branch. Non-current notices preserve room
+unread and mention state.
 
-The current vectors cover the observed room gate, current-account branches,
-lower-bound descriptor, stale/equal current-account routing, immutable input
-ownership, strict JSON fixture decoding, and effect ordering. A stale or equal
-member watermark must not suppress the outer current-account unread/joined/
-archive branch; member-write suppression is a separate helper decision. The
-vectors deliberately omit active-member additions and frozen-room handling
-until the helper's state inputs and bulk-update semantics are reconciled.
+Member handling is gated by a non-empty active-member list, bot membership, and
+the frozen type-3 room guard. A member absent from the active list is added and
+its active-member count is refreshed. That addition does not imply a watermark
+write when the stored watermark is newer or equal. A watermark is planned only
+when absent or strictly newer. All maps and slices are copied, and effects are
+ordered as returned.
 
-The first effect for the below-last-log branch is an explicit `query_unread`
-descriptor carrying `chatId` and the clamped lower bound. The query's excluded
-type/status and allowed-scope literals remain separate reviewed inputs rather
-than being guessed by the reducer.
-
-Open review questions are whether stale/equal member watermarks are filtered
-before the planned effect, whether the bulk helper can accept multiple pairs,
-and which room field identifies the frozen special type.
+`CountEligibleUnread` exposes the reviewed reusable predicate for stored logs:
+matching chat ID, positive log ID strictly greater than the lower bound, type
+other than 3, status other than 5, and scope 1 or 3. This helper is independent
+of the reducer's selected query-result boundary.
