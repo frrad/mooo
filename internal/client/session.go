@@ -782,10 +782,6 @@ func endpoint(body []byte) (string, int, error) {
 	return hostValue.StringValue(), port, nil
 }
 
-func finishLoginSync(wire *wireConn, first []byte, firstStatus int32, nextID uint32) ([]bson.Raw, uint32, []loco.Packet, loginCursor, error) {
-	return finishLoginSyncWithCompletion(wire, first, firstStatus, nextID, nil)
-}
-
 func finishLoginSyncWithCompletion(wire *wireConn, first []byte, firstStatus int32, nextID uint32, onCompletion func()) ([]bson.Raw, uint32, []loco.Packet, loginCursor, error) {
 	page := append(bson.Raw(nil), first...)
 	status := firstStatus
