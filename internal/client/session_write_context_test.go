@@ -1,12 +1,15 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
 type blockedWriteConn struct {
@@ -223,5 +226,70 @@ func TestSessionPartialWriteErrorClosesCarriage(t *testing.T) {
 	}
 	if _, err := session.Request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); !errors.Is(err, ErrClosed) {
 		t.Fatalf("reused carriage error=%v, want ErrClosed", err)
+	}
+}
+
+// A reader may have selected a push delivery while a concurrent writer
+// discovers a partial frame. The writer must leave terminal push fanout to the
+// reader so that the selected send cannot race with channel shutdown.
+type selectedPushConn struct {
+	net.Conn
+	reader   *bytes.Reader
+	selected chan struct{}
+	release  chan struct{}
+	reads    int
+}
+
+func (c *selectedPushConn) Read(p []byte) (int, error) {
+	n, err := c.reader.Read(p)
+	c.reads++
+	if c.reads == 2 {
+		close(c.selected)
+		<-c.release
+	}
+	return n, err
+}
+
+func (c *selectedPushConn) Write([]byte) (int, error)      { return 1, io.ErrUnexpectedEOF }
+func (*selectedPushConn) Close() error                     { return nil }
+func (*selectedPushConn) SetWriteDeadline(time.Time) error { return nil }
+
+func TestSessionPartialWriteLeavesSelectedPushSafe(t *testing.T) {
+	raw, err := (loco.Packet{
+		Header: loco.Header{PacketID: 1, Method: "MSG", BodyType: loco.BodyTypeBSON},
+		Body:   []byte{5, 0, 0, 0, 0},
+	}).MarshalBinary(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := &selectedPushConn{
+		reader:   bytes.NewReader(raw),
+		selected: make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+	session := newSession(nil)
+	session.wire = &wireConn{c: conn}
+	session.pushes = make(chan loco.Packet, 1)
+	done := make(chan any, 1)
+	go func() {
+		defer func() { done <- recover() }()
+		session.readLoop()
+	}()
+	select {
+	case <-conn.selected:
+	case <-time.After(time.Second):
+		t.Fatal("push was not selected")
+	}
+	if _, err := session.Request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); err == nil {
+		t.Fatal("partial write succeeded")
+	}
+	close(conn.release)
+	select {
+	case panicValue := <-done:
+		if panicValue != nil {
+			t.Fatalf("selected push panicked: %v", panicValue)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reader did not finish")
 	}
 }
