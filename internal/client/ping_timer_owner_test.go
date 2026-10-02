@@ -253,3 +253,27 @@ func TestSessionTerminalFinishShutsInjectedTimerOwner(t *testing.T) {
 	default:
 	}
 }
+
+func TestSessionTerminalFinishShutsInjectedTimerOwner(t *testing.T) {
+	clock := &queuedTimerClock{}
+	fired := make(chan struct{}, 1)
+	owner := newPingTimerOwner(clock, time.Second, func() { fired <- struct{}{} })
+	session := &Session{
+		pushes:             make(chan loco.Packet, 1),
+		pending:            make(map[uint32]chan requestResult),
+		lifecycleScheduler: owner,
+	}
+	if !owner.queueSchedule() {
+		t.Fatal("queueSchedule rejected open owner")
+	}
+	session.finishRead(errors.New("synthetic terminal disconnect"))
+	if owner.queueSchedule() {
+		t.Fatal("queueSchedule accepted after terminal finish")
+	}
+	clock.runEvenIfStopped(0)
+	select {
+	case <-fired:
+		t.Fatal("terminal owner delivered a stale timer callback")
+	default:
+	}
+}
