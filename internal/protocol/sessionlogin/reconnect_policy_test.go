@@ -23,8 +23,10 @@ type reconnectVectors struct {
 			Tag               int64 `json:"tag"`
 			ConfiguredTimeout int64 `json:"configured_timeout_seconds"`
 			Arm               bool  `json:"arm"`
+			ConfiguredSeconds int32 `json:"configured_seconds"`
+			StoredSeconds     int32 `json:"stored_seconds"`
 		} `json:"cases"`
-		PingIntervalDefault  *int64   `json:"ping_interval_default_seconds"`
+		PingIntervalFallback *int64   `json:"ping_interval_fallback_seconds"`
 		ConnectTimeout       *int64   `json:"connect_timeout_seconds"`
 		ReceiveHeaderTimeout *int64   `json:"receive_header_timeout_seconds"`
 		InSegmentTimeout     *int64   `json:"in_segment_timeout_seconds"`
@@ -62,11 +64,19 @@ func TestReconnectPolicyVectors(t *testing.T) {
 					}
 				}
 			case "configuration":
+				if len(tc.Subcases) > 0 {
+					for _, sub := range tc.Subcases {
+						if got := PingInterval(sub.ConfiguredSeconds); got != sub.StoredSeconds {
+							t.Fatalf("PingInterval(%d) = %d, want %d", sub.ConfiguredSeconds, got, sub.StoredSeconds)
+						}
+					}
+					break
+				}
 				defaults := RecoveredManagerTimeouts()
 				if defaults.Connect != duration(*tc.ConnectTimeout) || defaults.ReceiveHeader != duration(*tc.ReceiveHeaderTimeout) || defaults.InSegment != duration(*tc.InSegmentTimeout) || defaults.OutSegment != duration(*tc.OutSegmentTimeout) {
 					t.Fatalf("defaults=%#v", defaults)
 				}
-				if PingInterval(int32(*tc.PingIntervalDefault)-1) != int32(*tc.PingIntervalDefault)-1 || PingInterval(int32(*tc.PingIntervalDefault)+1) != int32(*tc.PingIntervalDefault)+1 {
+				if PingInterval(int32(*tc.PingIntervalFallback)-1) != int32(*tc.PingIntervalFallback)-1 || PingInterval(int32(*tc.PingIntervalFallback)+1) != int32(*tc.PingIntervalFallback)+1 {
 					t.Fatal("ping floor mismatch")
 				}
 			default:

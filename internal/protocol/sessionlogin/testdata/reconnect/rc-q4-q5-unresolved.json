@@ -6,7 +6,8 @@
     "RC-Q5"
   ],
   "evidence": [
-    "RC-BIN-001"
+    "RC-BIN-001",
+    "RC-BIN-002"
   ],
   "cases": [
     {
@@ -32,6 +33,18 @@
       "expect": [
         "nil_reply -> completion(nil)",
         "reply -> construct_response_wrapper -> completion(wrapper)"
+      ]
+    },
+    {
+      "name": "manager PING schedule/cancel primitive",
+      "kind": "schedule-primitive",
+      "evidence": [
+        "RC-BIN-002"
+      ],
+      "status": "unexecuted",
+      "expect": [
+        "schedule delayed PING on carriage target",
+        "cancel prior delayed invocation for same target/selector"
       ]
     }
   ]

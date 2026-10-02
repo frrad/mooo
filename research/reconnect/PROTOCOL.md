@@ -72,3 +72,5 @@ rejects unknown fields and fails on unsupported pure-policy kinds. Wire-shape,
 completion-forwarding, and disconnect/failure-order vectors remain separate and
 explicitly unexecuted in
 `internal/protocol/sessionlogin/testdata/reconnect/rc-q4-q5-unresolved.json`.
+The vector evidence also identifies RC-BIN-002 for the recovered scheduling
+primitive without treating its lifecycle or clock as implemented.

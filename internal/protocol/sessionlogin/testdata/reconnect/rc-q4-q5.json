@@ -58,12 +58,33 @@
       "name": "ping interval fallback boundary",
       "kind": "configuration",
       "cases": [
-        {"configured_seconds": 0, "stored_seconds": 180},
-        {"configured_seconds": -1, "stored_seconds": 180},
-        {"configured_seconds": 1, "stored_seconds": 1},
-        {"configured_seconds": 179, "stored_seconds": 179},
-        {"configured_seconds": 180, "stored_seconds": 180},
-        {"configured_seconds": 181, "stored_seconds": 181}
+        {
+          "configured_seconds": 0,
+          "stored_seconds": 180
+        },
+        {
+          "configured_seconds": -1,
+          "stored_seconds": 180
+        },
+        {
+          "configured_seconds": 1,
+          "stored_seconds": 1
+        },
+        {
+          "configured_seconds": 179,
+          "stored_seconds": 179
+        },
+        {
+          "configured_seconds": 180,
+          "stored_seconds": 180
+        },
+        {
+          "configured_seconds": 181,
+          "stored_seconds": 181
+        }
+      ],
+      "evidence": [
+        "RC-BIN-001"
       ]
     }
   ]
