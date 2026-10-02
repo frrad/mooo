@@ -68,15 +68,18 @@ bootstrap admission, serialized configuration key, or official queue timing is
 claimed by this owner.
 
 The Go session integration binds the owner as soon as the authenticated
-carriage is available, before the first `LOGINLIST` request. Each successful
-LOGINLIST/LCHATLIST transport completion queues the next lifecycle action
-before that page is parsed and consumed. The owner callback remains gated until
-bootstrap state is installed and the single reader has started; it then sends
-an empty BSON `PING` through the normal one-shot request path with a bounded
-context. This is a clean-room runtime decision and test seam; it does not
-assert that the official client uses the same first-admission point.
+carriage is available, before the first `LOGINLIST` request. LOGINLIST and
+LCHATLIST use the Session's correlated raw-request path, so the one reader
+queues the next lifecycle action before delivering each response to bootstrap
+page parsing. Unmatched packets are buffered while bootstrap is in progress
+and transferred to the public push channel only after bootstrap state has been
+installed. The owner callback sends an empty BSON `PING` through the same
+one-shot request path with a bounded context. This is a clean-room runtime
+decision and test seam; it does not assert that the official client uses the
+same first-admission point.
 
 Untraced: exact OS queue execution timing, whether an already-eligible delayed
 invocation can run before a queued cancellation, global first-admission ordering
 among concurrent traffic, and any alternate scheduler caller outside the
-traced paths.
+traced paths. Serialized configuration-key mapping and official queue timing
+remain separate evidence gaps.

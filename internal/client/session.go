@@ -11,7 +11,6 @@ import (
 	"io"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/frrad/mooo/internal/authstate"
@@ -79,12 +78,15 @@ type Session struct {
 	appVersion         string
 	mediaDial          wireDialer
 	loginCursor        loginCursor
+	bootstrapDone      bool
+	bootstrapPushes    []loco.Packet
 }
 
 func newSession(scheduler lifecycleScheduler) *Session {
 	return &Session{
 		pending:            make(map[uint32]chan requestResult),
 		lifecycleScheduler: scheduler,
+		bootstrapDone:      true,
 	}
 }
 
@@ -143,9 +145,10 @@ const defaultPingInterval = 180 * time.Second
 const defaultPingRequestTimeout = 15 * time.Second
 
 type pingSessionOptions struct {
-	clock    relativeTimer
-	interval time.Duration
-	timeout  time.Duration
+	clock                  relativeTimer
+	interval               time.Duration
+	timeout                time.Duration
+	beforeBootstrapRequest func()
 }
 
 type sessionDialers struct {
@@ -235,11 +238,10 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 		pingOptions.timeout = defaultPingRequestTimeout
 	}
 	var session *Session
-	var ready atomic.Bool
 	var owner lifecycleScheduler
 	if pingOptions.clock != nil && pingOptions.interval > 0 {
 		owner = newPingTimerOwner(pingOptions.clock, pingOptions.interval, func() {
-			if session == nil || !ready.Load() {
+			if session == nil {
 				return
 			}
 			pingCtx, cancel := context.WithTimeout(context.Background(), pingOptions.timeout)
@@ -251,6 +253,8 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	}
 	session = newSession(owner)
 	session.wire = carriage
+	session.bootstrapDone = false
+	session.bootstrapPushes = make([]loco.Packet, 0)
 	session.nextID = 2
 	session.pushes = make(chan loco.Packet, requestLimit)
 	session.userID = state.Credentials.UserID
@@ -273,7 +277,8 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	if err != nil {
 		return nil, ErrBootstrap
 	}
-	loginReply, _, err := carriage.request(2, "LOGINLIST", loginBody)
+	go session.readLoop()
+	loginReply, err := session.requestRaw(ctx, 2, "LOGINLIST", loginBody)
 	if err != nil {
 		return nil, ErrLogin
 	}
@@ -284,30 +289,17 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	if !sessionlogin.ClassifyLoginStatus(status).Accepted() {
 		return nil, StatusError{Command: "LOGINLIST", Status: status}
 	}
-	// Schedule the next lifecycle action before consuming the LOGINLIST page.
-	session.queueSchedule()
-	chatData, nextID, pendingPushes, cursor, err := finishLoginSyncWithCompletion(carriage, loginReply.Body, status, 3, session.queueSchedule)
+	chatData, cursor, err := finishLoginSyncSession(ctx, session, loginReply.Body, status, pingOptions.beforeBootstrapRequest)
 	if err != nil {
 		return nil, ErrLogin
 	}
 	cursor.replaceInventory = resume.LastTokenID == 0
-	pushBuffer := requestLimit
-	if len(pendingPushes) > pushBuffer {
-		pushBuffer = len(pendingPushes)
-	}
-	session.nextID = nextID
-	if cap(session.pushes) < pushBuffer {
-		session.pushes = make(chan loco.Packet, pushBuffer)
-	}
 	session.initialChatData = chatData
 	session.loginCursor = cursor
-	for _, packet := range pendingPushes {
-		session.pushes <- packet
+	if !session.finishBootstrap() {
+		return nil, ErrClosed
 	}
 	_ = carriage.c.SetDeadline(time.Time{})
-	go session.readLoop()
-	ready.Store(true)
-	session.queueSchedule()
 	cleanup = false
 	return session, nil
 }
@@ -340,39 +332,9 @@ func (s *Session) Pushes() <-chan loco.Packet {
 // Request sends exactly once. A timeout or disconnect is ambiguous and is
 // returned without retrying the command.
 func (s *Session) Request(ctx context.Context, command string, body []byte) (loco.Packet, error) {
-	if s == nil || ctx == nil || command == "" {
-		return loco.Packet{}, ErrProtocol
-	}
-	s.mu.Lock()
-	if s.closed || s.closing || s.wire == nil {
-		s.mu.Unlock()
-		return loco.Packet{}, ErrClosed
-	}
-	id, err := s.allocateRequestIDLocked()
+	reply, err := s.requestRaw(ctx, 0, command, body)
 	if err != nil {
-		s.mu.Unlock()
 		return loco.Packet{}, err
-	}
-	result := make(chan requestResult, 1)
-	s.pending[id] = result
-	wire := s.wire
-	s.mu.Unlock()
-	s.queueCancelRequest()
-
-	if err := s.writeRequest(ctx, wire, id, command, body); err != nil {
-		s.removePending(id, result)
-		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, err)
-	}
-	var reply loco.Packet
-	select {
-	case outcome := <-result:
-		if outcome.err != nil {
-			return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, outcome.err)
-		}
-		reply = outcome.packet
-	case <-ctx.Done():
-		s.removePending(id, result)
-		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, ctx.Err())
 	}
 	status, err := responseStatus(reply)
 	if err != nil {
@@ -382,6 +344,53 @@ func (s *Session) Request(ctx context.Context, command string, body []byte) (loc
 		return reply, StatusError{Command: command, Status: status}
 	}
 	return reply, nil
+}
+
+func (s *Session) requestRaw(ctx context.Context, id uint32, command string, body []byte) (loco.Packet, error) {
+	if s == nil || ctx == nil || command == "" {
+		return loco.Packet{}, ErrProtocol
+	}
+	s.mu.Lock()
+	if s.closed || s.closing || s.wire == nil {
+		s.mu.Unlock()
+		return loco.Packet{}, ErrClosed
+	}
+	var err error
+	if id == 0 {
+		id, err = s.allocateRequestIDLocked()
+		if err != nil {
+			s.mu.Unlock()
+			return loco.Packet{}, err
+		}
+	} else if id >= s.nextID {
+		s.nextID = id + 1
+		if s.nextID >= requestIDMax {
+			s.nextID = requestIDMin
+		}
+	}
+	if _, exists := s.pending[id]; exists {
+		s.mu.Unlock()
+		return loco.Packet{}, ErrProtocol
+	}
+	result := make(chan requestResult, 1)
+	s.pending[id] = result
+	wire := s.wire
+	s.mu.Unlock()
+	s.queueCancelRequest()
+	if err := s.writeRequest(ctx, wire, id, command, body); err != nil {
+		s.removePending(id, result)
+		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, err)
+	}
+	select {
+	case outcome := <-result:
+		if outcome.err != nil {
+			return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, outcome.err)
+		}
+		return outcome.packet, nil
+	case <-ctx.Done():
+		s.removePending(id, result)
+		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, ctx.Err())
+	}
 }
 
 // allocateRequestIDLocked returns one ID from the official bounded request
@@ -493,6 +502,12 @@ func (s *Session) readLoop() {
 	for {
 		packet, err := s.wire.read()
 		if err != nil {
+			s.mu.Lock()
+			bootstrapComplete := !s.bootstrapDone && s.bootstrapPushes != nil && len(s.pending) == 0
+			s.mu.Unlock()
+			if bootstrapComplete {
+				return
+			}
 			s.finishRead(err)
 			return
 		}
@@ -507,14 +522,42 @@ func (s *Session) readLoop() {
 			waiter <- requestResult{packet: packet}
 			continue
 		}
+		s.mu.Lock()
+		if !s.bootstrapDone && s.bootstrapPushes != nil {
+			s.bootstrapPushes = append(s.bootstrapPushes, packet)
+			s.mu.Unlock()
+			continue
+		}
+		pushes := s.pushes
+		s.mu.Unlock()
 		select {
-		case s.pushes <- packet:
+		case pushes <- packet:
 		default:
 			s.finishRead(ErrProtocol)
 			_ = s.wire.close()
 			return
 		}
 	}
+}
+
+func (s *Session) finishBootstrap() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.closing {
+		return false
+	}
+	pushBuffer := requestLimit
+	if len(s.bootstrapPushes) > pushBuffer {
+		pushBuffer = len(s.bootstrapPushes)
+	}
+	pushes := make(chan loco.Packet, pushBuffer)
+	for _, packet := range s.bootstrapPushes {
+		pushes <- packet
+	}
+	s.bootstrapPushes = nil
+	s.pushes = pushes
+	s.bootstrapDone = true
+	return true
 }
 
 func (s *Session) finishRead(err error) {
@@ -782,61 +825,58 @@ func endpoint(body []byte) (string, int, error) {
 	return hostValue.StringValue(), port, nil
 }
 
-func finishLoginSyncWithCompletion(wire *wireConn, first []byte, firstStatus int32, nextID uint32, onCompletion func()) ([]bson.Raw, uint32, []loco.Packet, loginCursor, error) {
+func finishLoginSyncSession(ctx context.Context, session *Session, first []byte, firstStatus int32, beforeRequest func()) ([]bson.Raw, loginCursor, error) {
 	page := append(bson.Raw(nil), first...)
 	status := firstStatus
 	var chats []bson.Raw
-	var pushes []loco.Packet
 	var cursor loginCursor
 	for range 20 {
 		pageChats, eof, err := parseChatPageContent(page)
 		if err != nil {
-			return nil, nextID, pushes, cursor, err
+			return nil, cursor, err
 		}
 		// The official client applies per-chat deltas for its accepted negative
 		// list statuses, but only a status-zero EOF commits global progress.
 		if err := updateLoginCursor(page, &cursor, status == 0 && eof); err != nil {
-			return nil, nextID, pushes, cursor, err
+			return nil, cursor, err
 		}
 		chats = append(chats, pageChats...)
 		if status != 0 {
 			if status == -305 || status == -310 {
-				return chats, nextID, pushes, cursor, nil
+				return chats, cursor, nil
 			}
-			return nil, nextID, pushes, cursor, ErrProtocol
+			return nil, cursor, ErrProtocol
 		}
 		if eof {
-			return chats, nextID, pushes, cursor, nil
+			return chats, cursor, nil
 		}
 		lastTokenID, err := bsonInt64(page, "lastTokenId")
 		if err != nil {
-			return nil, nextID, pushes, cursor, ErrProtocol
+			return nil, cursor, ErrProtocol
 		}
 		lastChatID, err := bsonInt64(page, "lastChatId")
 		if err != nil {
-			return nil, nextID, pushes, cursor, ErrProtocol
+			return nil, cursor, ErrProtocol
 		}
 		body, err := bson.Marshal(bson.D{
 			{Key: "lastTokenId", Value: lastTokenID},
 			{Key: "lastChatId", Value: lastChatID},
 		})
 		if err != nil {
-			return nil, nextID, pushes, cursor, ErrProtocol
+			return nil, cursor, ErrProtocol
 		}
-		reply, unsolicited, err := wire.request(nextID, "LCHATLIST", body)
-		nextID++
-		if onCompletion != nil {
-			onCompletion()
+		if beforeRequest != nil {
+			beforeRequest()
 		}
-		pushes = append(pushes, unsolicited...)
+		reply, err := session.requestRaw(ctx, 0, "LCHATLIST", body)
 		replyStatus, statusErr := responseStatus(reply)
 		if err != nil || statusErr != nil || (replyStatus != 0 && replyStatus != -310) {
-			return nil, nextID, pushes, cursor, ErrProtocol
+			return nil, cursor, ErrProtocol
 		}
 		status = replyStatus
 		page = append(page[:0], reply.Body...)
 	}
-	return nil, nextID, pushes, cursor, ErrProtocol
+	return nil, cursor, ErrProtocol
 }
 
 func updateLoginCursor(page bson.Raw, cursor *loginCursor, updateGlobal bool) error {
