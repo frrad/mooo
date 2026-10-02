@@ -153,8 +153,7 @@
         "decode_body_type_u8",
         "decode_body_length_u32",
         "header_callback_if_supported",
-        "complete_packet_callback_after_body",
-        "producer_loop_next_frame"
+        "complete_packet_callback_after_body"
       ],
       "body_lengths": [
         8,
@@ -256,6 +255,32 @@
       "delegate_supports_packet": true,
       "delegate_is_agent": false,
       "timeout_identity_matches": true,
+      "expected_buffered_bytes": 0,
+      "expected_consumer_bytes_needed": 0,
+      "expected_current_header_present": false,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "decode_packet_id_u32",
+        "decode_status_u16",
+        "decode_method_utf8_11",
+        "decode_body_type_u8",
+        "decode_body_length_u32",
+        "header_callback_if_supported",
+        "complete_packet_callback_after_body"
+      ]
+    },
+    {
+      "name": "producer empty body frame",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 22,
+      "body_lengths": [
+        0
+      ],
+      "current_header_present": false,
+      "delegate_supports_header": true,
+      "delegate_supports_packet": true,
       "expected_buffered_bytes": 0,
       "expected_consumer_bytes_needed": 0,
       "expected_current_header_present": false,

@@ -32,7 +32,7 @@ type secureFrameCase struct {
 	Expected                    []string `json:"expected"`
 }
 
-var secureEffects = map[string]bool{"header_read_length_4": true, "header_read_length_22": true, "header_timeout_minus_one": true, "header_tag_zero": true, "header_prefix_zero": true, "header_prefix_nonzero": true, "read_header_again": true, "read_body_length": true, "supply_raw_data": true, "route_body": true, "decrypt_accumulated": true, "header_callback_if_supported": true, "complete_packet_callback_after_body": true, "conditional_timeout_disarm_after_header": true, "producer_loop_next_frame": true, "decode_packet_id_u32": true, "decode_status_u16": true, "decode_method_utf8_11": true, "decode_body_type_u8": true, "decode_body_length_u32": true, "buffer_retained_below_minimum": true, "producer_return_zero_below_minimum": true, "producer_return_remaining_bytes": true}
+var secureEffects = map[string]bool{"header_read_length_4": true, "header_read_length_22": true, "header_timeout_minus_one": true, "header_tag_zero": true, "header_prefix_zero": true, "header_prefix_nonzero": true, "read_header_again": true, "read_body_length": true, "supply_raw_data": true, "route_body": true, "decrypt_accumulated": true, "header_callback_if_supported": true, "complete_packet_callback_after_body": true, "conditional_timeout_disarm_after_header": true, "decode_packet_id_u32": true, "decode_status_u16": true, "decode_method_utf8_11": true, "decode_body_type_u8": true, "decode_body_length_u32": true, "buffer_retained_below_minimum": true, "producer_return_zero_below_minimum": true, "producer_return_remaining_bytes": true}
 
 func TestSecureFramingContractSchema(t *testing.T) {
 	b, e := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-secure-framing.json"))
@@ -45,7 +45,7 @@ func TestSecureFramingContractSchema(t *testing.T) {
 	if e = d.Decode(&v); e != nil {
 		t.Fatal(e)
 	}
-	if v.Status != "reviewed-static-unexecuted-runtime" || v.Question != "RC-Q5" || len(v.Cases) != 15 {
+	if v.Status != "reviewed-static-unexecuted-runtime" || v.Question != "RC-Q5" || len(v.Cases) != 16 {
 		t.Fatalf("header=%+v", v)
 	}
 	seen := map[string]bool{}
@@ -88,9 +88,6 @@ func TestSecureFramingContractSchema(t *testing.T) {
 		if len(bodyLengths) == 0 && c.BodyLength > 0 {
 			bodyLengths = []int{c.BodyLength}
 		}
-		if len(bodyLengths) > 0 && len(bodyLengths) != 2 && len(c.BodyLengths) > 0 {
-			t.Fatalf("body frame cardinality mismatch: %s", c.Name)
-		}
 		model := make([]string, 0, len(c.Expected))
 		buffered, needed := c.Accumulated, 0
 		header := c.HeaderPresent
@@ -126,15 +123,31 @@ func TestSecureFramingContractSchema(t *testing.T) {
 			needed = 0
 			header = false
 		}
-		if len(bodyLengths) > 1 {
-			model = append(model, "producer_loop_next_frame")
-		}
 		transport := []string{}
-		if len(bodyLengths) > 0 {
-			transport = []string{"route_body", "supply_raw_data"}
+		if c.ReadTag == 0 {
+			transport = append(transport, "header_read_length_22", "header_timeout_minus_one", "header_tag_zero")
+			if c.CryptoPresent {
+				transport[0] = "header_read_length_4"
+				if c.PrefixValue == nil {
+					t.Fatalf("crypto header prefix missing: %s", c.Name)
+				}
+				if *c.PrefixValue == 0 {
+					transport = append(transport, "header_prefix_zero", "read_header_again")
+				} else {
+					transport = append(transport, "header_prefix_nonzero", "read_body_length")
+				}
+			} else {
+				transport = append(transport, "supply_raw_data")
+			}
+		} else {
+			transport = append(transport, "route_body")
+			if c.CryptoPresent {
+				transport = append(transport, "decrypt_accumulated")
+			}
+			transport = append(transport, "supply_raw_data")
 		}
 		want := append(transport, model...)
-		if len(bodyLengths) > 0 && len(c.Expected) != len(want) {
+		if len(c.Expected) != len(want) {
 			t.Fatalf("event count mismatch %s: want %d got %d", c.Name, len(want), len(c.Expected))
 		}
 		for i, effect := range want {
