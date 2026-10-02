@@ -21,15 +21,17 @@ OS behavior gaps.
 
 When the delayed selector fires, the owner sends itself `disconnect`. The
 owner's disconnect method queues a socket disconnect on its object queue. The
-socket delegate receives `(agent, socket, error)`, sets the agent status to
-`0` with that error, cancels prior delayed-selector work for the agent target,
-and enumerates the agent's pending-completion map. Each enumerated completion
-is called with `(nil, NSError(domain="LocoAgent", code=-1,
-userInfo=nil))`. The reviewed handler does not explicitly clear the pending
-map; whether the installed status handler mutates or replaces it before enumeration is unresolved. The
-handler's POSIX-domain/code 60 or 32 logging branches are separate from the
-fanout and do not alter this contract. No socket-identity guard was observed
-in the reviewed handler.
+socket delegate receives `(agent, socket, error)`. It writes status byte `0`
+with that error through `setStatus:error:`; when a status handler is installed,
+the setter synchronously invokes it with `(agent, oldStatus, newStatus, error)`
+before the disconnect path cancels prior delayed-selector work for the agent
+target and enumerates the pending-completion map. The handler may mutate state,
+including pending-map state, before cancellation/fanout; that indirect effect
+is unresolved. With no handler, the setter has no callback effect. Each
+enumerated completion is called with `(nil, NSError(domain="LocoAgent", code=-1,
+userInfo=nil))`. The reviewed handler does not explicitly clear the pending map.
+Its POSIX-domain/code 60 or 32 logging branches are separate from fanout. No
+socket-identity guard was observed in the reviewed handler.
 
 The packet producer arms the receive-header timeout only on its status-3
 send path. Its block carries a weak agent reference and a separate strong
