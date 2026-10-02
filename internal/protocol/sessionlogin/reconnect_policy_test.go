@@ -13,6 +13,7 @@ import (
 type reconnectVectors struct {
 	Questions []string `json:"questions"`
 	Evidence  []string `json:"evidence"`
+	Status    string   `json:"status"`
 	Cases     []struct {
 		Name              string   `json:"name"`
 		Kind              string   `json:"kind"`
