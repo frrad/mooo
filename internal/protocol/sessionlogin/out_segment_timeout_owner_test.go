@@ -114,6 +114,92 @@ func TestOutSegmentTimeoutOwnerNonOneCancelsExactTupleWithoutReread(t *testing.T
 	}
 }
 
+func TestOutSegmentTimeoutOwnerNonPositiveDisableLeavesExistingTimer(t *testing.T) {
+	config := &outOwnerTestConfig{admission: time.Second, execution: time.Second}
+	clock := &outOwnerTestClock{}
+	queue := &outOwnerTestQueue{}
+	var fired int
+	owner := newTestOutOwner(t, config, clock, queue, &fired)
+	if _, err := owner.Toggle(1); err != nil {
+		t.Fatal(err)
+	}
+	queue.runNext()
+	config.admission = 0
+	config.execution = 0
+	if admitted, err := owner.Disable(); err != nil || admitted {
+		t.Fatalf("disabled admission=%t err=%v", admitted, err)
+	}
+	if len(queue.work) != 0 || clock.timers[0].stopped {
+		t.Fatalf("non-positive disable changed queued=%d timer-stopped=%t", len(queue.work), clock.timers[0].stopped)
+	}
+	clock.timers[0].runEvenIfStopped()
+	if fired != 1 {
+		t.Fatalf("existing timer fired=%d want 1", fired)
+	}
+}
+
+func TestOutSegmentTimeoutOwnerDisablePreservesLaterQueuedEnable(t *testing.T) {
+	config := &outOwnerTestConfig{admission: time.Second, execution: 2 * time.Second}
+	clock := &outOwnerTestClock{}
+	queue := &outOwnerTestQueue{}
+	var fired int
+	owner := newTestOutOwner(t, config, clock, queue, &fired)
+	if _, err := owner.Toggle(1); err != nil {
+		t.Fatal(err)
+	}
+	queue.runNext()
+	if _, err := owner.Toggle(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Toggle(1); err != nil {
+		t.Fatal(err)
+	}
+	queue.runNext()
+	queue.runNext()
+	if len(clock.timers) != 2 || !clock.timers[0].stopped || clock.timers[1].stopped {
+		t.Fatalf("timers=%d stopped=[%t %t]", len(clock.timers), clock.timers[0].stopped, clock.timers[1].stopped)
+	}
+	clock.timers[0].runEvenIfStopped()
+	clock.timers[1].runEvenIfStopped()
+	if fired != 1 {
+		t.Fatalf("fired=%d want 1", fired)
+	}
+}
+
+func TestOutSegmentTimeoutOwnerConsumedQueueWorkCannotScheduleOnReplay(t *testing.T) {
+	config := &outOwnerTestConfig{admission: time.Second, execution: time.Second}
+	clock := &outOwnerTestClock{}
+	queue := &outOwnerTestQueue{}
+	var fired int
+	owner := newTestOutOwner(t, config, clock, queue, &fired)
+	if _, err := owner.Toggle(1); err != nil {
+		t.Fatal(err)
+	}
+	queued := queue.work[0]
+	queue.runNext()
+	queued()
+	if len(clock.timers) != 1 || config.reads != 3 {
+		t.Fatalf("timers=%d reads=%d, want 1 and 3", len(clock.timers), config.reads)
+	}
+}
+
+func TestOutSegmentTimeoutOwnerCloseStopsScheduledAndReplayedCallback(t *testing.T) {
+	config := &outOwnerTestConfig{admission: time.Second, execution: time.Second}
+	clock := &outOwnerTestClock{}
+	queue := &outOwnerTestQueue{}
+	var fired int
+	owner := newTestOutOwner(t, config, clock, queue, &fired)
+	if _, err := owner.Toggle(1); err != nil {
+		t.Fatal(err)
+	}
+	queue.runNext()
+	owner.Close()
+	clock.timers[0].runEvenIfStopped()
+	if fired != 0 || !clock.timers[0].stopped {
+		t.Fatalf("closed owner fired=%d stopped=%t", fired, clock.timers[0].stopped)
+	}
+}
+
 func TestOutSegmentTimeoutOwnerRepeatedEnableCancelsEveryScheduledTuple(t *testing.T) {
 	config := &outOwnerTestConfig{admission: time.Second, execution: time.Second}
 	clock := &outOwnerTestClock{}
@@ -237,11 +323,16 @@ func TestOutSegmentTimeoutOwnerCanonicalToggleVectors(t *testing.T) {
 			}
 			queue.runNext()
 			if tc.EnableByte == 1 {
+				if config.reads != 2 {
+					t.Fatalf("enable reads=%d want 2", config.reads)
+				}
 				if len(clock.timers) != 1 || clock.delays[0] != time.Duration(tc.TimeoutExecutionSeconds*float64(time.Second)) {
 					t.Fatalf("timers=%d delays=%v", len(clock.timers), clock.delays)
 				}
 			} else if len(clock.timers) != 0 {
 				t.Fatalf("cancel scheduled timers=%d", len(clock.timers))
+			} else if config.reads != 1 {
+				t.Fatalf("cancel reads=%d want 1", config.reads)
 			}
 		})
 	}

@@ -20,11 +20,14 @@ type OutSegmentTimeoutTimer interface {
 // OutSegmentTimeoutClock creates relative timers. AfterFunc must not invoke
 // its callback synchronously on the caller's stack.
 type OutSegmentTimeoutClock interface {
+	// AfterFunc must not invoke fn synchronously. Stop must not synchronously
+	// wait for fn while the owner mutex is held.
 	AfterFunc(time.Duration, func()) OutSegmentTimeoutTimer
 }
 
 // OutSegmentTimeoutQueue represents the reviewed main-queue hop. It only
-// enqueues work; it must not synchronously execute timer callbacks.
+// enqueues work; it must not synchronously execute timer callbacks or reenter
+// the owner. Implementations preserve FIFO order by enqueue order.
 type OutSegmentTimeoutQueue interface {
 	Enqueue(func())
 }
@@ -36,7 +39,8 @@ type OutSegmentTimeoutConfig interface {
 
 // OutSegmentTimeoutOwner implements the bounded reviewed toggle contract. It
 // owns only delayed out-segment work; it does not perform socket I/O or decide
-// when callers should enable or disable the timeout.
+// when callers should enable or disable the timeout. The owner string is a
+// diagnostic label; cancellation isolation is provided by owner instances.
 type OutSegmentTimeoutOwner struct {
 	mu       sync.Mutex
 	clock    OutSegmentTimeoutClock
