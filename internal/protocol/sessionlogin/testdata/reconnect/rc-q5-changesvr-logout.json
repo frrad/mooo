@@ -1,0 +1,23 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {
+      "name": "main_thread_manager_invokes_inline",
+      "callback_on_main_thread": true,
+      "manager_present": true,
+      "expected_effects": ["invoke_logout_for_change_server_inline"]
+    },
+    {
+      "name": "background_thread_manager_dispatches_then_invokes",
+      "callback_on_main_thread": false,
+      "manager_present": true,
+      "expected_effects": ["dispatch_main_queue", "invoke_logout_for_change_server"]
+    },
+    {
+      "name": "nil_manager_message_has_no_effect",
+      "callback_on_main_thread": false,
+      "manager_present": false,
+      "expected_effects": []
+    }
+  ]
+}
