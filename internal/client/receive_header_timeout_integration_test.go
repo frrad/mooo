@@ -230,7 +230,7 @@ func TestSessionReceiveHeaderTimeoutWrongHeaderUIDDoesNotDisarm(t *testing.T) {
 		receiveHeaderTimeout:       controller,
 		receiveHeaderTimeoutEnable: func(string, uint32) (byte, bool) { return 1, true },
 	}
-	token := session.prepareReceiveHeaderTimeout("PING", 7)
+	token := session.prepareReceiveHeaderTimeout("EXPECTED", 7)
 	if token == nil {
 		t.Fatal("timeout preparation rejected")
 	}
@@ -269,6 +269,11 @@ func TestSessionReceiveHeaderTimeoutWrongHeaderUIDDoesNotDisarm(t *testing.T) {
 	calls, _ = controller.snapshot()
 	if len(calls) != 1 || calls[0].enable != 1 {
 		t.Fatalf("wrong-UID toggle calls=%#v", calls)
+	}
+	session.observeHeader(loco.Header{PacketID: 7, Method: "EXPECTED"})
+	calls, _ = controller.snapshot()
+	if len(calls) != 2 || calls[1].enable != 0 || calls[1].tag != 7 {
+		t.Fatalf("matching header toggle calls=%#v, want arm then disarm", calls)
 	}
 	_ = session.Close()
 	select {
