@@ -107,15 +107,22 @@ func decodeMediaComplete(packet loco.Packet) (media.SendResult, error) {
 }
 
 func writeAll(conn interface{ Write([]byte) (int, error) }, data []byte) error {
+	_, err := writeAllCount(conn, data)
+	return err
+}
+
+func writeAllCount(conn interface{ Write([]byte) (int, error) }, data []byte) (int, error) {
+	written := 0
 	for len(data) > 0 {
 		n, err := conn.Write(data)
 		if err != nil {
-			return err
+			return written, err
 		}
 		if n <= 0 {
-			return fmt.Errorf("zero-byte write")
+			return written, fmt.Errorf("zero-byte write")
 		}
+		written += n
 		data = data[n:]
 	}
-	return nil
+	return written, nil
 }
