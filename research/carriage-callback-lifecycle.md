@@ -72,12 +72,12 @@ without reproducing proprietary implementation details:
 - reader teardown fails every pending waiter once, clears pending state, and
   closes the unsolicited stream;
 - explicit session close reaches the same pending-request failure boundary;
-- packet-ID wrap is expected at the official upper boundary.
+- packet-ID wrap and collision avoidance pass at the official upper boundary;
+  the NOTIREAD concrete disconnect path is covered by
+  `TestNotiReadDisconnectFailsOnceWithoutReplay`.
 
-The first two tests pass against the current client. The packet-ID wrap test
-currently fails because the clean-room `Session` increments past
-`200000000`; that is an intentional implementation handoff, not a fabricated
-response or status failure.
+These tests pass against the current client and preserve the one-shot failure
+and bounded-ID behavior established by the shared carriage evidence.
 
 ## Provenance and confidence
 

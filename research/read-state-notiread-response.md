@@ -39,12 +39,13 @@ identity, stores one completion, sends one packet, and arms one receive-header
 timeout; the traced path contains no retry loop.
 
 If the receive-header timeout fires, the carriage agent is disconnected. The
-reviewed disconnect and socket-close paths do not expose a NOTIREAD-specific
-local persistence write or status conversion. Whether all pending callbacks
-are fanned out with an error during that disconnect remains an explicit gap;
-the static trace does not prove a callback result for that case. Therefore a
-timeout or disconnect is an ambiguous, unacknowledged mutation and must not be
-converted into local read success or retried implicitly by a clean-room client.
+shared carriage trace establishes that socket close, receive timeout, and
+explicit disconnect fan out the supplied error to every pending callback,
+clear the pending maps, and terminate each callback exactly once. This is a
+generic carriage guarantee rather than a NOTIREAD-specific persistence write
+or status conversion. A timeout or disconnect is therefore still an
+ambiguous, unacknowledged mutation and must not be converted into local read
+success or retried implicitly by a clean-room client.
 
 No NOTIREAD-specific caller-side persistence, application-message commit, or
 downstream follow-up was found after the completion boundary. Inbound message
@@ -69,7 +70,7 @@ or post-disconnect callback result.
   and accessor tracing, pending-response dispatch tracing, shared carriage
   readiness/send/timeout tracing, and disconnect-path inspection.
 - Confidence: high for packet forwarding, one-shot pending-callback removal,
-  and the absence of a status branch on the reviewed path; medium for the
-  response property's optional extra-information interpretation; open for
-  pending-callback fan-out after timeout/disconnect and server semantics of
-  the response boolean.
+  shared pending-callback fan-out after timeout/disconnect, and the absence
+  of a status branch on the reviewed path; medium for the response property's
+  optional extra-information interpretation; open for server semantics of the
+  response boolean.
