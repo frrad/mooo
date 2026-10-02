@@ -13,20 +13,23 @@ import (
 var ErrCredentialRenewal = errors.New("client: credential renewal failed")
 
 func (c *Client) renewCredentials(ctx context.Context) error {
-	if c.store == nil || c.state.Credentials == nil {
+	c.mu.Lock()
+	store, state, doer := c.store, c.state, c.http
+	c.mu.Unlock()
+	if store == nil || state.Credentials == nil {
 		return ErrCredentialsAbsent
 	}
-	wireUUID, err := c.state.Identity.WireDeviceUUID()
+	wireUUID, err := state.Identity.WireDeviceUUID()
 	if err != nil {
 		return ErrBootstrap
 	}
-	old := c.state.Credentials.Clone()
+	old := state.Credentials.Clone()
 	refreshToken, err := refreshTokenFromMaterial(old.AutoLoginMaterial)
 	if err != nil {
 		return err
 	}
-	rotation, err := tokenrefresh.Execute(ctx, c.http, tokenrefresh.ClientProfile{
-		AppVersion: c.state.Identity.Metadata.AppVersion, OSVersion: c.state.Identity.Metadata.OSVersion,
+	rotation, err := tokenrefresh.Execute(ctx, doer, tokenrefresh.ClientProfile{
+		AppVersion: state.Identity.Metadata.AppVersion, OSVersion: state.Identity.Metadata.OSVersion,
 		Language: "en", AccessToken: old.AccessToken, DeviceUUID: wireUUID,
 	}, tokenrefresh.Request{RefreshToken: refreshToken})
 	if err != nil {
@@ -39,11 +42,17 @@ func (c *Client) renewCredentials(ctx context.Context) error {
 	replacement := authstate.Credentials{
 		UserID: old.UserID, AccessToken: rotation.AccessToken, AutoLoginMaterial: material,
 	}
-	if err := c.store.CompareAndSwapCredentials(old, replacement); err != nil {
+	if err := store.CompareAndSwapCredentials(old, replacement); err != nil {
 		return err
 	}
 	copy := replacement.Clone()
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return ErrClientClosed
+	}
 	c.state.Credentials = &copy
+	c.mu.Unlock()
 	return nil
 }
 

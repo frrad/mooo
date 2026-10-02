@@ -126,6 +126,91 @@ through every terminal fan-out path.
 Mapping the serialized ping configuration key and claiming official queue
 timing remain separate evidence gaps.
 
+### Default status/config owner binding proposal
+
+The next reconnect slice is a constructor-bound integration layer for the
+reviewed status and timeout contracts. It must be implemented on a branch based
+on the current main and reviewed independently from the opt-in asynchronous
+submission adapter.
+
+The constructor should receive three distinct inputs: the `LocoAgent` transport
+status source used by the status-3 producer gate, the out-segment timeout
+configuration source, and the queue/clock owner dependencies. Manager status
+values (`0x15`, `0x16`, `0x17`, `0x1a`) must not be used as the agent status
+source. The owner and these providers must be immutable before `readLoop` or
+the first LOGINLIST admission begins; a late setter is not an acceptable
+lifecycle seam.
+
+The binding sequence is: establish the carriage and its status source, create
+the receive-header and out-segment owners, bind them to the Session, start the
+single reader, and then admit LOGINLIST. At request execution, status other than
+3 must return the reviewed producer failure without packet allocation, socket
+write, or receive-header timeout admission. Status 3 uses the existing exact
+method-and-ID correlation and async submission path. The out-segment owner reads
+configuration at admission and again only for queued enable execution; a
+non-positive value skips timer admission while allowing the write to complete.
+
+The integration must keep queue operations enqueue-only and must not invoke
+Session, socket, or timer callbacks while holding Session or owner locks. The
+worker is FIFO and bounded. `Close` interrupts and is safe from callback
+context; external teardown uses `Session.Shutdown(ctx)` to join the worker with
+a caller deadline. Terminal write errors resolve their exact pending request
+before reader fan-out can replace the original error. Partial progress disables
+the out timer while retaining the request; ambiguous partial failure closes the
+carriage without retry.
+
+Required synthetic and real-client tests are:
+
+1. Constructor ordering and immutable owner binding before reader startup.
+2. Status 3 versus non-3 execution, with assertions for allocation, write, and
+   receive-timeout effects.
+3. Positive, zero, and negative timeout configuration, including queued
+   execution reread and no-reread cancellation.
+4. LOGINLIST/LCHATLIST accepted-status handling, preserved initial pushes, and
+   EOF/close cleanup through the same reader.
+5. Exact UID response correlation, wrong-method same-ID routing, partial
+   progress before terminal completion, zero-byte error, ambiguous partial
+   error, queued cancellation, full-write cancellation, and bounded Shutdown.
+
+The serialized configuration key/override and initial admission source remain
+unresolved evidence inputs. The startup manager's observed 15/20/10/10
+configuration values are documented separately; their mapping into this
+constructor and the serialized override key still require source evidence.
+Until those inputs are landed as public contracts, the default constructor
+must not activate these owners or invent a fallback status.
+
+### Existing ownership and shutdown call sites
+
+`Client` is the sole production owner of a live `Session`: `ensureSession`
+stores the lazily connected session under `Client.mu`, and chat, sync, media,
+metadata, and event APIs all obtain that same pointer. The connect path creates
+the Session after secure carriage setup and starts `readLoop` before the first
+LOGINLIST request. The future binding point is therefore between carriage
+assignment and reader startup, before LOGINLIST admission. The bridge reaches a
+Session only through `Client`; there is no second bridge-owned carriage owner.
+
+`Client.Close` currently holds `Client.mu` while calling `Session.Close`, then
+marks the checkpoint clean and releases the profile lease. A bounded worker
+join must not be added under that lock because worker callbacks can complete
+pending Session requests and may call higher-level code. A future context-aware
+Client shutdown should capture the Session while holding `Client.mu`, mark the
+Client closed, unlock, call `Session.Shutdown(ctx)`, and finalize the
+checkpoint and lease only after the join succeeds. If the deadline expires,
+the exclusive profile lease and checkpoint ownership must remain held so a
+later shutdown can retry the join; marking the Client closed must not discard
+the live Session reference. Existing `Close` call sites and test dials use
+interrupt-only cleanup and must remain valid until that API is approved.
+
+The integration tests belong at two levels. Session tests should exercise
+constructor binding, reader startup, status/config gates, UID correlation,
+worker joins, and terminal fan-out on scripted carriages. Client tests should
+inject a dialer returning that Session, assert one shared owner across
+concurrent operations, and verify bounded shutdown releases the session,
+checkpoint, and profile lease without holding `Client.mu` during the worker
+join. A timeout case must assert that the lease remains held and a later
+successful join releases it; a closed Client must reject new operations during
+that interval.
+
 ## Phase 4 — Matrix/Beeper bridge
 
 Execution follows [`research/bridge/PLAN.md`](research/bridge/PLAN.md).

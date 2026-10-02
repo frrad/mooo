@@ -39,7 +39,9 @@ func (c *Client) MarkRead(ctx context.Context, chatID, watermark int64) (syncmsg
 		return syncmsg.Response{}, ErrClientClosed
 	}
 	checkpoint := c.checkpoint
+	endPersistence := c.beginPersistenceLocked()
 	c.mu.Unlock()
+	defer endPersistence()
 
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
