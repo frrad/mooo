@@ -18,7 +18,7 @@ of the manager PING selector on the main queue, and clears the status-change
 handler. For status `3`, it writes internal status `0x17`, sets the per-handler
 latch only when clear, and invokes the optional callback with `true` only on
 that transition. The latch is initialized clear when the handler is installed;
-it is not an ongoing activity flag. Numeric status labels remain untraced.
+it is not an ongoing activity flag. Numeric status labels remain untraced. The reviewed manager installer supplies a callback block, but whether a nil boolean callback is a supported installation state is not proven; vectors therefore make callback presence explicit.
 
 After a socket disconnect, the delegate calls `setStatus:error:` first. The
 optional status handler therefore runs before delayed-work cancellation and

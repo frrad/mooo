@@ -15,17 +15,18 @@ type statusHandlerContract struct {
 	Cases     []statusHandlerCase `json:"cases"`
 }
 type statusHandlerCase struct {
-	Name           string   `json:"name"`
-	Kind           string   `json:"kind"`
-	Evidence       []string `json:"evidence"`
-	HandlerPresent *bool    `json:"handler_present"`
-	OldStatus      *int8    `json:"old_status"`
-	NewStatus      *int8    `json:"new_status"`
-	AgentCurrent   *bool    `json:"agent_current"`
-	LatchInitial   *bool    `json:"latch_initial"`
-	PendingCount   *int     `json:"pending_count"`
-	Expect         []string `json:"expect"`
-	RemainingGaps  []string `json:"remaining_gaps"`
+	Name            string   `json:"name"`
+	Kind            string   `json:"kind"`
+	Evidence        []string `json:"evidence"`
+	HandlerPresent  *bool    `json:"handler_present"`
+	OldStatus       *int8    `json:"old_status"`
+	NewStatus       *int8    `json:"new_status"`
+	AgentCurrent    *bool    `json:"agent_current"`
+	LatchInitial    *bool    `json:"latch_initial"`
+	CallbackPresent *bool    `json:"callback_present"`
+	PendingCount    *int     `json:"pending_count"`
+	Expect          []string `json:"expect"`
+	RemainingGaps   []string `json:"remaining_gaps"`
 }
 
 var statusHandlerKinds = map[string]bool{"status-setter": true, "manager-status-zero": true, "manager-status-three": true, "manager-status-gate": true, "disconnect-fanout-order": true, "owner-capture": true, "pending-response": true}
@@ -73,7 +74,7 @@ func validateStatusHandlerContract(v statusHandlerContract) error {
 				return fmt.Errorf("setter inputs")
 			}
 		case "manager-status-zero", "manager-status-three":
-			if c.AgentCurrent == nil || c.LatchInitial == nil {
+			if c.AgentCurrent == nil || c.LatchInitial == nil || c.CallbackPresent == nil {
 				return fmt.Errorf("status inputs")
 			}
 		case "manager-status-gate":
