@@ -252,3 +252,35 @@ func TestSessionRequestIDSkipsPendingAfterWrap(t *testing.T) {
 		t.Fatalf("request IDs = %d, %d; want 199999999, 100000001", first, second)
 	}
 }
+
+func TestSessionMalformedHeaderFailsPendingExactlyOnce(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	session := &Session{
+		wire:    &wireConn{c: clientConn},
+		pushes:  make(chan loco.Packet, 1),
+		pending: make(map[uint32]chan requestResult),
+	}
+	waiter := make(chan requestResult, 1)
+	session.pending[100000000] = waiter
+	go session.readLoop()
+	defer func() { _ = serverConn.Close() }()
+	if _, err := serverConn.Write(make([]byte, loco.HeaderSize)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-waiter:
+		if result.err == nil {
+			t.Fatal("malformed header completed pending request successfully")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("malformed header did not fail pending request")
+	}
+	select {
+	case result := <-waiter:
+		t.Fatalf("pending callback invoked twice: %#v", result)
+	default:
+	}
+	if session.pending != nil {
+		t.Fatalf("pending map = %#v, want nil", session.pending)
+	}
+}
