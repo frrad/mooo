@@ -110,6 +110,8 @@ Status: active work plan, 2026-09-30. Framework decision:
       [`chat-metadata.md`](../chat-metadata.md); friend/contact sync and the
       listed live-encoding gaps remain.
 - [ ] Client APIs for them, with synthetic fixtures.
+      `Client.ChatInfo`, `Client.Members`, and `Client.MemberList` exist
+      (`internal/protocol/chatmeta`); friend/contact sync APIs remain.
 - [ ] Portal names, avatars, and members. Group portals.
 - [ ] Membership events: `NEWMEM`, `DELMEM`, `LEFT`, `CHGCHATST`.
 
