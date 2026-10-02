@@ -44,7 +44,7 @@ func PlanReceiveHeaderTimeout(input ReceiveHeaderTimeoutInput) ([]ReceiveHeaderT
 	if input.EnableByte == 1 {
 		effects = append(effects,
 			ReceiveHeaderTimeoutEffect{Kind: "reread_timeout", Delay: input.ExecutionTimeout},
-			ReceiveHeaderTimeoutEffect{Kind: "perform_selector_after_delay", Delay: input.ExecutionTimeout},
+			ReceiveHeaderTimeoutEffect{Kind: "perform_selector_after_delay", Delay: input.ExecutionTimeout, Owner: input.Owner, Target: receiveHeaderTimeoutSelector, Tag: input.RequestTag},
 			ReceiveHeaderTimeoutEffect{Kind: "owner_target", Owner: input.Owner},
 			ReceiveHeaderTimeoutEffect{Kind: "fire_selector", Target: receiveHeaderTimeoutSelector},
 			ReceiveHeaderTimeoutEffect{Kind: "wrapped_tag", Tag: input.RequestTag},
@@ -52,7 +52,7 @@ func PlanReceiveHeaderTimeout(input ReceiveHeaderTimeoutInput) ([]ReceiveHeaderT
 		return effects, nil
 	}
 	effects = append(effects,
-		ReceiveHeaderTimeoutEffect{Kind: "cancel_previous_perform"},
+		ReceiveHeaderTimeoutEffect{Kind: "cancel_previous_perform", Owner: input.Owner, Target: receiveHeaderTimeoutSelector, Tag: input.RequestTag},
 		ReceiveHeaderTimeoutEffect{Kind: "owner_target", Owner: input.Owner},
 		ReceiveHeaderTimeoutEffect{Kind: "fire_selector", Target: receiveHeaderTimeoutSelector},
 		ReceiveHeaderTimeoutEffect{Kind: "wrapped_tag", Tag: input.RequestTag},

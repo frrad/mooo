@@ -18,7 +18,7 @@ func TestPlanReceiveHeaderTimeoutAdmissionAndQueuedEnable(t *testing.T) {
 		{Kind: "read_timeout", Delay: 20 * time.Second},
 		{Kind: "check_tag_nonnegative", Tag: 7}, {Kind: "queue_main"},
 		{Kind: "reread_timeout", Delay: 1500 * time.Millisecond},
-		{Kind: "perform_selector_after_delay", Delay: 1500 * time.Millisecond},
+		{Kind: "perform_selector_after_delay", Delay: 1500 * time.Millisecond, Owner: "agent", Target: receiveHeaderTimeoutSelector, Tag: 7},
 		{Kind: "owner_target", Owner: "agent"},
 		{Kind: "fire_selector", Target: receiveHeaderTimeoutSelector},
 		{Kind: "wrapped_tag", Tag: 7},
@@ -36,8 +36,18 @@ func TestPlanReceiveHeaderTimeoutDisableUsesExactTuple(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got[len(got)-4].Kind != "cancel_previous_perform" || got[len(got)-3] != (ReceiveHeaderTimeoutEffect{Kind: "owner_target", Owner: "agent"}) || got[len(got)-2] != (ReceiveHeaderTimeoutEffect{Kind: "fire_selector", Target: receiveHeaderTimeoutSelector}) || got[len(got)-1] != (ReceiveHeaderTimeoutEffect{Kind: "wrapped_tag", Tag: 1}) {
+	if got[len(got)-4] != (ReceiveHeaderTimeoutEffect{Kind: "cancel_previous_perform", Owner: "agent", Target: receiveHeaderTimeoutSelector, Tag: 1}) || got[len(got)-3] != (ReceiveHeaderTimeoutEffect{Kind: "owner_target", Owner: "agent"}) || got[len(got)-2] != (ReceiveHeaderTimeoutEffect{Kind: "fire_selector", Target: receiveHeaderTimeoutSelector}) || got[len(got)-1] != (ReceiveHeaderTimeoutEffect{Kind: "wrapped_tag", Tag: 1}) {
 		t.Fatalf("disable effects=%#v", got)
+	}
+}
+
+func TestPlanReceiveHeaderTimeoutEnableUsesExecutionTimeZero(t *testing.T) {
+	got, err := PlanReceiveHeaderTimeout(ReceiveHeaderTimeoutInput{AdmissionTimeout: 20 * time.Second, EnableByte: 1, Owner: "agent", RequestTag: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[3].Kind != "reread_timeout" || got[3].Delay != 0 || got[4].Kind != "perform_selector_after_delay" || got[4].Delay != 0 || got[4].Owner != "agent" || got[4].Target != receiveHeaderTimeoutSelector || got[4].Tag != 1 {
+		t.Fatalf("zero execution timeout effects=%#v", got)
 	}
 }
 
