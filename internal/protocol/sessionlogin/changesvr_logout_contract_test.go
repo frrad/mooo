@@ -19,6 +19,7 @@ type changeSvrLogoutCase struct {
 	Name           string   `json:"name"`
 	CallbackMain   bool     `json:"callback_on_main_thread"`
 	ManagerPresent bool     `json:"manager_present"`
+	HasMoreTickets bool     `json:"has_more_ticket_addresses"`
 	Expected       []string `json:"expected_effects"`
 }
 
@@ -42,12 +43,17 @@ func loadChangeSvrLogoutContract(path string) (changeSvrLogoutContract, error) {
 			return contract, fmt.Errorf("invalid case %q", tc.Name)
 		}
 		seen[tc.Name] = true
-		want := []string{"invoke_logout_for_change_server_inline"}
+		want := []string{"invoke_logout_for_change_server_inline", "clear_carriage_address", "check_more_ticket_addresses"}
 		if !tc.CallbackMain {
-			want = []string{"dispatch_main_queue", "invoke_logout_for_change_server"}
+			want = []string{"dispatch_main_queue", "invoke_logout_for_change_server", "clear_carriage_address", "check_more_ticket_addresses"}
 		}
 		if !tc.ManagerPresent {
 			want = []string{}
+		} else if tc.HasMoreTickets {
+			want = append(want, "move_ticket_address_cursor")
+		}
+		if tc.ManagerPresent {
+			want = append(want, "send_logout")
 		}
 		if !reflect.DeepEqual(tc.Expected, want) {
 			return contract, fmt.Errorf("effects=%v want=%v case=%q", tc.Expected, want, tc.Name)
