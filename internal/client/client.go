@@ -186,6 +186,9 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 			}
 			c.mu.Lock()
 			if c.closed {
+				// Keep a late session reachable so Shutdown can join its worker;
+				// closing the transport alone is not a worker-join guarantee.
+				c.session = session
 				c.mu.Unlock()
 				_ = session.Close()
 				finish()
@@ -243,6 +246,8 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 		}
 		c.mu.Lock()
 		if c.closed {
+			// Keep a late session reachable so Shutdown can join its worker.
+			c.session = session
 			c.mu.Unlock()
 			_ = session.Close()
 			finish()

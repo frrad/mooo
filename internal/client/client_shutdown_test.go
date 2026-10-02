@@ -102,11 +102,27 @@ func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+	lateConn := &stuckWriteConn{release: make(chan struct{}), entered: make(chan struct{})}
+	lateSession := newSession(nil)
+	lateSession.wire = &wireConn{c: lateConn}
+	clock := &clientOutClock{}
+	queue := &clientOutQueue{}
+	owner, err := sessionlogin.NewOutSegmentTimeoutOwner(clock, queue, clientOutConfig{timeout: time.Second}, "agent", sessionlogin.OutSegmentTimeoutSelector, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lateSession.installOutSegmentSubmitter(lateSession.wire, owner, func(sessionlogin.OutSegmentWriteResult) {}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lateSession.writeRequest(context.Background(), lateSession.wire, 41, "PING", nil); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(lateConn.Release)
 	client := &Client{lease: lease}
 	client.dial = func(context.Context, authstate.State) (*Session, error) {
 		close(started)
 		<-release
-		return &Session{}, nil
+		return lateSession, nil
 	}
 	connectDone := make(chan error, 1)
 	go func() { connectDone <- client.Connect(context.Background()) }()
@@ -141,6 +157,16 @@ func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("connect did not unwind after dial release")
 	}
+	ctx, cancel = context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err = client.Shutdown(ctx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("shutdown while late session worker blocked error=%v, want deadline", err)
+	}
+	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
+		t.Fatalf("lease after late worker timeout error=%v, want %v", err, ErrProfileInUse)
+	}
+	lateConn.Release()
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
 	if err := client.Shutdown(ctx); err != nil {
 		cancel()
@@ -216,6 +242,7 @@ func TestClientCloseRetainsOwnershipThroughBlockedConnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = lease.Close() })
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var releaseOnce sync.Once
@@ -247,6 +274,12 @@ func TestClientCloseRetainsOwnershipThroughBlockedConnect(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("connect did not unwind after dial release")
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	if err := client.Shutdown(ctx); err != nil {
+		cancel()
+		t.Fatalf("shutdown after close/connect completion: %v", err)
+	}
+	cancel()
 	otherLease, err := acquireProfileLease(leasePath)
 	if err != nil {
 		t.Fatalf("lease after close cleanup: %v", err)
