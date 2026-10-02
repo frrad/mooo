@@ -79,6 +79,11 @@ func TestTokenHelperUnresolvedVectorsSchema(t *testing.T) {
 		"context_failure_behavior_unresolved": true, "durable_commit_unresolved": true, "reset_policy_unresolved": true,
 	}
 	for _, vector := range got.Vectors {
+		for _, expected := range vector.Expect {
+			if !validEffects[expected] {
+				t.Fatalf("%q: unknown expected effect %q", vector.Name, expected)
+			}
+		}
 		if vector.Name == "negative token to zero is typed assertion error" {
 			if vector.Current == nil || vector.Incoming == nil {
 				t.Fatalf("%q: assertion vector requires current and incoming", vector.Name)
@@ -98,14 +103,6 @@ func TestTokenHelperUnresolvedVectorsSchema(t *testing.T) {
 		gotEffects, err := SelectTokenHelperEffects(vector.Kind, *vector.Current, *vector.Incoming, vector.ExistingLossCheckPositive, vector.ExistingTokenEqualsLossCheck, vector.NestedContext)
 		if err != nil {
 			t.Fatalf("%q: unexpected error: %v", vector.Name, err)
-		}
-		for _, expected := range vector.Expect {
-			if expected == "perform_blind_write" {
-				expected = "set_blind"
-			}
-			if !validEffects[expected] {
-				t.Fatalf("%q: unknown expected effect %q", vector.Name, expected)
-			}
 		}
 		for _, expected := range vector.Expect {
 			if expected == "perform_blind_write" {
