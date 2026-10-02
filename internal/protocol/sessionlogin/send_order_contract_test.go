@@ -18,6 +18,7 @@ type sendOrderCase struct {
 	Name            string   `json:"name"`
 	ProducerStatus  uint8    `json:"producer_status"`
 	Completion      bool     `json:"completion_present"`
+	CryptoPresent   bool     `json:"crypto_present"`
 	ExpectedEffects []string `json:"expected_effects"`
 	RemainingGaps   []string `json:"remaining_gaps"`
 }
@@ -32,8 +33,12 @@ var knownSendOrderEffect = map[string]bool{
 	"encrypt_packet_data":            true,
 	"socket_write_timeout_minus_one": true,
 	"enable_out_segment_timeout":     true,
-	"forward_nil_error":              true,
+	"forward_nil_packet":             true,
+	"forward_producer_error":         true,
+	"no_completion_callback":         true,
+	"no_send":                        true,
 	"no_receive_timeout_arm":         true,
+	"arm_receive_header_timeout":     true,
 }
 
 func loadSendOrderContract(path string) (sendOrderContract, error) {
@@ -50,7 +55,7 @@ func loadSendOrderContract(path string) (sendOrderContract, error) {
 	if v.Status != "reviewed-static-unexecuted-runtime" {
 		return v, fmt.Errorf("status=%q", v.Status)
 	}
-	if len(v.Cases) != 3 {
+	if len(v.Cases) != 4 {
 		return v, fmt.Errorf("cases=%d", len(v.Cases))
 	}
 	seen := map[string]bool{}
@@ -64,6 +69,28 @@ func loadSendOrderContract(path string) (sendOrderContract, error) {
 				return v, fmt.Errorf("unknown effect %q", effect)
 			}
 		}
+		if !c.CryptoPresent {
+			return v, fmt.Errorf("crypto scope must be explicit supported path: %q", c.Name)
+		}
+		want := []string{"allocate_packet", "derive_packet_tag"}
+		if c.ProducerStatus == 3 {
+			if c.Completion {
+				want = append(want, "register_completion_by_uid", "register_packet_uid")
+			}
+			want = append(want, "send_packet", "packet_data", "encrypt_packet_data", "socket_write_timeout_minus_one", "enable_out_segment_timeout", "arm_receive_header_timeout")
+		} else if c.Completion {
+			want = append(want, "forward_nil_packet", "forward_producer_error", "no_receive_timeout_arm")
+		} else {
+			want = append(want, "no_completion_callback", "no_send", "no_receive_timeout_arm")
+		}
+		if len(want) != len(c.ExpectedEffects) {
+			return v, fmt.Errorf("effect count mismatch %q: got=%v want=%v", c.Name, c.ExpectedEffects, want)
+		}
+		for i := range want {
+			if c.ExpectedEffects[i] != want[i] {
+				return v, fmt.Errorf("effect order mismatch %q: got=%v want=%v", c.Name, c.ExpectedEffects, want)
+			}
+		}
 	}
 	return v, nil
 }
@@ -73,13 +100,7 @@ func TestSendOrderContractSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := v.Cases[0].ExpectedEffects; len(got) != 9 || got[4] != "send_packet" || got[5] != "packet_data" || got[6] != "encrypt_packet_data" || got[7] != "socket_write_timeout_minus_one" || got[8] != "enable_out_segment_timeout" {
-		t.Fatalf("completion send order=%v", got)
-	}
-	if got := v.Cases[1].ExpectedEffects; len(got) != 7 || got[2] != "send_packet" || got[6] != "enable_out_segment_timeout" {
-		t.Fatalf("fire-and-forget send order=%v", got)
-	}
-	if got := v.Cases[2].ExpectedEffects; len(got) != 4 || got[3] != "no_receive_timeout_arm" {
-		t.Fatalf("non-status-3 effects=%v", got)
+	if len(v.Cases) != 4 {
+		t.Fatalf("cases=%d", len(v.Cases))
 	}
 }

@@ -5,6 +5,7 @@
       "name": "status three completion registration precedes write and out timeout",
       "producer_status": 3,
       "completion_present": true,
+      "crypto_present": true,
       "expected_effects": [
         "allocate_packet",
         "derive_packet_tag",
@@ -14,7 +15,8 @@
         "packet_data",
         "encrypt_packet_data",
         "socket_write_timeout_minus_one",
-        "enable_out_segment_timeout"
+        "enable_out_segment_timeout",
+        "arm_receive_header_timeout"
       ],
       "remaining_gaps": [
         "write completion callback and partial failure behavior are untraced",
@@ -25,6 +27,7 @@
       "name": "status three fire and forget still arms out timeout",
       "producer_status": 3,
       "completion_present": false,
+      "crypto_present": true,
       "expected_effects": [
         "allocate_packet",
         "derive_packet_tag",
@@ -32,7 +35,8 @@
         "packet_data",
         "encrypt_packet_data",
         "socket_write_timeout_minus_one",
-        "enable_out_segment_timeout"
+        "enable_out_segment_timeout",
+        "arm_receive_header_timeout"
       ],
       "remaining_gaps": [
         "write completion callback and partial failure behavior are untraced"
@@ -42,14 +46,32 @@
       "name": "non status three forwards producer error without send or receive arm",
       "producer_status": 2,
       "completion_present": true,
+      "crypto_present": true,
       "expected_effects": [
         "allocate_packet",
         "derive_packet_tag",
-        "forward_nil_error",
+        "forward_nil_packet",
+        "forward_producer_error",
         "no_receive_timeout_arm"
       ],
       "remaining_gaps": [
         "producer error domain and code are untraced in this callback"
+      ]
+    },
+    {
+      "name": "non status three without completion is silent",
+      "producer_status": 2,
+      "completion_present": false,
+      "crypto_present": true,
+      "expected_effects": [
+        "allocate_packet",
+        "derive_packet_tag",
+        "no_completion_callback",
+        "no_send",
+        "no_receive_timeout_arm"
+      ],
+      "remaining_gaps": [
+        "producer error is unobserved when completion is absent"
       ]
     }
   ]

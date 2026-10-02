@@ -103,7 +103,9 @@ tag. When a completion exists, it registers the completion by packet unique ID
 and the packet-ID-to-unique-ID association before invoking the send path. The
 send path obtains packet data, encrypts it, submits the encrypted bytes to the
 socket with write timeout `-1` and the packet ID tag, and then enables the
-out-segment timeout. A status other than 3 forwards a producer error to a
+out-segment timeout. The enclosing status-3 producer block then arms the
+receive-header timeout after `sendPacket` returns; these are distinct toggles.
+A status other than 3 forwards a producer error to a
 present completion and does not send or arm the receive-header timeout. The
 write completion, partial-write behavior, packet serialization fields, and
 producer error identity remain untraced.
