@@ -4,18 +4,22 @@ Status: static handoff with explicit gaps, 2026-10-02. Evidence: RC-BIN-001.
 
 The manager exposes a configurable carriage ping interval and a method that
 constructs a zero-field `PING` request through the ordinary carriage request
-path. The recovered interval setter and request method do not by themselves
-prove the timer consumer or lifecycle. The request completion is forwarded
-through the normal response wrapper; a successful reply does not expose any
-additional application state. The traced completion itself does not cancel a
-keep-alive timer.
+path. Three recovered manager callback paths read that interval and schedule a
+delayed invocation of the carriage ping method on the carriage target. A
+paired callback cancels prior delayed invocations for that same target and
+selector. The entry/exit gates for those callbacks and any traffic-based reset
+remain untraced. The request completion is forwarded through the normal
+response wrapper; a successful reply does not expose any additional
+application state. The traced completion itself does not cancel a keep-alive
+timer.
 
 The coordinator assigns a fallback ping interval of 180 seconds: any positive
 signed 32-bit configuration value is retained, while zero or negative values
-become 180. The interval setter and storage field are proven, but the consumer
-that schedules LOCO keep-alive work was not recovered. Timer creation/start gate,
-timer stop gate, elapsed-clock source, and whether other traffic updates the
-last-ping timestamp remain gaps. A separate Swift helper in the binary has a
+become 180. The interval setter, storage field, and delayed scheduling
+primitive are proven, but the caller gates that start or stop those callbacks
+were not recovered. Timer creation/start gate, timer stop gate, elapsed-clock
+source, and whether other traffic updates the last-ping timestamp remain gaps.
+A separate Swift helper in the binary has a
 Foundation-clock timer that builds an HTTP `/ping` request; it is excluded from
 this LOCO carriage contract.
 
@@ -40,11 +44,13 @@ body-read timeout behavior are likewise open.
 
 ## Transfer boundaries
 
-Observed: zero-field PING construction, ordinary carriage dispatch, completion
-wrapper (nil response calls the supplied completion with nil; non-nil response is
-wrapped before that call), delayed receive-header timeout gated by positive timeout
-and request tag, timeout-to-disconnect, tag-driven header/body read callbacks,
-configuration values at the traced initializer, and the separate HTTP helper's
+Observed: zero-field PING construction, ordinary carriage dispatch, interval
+read plus delayed PING scheduling, cancellation of a prior delayed PING for the
+same target and selector, completion wrapper (nil response calls the supplied
+completion with nil; non-nil response is wrapped before that call), delayed
+receive-header timeout gated by positive timeout and request tag,
+timeout-to-disconnect, tag-driven header/body read callbacks, configuration
+values at the traced initializer, and the separate HTTP helper's
 Foundation-clock `/ping` chain as an excluded path.
 
 Implementation decisions: represent PING scheduling with an injected clock only
@@ -53,6 +59,7 @@ unknown while it remains untraced;
 fail pending requests once on timeout-disconnect; keep keep-alive and receive
 timeout ownership in the session supervisor rather than the wire parser.
 
-Untraced: timer lifecycle gates, traffic reset policy, exact timeout error value,
-whether idle sessions arm the receive timeout, and whether configuration callers
-override the recovered defaults.
+Untraced: timer lifecycle gates around the recovered scheduling callbacks,
+traffic reset policy, exact timeout error value, whether idle sessions arm the
+receive timeout, and whether configuration callers override the recovered
+defaults.
