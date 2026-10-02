@@ -31,8 +31,9 @@ type RetryTimer interface {
 type RetryTimerEvent struct { Generation uint64 }
 ```
 
-`Events` is the observable delivery path: the owner reads one event and injects
-`RecoveryTimerFired{Generation}` into `ReduceRecovery`; the timer callback never
+`Events` is the observable delivery path: the owner reads one event and would
+need a future reducer event (for example `RecoveryTimerFired{Generation}`) because
+no such event is currently accepted by `ReduceRecovery`. The timer callback never
 calls login or mutates reducer state. `Cancel` is idempotent and closes or drains
 the event stream according to the scheduler contract, so a cancelled timer
 cannot admit a retry. A deterministic fake scheduler can retain due times,
@@ -45,8 +46,9 @@ This is deliberately retry-only. `EndpointCache` keeps its existing elapsed
 keep-alive uses its separate wall-clock timer owner. None of those clocks should
 be hidden behind a single `Now` method or converted into retry timestamps.
 
-The reducer remains usable without a scheduler by emitting a schedule intent as
-data. The eventual effect should carry an explicit retry delay and generation,
+The current reducer remains usable without a scheduler by emitting a schedule
+intent as data. Adding a timer-fired event and a delay field is a future API
+change, not an assumption about the current `RecoveryEvent` interface. The eventual effect should carry an explicit retry delay and generation,
 for example `ScheduleRecovery{Generation, Delay}`. Applying that effect is the
 only place allowed to call `RetryScheduler.ScheduleRetry`. The constructor's
 scheduler/default delay remains an integration decision pending public source
