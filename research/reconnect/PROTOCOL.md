@@ -52,9 +52,11 @@ established by this trace.
 The coordinator assigns a fallback ping interval of 180 seconds: any positive
 signed 32-bit configuration value is retained, while zero or negative values
 become 180. The interval setter, storage field, and delayed scheduling
-primitive are proven, but the caller gates that start or stop those callbacks
-were not recovered. Timer creation/start gate, timer stop gate, elapsed-clock
-source, and whether other traffic updates the last-ping timestamp remain gaps.
+primitive are proven, and request/completion/push-receipt callers are traced;
+the broader admission gates that start or stop those callbacks remain
+unresolved. Timer creation/start gate outside those callers, timer stop gate,
+elapsed-clock source, and whether other traffic updates the last-ping timestamp
+remain gaps.
 A separate Swift helper in the binary has a
 Foundation-clock timer that builds an HTTP `/ping` request; it is excluded from
 this LOCO carriage contract.

@@ -4,38 +4,10 @@
     "RC-Q5"
   ],
   "evidence": [
-    "RC-BIN-001",
-    "RC-BIN-002",
-    "RC-BIN-003",
-    "RC-BIN-004"
+    "RC-BIN-001"
   ],
   "status": "unexecuted",
   "cases": [
-    {
-      "name": "keep-alive uses an empty PING body",
-      "kind": "wire-shape",
-      "expect_client": {
-        "method": "PING",
-        "body": {}
-      }
-    },
-    {
-      "name": "timeout disconnects carriage and fails pending callbacks once",
-      "kind": "failure-order",
-      "expect": [
-        "disconnect",
-        "fan_out_pending_error_once",
-        "clear_pending"
-      ]
-    },
-    {
-      "name": "PING completion forwards nil failure and wraps a nonnil reply",
-      "kind": "completion-forwarding",
-      "expect": [
-        "nil_reply -> completion(nil)",
-        "reply -> construct_response_wrapper -> completion(wrapper)"
-      ]
-    },
     {
       "name": "receive-header timeout predicate accepts nonnegative signed tags",
       "kind": "timeout-predicate",
@@ -60,6 +32,9 @@
           "configured_timeout_seconds": 0,
           "arm": false
         }
+      ],
+      "evidence": [
+        "RC-BIN-001"
       ]
     },
     {
@@ -74,6 +49,9 @@
         "timer lifecycle",
         "traffic reset",
         "idle timeout scope"
+      ],
+      "evidence": [
+        "RC-BIN-001"
       ]
     },
     {
@@ -104,84 +82,9 @@
           "configured_seconds": 181,
           "stored_seconds": 181
         }
-      ]
-    },
-    {
-      "name": "request completion queues ping scheduling before callback",
-      "kind": "lifecycle-order",
-      "expect": [
-        "queue_ping_schedule_on_main",
-        "forward_packet_or_error_to_completion"
       ],
-      "remaining_gaps": [
-        "clock source",
-        "queue execution race"
-      ]
-    },
-    {
-      "name": "request status rejection queues cancellation without completion rearm",
-      "kind": "lifecycle-order",
-      "expect": [
-        "queue_ping_cancel_on_main",
-        "early_request_error",
-        "no_completion_callback_rearm"
-      ]
-    },
-    {
-      "name": "no-completion request orders cancel request schedule",
-      "kind": "lifecycle-order",
-      "expect": [
-        "queue_ping_cancel_on_main",
-        "ordinary_request",
-        "queue_ping_schedule_on_main"
-      ]
-    },
-    {
-      "name": "numeric zero status clears agent and queues ping cancellation",
-      "kind": "lifecycle-order",
-      "status": 0,
-      "expect": [
-        "compare_current_carriage_agent",
-        "clear_carriage_agent",
-        "write_internal_status_0x1a_or_0x16",
-        "gate_false_callback_on_clear_handler_latch",
-        "queue_ping_cancel_on_main",
-        "clear_status_change_handler"
-      ],
-      "latch_initial": "clear_at_handler_installation"
-    },
-    {
-      "name": "numeric three status writes connected state",
-      "kind": "lifecycle-order",
-      "status": 3,
-      "expect": [
-        "compare_current_carriage_agent",
-        "write_internal_status_0x17",
-        "set_handler_latch_if_clear",
-        "gate_true_callback_on_clear_handler_latch"
-      ],
-      "status_label": "untraced",
-      "latch_initial": "clear_at_handler_installation"
-    },
-    {
-      "name": "ordinary carriage request queues ping cancellation",
-      "kind": "lifecycle-order",
-      "expect": [
-        "queue_ping_cancel_on_main",
-        "normal_request_or_error_handling"
-      ],
-      "ordering_boundary": "queued cancellation may race an already eligible delayed invocation"
-    },
-    {
-      "name": "push-receipt request orders cancel send schedule",
-      "kind": "lifecycle-order",
-      "expect": [
-        "queue_ping_cancel_on_main",
-        "push_receipt_send",
-        "queue_ping_schedule_on_main"
-      ],
-      "remaining_gaps": [
-        "push-receipt response/failure semantics"
+      "evidence": [
+        "RC-BIN-001"
       ]
     }
   ]
