@@ -73,14 +73,16 @@ type Session struct {
 	pending            map[uint32]chan requestResult
 	lifecycleScheduler lifecycleScheduler
 	lifecycleStopped   bool
-	headerObserver     func(loco.Header)
-	initialChatData    []bson.Raw
-	userID             int64
-	appVersion         string
-	mediaDial          wireDialer
-	loginCursor        loginCursor
-	bootstrapDone      bool
-	bootstrapPushes    []loco.Packet
+	// headerObserver is configured before readLoop starts and must not change
+	// while that loop is running.
+	headerObserver  func(loco.Header)
+	initialChatData []bson.Raw
+	userID          int64
+	appVersion      string
+	mediaDial       wireDialer
+	loginCursor     loginCursor
+	bootstrapDone   bool
+	bootstrapPushes []loco.Packet
 }
 
 func newSession(scheduler lifecycleScheduler) *Session {

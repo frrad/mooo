@@ -1,6 +1,8 @@
 package client
 
 import (
+	"errors"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -135,15 +137,25 @@ func TestSessionHeaderObserverBodyEOFFailsWaiterOnce(t *testing.T) {
 	}
 	select {
 	case result := <-waiter:
-		if result.err == nil {
-			t.Fatal("body EOF completed waiter successfully")
+		if !errors.Is(result.err, io.ErrUnexpectedEOF) {
+			t.Fatalf("body EOF waiter error=%v, want unexpected EOF", result.err)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("body EOF did not fail waiter")
 	}
 	select {
+	case <-readDone:
+	case <-time.After(time.Second):
+		t.Fatal("session read loop did not stop after body EOF")
+	}
+	select {
 	case result := <-waiter:
 		t.Fatalf("waiter received duplicate completion: %#v", result)
+	default:
+	}
+	select {
+	case <-observed:
+		t.Fatal("header observer ran more than once")
 	default:
 	}
 	session.mu.Lock()
