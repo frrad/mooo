@@ -58,33 +58,58 @@ type lifecycleShutdown interface {
 	shutdown()
 }
 
+// receiveHeaderTimeoutController is intentionally injected before readLoop
+// starts and must not be replaced while that loop runs. The reviewed source
+// gates timer admission on producer status and captured configuration; Session
+// does not invent a default status/config source until that layer is traced and
+// wired. Toggle is called with the captured enable byte and packet identity,
+// while Close invalidates queued and scheduled owner work. Toggle must enqueue
+// without synchronously reentering Session: Session holds a dedicated mutex
+// across the call to serialize arm/disarm ordering.
+type receiveHeaderTimeoutController interface {
+	Toggle(enableByte byte, tag int64) (bool, error)
+	Close()
+}
+
 // Session owns one authenticated carriage. A background reader dispatches
 // correlated responses and preserves unsolicited packets for the caller.
 type Session struct {
-	mu                  sync.Mutex
-	writeGateOnce       sync.Once
-	writeGate           chan struct{}
-	lifecycleMu         sync.Mutex
-	wire                *wireConn
-	nextID              uint32
-	closed              bool
-	closing             bool
-	pushes              chan loco.Packet
-	pending             map[uint32]chan requestResult
-	pendingByUniqueID   map[string]chan requestResult
-	pendingUniqueIDByID map[uint32]string
-	lifecycleScheduler  lifecycleScheduler
-	lifecycleStopped    bool
+	mu                     sync.Mutex
+	writeGateOnce          sync.Once
+	writeGate              chan struct{}
+	receiveHeaderTimeoutMu sync.Mutex
+	lifecycleMu            sync.Mutex
+	wire                   *wireConn
+	nextID                 uint32
+	closed                 bool
+	closing                bool
+	pushes                 chan loco.Packet
+	pending                map[uint32]chan requestResult
+	pendingByUniqueID      map[string]chan requestResult
+	pendingUniqueIDByID    map[uint32]string
+	lifecycleScheduler     lifecycleScheduler
+	lifecycleStopped       bool
 	// headerObserver is configured before readLoop starts and must not change
 	// while that loop is running.
-	headerObserver  func(loco.Header)
-	initialChatData []bson.Raw
-	userID          int64
-	appVersion      string
-	mediaDial       wireDialer
-	loginCursor     loginCursor
-	bootstrapDone   bool
-	bootstrapPushes []loco.Packet
+	headerObserver             func(loco.Header)
+	receiveHeaderTimeout       receiveHeaderTimeoutController
+	receiveHeaderTimeoutEnable func(command string, packetID uint32) (byte, bool)
+	receiveHeaderTimeoutState  map[uint32]*receiveHeaderTimeoutToken
+	initialChatData            []bson.Raw
+	userID                     int64
+	appVersion                 string
+	mediaDial                  wireDialer
+	loginCursor                loginCursor
+	bootstrapDone              bool
+	bootstrapPushes            []loco.Packet
+}
+
+type receiveHeaderTimeoutToken struct {
+	packetID  uint32
+	key       string
+	enable    byte
+	committed bool
+	canceled  bool
 }
 
 func newSession(scheduler lifecycleScheduler) *Session {
@@ -391,11 +416,14 @@ func (s *Session) requestRaw(ctx context.Context, id uint32, command string, bod
 	s.pendingUniqueIDByID[id] = packetUniqueID(command, id)
 	wire := s.wire
 	s.mu.Unlock()
+	preparedTimeout := s.prepareReceiveHeaderTimeout(command, id)
 	s.queueCancelRequest()
 	if err := s.writeRequest(ctx, wire, id, command, body); err != nil {
+		s.abortReceiveHeaderTimeout(preparedTimeout)
 		s.removePending(id, result)
 		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, err)
 	}
+	s.commitReceiveHeaderTimeout(preparedTimeout)
 	select {
 	case outcome := <-result:
 		if outcome.err != nil {
@@ -523,9 +551,129 @@ func packetUniqueID(method string, id uint32) string {
 	return sessionlogin.FormatPacketUniqueID(method, id)
 }
 
+func (s *Session) prepareReceiveHeaderTimeout(command string, packetID uint32) *receiveHeaderTimeoutToken {
+	// The reviewed source proves status-3 producer ordering but does not expose
+	// the lower asynchronous
+	// socket-write callback boundary, so the gate is captured before the write
+	// and committed only after the write succeeds.
+	s.mu.Lock()
+	controller := s.receiveHeaderTimeout
+	gate := s.receiveHeaderTimeoutEnable
+	s.mu.Unlock()
+	if controller == nil || gate == nil {
+		return nil
+	}
+	enableByte, admitted := gate(command, packetID)
+	if !admitted {
+		return nil
+	}
+	token := &receiveHeaderTimeoutToken{packetID: packetID, key: packetUniqueID(command, packetID), enable: enableByte}
+	s.receiveHeaderTimeoutMu.Lock()
+	if s.receiveHeaderTimeoutState == nil {
+		s.receiveHeaderTimeoutState = make(map[uint32]*receiveHeaderTimeoutToken)
+	}
+	s.receiveHeaderTimeoutState[packetID] = token
+	s.receiveHeaderTimeoutMu.Unlock()
+	return token
+}
+
+func (s *Session) commitReceiveHeaderTimeout(token *receiveHeaderTimeoutToken) {
+	if token == nil {
+		return
+	}
+	s.receiveHeaderTimeoutMu.Lock()
+	state, pending := s.receiveHeaderTimeoutState[token.packetID]
+	if !pending || state != token || state.committed || state.canceled {
+		s.receiveHeaderTimeoutMu.Unlock()
+		return
+	}
+	s.mu.Lock()
+	controller := s.receiveHeaderTimeout
+	closed := s.closed || s.closing
+	s.mu.Unlock()
+	if controller == nil || closed {
+		if current, ok := s.receiveHeaderTimeoutState[token.packetID]; ok && current == token {
+			delete(s.receiveHeaderTimeoutState, token.packetID)
+		}
+		s.receiveHeaderTimeoutMu.Unlock()
+		return
+	}
+	admitted, _ := controller.Toggle(state.enable, int64(token.packetID))
+	if !admitted {
+		if current, ok := s.receiveHeaderTimeoutState[token.packetID]; ok && current == token {
+			delete(s.receiveHeaderTimeoutState, token.packetID)
+		}
+		s.receiveHeaderTimeoutMu.Unlock()
+		return
+	}
+	token.committed = true
+	s.receiveHeaderTimeoutMu.Unlock()
+}
+
+func (s *Session) abortReceiveHeaderTimeout(token *receiveHeaderTimeoutToken) {
+	if token == nil {
+		return
+	}
+	s.receiveHeaderTimeoutMu.Lock()
+	if current, ok := s.receiveHeaderTimeoutState[token.packetID]; ok && current == token {
+		delete(s.receiveHeaderTimeoutState, token.packetID)
+	}
+	s.receiveHeaderTimeoutMu.Unlock()
+}
+
+func (s *Session) resetReceiveHeaderTimeout() {
+	s.receiveHeaderTimeoutMu.Lock()
+	s.receiveHeaderTimeoutState = nil
+	s.receiveHeaderTimeoutMu.Unlock()
+}
+
+func (s *Session) disarmReceiveHeaderTimeout(packetID uint32, key string, controller receiveHeaderTimeoutController) bool {
+	s.receiveHeaderTimeoutMu.Lock()
+	state, tracked := s.receiveHeaderTimeoutState[packetID]
+	if !tracked || state.key != key {
+		s.receiveHeaderTimeoutMu.Unlock()
+		return false
+	}
+	admitted, _ := controller.Toggle(0, int64(packetID))
+	if admitted {
+		state.canceled = true
+		delete(s.receiveHeaderTimeoutState, packetID)
+	}
+	s.receiveHeaderTimeoutMu.Unlock()
+	return admitted
+}
+
+// observeHeader preserves the existing test seam while disarming the
+// injected owner at the source-observed pre-body header boundary. Matching is
+// against the packet-ID map's unique-ID value; missing or mismatching values
+// leave the timer untouched.
+func (s *Session) observeHeader(header loco.Header) {
+	s.mu.Lock()
+	controller := s.receiveHeaderTimeout
+	stored := s.pendingUniqueIDByID[header.PacketID]
+	matching := stored != "" && stored == packetUniqueID(header.Method, header.PacketID)
+	observer := s.headerObserver
+	s.mu.Unlock()
+	if observer != nil {
+		observer(header)
+	}
+	if matching && controller != nil {
+		s.disarmReceiveHeaderTimeout(header.PacketID, packetUniqueID(header.Method, header.PacketID), controller)
+	}
+}
+
+func (s *Session) closeReceiveHeaderTimeout() {
+	s.mu.Lock()
+	controller := s.receiveHeaderTimeout
+	s.mu.Unlock()
+	if controller != nil {
+		controller.Close()
+	}
+}
+
 func (s *Session) readLoop() {
 	for {
-		packet, err := s.wire.readWithHeaderObserver(s.headerObserver)
+		packet, err := s.wire.readWithHeaderObserver(s.observeHeader)
 		if err != nil {
 			s.finishRead(err)
 			return
@@ -613,6 +761,8 @@ func (s *Session) finishRead(err error) {
 		}
 	}
 	s.stopLifecycle()
+	s.closeReceiveHeaderTimeout()
+	s.resetReceiveHeaderTimeout()
 	for _, waiter := range pending {
 		waiter <- requestResult{err: err}
 	}
@@ -636,10 +786,13 @@ func (s *Session) Close() error {
 		s.closed = true
 		s.mu.Unlock()
 		s.stopLifecycle()
+		s.closeReceiveHeaderTimeout()
 		return nil
 	}
 	s.mu.Unlock()
 	s.stopLifecycle()
+	s.closeReceiveHeaderTimeout()
+	s.resetReceiveHeaderTimeout()
 	return wire.close()
 }
 
