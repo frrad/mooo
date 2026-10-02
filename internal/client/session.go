@@ -42,21 +42,75 @@ type StatusError struct {
 
 func (e StatusError) Error() string { return fmt.Sprintf("client: %s status %d", e.Command, e.Status) }
 
+// lifecycleScheduler is an injected owner seam for the reviewed carriage
+// request lifecycle. Implementations enqueue cancellation/scheduling; Session
+// never creates a timer or chooses an initial keep-alive admission policy.
+type lifecycleScheduler interface {
+	// Queue methods only enqueue lifecycle work; they must not synchronously
+	// reenter Session or execute timer/network callbacks while lifecycleMu is held.
+	queueCancel()
+	queueSchedule() bool
+}
+
 // Session owns one authenticated carriage. A background reader dispatches
 // correlated responses and preserves unsolicited packets for the caller.
 type Session struct {
-	mu              sync.Mutex
-	writeMu         sync.Mutex
-	wire            *wireConn
-	nextID          uint32
-	closed          bool
-	pushes          chan loco.Packet
-	pending         map[uint32]chan requestResult
-	initialChatData []bson.Raw
-	userID          int64
-	appVersion      string
-	mediaDial       wireDialer
-	loginCursor     loginCursor
+	mu                 sync.Mutex
+	writeMu            sync.Mutex
+	lifecycleMu        sync.Mutex
+	wire               *wireConn
+	nextID             uint32
+	closed             bool
+	closing            bool
+	pushes             chan loco.Packet
+	pending            map[uint32]chan requestResult
+	lifecycleScheduler lifecycleScheduler
+	lifecycleStopped   bool
+	initialChatData    []bson.Raw
+	userID             int64
+	appVersion         string
+	mediaDial          wireDialer
+	loginCursor        loginCursor
+}
+
+func newSession(scheduler lifecycleScheduler) *Session {
+	return &Session{
+		pending:            make(map[uint32]chan requestResult),
+		lifecycleScheduler: scheduler,
+	}
+}
+
+// queueSchedule and queueCancelRequest keep owner callbacks out of Session.mu.
+// lifecycleMu serializes them with stopLifecycle so shutdown cannot be
+// followed by an effective timer rearm.
+func (s *Session) queueSchedule() {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if s.lifecycleStopped || s.lifecycleScheduler == nil {
+		return
+	}
+	s.lifecycleScheduler.queueSchedule()
+}
+
+func (s *Session) queueCancelRequest() {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if s.lifecycleStopped || s.lifecycleScheduler == nil {
+		return
+	}
+	s.lifecycleScheduler.queueCancel()
+}
+
+func (s *Session) stopLifecycle() {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if s.lifecycleStopped {
+		return
+	}
+	s.lifecycleStopped = true
+	if s.lifecycleScheduler != nil {
+		s.lifecycleScheduler.queueCancel()
+	}
 }
 
 type loginCursor struct {
@@ -189,17 +243,15 @@ func connectSessionWithResume(ctx context.Context, state authstate.State, resume
 	if len(pendingPushes) > pushBuffer {
 		pushBuffer = len(pendingPushes)
 	}
-	session := &Session{
-		wire:            carriage,
-		nextID:          nextID,
-		pushes:          make(chan loco.Packet, pushBuffer),
-		pending:         make(map[uint32]chan requestResult),
-		initialChatData: chatData,
-		userID:          state.Credentials.UserID,
-		appVersion:      state.Identity.Metadata.AppVersion,
-		mediaDial:       dialers.secure,
-		loginCursor:     cursor,
-	}
+	session := newSession(nil)
+	session.wire = carriage
+	session.nextID = nextID
+	session.pushes = make(chan loco.Packet, pushBuffer)
+	session.initialChatData = chatData
+	session.userID = state.Credentials.UserID
+	session.appVersion = state.Identity.Metadata.AppVersion
+	session.mediaDial = dialers.secure
+	session.loginCursor = cursor
 	for _, packet := range pendingPushes {
 		session.pushes <- packet
 	}
@@ -240,7 +292,7 @@ func (s *Session) Request(ctx context.Context, command string, body []byte) (loc
 		return loco.Packet{}, ErrProtocol
 	}
 	s.mu.Lock()
-	if s.closed || s.wire == nil {
+	if s.closed || s.closing || s.wire == nil {
 		s.mu.Unlock()
 		return loco.Packet{}, ErrClosed
 	}
@@ -253,6 +305,7 @@ func (s *Session) Request(ctx context.Context, command string, body []byte) (loc
 	s.pending[id] = result
 	wire := s.wire
 	s.mu.Unlock()
+	s.queueCancelRequest()
 
 	if err := s.writeRequest(wire, id, command, body); err != nil {
 		s.removePending(id, result)
@@ -340,6 +393,7 @@ func (s *Session) readLoop() {
 		}
 		s.mu.Unlock()
 		if waiter != nil {
+			s.queueSchedule()
 			waiter <- requestResult{packet: packet}
 			continue
 		}
@@ -360,10 +414,17 @@ func (s *Session) finishRead(err error) {
 		return
 	}
 	s.closed = true
+	shouldSchedule := !s.closing
 	pending := s.pending
 	s.pending = nil
 	pushes := s.pushes
 	s.mu.Unlock()
+	if shouldSchedule {
+		for range pending {
+			s.queueSchedule()
+		}
+	}
+	s.stopLifecycle()
 	for _, waiter := range pending {
 		waiter <- requestResult{err: err}
 	}
@@ -377,17 +438,20 @@ func (s *Session) Close() error {
 		return nil
 	}
 	s.mu.Lock()
-	if s.closed {
+	if s.closed || s.closing {
 		s.mu.Unlock()
 		return nil
 	}
+	s.closing = true
 	wire := s.wire
 	if wire == nil {
 		s.closed = true
 		s.mu.Unlock()
+		s.stopLifecycle()
 		return nil
 	}
 	s.mu.Unlock()
+	s.stopLifecycle()
 	return wire.close()
 }
 
