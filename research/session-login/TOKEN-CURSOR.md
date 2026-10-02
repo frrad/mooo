@@ -36,5 +36,6 @@ token widths, and the unresolved durable-policy branch. Wire
 validation is separate and remains outside this reducer contract. A Go client
 should fail closed on the observed assertion input rather than reproduce a
 process abort; that is an implementation decision.
-They are RED characterization data for an independently implemented reducer;
-no production implementation is included here.
+The pure-selection cases are executable against the independent reducer and
+the profile-policy case remains explicitly unresolved. No durable checkpoint
+or profile-replacement implementation is included here.

@@ -1,6 +1,6 @@
 {
   "schema": "session-login-token-cursor-v1",
-  "status": "RED contract vectors; no production reducer",
+  "status": "implemented pure selector; profile policy unresolved",
   "vectors": [
     {
       "name": "greater int64 token advances",
@@ -11,7 +11,8 @@
       "expect": [
         "token_update_selected",
         "no_lbk_update_selected"
-      ]
+      ],
+      "execution": "implemented"
     },
     {
       "name": "equal int64 token is ignored",
@@ -19,7 +20,8 @@
       "incomingTokenId": 42,
       "expect": [
         "no_token_update_selected"
-      ]
+      ],
+      "execution": "implemented"
     },
     {
       "name": "lower int64 token is ignored",
@@ -27,7 +29,8 @@
       "incomingTokenId": 41,
       "expect": [
         "no_token_update_selected"
-      ]
+      ],
+      "execution": "implemented"
     },
     {
       "name": "greater int32 blind cursor advances independently",
@@ -38,7 +41,8 @@
       "expect": [
         "no_token_update_selected",
         "lbk_update_selected"
-      ]
+      ],
+      "execution": "implemented"
     },
     {
       "name": "lower blind cursor is ignored independently",
@@ -49,7 +53,8 @@
       "expect": [
         "no_token_update_selected",
         "no_lbk_update_selected"
-      ]
+      ],
+      "execution": "implemented"
     },
     {
       "name": "lower login cursor requires explicit profile policy",
@@ -59,7 +64,8 @@
       "expect": [
         "request_reset_or_ignore_policy",
         "never_implicit_global_replace"
-      ]
+      ],
+      "execution": "unresolved"
     },
     {
       "name": "signed int64 negative domain advances strictly",
@@ -67,7 +73,8 @@
       "incomingTokenId": -1,
       "expect": [
         "token_update_selected"
-      ]
+      ],
+      "execution": "implemented"
     },
     {
       "name": "signed int64 negative equal is ignored",
@@ -75,7 +82,8 @@
       "incomingTokenId": -1,
       "expect": [
         "no_token_update_selected"
-      ]
+      ],
+      "execution": "implemented"
     },
     {
       "name": "signed int64 positive to negative is lower",
@@ -83,7 +91,8 @@
       "incomingTokenId": -1,
       "expect": [
         "no_token_update_selected"
-      ]
+      ],
+      "execution": "implemented"
     },
     {
       "name": "signed int32 negative blind domain advances strictly",
@@ -91,7 +100,8 @@
       "incomingLBK": -1,
       "expect": [
         "lbk_update_selected"
-      ]
+      ],
+      "execution": "implemented"
     },
     {
       "name": "negative current with zero incoming takes observed assertion branch",
@@ -101,7 +111,8 @@
         "token_assertion_abort_observed",
         "no_update_selected"
       ],
-      "implementationDecision": "return_error_without_process_abort"
+      "implementationDecision": "return_error_without_process_abort",
+      "execution": "implemented"
     }
   ]
 }
