@@ -89,8 +89,12 @@ reproducible research before bridge features.
 - Whenever a bug is discovered in production or during a live owned-account
   experiment, add a regression test that reproduces the failure and protects the
   fix before considering the bug resolved.
-- Run `go test ./...`, `go vet ./...`, formatting, linting, vulnerability checks,
-  and secret scanning before merging.
+- Use the repository's default pure-Go Olm backend (`goolm`), matching CI.
+  Run `make check` (race-enabled tests, vet, formatting, linting, vulnerability
+  checks) and secret scanning before merging. For direct Go commands, including
+  focused tests and `go run`, set `GOFLAGS='-tags=goolm'`; untagged builds require
+  C libolm development headers. Do not change user-wide Go defaults to set this
+  repository's build tag.
 
 ## External actions
 
