@@ -31,6 +31,9 @@ so both completion forms follow the same ordering. A request-owner status
 rejection queues cancellation but does not enter this completion wrapper and
 therefore does not queue its re-arm. The no-completion request path queues
 cancellation, invokes the ordinary request method, and then queues scheduling.
+The fire-and-forget push-receipt path follows the same ordering: it queues
+cancellation, invokes the push-receipt send, and then queues interval-based
+scheduling.
 
 A separate status callback compares the callback's carriage-agent argument
 against the request owner's current carriage agent; stale-agent callbacks have
@@ -81,8 +84,9 @@ Observed: zero-field PING construction through the ordinary carriage request
 path, queued cancellation of a delayed PING for the same request owner when
 that path is entered (including its early failure path), request completion
 that queues interval-based scheduling before forwarding packet/error arguments,
-no-completion request ordering of cancel -> request -> schedule, the separate
-numeric status `0` and `3` branches with status writes, flag transitions,
+no-completion request ordering of cancel -> request -> schedule, fire-and-forget
+push-receipt ordering of cancel -> send -> schedule, the separate numeric
+status `0` and `3` branches with status writes, flag transitions,
 callback gating, agent clearing, and handler clearing, interval read plus delayed PING scheduling,
 cancellation of a prior delayed PING for the same target and selector,
 completion wrapper (nil response calls the supplied

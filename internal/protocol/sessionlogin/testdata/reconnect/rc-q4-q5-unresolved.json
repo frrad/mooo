@@ -8,7 +8,8 @@
   "evidence": [
     "RC-BIN-001",
     "RC-BIN-002",
-    "RC-BIN-003"
+    "RC-BIN-003",
+    "RC-BIN-004"
   ],
   "cases": [
     {
@@ -113,6 +114,18 @@
         "normal_request_or_error_handling"
       ],
       "ordering_boundary": "queued cancellation may race an already eligible delayed invocation"
+    },
+    {
+      "name": "push-receipt request orders cancel send schedule",
+      "kind": "lifecycle-order",
+      "expect": [
+        "queue_ping_cancel_on_main",
+        "push_receipt_send",
+        "queue_ping_schedule_on_main"
+      ],
+      "remaining_gaps": [
+        "push-receipt response/failure semantics"
+      ]
     }
   ]
 }
