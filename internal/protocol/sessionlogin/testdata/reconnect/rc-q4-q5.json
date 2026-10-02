@@ -6,6 +6,7 @@
   "evidence": [
     "RC-BIN-001"
   ],
+  "status": "unexecuted",
   "cases": [
     {
       "name": "keep-alive uses an empty PING body",
@@ -54,6 +55,16 @@
         "timer lifecycle",
         "traffic reset",
         "idle timeout scope"
+      ]
+    },
+    {
+      "name": "ping interval floor boundary",
+      "kind": "configuration",
+      "cases": [
+        {"configured_seconds": 0, "stored_seconds": 180},
+        {"configured_seconds": -1, "stored_seconds": 180},
+        {"configured_seconds": 180, "stored_seconds": 180},
+        {"configured_seconds": 181, "stored_seconds": 181}
       ]
     }
   ]
