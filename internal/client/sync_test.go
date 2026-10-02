@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/frrad/mooo/internal/authstate"
@@ -277,5 +278,31 @@ func TestResumeTargetsOnlyIncludeCommittedChatsThatFellBehind(t *testing.T) {
 
 	if len(targets) != 1 || targets[0] != (syncmsg.Target{ChatID: 2, MaxLogID: 200}) {
 		t.Fatalf("resume targets = %#v, want only chat 2 through 200", targets)
+	}
+}
+
+func TestCommitEventRejectsDECUNREADWithoutChangingMessageCheckpoint(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitMessage(42, 100); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkpoint.CommitReadWatermark(42, 77); err != nil {
+		t.Fatal(err)
+	}
+	api, err := newClient(reusableTestState(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api.checkpoint = checkpoint
+	before := checkpoint.Snapshot()
+	event := events.ReadStateChanged{ChatID: 42, UserID: 7, Watermark: 101}
+	if err := api.CommitEvent(event); !errors.Is(err, ErrProtocol) {
+		t.Fatalf("DECUNREAD commit error = %v, want ErrProtocol", err)
+	}
+	if got := checkpoint.Snapshot(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("DECUNREAD changed checkpoint: got %#v want %#v", got, before)
+	}
+	if len(api.pendingCommits) != 0 {
+		t.Fatalf("DECUNREAD queued message commit: %#v", api.pendingCommits)
 	}
 }
