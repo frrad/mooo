@@ -126,7 +126,7 @@ func TestReduceStatusHandlerRoutesUnmatchedPacketTuple(t *testing.T) {
 }
 
 func TestReduceStatusHandlerRejectsNilManagerCallback(t *testing.T) {
-	state := StatusHandlerState{AgentID: "agent", Pending: map[string]struct{}{}}
+	state := StatusHandlerState{AgentID: "agent", ManagerID: "manager", Pending: map[string]struct{}{}}
 	got, effects := ReduceStatusHandler(state, StatusHandlerInput{Kind: StatusHandlerManagerStatus, CallbackAgent: "agent", Status: 3})
 	if !reflect.DeepEqual(got, state) || len(effects) != 2 || effects[1].Kind != StatusEffectInvalidInput {
 		t.Fatalf("nil callback accepted: state=%+v effects=%+v", got, effects)
