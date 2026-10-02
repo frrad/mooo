@@ -60,6 +60,8 @@ type Client struct {
 	pushConsumer     pushConsumerMode
 	eventStream      chan events.Result
 	commitMu         sync.Mutex
+	commitActive     int
+	commitDone       chan struct{}
 	pendingCommits   map[int64][]int64
 	readMu           sync.Mutex
 }
@@ -389,7 +391,20 @@ func (c *Client) CommitEvent(event events.Event) error {
 		return ErrClientClosed
 	}
 	checkpoint := c.checkpoint
+	if c.commitActive == 0 {
+		c.commitDone = make(chan struct{})
+	}
+	c.commitActive++
 	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.commitActive--
+		if c.commitActive == 0 {
+			close(c.commitDone)
+			c.commitDone = nil
+		}
+		c.mu.Unlock()
+	}()
 	if checkpoint == nil {
 		return ErrProtocol
 	}
@@ -602,11 +617,11 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		c.shutdownActive = true
 		c.shutdownDone = make(chan struct{})
 		c.closed = true
-		session := c.session
-		if session == nil {
-			session = c.cleanupSession
-		}
+		var session *Session
+		var checkpoint *continuity.Store
+		var lease *profileLease
 		connectDone := c.connectDone
+		commitDone := c.commitDone
 		done := c.shutdownDone
 		c.mu.Unlock()
 
@@ -627,12 +642,21 @@ func (c *Client) Shutdown(ctx context.Context) error {
 				finish()
 				return ctx.Err()
 			}
-			c.mu.Lock()
-			session = c.session
-			c.mu.Unlock()
+		}
+		if commitDone != nil {
+			select {
+			case <-commitDone:
+			case <-ctx.Done():
+				finish()
+				return ctx.Err()
+			}
 		}
 		c.mu.Lock()
-		checkpoint, lease := c.checkpoint, c.lease
+		session = c.session
+		if session == nil {
+			session = c.cleanupSession
+		}
+		checkpoint, lease = c.checkpoint, c.lease
 		c.mu.Unlock()
 		if session != nil {
 			if err := session.Shutdown(ctx); err != nil {
