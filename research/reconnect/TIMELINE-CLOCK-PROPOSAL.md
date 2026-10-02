@@ -11,7 +11,7 @@ and rejects stale completions. The effect is data only; no timer or goroutine is
 started there. `internal/client.Client` explicitly does not reconnect after a
 session disconnect, so a future supervisor must own retry scheduling. The
 carriage/session code uses wall-clock `time.Now()` only for socket deadlines and
-request IDs; those calls are transport concerns and are not a reconnect clock.
+request IDs; those calls are transport concerns and are not a reconnect clock. Foundation timer tracing reaches an HTTP `/ping` helper outside the LOCO carriage contract; LOCO keep-alive timer ownership and clock remain untraced.
 Bridge connector tests currently use real deadlines for lifecycle assertions.
 
 ## Bounded interface proposal
@@ -42,9 +42,9 @@ or stale generations without sleeping.
 
 This is deliberately retry-only. `EndpointCache` keeps its existing elapsed
 `time.Duration` uptime input. Socket deadlines continue to use absolute
-`time.Time` at the transport boundary. The already recovered Foundation PING
-keep-alive uses its separate wall-clock timer owner. None of those clocks should
-be hidden behind a single `Now` method or converted into retry timestamps.
+`time.Time` at the transport boundary. Foundation HTTP `/ping` timing is outside the LOCO contract. LOCO keep-alive timing
+remains untraced, and none of these domains should be hidden behind a single `Now`
+method or converted into retry timestamps.
 
 The current reducer remains usable without a scheduler by emitting a schedule
 intent as data. Adding a timer-fired event and a delay field is a future API
@@ -78,6 +78,6 @@ supervisor integration harness only after the full reconnect chain is reviewed.
 The public reconnect questions still do not establish the first retry delay,
 growth/reset rule, maximum attempts, retry timer constructor/defaults, sleep/wake
 behavior, or reachability interaction. The retry clock is therefore unresolved
-separately from the already recovered Foundation PING wall-clock basis. They also do not establish whether token renewal and
+separately from the excluded Foundation HTTP `/ping` timer. They also do not establish whether token renewal and
 `-328` retry share a budget. Until those values are transferred as a reviewed
 contract, implementing a concrete timer or delay would be speculative.
