@@ -59,6 +59,7 @@ const (
 	StatusEffectWeakSendCapture
 	StatusEffectStrongTimeoutCapture
 	StatusEffectNoIdentityProof
+	StatusEffectSameReceiverCapture
 	StatusEffectLookupCompletion
 	StatusEffectRemoveCompletion
 	StatusEffectInvokeCompletion
