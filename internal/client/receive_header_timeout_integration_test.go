@@ -132,7 +132,24 @@ func TestSessionReceiveHeaderTimeoutArmsAfterSuccessfulSendAndDisarmsBeforeBody(
 		close(readDone)
 	}()
 	serverDone := make(chan error, 1)
+	serverExited := make(chan struct{})
+	t.Cleanup(func() {
+		_ = session.Close()
+		_ = clientConn.Close()
+		_ = serverConn.Close()
+		select {
+		case <-readDone:
+		case <-time.After(time.Second):
+			t.Errorf("read loop did not stop during cleanup")
+		}
+		select {
+		case <-serverExited:
+		case <-time.After(time.Second):
+			t.Errorf("server did not stop during cleanup")
+		}
+	})
 	go func() {
+		defer close(serverExited)
 		header := make([]byte, loco.HeaderSize)
 		if _, err := io.ReadFull(serverConn, header); err != nil {
 			serverDone <- err
@@ -204,14 +221,35 @@ func TestSessionReceiveHeaderTimeoutWrongHeaderUIDDoesNotDisarm(t *testing.T) {
 	controller := &receiveHeaderTimeoutControllerSpy{}
 	waiter := make(chan requestResult, 1)
 	session := &Session{
-		wire:                &wireConn{c: clientConn},
-		pushes:              make(chan loco.Packet, 1),
-		pending:             map[uint32]chan requestResult{7: waiter},
-		pendingByUniqueID:   map[string]chan requestResult{"EXPECTED.7": waiter},
-		pendingUniqueIDByID: map[uint32]string{7: "EXPECTED.7"},
-		bootstrapDone:       true, receiveHeaderTimeout: controller,
+		wire:                       &wireConn{c: clientConn},
+		pushes:                     make(chan loco.Packet, 1),
+		pending:                    map[uint32]chan requestResult{7: waiter},
+		pendingByUniqueID:          map[string]chan requestResult{"EXPECTED.7": waiter},
+		pendingUniqueIDByID:        map[uint32]string{7: "EXPECTED.7"},
+		bootstrapDone:              true,
+		receiveHeaderTimeout:       controller,
+		receiveHeaderTimeoutEnable: func(string, uint32) (byte, bool) { return 1, true },
+	}
+	token := session.prepareReceiveHeaderTimeout("PING", 7)
+	if token == nil {
+		t.Fatal("timeout preparation rejected")
+	}
+	session.commitReceiveHeaderTimeout(token)
+	calls, _ := controller.snapshot()
+	if len(calls) != 1 || calls[0].enable != 1 {
+		t.Fatalf("prepared timer calls=%#v, want one arm", calls)
 	}
 	readDone := make(chan struct{})
+	t.Cleanup(func() {
+		_ = session.Close()
+		_ = clientConn.Close()
+		_ = serverConn.Close()
+		select {
+		case <-readDone:
+		case <-time.After(time.Second):
+			t.Errorf("read loop did not stop during cleanup")
+		}
+	})
 	go func() {
 		session.readLoop()
 		close(readDone)
@@ -228,8 +266,8 @@ func TestSessionReceiveHeaderTimeoutWrongHeaderUIDDoesNotDisarm(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("wrong-UID packet was not routed as unsolicited")
 	}
-	calls, _ := controller.snapshot()
-	if len(calls) != 0 {
+	calls, _ = controller.snapshot()
+	if len(calls) != 1 || calls[0].enable != 1 {
 		t.Fatalf("wrong-UID toggle calls=%#v", calls)
 	}
 	_ = session.Close()
@@ -299,7 +337,9 @@ func TestSessionReceiveHeaderTimeoutEarlyHeaderDoesNotRearmAfterWriteReturns(t *
 	readDone := make(chan struct{})
 	go func() { session.readLoop(); close(readDone) }()
 	serverDone := make(chan error, 1)
+	serverExited := make(chan struct{})
 	go func() {
+		defer close(serverExited)
 		header := make([]byte, loco.HeaderSize)
 		if _, err := io.ReadFull(serverConn, header); err != nil {
 			serverDone <- err
@@ -322,7 +362,29 @@ func TestSessionReceiveHeaderTimeoutEarlyHeaderDoesNotRearmAfterWriteReturns(t *
 		serverDone <- err
 	}()
 	requestDone := make(chan error, 1)
+	requestExited := make(chan struct{})
+	t.Cleanup(func() {
+		_ = session.Close()
+		_ = clientConn.Close()
+		_ = serverConn.Close()
+		select {
+		case <-readDone:
+		case <-time.After(time.Second):
+			t.Errorf("read loop did not stop during cleanup")
+		}
+		select {
+		case <-requestExited:
+		case <-time.After(time.Second):
+			t.Errorf("request did not stop during cleanup")
+		}
+		select {
+		case <-serverExited:
+		case <-time.After(time.Second):
+			t.Errorf("server did not stop during cleanup")
+		}
+	})
 	go func() {
+		defer close(requestExited)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		_, err := session.requestRaw(ctx, 0, "PING", []byte{})
@@ -332,6 +394,11 @@ func TestSessionReceiveHeaderTimeoutEarlyHeaderDoesNotRearmAfterWriteReturns(t *
 	case <-headerSeen:
 	case <-time.After(time.Second):
 		t.Fatal("response header did not arrive before write return")
+	}
+	select {
+	case <-releaseWrite:
+	case <-time.After(time.Second):
+		t.Fatal("header disarm did not release write")
 	}
 	calls, _ := controller.snapshot()
 	if len(calls) != 1 || calls[0].enable != 0 {
