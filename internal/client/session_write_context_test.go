@@ -61,7 +61,7 @@ func (c *partialWriteConn) Write(p []byte) (int, error) {
 	if !c.first {
 		c.first = true
 		close(c.entered)
-		return 1, nil
+		return 1, io.ErrUnexpectedEOF
 	}
 	return 0, io.ErrUnexpectedEOF
 }
@@ -118,6 +118,21 @@ func TestSessionQueuedWriterHonorsContextCancellation(t *testing.T) {
 		_, err := session.Request(ctx, "PING", []byte{5, 0, 0, 0, 0})
 		queued <- err
 	}()
+	deadline := time.After(time.Second)
+	for {
+		session.mu.Lock()
+		admitted := len(session.pending) == 2
+		session.mu.Unlock()
+		if admitted {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("queued request was not admitted before cancellation")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
 	cancel()
 	select {
 	case err := <-queued:
@@ -132,5 +147,81 @@ func TestSessionQueuedWriterHonorsContextCancellation(t *testing.T) {
 	case <-firstDone:
 	case <-time.After(time.Second):
 		t.Fatal("first blocked request did not finish after close")
+	}
+}
+
+func TestSessionCanceledWriteRestoresDeadlineForNextRequest(t *testing.T) {
+	clientConn, peer := net.Pipe()
+	conn := &blockedWriteConn{Conn: clientConn, entered: make(chan struct{})}
+	session := newSession(nil)
+	session.wire = &wireConn{c: conn}
+	firstCtx, cancelFirst := context.WithCancel(context.Background())
+	first := make(chan error, 1)
+	go func() {
+		_, err := session.Request(firstCtx, "PING", []byte{5, 0, 0, 0, 0})
+		first <- err
+	}()
+	defer func() { _ = clientConn.Close(); _ = peer.Close() }()
+	select {
+	case <-conn.entered:
+	case <-time.After(time.Second):
+		t.Fatal("first write did not start")
+	}
+	cancelFirst()
+	select {
+	case err := <-first:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("first request error=%v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first request did not cancel")
+	}
+	secondRead := make(chan error, 1)
+	go func() {
+		_, err := peer.Read(make([]byte, 256))
+		secondRead <- err
+	}()
+	secondCtx, cancelSecond := context.WithCancel(context.Background())
+	second := make(chan error, 1)
+	go func() {
+		_, err := session.Request(secondCtx, "PING", []byte{5, 0, 0, 0, 0})
+		second <- err
+	}()
+	select {
+	case <-secondRead:
+	case <-time.After(time.Second):
+		t.Fatal("next write remained blocked after canceled write")
+	}
+	cancelSecond()
+	select {
+	case <-second:
+	case <-time.After(time.Second):
+		t.Fatal("next request did not finish")
+	}
+}
+
+type partialErrorConn struct {
+	net.Conn
+}
+
+func (c *partialErrorConn) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, io.ErrUnexpectedEOF
+	}
+	return 1, io.ErrUnexpectedEOF
+}
+
+func TestSessionPartialWriteErrorClosesCarriage(t *testing.T) {
+	clientConn, peer := net.Pipe()
+	conn := &partialErrorConn{Conn: clientConn}
+	session := newSession(nil)
+	session.wire = &wireConn{c: conn}
+	defer func() { _ = clientConn.Close(); _ = peer.Close() }()
+	_, err := session.Request(context.Background(), "PING", []byte{5, 0, 0, 0, 0})
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("request error=%v, want unexpected EOF", err)
+	}
+	if _, err := session.Request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("reused carriage error=%v, want ErrClosed", err)
 	}
 }
