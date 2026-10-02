@@ -138,6 +138,15 @@ type requestResult struct {
 
 type wireDialer func(context.Context, string, int) (*wireConn, error)
 
+const defaultPingInterval = 180 * time.Second
+const defaultPingRequestTimeout = 15 * time.Second
+
+type pingSessionOptions struct {
+	clock    relativeTimer
+	interval time.Duration
+	timeout  time.Duration
+}
+
 type sessionDialers struct {
 	tls    wireDialer
 	secure wireDialer
@@ -150,7 +159,7 @@ func productionSessionDialers() sessionDialers {
 // connectSession performs GETCONF, CHECKIN, secure carriage setup, and
 // LOGINLIST from client-owned state. Client owns and reuses the result.
 func connectSession(ctx context.Context, state authstate.State) (*Session, error) {
-	return connectSessionWithResume(ctx, state, continuity.Checkpoint{Version: continuity.Version}, productionSessionDialers())
+	return connectSessionWithResumeOptions(ctx, state, continuity.Checkpoint{Version: continuity.Version}, productionSessionDialers(), pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout})
 }
 
 func connectSessionWithDialers(ctx context.Context, state authstate.State, dialers sessionDialers) (*Session, error) {
@@ -158,6 +167,10 @@ func connectSessionWithDialers(ctx context.Context, state authstate.State, diale
 }
 
 func connectSessionWithResume(ctx context.Context, state authstate.State, resume continuity.Checkpoint, dialers sessionDialers) (*Session, error) {
+	return connectSessionWithResumeOptions(ctx, state, resume, dialers, pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout})
+}
+
+func connectSessionWithResumeOptions(ctx context.Context, state authstate.State, resume continuity.Checkpoint, dialers sessionDialers, pingOptions pingSessionOptions) (*Session, error) {
 	if ctx == nil || state.Credentials == nil {
 		return nil, ErrCredentialsAbsent
 	}
@@ -253,7 +266,22 @@ func connectSessionWithResume(ctx context.Context, state authstate.State, resume
 	if len(pendingPushes) > pushBuffer {
 		pushBuffer = len(pendingPushes)
 	}
-	session := newSession(nil)
+	if pingOptions.timeout <= 0 {
+		pingOptions.timeout = defaultPingRequestTimeout
+	}
+	var session *Session
+	var owner lifecycleScheduler
+	if pingOptions.clock != nil && pingOptions.interval > 0 {
+		owner = newPingTimerOwner(pingOptions.clock, pingOptions.interval, func() {
+			if session == nil {
+				return
+			}
+			pingCtx, cancel := context.WithTimeout(context.Background(), pingOptions.timeout)
+			defer cancel()
+			_, _ = session.Request(pingCtx, "PING", []byte{5, 0, 0, 0, 0})
+		})
+	}
+	session = newSession(owner)
 	session.wire = carriage
 	session.nextID = nextID
 	session.pushes = make(chan loco.Packet, pushBuffer)
@@ -267,6 +295,9 @@ func connectSessionWithResume(ctx context.Context, state authstate.State, resume
 	}
 	_ = carriage.c.SetDeadline(time.Time{})
 	go session.readLoop()
+	if owner != nil {
+		session.queueSchedule()
+	}
 	return session, nil
 }
 
