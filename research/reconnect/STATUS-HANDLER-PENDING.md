@@ -29,7 +29,7 @@ handler does not explicitly clear the pending map. Whether the installed
 status handler, completion callback, or another owner later removes entries is
 untraced. The manager status handler itself has no pending-map access.
 
-For an ordinary packet response, the producer consumer looks up the packet unique ID in the pending-completion map. A match removes that completion entry before invoking it with `(packet, nil)`. A miss routes the packet to the default receive handler when one exists.
+For an ordinary packet response, the producer consumer gets the packet header unique ID, then looks it up in the pending-completion map. A match removes that completion entry before invoking it with `(packet, nil)`. A miss routes the packet to the default receive handler when one exists; with no default handler, that fallback has no callback effect in the reviewed body.
 
 The producer's packet-send block carries a weak send/status object and a
 separate strong timeout-scheduling object. The reviewed block does not compare

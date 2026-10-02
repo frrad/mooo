@@ -15,22 +15,24 @@ type statusHandlerContract struct {
 	Cases     []statusHandlerCase `json:"cases"`
 }
 type statusHandlerCase struct {
-	Name            string   `json:"name"`
-	Kind            string   `json:"kind"`
-	Evidence        []string `json:"evidence"`
-	HandlerPresent  *bool    `json:"handler_present"`
-	OldStatus       *int8    `json:"old_status"`
-	NewStatus       *int8    `json:"new_status"`
-	AgentCurrent    *bool    `json:"agent_current"`
-	LatchInitial    *bool    `json:"latch_initial"`
-	CallbackPresent *bool    `json:"callback_present"`
-	PendingCount    *int     `json:"pending_count"`
-	Expect          []string `json:"expect"`
-	RemainingGaps   []string `json:"remaining_gaps"`
+	Name                  string   `json:"name"`
+	Kind                  string   `json:"kind"`
+	Evidence              []string `json:"evidence"`
+	HandlerPresent        *bool    `json:"handler_present"`
+	OldStatus             *int8    `json:"old_status"`
+	NewStatus             *int8    `json:"new_status"`
+	AgentCurrent          *bool    `json:"agent_current"`
+	LatchInitial          *bool    `json:"latch_initial"`
+	CallbackPresent       *bool    `json:"callback_present"`
+	PendingCount          *int     `json:"pending_count"`
+	CompletionMatch       *bool    `json:"completion_match"`
+	DefaultHandlerPresent *bool    `json:"default_handler_present"`
+	Expect                []string `json:"expect"`
+	RemainingGaps         []string `json:"remaining_gaps"`
 }
 
 var statusHandlerKinds = map[string]bool{"status-setter": true, "manager-status-zero": true, "manager-status-three": true, "manager-status-gate": true, "disconnect-fanout-order": true, "owner-capture": true, "pending-response": true}
-var statusHandlerEffects = map[string]bool{"write_status_byte": true, "invoke_handler_agent_old_new_error": true, "no_handler_callback": true, "compare_current_agent": true, "clear_agent_slot": true, "write_status_0x16": true, "write_status_0x1a": true, "callback_false": true, "no_false_callback": true, "queue_ping_cancel": true, "clear_status_handler": true, "write_status_0x17": true, "set_latch": true, "callback_true": true, "no_latch_write": true, "no_true_callback": true, "no_effects": true, "cancel_owner_delayed_work": true, "enumerate_pending": true, "fanout_each_nil_locoagent_error": true, "weak_send_capture": true, "strong_timeout_capture": true, "no_identity_equality_proof": true, "lookup_completion_by_unique_id": true, "remove_completion_before_callback": true, "invoke_completion_packet_nil_error": true, "route_unmatched_to_default_handler": true}
+var statusHandlerEffects = map[string]bool{"write_status_byte": true, "invoke_handler_agent_old_new_error": true, "no_handler_callback": true, "compare_current_agent": true, "clear_agent_slot": true, "write_status_0x16": true, "write_status_0x1a": true, "callback_false": true, "no_false_callback": true, "queue_ping_cancel": true, "clear_status_handler": true, "write_status_0x17": true, "set_latch": true, "callback_true": true, "no_latch_write": true, "no_true_callback": true, "no_effects": true, "cancel_owner_delayed_work": true, "enumerate_pending": true, "fanout_each_nil_locoagent_error": true, "weak_send_capture": true, "strong_timeout_capture": true, "no_identity_equality_proof": true, "lookup_completion_by_unique_id": true, "remove_completion_before_callback": true, "invoke_completion_packet_nil_error": true, "route_unmatched_to_default_handler": true, "no_default_handler": true}
 
 func loadStatusHandlerContract(path string) (statusHandlerContract, error) {
 	body, err := os.ReadFile(path)
@@ -49,7 +51,7 @@ func validateStatusHandlerContract(v statusHandlerContract) error {
 	if v.Status != "reviewed-static-unexecuted-runtime" || len(v.Questions) != 1 || v.Questions[0] != "RC-Q5" {
 		return fmt.Errorf("header mismatch")
 	}
-	if len(v.Cases) != 11 {
+	if len(v.Cases) != 13 {
 		return fmt.Errorf("cases=%d", len(v.Cases))
 	}
 	seen := map[string]bool{}
@@ -87,7 +89,7 @@ func validateStatusHandlerContract(v statusHandlerContract) error {
 			}
 		case "owner-capture":
 		case "pending-response":
-			if c.PendingCount == nil || c.HandlerPresent == nil {
+			if c.PendingCount == nil || c.CompletionMatch == nil || c.DefaultHandlerPresent == nil {
 				return fmt.Errorf("pending response inputs")
 			}
 		}
