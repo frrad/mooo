@@ -5,7 +5,7 @@ reviewed model/dirty path; it does not claim durable commit, rollback, retry, or
 profile-reset parity.
 
 `NTChatContext` is a model subclass with signed 64-bit `lastTokenId` and signed
-32-bit `lastLossCheckLogId`, plus signed 32-bit `lastBlindToken`. The runtime
+64-bit `lastLossCheckLogId`, plus signed 32-bit `lastBlindToken`. The runtime
 schema declares `lastTokenId`, `lastLossCheckLogId`, and `lastBlindToken` as
 non-null integer columns with default zero values. Versioned schema migrations
 carry both token columns by name.
