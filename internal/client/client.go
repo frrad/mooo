@@ -705,13 +705,13 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		if checkpoint != nil {
 			if err := checkpoint.MarkClean(); err != nil {
 				finish()
-				return err
+				return errors.Join(interruptErr, err)
 			}
 		}
 		if lease != nil {
 			if err := lease.Close(); err != nil {
 				finish()
-				return err
+				return errors.Join(interruptErr, err)
 			}
 		}
 		c.mu.Lock()
@@ -723,6 +723,6 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		}
 		c.mu.Unlock()
 		finish()
-		return nil
+		return interruptErr
 	}
 }
