@@ -26,5 +26,5 @@ copied, and nil map/slice shapes are preserved.
 
 `CountEligibleUnread` exposes the reviewed reusable predicate for stored logs:
 matching chat ID, positive log ID strictly greater than the lower bound, type
-other than 3, status other than 5, and scope 1 or 3. This helper is independent
+other than 10001, status other than 5, and scope 1 or 3. This helper is independent
 of the reducer's selected query-result boundary.
