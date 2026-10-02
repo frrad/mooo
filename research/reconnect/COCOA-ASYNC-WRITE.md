@@ -5,7 +5,7 @@ Status: reviewed static contract, runtime unexecuted. Observation date: 2026-10-
 The analyzed client is KakaoTalk for macOS 26.8.0. Its bundled CocoaAsyncSocket
 framework identifies itself as `CocoaAsyncSocket` version `Pods-1`; the inspected
 universal framework binary has SHA-256
-`5e436f579d2d64e100350303ad998483068b8badd210bf2bd254c54132`. The framework
+`5e436f579d2d64e100350303ad998483068b8badd210b62110bf2bd254c54132`. The framework
 source observations below are static; they do not claim runtime write success or
 error policy.
 
