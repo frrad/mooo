@@ -404,7 +404,10 @@ func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, c
 	close(stop)
 	<-watchDone
 	_ = wire.c.SetWriteDeadline(time.Time{})
-	if (ctxErr != nil || err != nil) && written > 0 {
+	// A cancellation after the complete frame was written must not tear down
+	// an otherwise reusable carriage. A write error after any bytes have been
+	// sent leaves framing ambiguous and requires fail-closed cleanup.
+	if err != nil && written > 0 {
 		s.mu.Lock()
 		if s.wire == wire {
 			s.closing = true

@@ -229,6 +229,35 @@ func TestSessionPartialWriteErrorClosesCarriage(t *testing.T) {
 	}
 }
 
+type completeWriteCancelsConn struct {
+	net.Conn
+	cancel context.CancelFunc
+}
+
+func (c *completeWriteCancelsConn) Write(p []byte) (int, error) {
+	c.cancel()
+	return len(p), nil
+}
+
+func (*completeWriteCancelsConn) SetWriteDeadline(time.Time) error { return nil }
+func (*completeWriteCancelsConn) Close() error                     { return nil }
+
+func TestSessionCompleteWriteCancellationKeepsCarriage(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	session := newSession(nil)
+	session.wire = &wireConn{c: &completeWriteCancelsConn{cancel: cancel}}
+	if _, err := session.Request(ctx, "PING", []byte{5, 0, 0, 0, 0}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("request error=%v, want context.Canceled", err)
+	}
+	session.mu.Lock()
+	closed := session.closed || session.closing
+	session.mu.Unlock()
+	if closed {
+		t.Fatal("complete frame closed carriage after context cancellation")
+	}
+}
+
 // A reader may have selected a push delivery while a concurrent writer
 // discovers a partial frame. The writer must leave terminal push fanout to the
 // reader so that the selected send cannot race with channel shutdown.
