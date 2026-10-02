@@ -1,0 +1,60 @@
+{
+  "schema": "session-login-token-dirty-v1",
+  "status": "observed model dirty path; durable consumer unresolved",
+  "vectors": [
+    {
+      "name": "new model token change records field and dirty state",
+      "initialization": "non_database",
+      "field": "lastTokenId",
+      "old": 41,
+      "incoming": 42,
+      "expect": ["property_assignment", "changed_field_recorded", "dirty_true", "nest_registration"],
+      "execution": "observed"
+    },
+    {
+      "name": "new model blind token change records field and dirty state",
+      "initialization": "non_database",
+      "field": "lastBlindToken",
+      "old": 7,
+      "incoming": 8,
+      "expect": ["property_assignment", "changed_field_recorded", "dirty_true", "nest_registration"],
+      "execution": "observed"
+    },
+    {
+      "name": "equal token change has no changed field delta",
+      "initialization": "non_database",
+      "field": "lastTokenId",
+      "old": 42,
+      "incoming": 42,
+      "expect": ["property_assignment", "no_changed_field_delta"],
+      "execution": "observed"
+    },
+    {
+      "name": "database-loaded initializer registration boundary",
+      "initialization": "database",
+      "field": "lastTokenId",
+      "old": 41,
+      "incoming": 42,
+      "expect": ["decode_and_observe_path", "nest_registration_unresolved"],
+      "execution": "unresolved"
+    },
+    {
+      "name": "dirty transaction save and commit result",
+      "initialization": "non_database",
+      "field": "lastTokenId",
+      "old": 41,
+      "incoming": 42,
+      "expect": ["save_order_unresolved", "commit_result_unresolved", "storage_error_unresolved"],
+      "execution": "unresolved"
+    },
+    {
+      "name": "exception rollback and rethrow",
+      "initialization": "non_database",
+      "field": "lastTokenId",
+      "old": 41,
+      "incoming": 42,
+      "expect": ["revert_changed_objects", "rollback", "clear_changed_registry", "rethrow", "retry_unresolved"],
+      "execution": "observed"
+    }
+  ]
+}
