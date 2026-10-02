@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/frrad/mooo/internal/protocol/loco"
+	"github.com/frrad/mooo/internal/protocol/sessionlogin"
 )
 
 type receiveHeaderTimeoutToggleCall struct {
@@ -29,10 +30,45 @@ type writeReturnGateConn struct {
 	release <-chan struct{}
 }
 
+type integrationTimeoutTimer struct {
+	fn      func()
+	stopped bool
+}
+
+func (t *integrationTimeoutTimer) Stop() bool {
+	wasActive := !t.stopped
+	t.stopped = true
+	return wasActive
+}
+
+type integrationTimeoutClock struct {
+	timers []*integrationTimeoutTimer
+}
+
+func (c *integrationTimeoutClock) AfterFunc(_ time.Duration, fn func()) sessionlogin.ReceiveHeaderTimeoutTimer {
+	t := &integrationTimeoutTimer{fn: fn}
+	c.timers = append(c.timers, t)
+	return t
+}
+
+type integrationTimeoutQueue struct {
+	work []func()
+}
+
+func (q *integrationTimeoutQueue) Enqueue(fn func()) { q.work = append(q.work, fn) }
+
+type integrationTimeoutConfig struct{}
+
+func (integrationTimeoutConfig) ReceiveHeaderTimeout() time.Duration { return time.Second }
+
 func (c *writeReturnGateConn) Write(p []byte) (int, error) {
 	n, err := c.Conn.Write(p)
 	if err == nil {
-		<-c.release
+		select {
+		case <-c.release:
+		case <-time.After(time.Second):
+			return n, context.DeadlineExceeded
+		}
 	}
 	return n, err
 }
@@ -65,6 +101,8 @@ func (s *receiveHeaderTimeoutControllerSpy) snapshot() ([]receiveHeaderTimeoutTo
 
 func TestSessionReceiveHeaderTimeoutArmsAfterSuccessfulSendAndDisarmsBeforeBody(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
+	_ = clientConn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = serverConn.SetDeadline(time.Now().Add(2 * time.Second))
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 	controller := &receiveHeaderTimeoutControllerSpy{}
@@ -137,8 +175,13 @@ func TestSessionReceiveHeaderTimeoutArmsAfterSuccessfulSendAndDisarmsBeforeBody(
 	if _, err := session.requestRaw(ctx, 0, "PING", []byte{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := <-serverDone; err != nil {
-		t.Fatal(err)
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server did not finish")
 	}
 	calls, _ := controller.snapshot()
 	if len(calls) != 2 || calls[0] != (receiveHeaderTimeoutToggleCall{enable: 1, tag: int64(requestIDMin)}) || calls[1] != (receiveHeaderTimeoutToggleCall{enable: 0, tag: int64(requestIDMin)}) {
@@ -154,6 +197,8 @@ func TestSessionReceiveHeaderTimeoutArmsAfterSuccessfulSendAndDisarmsBeforeBody(
 
 func TestSessionReceiveHeaderTimeoutWrongHeaderUIDDoesNotDisarm(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
+	_ = clientConn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = serverConn.SetDeadline(time.Now().Add(2 * time.Second))
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 	controller := &receiveHeaderTimeoutControllerSpy{}
@@ -231,6 +276,8 @@ func TestSessionReceiveHeaderTimeoutGateCanRejectAdmission(t *testing.T) {
 
 func TestSessionReceiveHeaderTimeoutEarlyHeaderDoesNotRearmAfterWriteReturns(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
+	_ = clientConn.SetDeadline(time.Now().Add(2 * time.Second))
+	_ = serverConn.SetDeadline(time.Now().Add(2 * time.Second))
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 	releaseWrite := make(chan struct{})
@@ -290,11 +337,21 @@ func TestSessionReceiveHeaderTimeoutEarlyHeaderDoesNotRearmAfterWriteReturns(t *
 	if len(calls) != 1 || calls[0].enable != 0 {
 		t.Fatalf("early-header calls before write return=%#v, want one disable", calls)
 	}
-	if err := <-requestDone; err != nil {
-		t.Fatal(err)
+	select {
+	case err := <-requestDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("request did not finish")
 	}
-	if err := <-serverDone; err != nil {
-		t.Fatal(err)
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server did not finish")
 	}
 	calls, _ = controller.snapshot()
 	if len(calls) != 1 {
@@ -351,5 +408,30 @@ func TestSessionReceiveHeaderTimeoutOldTokenCannotAffectReusedPacketID(t *testin
 	calls, _ := controller.snapshot()
 	if len(calls) != 3 || calls[0].enable != 0 || calls[1].enable != 1 || calls[2].enable != 0 {
 		t.Fatalf("token reuse calls=%#v, want old disable, new arm, new disable", calls)
+	}
+}
+
+func TestSessionReceiveHeaderTimeoutCloseSuppressesQueuedOwnerDelivery(t *testing.T) {
+	clock := &integrationTimeoutClock{}
+	queue := &integrationTimeoutQueue{}
+	owner, err := sessionlogin.NewReceiveHeaderTimeoutOwner(clock, queue, integrationTimeoutConfig{}, "agent", "fireReceiveHeaderTimeout:", func(int64) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := &Session{
+		receiveHeaderTimeout:       owner,
+		receiveHeaderTimeoutEnable: func(string, uint32) (byte, bool) { return 1, true },
+	}
+	token := session.prepareReceiveHeaderTimeout("PING", 7)
+	session.commitReceiveHeaderTimeout(token)
+	if len(queue.work) != 1 {
+		t.Fatalf("queued owner work=%d, want 1", len(queue.work))
+	}
+	if err := session.Close(); err != nil {
+		t.Fatal(err)
+	}
+	queue.work[0]()
+	if len(clock.timers) != 0 {
+		t.Fatalf("closed owner scheduled timers=%d, want 0", len(clock.timers))
 	}
 }

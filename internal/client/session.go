@@ -58,11 +58,14 @@ type lifecycleShutdown interface {
 	shutdown()
 }
 
-// receiveHeaderTimeoutController is intentionally injected. The reviewed
-// source gates timer admission on producer status and captured configuration;
-// Session does not invent a default status/config source until that layer is
-// traced and wired. Toggle is called with the captured enable byte and packet
-// identity, while Close invalidates queued and scheduled owner work.
+// receiveHeaderTimeoutController is intentionally injected before readLoop
+// starts and must not be replaced while that loop runs. The reviewed source
+// gates timer admission on producer status and captured configuration; Session
+// does not invent a default status/config source until that layer is traced and
+// wired. Toggle is called with the captured enable byte and packet identity,
+// while Close invalidates queued and scheduled owner work. Toggle must enqueue
+// without synchronously reentering Session: Session holds a dedicated mutex
+// across the call to serialize arm/disarm ordering.
 type receiveHeaderTimeoutController interface {
 	Toggle(enableByte byte, tag int64) (bool, error)
 	Close()
