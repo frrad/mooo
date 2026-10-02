@@ -6,8 +6,8 @@ Status: reviewed static source contract, runtime unexecuted. Observation date:
 `sendCarriagePushReceipt:` first dispatches a main-queue cancellation block for
 `sendPingRequest` on the current carriage-agent target. It then invokes
 `sendPushReceipt:` inline through the current carriage-agent object and finally
-dispatches a second main-queue block that schedules `sendPingRequest` on that
-same target. The source proves enqueue/invocation order, but does not prove
+dispatches a second main-queue block that reads the configured carriage ping interval and
+schedules `sendPingRequest` on that same target with that delay. The source proves enqueue/invocation order, but does not prove
 which queued block executes first relative to the inline send or whether a nil
 agent is supported; the fixture scopes to an agent-present call.
 

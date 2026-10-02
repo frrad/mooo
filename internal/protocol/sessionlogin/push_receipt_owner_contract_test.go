@@ -44,7 +44,7 @@ func validatePushReceiptOwnerContract(c pushReceiptOwnerContract) error {
 		return fmt.Errorf("header")
 	}
 	for _, tc := range c.Cases {
-		if tc.Name == "" || !tc.AgentPresent {
+		if tc.Name == "" || !tc.AgentPresent || tc.PingInterval == nil || tc.ExpectedDelay == nil || *tc.PingInterval != *tc.ExpectedDelay {
 			return fmt.Errorf("invalid case %q", tc.Name)
 		}
 		for _, e := range tc.Expect {
