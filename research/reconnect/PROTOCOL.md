@@ -6,13 +6,24 @@ RC-BIN-001 through RC-BIN-004.
 The manager exposes a configurable carriage ping interval and a method that
 constructs a zero-field `PING` request through the ordinary carriage request
 path. Three recovered manager callback paths read that interval and schedule a
-delayed invocation of the carriage ping method on the carriage target. A
+delayed invocation of the carriage ping method on the captured request-owner target. A
 paired callback cancels prior delayed invocations for that same target and
 selector. Request, completion, and push-receipt callers are traced; the broader
 admission gates and any traffic-based reset remain unresolved. The request completion is forwarded through the normal
 response wrapper; a successful reply does not expose any additional
 application state. The traced completion itself does not cancel a keep-alive
 timer.
+
+The cached configuration model is `LocoConnInfo`. Its coder path decodes scalar
+properties with object lookup followed by integer coercion; absent scalar keys
+therefore become zero through nil integer conversion, and no coder-error branch
+was recovered. The `ports` property remains object-valued. Encoding uses integer
+number objects for scalar fields and the object directly for `ports`. The reviewed
+scalar keys are `bgKeepItv`, `bgReconnItv`, `bgPingItv`, `fgPingItv`, `encType`,
+`connTimeout`, `recvHeaderTimeout`, `inSegTimeout`, `outSegTimeout`, and
+`blockSendBufSize`. The booking response callback has no direct setter edge in
+the recovered call graph, so response-field mapping and producer failure policy
+remain open.
 
 The concrete PING method allocates an empty carriage packet and submits it
 through the manager's ordinary carriage request path. That ordinary path
@@ -49,9 +60,16 @@ to clear when the handler by-ref is installed; it is not an ongoing manager
 activity flag. External event labels for these numeric values are not
 established by this trace.
 
-The coordinator assigns a fallback ping interval of 180 seconds: any positive
-signed 32-bit configuration value is retained, while zero or negative values
-become 180. The interval setter, storage field, and delayed scheduling
+The traced configuration callback reads `fgPingItv` from the object returned by
+`getConfWifi`, whose static accessor is a signed 32-bit field, maps values below
+1 to 180 seconds, and passes the result to the manager interval setter. The
+setter stores the supplied value directly. The model is archived in the shared
+defaults store under a key formed from `GETCONFWIFI:%@` and the hashed-user-ID input (the hash transform is not
+recovered); a missing object yields no model. The signed 32-bit width is an
+in-memory field observation only. Serialized wire type/presence/default/failure
+behavior and the producer response-to-setter edge remain untraced. Alternate
+configuration callers and any other defaulting outside this callback were not
+recovered. The interval storage field and delayed scheduling
 primitive are proven, and request/completion/push-receipt callers are traced;
 the broader admission gates that start or stop those callbacks remain
 unresolved. Timer creation/start gate outside those callers, timer stop gate,
