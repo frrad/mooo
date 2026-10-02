@@ -152,18 +152,29 @@ is an empty successful page rather than malformed BSON.
 
 The first-party inbound read-state command is `DECUNREAD`. Its model contains
 int64 `chatId`, `userId`, and `watermark` fields. The packet handler delegates the
-notice into the database context. For every member, it advances that room
-member's watermark. When `userId` is the current account, it also recomputes or
-clears the room's unread count against the new watermark, clears mention/reply
-state when the watermark reaches the last log, and updates joined/archive state.
+notice into the database context. The member helper requires a nonempty active
+member set, skips bot IDs, and is suppressed for frozen type-3 rooms. Eligible
+member watermarks advance only when absent or strictly newer; adding an inactive
+member can still refresh member projections without advancing its watermark.
+For the current account, a positive unread count is recomputed or cleared;
+reaching the last log clears mention/reply state only within that positive-unread
+branch. Joined/archive refresh follows independently of the member-helper gates.
+The exact count predicate and effect order are specified in
+[`read-state/DECUNREAD.md`](read-state/DECUNREAD.md). The pure
+`internal/protocol/readstate` reducer and synthetic vectors model these planned
+effects, but the client does not yet apply them to a durable room/member store.
+DECUNREAD never advances the message checkpoint or the explicit local read
+watermark checkpoint.
 
 `NOTIREAD` is a distinct automatic response in the official inbound-message
 path, not sufficient evidence of an explicit user mark-read action. After an
 accepted `MSG` callback and an existing room lookup, the official client sends
 `NOTIREAD` with int64 chat ID, link ID, and message-log watermark, plus the
 room's boolean notification-read value and the message service ID. The clean-room
-client does not yet emit it: acknowledgement semantics, failure behavior, and
-the explicit `CHATONROOM` mark-read lifecycle remain under review. Static tracing
+client does not yet emit it automatically. Its request/response model and generic
+session transport have synthetic coverage, including disconnect without replay;
+the accepted-message/room-state consumer and live acknowledgement semantics
+remain open. The explicit `CHATONROOM` lifecycle also remains under review. Static tracing
 of the Mac client's explicit `markAsRead` and read-all entry points routes those
 operations through `SYNCMSG`; no separate mark-read LOCO request was found.
 `CHATOFF` in this path is local room teardown, and no distinct `CHATOFF` wire
@@ -277,7 +288,7 @@ least one official branch or storage effect remains unresolved.
 | Replies and reactions | Implemented subset mapped | Primary paths mapped | Revision/storage behavior partial | Some aggregate/detail paths mapped | Implemented subset covered | Partial |
 | Membership and chat changes | DELMEM/NEWMEM/LEFT/CHGCHATST/CHGMETA/CHGMCMETA typed decoder subset implemented | CHGCHATST revision gate and bounded CHGMETA effect selection implemented; broader follow-ups partial | Official member removal and selected room mutations traced; client durable membership store missing | Completion failures, subtype consumers, and remaining chat-type guards open | Synthetic decoder and CHGCHATST/CHGMETA reducer coverage | Partial |
 | Chat info, members, member list | CHATINFO/MEMBER/MEMLIST models and wire keys implemented; GETMEM unreachable | Explicit one-shot APIs, MEMBER filtering/batching and stop-on-failure implemented; INFOLINK deferral traced but not implemented | Member/user upsert mapped; shared room upsert partial; client APIs do not persist room/member state | Live key encoding and NEWMEM predicates open | Synthetic wire/model decoding, null/absence, malformed identities, MEMBER batching and partial-result failure coverage | Partial |
-| Read receipts, typing, deletion | DECUNREAD, NOTIREAD, and SYNCMSG read-side effect path mapped | Mac markAsRead/read-all routes through SYNCMSG; CHATOFF is local teardown; no distinct wire requests found | Official DECUNREAD mutations traced; client persists successful SYNCMSG read watermarks separately from message commits | SYNCMSG is not semantically read-only; live NOTIREAD/read-side-effect mechanism and failure behavior remain unresolved | DECUNREAD parser coverage; bounded A/B observation; synthetic SYNCMSG success/failure and persistence coverage | Partial |
+| Read receipts, typing, deletion | DECUNREAD, NOTIREAD, and SYNCMSG read-side effect path mapped | Bounded pure DECUNREAD reducer implemented; Mac markAsRead/read-all routes through SYNCMSG; CHATOFF is local teardown | DECUNREAD durable room/member consumer missing; successful SYNCMSG read watermarks are persisted separately from message commits | SYNCMSG is not read-only; automatic NOTIREAD consumer, live acknowledgement semantics, and DECUNREAD storage failures remain open | DECUNREAD parser, guarded reducer/effect order, count predicate, ownership and checkpoint exclusion; NOTIREAD response/disconnect; SYNCMSG success/failure/persistence coverage | Partial |
 | CHANGESVR/KICKOUT/reconnect | Commands and some reasons mapped | Manager delegation, pending-failure fan-out, and packet-ID lifecycle traced | Route clearing/reset ownership mapped; full durable recovery partial | Reconnect remains an explicit manager decision | Reducer plus lifecycle characterization, collision skipping, packet-ID wrap, and unauthenticated-KICKOUT coverage | Partial |
 
 ## Immediate work queue
