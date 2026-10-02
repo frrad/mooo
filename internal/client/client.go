@@ -179,6 +179,11 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 			c.mu.Unlock()
 			if checkpoint != nil {
 				if checkpointErr := checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
+					c.mu.Lock()
+					if c.closed {
+						c.session = session
+					}
+					c.mu.Unlock()
 					_ = session.Close()
 					finish()
 					return nil, checkpointErr
@@ -239,6 +244,11 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 		c.mu.Unlock()
 		if checkpoint != nil {
 			if checkpointErr := checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
+				c.mu.Lock()
+				if c.closed {
+					c.session = session
+				}
+				c.mu.Unlock()
 				_ = session.Close()
 				finish()
 				return nil, checkpointErr
