@@ -11,6 +11,7 @@ import (
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/continuity"
+	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/sessionlogin"
 )
 
@@ -289,18 +290,40 @@ func TestClientCloseRetainsOwnershipThroughBlockedConnect(t *testing.T) {
 
 func TestClientShutdownRetainsOwnershipForAdmittedCommit(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	leasePath := filepath.Join(dir, "profile.lock")
 	lease, err := acquireProfileLease(leasePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = lease.Close() }()
-	client := &Client{lease: lease}
-	commitDone := make(chan struct{})
-	client.mu.Lock()
-	client.commitActive = 1
-	client.commitDone = commitDone
-	client.mu.Unlock()
+	checkpoint, err := continuity.Open(filepath.Join(dir, "continuity"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{lease: lease, checkpoint: checkpoint, pendingCommits: map[int64][]int64{42: {100}}}
+	client.commitMu.Lock()
+	commitResult := make(chan error, 1)
+	go func() {
+		commitResult <- client.CommitEvent(events.TextMessage{ChatID: 42, LogID: 100})
+	}()
+	deadline := time.After(time.Second)
+	for {
+		client.mu.Lock()
+		active := client.commitActive
+		client.mu.Unlock()
+		if active == 1 {
+			break
+		}
+		select {
+		case <-time.After(time.Millisecond):
+		case <-deadline:
+			client.commitMu.Unlock()
+			t.Fatal("CommitEvent did not enter persistence gate")
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	err = client.Shutdown(ctx)
 	cancel()
@@ -310,11 +333,10 @@ func TestClientShutdownRetainsOwnershipForAdmittedCommit(t *testing.T) {
 	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
 		t.Fatalf("lease during admitted commit error=%v, want %v", err, ErrProfileInUse)
 	}
-	client.mu.Lock()
-	client.commitActive = 0
-	close(commitDone)
-	client.commitDone = nil
-	client.mu.Unlock()
+	client.commitMu.Unlock()
+	if err := <-commitResult; err != nil {
+		t.Fatalf("CommitEvent: %v", err)
+	}
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
 	if err := client.Shutdown(ctx); err != nil {
 		cancel()
