@@ -46,6 +46,7 @@ type Client struct {
 	connectDone      chan struct{}
 	shutdownActive   bool
 	shutdownDone     chan struct{}
+	closePending     bool
 	state            authstate.State
 	store            *authstate.Store
 	checkpoint       *continuity.Store
@@ -153,11 +154,23 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 		c.mu.Unlock()
 
 		finish := func() {
+			var checkpoint *continuity.Store
+			var lease *profileLease
 			c.mu.Lock()
 			c.connectActive = false
 			close(c.connectDone)
 			c.connectDone = nil
+			if c.closePending && c.closed && c.session == nil {
+				checkpoint, lease = c.checkpoint, c.lease
+				c.checkpoint, c.lease, c.closePending = nil, nil, false
+			}
 			c.mu.Unlock()
+			if checkpoint != nil {
+				_ = checkpoint.MarkClean()
+			}
+			if lease != nil {
+				_ = lease.Close()
+			}
 		}
 		session, err := dial(ctx, state)
 		if err == nil {
@@ -187,7 +200,12 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 		c.mu.Lock()
 		store := c.store
 		renewalAttempted := c.renewalAttempted
+		closed := c.closed
 		c.mu.Unlock()
+		if closed {
+			finish()
+			return nil, ErrClientClosed
+		}
 		if store == nil || renewalAttempted || !errors.As(err, &status) || status.Status != -950 {
 			finish()
 			return nil, err
@@ -200,6 +218,11 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 			return nil, errors.Join(ErrCredentialRenewal, renewErr)
 		}
 		c.mu.Lock()
+		if c.closed {
+			c.mu.Unlock()
+			finish()
+			return nil, ErrClientClosed
+		}
 		state = c.state
 		dial = c.dial
 		c.mu.Unlock()
@@ -518,6 +541,11 @@ func (c *Client) Close() error {
 	}
 	c.closed = true
 	session, checkpoint, lease := c.session, c.checkpoint, c.lease
+	if c.connectActive {
+		c.closePending = true
+		c.mu.Unlock()
+		return nil
+	}
 	c.mu.Unlock()
 	var err error
 	if session != nil {
@@ -559,8 +587,7 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		c.shutdownDone = make(chan struct{})
 		c.closed = true
 		session := c.session
-		checkpoint := c.checkpoint
-		lease := c.lease
+		connectDone := c.connectDone
 		done := c.shutdownDone
 		c.mu.Unlock()
 
@@ -574,6 +601,20 @@ func (c *Client) Shutdown(ctx context.Context) error {
 			c.mu.Unlock()
 		}
 
+		if connectDone != nil {
+			select {
+			case <-connectDone:
+			case <-ctx.Done():
+				finish()
+				return ctx.Err()
+			}
+			c.mu.Lock()
+			session = c.session
+			c.mu.Unlock()
+		}
+		c.mu.Lock()
+		checkpoint, lease := c.checkpoint, c.lease
+		c.mu.Unlock()
 		if session != nil {
 			if err := session.Shutdown(ctx); err != nil {
 				finish()
