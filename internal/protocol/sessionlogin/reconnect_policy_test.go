@@ -13,11 +13,12 @@ type reconnectVectors struct {
 	Questions []string `json:"questions"`
 	Evidence  []string `json:"evidence"`
 	Cases     []struct {
-		Name              string `json:"name"`
-		Kind              string `json:"kind"`
-		Tag               *int64 `json:"tag"`
-		ConfiguredTimeout *int64 `json:"configured_timeout_seconds"`
-		Arm               *bool  `json:"arm"`
+		Name              string   `json:"name"`
+		Kind              string   `json:"kind"`
+		Evidence          []string `json:"evidence"`
+		Tag               *int64   `json:"tag"`
+		ConfiguredTimeout *int64   `json:"configured_timeout_seconds"`
+		Arm               *bool    `json:"arm"`
 		Subcases          []struct {
 			Tag               int64 `json:"tag"`
 			ConfiguredTimeout int64 `json:"configured_timeout_seconds"`
@@ -43,10 +44,15 @@ func TestReconnectPolicyVectors(t *testing.T) {
 	if err := decoder.Decode(&vectors); err != nil {
 		t.Fatal(err)
 	}
-	if len(vectors.Cases) != 2 {
-		t.Fatalf("pure policy case count = %d, want 2", len(vectors.Cases))
+	if len(vectors.Cases) == 0 {
+		t.Fatal("pure policy vector file contains no cases")
 	}
+	executed := 0
 	for _, tc := range vectors.Cases {
+		if len(tc.Evidence) == 0 {
+			t.Fatalf("case %q has no evidence IDs", tc.Name)
+		}
+
 		t.Run(tc.Name, func(t *testing.T) {
 			switch tc.Kind {
 			case "timeout-predicate":
@@ -66,7 +72,11 @@ func TestReconnectPolicyVectors(t *testing.T) {
 			default:
 				t.Fatalf("unsupported pure policy kind %q", tc.Kind)
 			}
+			executed++
 		})
+	}
+	if executed != len(vectors.Cases) {
+		t.Fatalf("executed %d of %d pure policy cases", executed, len(vectors.Cases))
 	}
 }
 

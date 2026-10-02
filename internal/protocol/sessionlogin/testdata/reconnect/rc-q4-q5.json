@@ -32,6 +32,9 @@
           "configured_timeout_seconds": 0,
           "arm": false
         }
+      ],
+      "evidence": [
+        "RC-BIN-001"
       ]
     },
     {
@@ -46,6 +49,9 @@
         "timer lifecycle",
         "traffic reset",
         "idle timeout scope"
+      ],
+      "evidence": [
+        "RC-BIN-001"
       ]
     },
     {
