@@ -322,6 +322,43 @@ type ChatMetaChanged struct {
 func (ChatMetaChanged) Kind() Kind { return KindChatMetaChanged }
 func (ChatMetaChanged) isEvent()   {}
 
+// ChatMetaState contains the room facts needed by the bounded CHGMETA
+// transition contract. It deliberately excludes persistence and downstream
+// service implementations.
+type ChatMetaState struct {
+	RoomExists         bool
+	OpenChatBotEnabled bool
+	OpenLinkRevision   *int64
+	TeamChat           bool
+}
+
+// ChatMetaTransition reports the proven effects selected by ReduceChatMeta.
+// The caller remains responsible for applying the generic metadata merge and
+// for invoking the selected downstream operations.
+type ChatMetaTransition struct {
+	Applied         bool
+	OpenLinkUpdated bool
+	CalendarSynced  bool
+}
+
+// ReduceChatMeta applies the room and subtype gates established by the public
+// CHGMETA specification. Numeric subtype values remain opaque protocol data;
+// this reducer only reports the corresponding proven gates.
+func ReduceChatMeta(state ChatMetaState, change ChatMetaChanged) ChatMetaTransition {
+	if !state.RoomExists {
+		return ChatMetaTransition{}
+	}
+	result := ChatMetaTransition{Applied: true}
+	if change.Type == 14 && state.OpenChatBotEnabled && state.OpenLinkRevision != nil &&
+		change.Revision > *state.OpenLinkRevision {
+		result.OpenLinkUpdated = true
+	}
+	if state.TeamChat && (change.Type == 3 || change.Type == 15) {
+		result.CalendarSynced = true
+	}
+	return result
+}
+
 // ChatMCMetaChanged carries the decoder-proven MCM fields without interpreting
 // type labels or applying room/revision effects.
 type ChatMCMetaChanged struct {

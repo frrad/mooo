@@ -101,6 +101,17 @@ Execution through first text send/receive follows
       the sole checkpoint committer and per-profile session owner.
 - [ ] Verify against the disposable account and add regression tests.
 
+### Durable parity implementation pipeline
+
+Small parity slices move through one repeatable sequence: an approved public
+specification and synthetic characterization tests are reviewed first; an
+implementation agent then writes an independent reducer or decoder against
+that contract; the branch runs the repository checks and is squash-merged only
+after CI reports it mergeable. The CHGMETA slice is complete through its
+bounded effect-selection reducer gates. CHGMCMETA tracing and the chat-metadata API remain
+separate follow-up work, while persistence, failure behavior, and other
+unresolved effects stay outside this slice until their contracts are reviewed.
+
 ## Phase 4 — Matrix/Beeper bridge
 
 Execution follows [`research/bridge/PLAN.md`](research/bridge/PLAN.md).

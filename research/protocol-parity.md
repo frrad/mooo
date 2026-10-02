@@ -234,7 +234,15 @@ reducer contract.
 CHGMETA has a separate typed-decoder handoff for signed int64 `chatId` and
 the nested metadata's signed int32 subtype plus signed int64 revision,
 author, and update timestamp fields. Content remains opaque metadata; subtype
-labels and persistence effects are not inferred.
+labels and persistence effects are not inferred. The manager's database block
+looks up the room, skips all work when it is absent, invokes a generic nested
+metadata merge first, and then applies numeric subtype guards: subtype 14
+refreshes its open-link metadata only when the incoming revision is strictly
+newer than the stored revision, while subtypes 3 and 15 reach calendar
+synchronization only for team-chat rooms. Subtype 21 has a separate
+chat-bot/member consumer path. The pure characterization test covers only
+these gates; merge keys, content equality/replacement semantics, error
+reporting, and subtype labels remain open.
 CHGMCMETA has a distinct typed-decoder handoff for signed int64 `chatId`,
 signed int32 `revision`, and opaque string fields `type`, `content`,
 `imageUrl`, and `fullImageUrl`. Its manager path is room-existence-gated and
