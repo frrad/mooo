@@ -115,12 +115,13 @@ unresolved effects stay outside this slice until their contracts are reviewed.
 The reconnect owner is progressing through the same boundary. The current
 feature branch has a deterministic, injected relative timer owner with
 generation invalidation and terminal shutdown, exercised through the real
-Session completion seam. Remaining runtime work is explicit: connect the owner
-at the production Session constructor, decide and test the post-LOGINLIST
-bootstrap admission point, cover push-receipt cancellation/scheduling, and
-preserve shutdown generation guards through terminal fan-out. Mapping the
-serialized ping configuration key and claiming official queue timing remain
-separate evidence gaps.
+Session completion seam. The production Session constructor now binds that
+owner after successful LOGINLIST/LCHATLIST completion and arms it after the
+reader starts; tests cover empty-BSON PING delivery and bounded cancellation.
+Remaining runtime work is explicit: cover push-receipt cancellation/scheduling
+and preserve shutdown generation guards through every terminal fan-out path.
+Mapping the serialized ping configuration key and claiming official queue
+timing remain separate evidence gaps.
 
 ## Phase 4 — Matrix/Beeper bridge
 
