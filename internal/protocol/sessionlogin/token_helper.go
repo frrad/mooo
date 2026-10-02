@@ -32,6 +32,8 @@ func SelectTokenHelperEffects(kind string, current, incoming int64, existingLoss
 			effects = append(effects, "existing_loss_check_positive_guard", "existing_token_equality_probe")
 			if existingTokenEqualsLossCheck {
 				effects = append(effects, "set_loss_check_if_equal")
+			} else {
+				effects = append(effects, "skip_loss_check_setter")
 			}
 		} else {
 			effects = append(effects, "skip_loss_check_setter")

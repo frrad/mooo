@@ -16,6 +16,7 @@ type tokenHelperVector struct {
 	ExistingLossCheckPositive    bool     `json:"existingLossCheckPositive"`
 	ExistingTokenEqualsLossCheck bool     `json:"existingTokenEqualsLossCheck"`
 	NestedContext                string   `json:"nestedContext"`
+	Execution                    string   `json:"execution"`
 	Expect                       []string `json:"expect"`
 }
 
@@ -40,7 +41,7 @@ func TestTokenHelperUnresolvedVectorsSchema(t *testing.T) {
 	if got.Schema != "session-login-token-helper-v1" {
 		t.Fatalf("schema = %q", got.Schema)
 	}
-	if got.Status != "RED contract vectors; no production reducer" {
+	if got.Status != "implemented pure effect selector; durable policy unresolved" {
 		t.Fatalf("status = %q", got.Status)
 	}
 	if len(got.Vectors) < 8 {
@@ -48,7 +49,7 @@ func TestTokenHelperUnresolvedVectorsSchema(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, v := range got.Vectors {
-		if v.Name == "" || (v.Kind != "token" && v.Kind != "blind") || len(v.Expect) == 0 {
+		if v.Name == "" || (v.Kind != "token" && v.Kind != "blind") || len(v.Expect) == 0 || (v.Execution != "implemented" && v.Execution != "unresolved") {
 			t.Fatalf("incomplete vector: %#v", v)
 		}
 		if seen[v.Name] {
@@ -67,4 +68,49 @@ func TestTokenHelperUnresolvedVectorsSchema(t *testing.T) {
 			t.Fatalf("missing required vector %q", name)
 		}
 	}
+	validEffects := map[string]bool{
+		"compare_strict_greater": true, "open_nested_context": true, "dispatch_context_block": true,
+		"set_token": true, "set_blind": true, "no_effect": true, "observed_assertion_boundary": true,
+		"typed_error_decision": true, "existing_loss_check_positive_guard": true, "existing_token_equality_probe": true,
+		"set_loss_check_if_equal": true, "skip_loss_check_setter": true, "perform_blind_write": true,
+		"invoke_block_inline": true, "wrap_write_operation": true, "invoke_block": true,
+		"process_changed_objects": true, "wait_for_operation": true, "skip_block": true,
+		"context_failure_behavior_unresolved": true, "durable_commit_unresolved": true, "reset_policy_unresolved": true,
+	}
+	for _, vector := range got.Vectors {
+		if vector.Execution == "unresolved" {
+			continue
+		}
+		if vector.Name == "negative token to zero is typed assertion error" {
+			_, err := SelectTokenHelperEffects(vector.Kind, *vector.Current, *vector.Incoming, vector.ExistingLossCheckPositive, vector.ExistingTokenEqualsLossCheck, vector.NestedContext)
+			if err == nil {
+				t.Fatalf("%q: expected typed assertion error", vector.Name)
+			}
+			continue
+		}
+		gotEffects, err := SelectTokenHelperEffects(vector.Kind, *vector.Current, *vector.Incoming, vector.ExistingLossCheckPositive, vector.ExistingTokenEqualsLossCheck, vector.NestedContext)
+		if err != nil {
+			t.Fatalf("%q: unexpected error: %v", vector.Name, err)
+		}
+		for _, expected := range vector.Expect {
+			if expected == "perform_blind_write" {
+				expected = "set_blind"
+			}
+			if !validEffects[expected] {
+				t.Fatalf("%q: unknown expected effect %q", vector.Name, expected)
+			}
+			found := false
+			for i, effect := range gotEffects {
+				if effect == expected {
+					gotEffects = gotEffects[i+1:]
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("%q: expected ordered effect %q in %v", vector.Name, expected, gotEffects)
+			}
+		}
+	}
+
 }
