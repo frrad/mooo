@@ -52,6 +52,22 @@ func TestReduceChatMCMetaRoutesStaleNoticeButDoesNotRegressRevision(t *testing.T
 	}
 }
 
+func TestReduceChatMCMetaSharesGlobalRevisionAcrossRooms(t *testing.T) {
+	roomA := ReduceChatMCMeta(ChatMCMetaState{RoomExists: true, GlobalRevision: 90}, ChatMCMetaChanged{
+		ChatID: 100, Revision: 100, Type: "name", Content: "room A",
+	})
+	if roomA.State.GlobalRevision != 100 {
+		t.Fatalf("room A global revision = %d, want 100", roomA.State.GlobalRevision)
+	}
+
+	roomB := ReduceChatMCMeta(ChatMCMetaState{RoomExists: true, GlobalRevision: roomA.State.GlobalRevision}, ChatMCMetaChanged{
+		ChatID: 200, Revision: 90, Type: "name", Content: "room B",
+	})
+	if !roomB.Applied || roomB.State.Name != "room B" || roomB.State.GlobalRevision != 100 {
+		t.Fatalf("room B transition = %#v, want field assignment with global revision 100", roomB)
+	}
+}
+
 func TestReduceChatMCMetaHiddenStateEmitsCleanupEffects(t *testing.T) {
 	state := ChatMCMetaState{RoomExists: true, GlobalRevision: 2, Name: "room", Pin: 3}
 	result := ReduceChatMCMeta(state, ChatMCMetaChanged{
@@ -123,6 +139,18 @@ func TestReduceChatMCMetaBooleanLabelsUseExactTrue(t *testing.T) {
 				t.Fatalf("hidden = %v, want %v", result.State.Hidden, test.want)
 			}
 		})
+	}
+}
+
+func TestReduceChatMCMetaUnhidePreservesPinAndSuppressesCleanup(t *testing.T) {
+	state := ChatMCMetaState{RoomExists: true, GlobalRevision: 12, Hidden: true, Pin: 7}
+	result := ReduceChatMCMeta(state, ChatMCMetaChanged{
+		Revision: 13,
+		Type:     "chat_hide",
+		Content:  "false",
+	})
+	if !result.Applied || result.State.Hidden || result.State.Pin != 7 || result.Unpin || result.UnpinInAllFolders {
+		t.Fatalf("unhide transition = %#v, want visible room with preserved pin and no cleanup", result)
 	}
 }
 
