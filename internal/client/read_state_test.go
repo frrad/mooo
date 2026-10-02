@@ -3,9 +3,11 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/continuity"
@@ -86,6 +88,58 @@ func TestClientMarkReadCommitsOnlyAfterSuccess(t *testing.T) {
 	}
 	if len(response.ChatLogs) != 0 || checkpoint.ReadWatermark(42) != 99 {
 		t.Fatalf("response=%#v watermark=%d", response, checkpoint.ReadWatermark(42))
+	}
+	backend.wait(t)
+}
+
+func TestClientMarkReadSerializesDuplicateWatermarks(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	requests := 0
+	firstRequest := make(chan struct{})
+	allowFirstResponse := make(chan struct{})
+	backend := newScriptedBackend(t, false, func(server *wireConn) error {
+		request, err := server.read()
+		if err != nil {
+			return err
+		}
+		if request.Header.Method != "SYNCMSG" {
+			return fmt.Errorf("method = %q, want SYNCMSG", request.Header.Method)
+		}
+		requests++
+		close(firstRequest)
+		<-allowFirstResponse
+		return writeBackendPacket(server, request.Header.PacketID, "SYNCMSG", mustBSON(statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})))
+	})
+	api := testContinuityClient(t, checkpoint, backend)
+	errs := make(chan error, 2)
+	go func() {
+		_, err := api.MarkRead(context.Background(), 42, 99)
+		errs <- err
+	}()
+	select {
+	case <-firstRequest:
+	case <-time.After(time.Second):
+		t.Fatal("first MarkRead did not reach the transport")
+	}
+	secondStarted := make(chan struct{})
+	go func() {
+		close(secondStarted)
+		_, err := api.MarkRead(context.Background(), 42, 99)
+		errs <- err
+	}()
+	select {
+	case <-secondStarted:
+	case <-time.After(time.Second):
+		t.Fatal("second MarkRead did not start while first was blocked")
+	}
+	close(allowFirstResponse)
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if requests != 1 || checkpoint.ReadWatermark(42) != 99 {
+		t.Fatalf("requests=%d watermark=%d, want one request and watermark 99", requests, checkpoint.ReadWatermark(42))
 	}
 	backend.wait(t)
 }
