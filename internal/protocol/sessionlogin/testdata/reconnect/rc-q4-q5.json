@@ -4,7 +4,9 @@
     "RC-Q5"
   ],
   "evidence": [
-    "RC-BIN-001"
+    "RC-BIN-001",
+    "RC-BIN-002",
+    "RC-BIN-003"
   ],
   "status": "unexecuted",
   "cases": [
@@ -86,6 +88,36 @@
       "evidence": [
         "RC-BIN-001"
       ]
+    },
+    {
+      "name": "status forwarding queues ping scheduling before handler",
+      "kind": "lifecycle-order",
+      "expect": [
+        "queue_ping_schedule_on_main",
+        "forward_status_event"
+      ],
+      "remaining_gaps": [
+        "status admission predicate",
+        "clock source",
+        "reply rearm"
+      ]
+    },
+    {
+      "name": "disconnect status queues ping cancellation after bookkeeping",
+      "kind": "lifecycle-order",
+      "expect": [
+        "disconnect_bookkeeping",
+        "queue_ping_cancel_on_main"
+      ]
+    },
+    {
+      "name": "ordinary carriage request queues ping cancellation",
+      "kind": "lifecycle-order",
+      "expect": [
+        "queue_ping_cancel_on_main",
+        "normal_request_or_error_handling"
+      ],
+      "ordering_boundary": "queued cancellation may race an already eligible delayed invocation"
     }
   ]
 }

@@ -17,9 +17,18 @@ timer.
 The concrete PING method allocates an empty carriage packet and submits it
 through the manager's ordinary carriage request path. That ordinary path
 queues a main-queue cancellation of any delayed PING invocation for the same
-carriage target before continuing with its normal request/error handling. Thus
-an outgoing carriage request suppresses an already queued delayed PING; the
-source chain does not prove that this path immediately re-arms the interval.
+carriage target before continuing with its normal request/error handling. The
+cancellation is queued rather than executed inline, so ordering against a
+simultaneously eligible delayed invocation is not proven. The source chain does
+not prove that this path immediately re-arms the interval.
+
+The traced status-forwarding callback also posts interval-based PING scheduling
+to the main queue before forwarding the status event. Its disconnect-status
+branch performs disconnect bookkeeping and then posts the matching PING
+cancellation; its connected-status branch updates the active flag. These
+status transitions therefore establish scheduling and cancellation triggers,
+while the exact status admission predicate and any re-arm after a PING reply
+remain open.
 
 The coordinator assigns a fallback ping interval of 180 seconds: any positive
 signed 32-bit configuration value is retained, while zero or negative values
@@ -53,9 +62,11 @@ body-read timeout behavior are likewise open.
 ## Transfer boundaries
 
 Observed: zero-field PING construction through the ordinary carriage request
-path, cancellation of a queued delayed PING when that path is entered, interval
-read plus delayed PING scheduling, cancellation of a prior delayed PING for the
-same target and selector, completion wrapper (nil response calls the supplied
+path, queued cancellation of a delayed PING when that path is entered, status
+forwarding that queues interval-based scheduling before its handler, disconnect
+status queuing cancellation after disconnect bookkeeping, interval read plus
+delayed PING scheduling, cancellation of a prior delayed PING for the same
+target and selector, completion wrapper (nil response calls the supplied
 completion with nil; non-nil response is wrapped before that call), delayed
 receive-header timeout gated by positive timeout and request tag,
 timeout-to-disconnect, tag-driven header/body read callbacks, configuration
