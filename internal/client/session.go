@@ -52,6 +52,10 @@ type lifecycleScheduler interface {
 	queueSchedule() bool
 }
 
+type lifecycleShutdown interface {
+	shutdown()
+}
+
 // Session owns one authenticated carriage. A background reader dispatches
 // correlated responses and preserves unsolicited packets for the caller.
 type Session struct {
@@ -110,6 +114,9 @@ func (s *Session) stopLifecycle() {
 	s.lifecycleStopped = true
 	if s.lifecycleScheduler != nil {
 		s.lifecycleScheduler.queueCancel()
+		if owner, ok := s.lifecycleScheduler.(lifecycleShutdown); ok {
+			owner.shutdown()
+		}
 	}
 }
 
