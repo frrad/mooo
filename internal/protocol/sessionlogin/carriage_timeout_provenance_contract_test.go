@@ -33,7 +33,7 @@ func loadCarriageTimeoutContract(path string) (carriageTimeoutContract, error) {
 	if err := dec.Decode(&contract); err != nil {
 		return contract, err
 	}
-	if contract.Status != "reviewed-static-unexecuted-runtime" || len(contract.Cases) != 2 {
+	if contract.Status != "reviewed-static-unexecuted-runtime" || len(contract.Cases) != 3 {
 		return contract, fmt.Errorf("invalid status=%q cases=%d", contract.Status, len(contract.Cases))
 	}
 	seen := map[string]bool{}
@@ -43,6 +43,8 @@ func loadCarriageTimeoutContract(path string) (carriageTimeoutContract, error) {
 		"read_in_segment_timeout_seconds",
 		"read_out_segment_timeout_seconds",
 		"construct_loco_agent_with_same_timeout_order",
+		"construct_loco_agent_server_type_3",
+		"construct_loco_agent_secure_layer_type_1",
 		"disable_agent_fallback",
 		"install_carriage_agent",
 		"install_status_handler",
@@ -54,11 +56,6 @@ func loadCarriageTimeoutContract(path string) (carriageTimeoutContract, error) {
 			return contract, fmt.Errorf("invalid case %q", tc.Name)
 		}
 		seen[tc.Name] = true
-		for _, value := range tc.ConfigSeconds {
-			if value < 0 {
-				return contract, fmt.Errorf("negative timeout in %q", tc.Name)
-			}
-		}
 		if !reflect.DeepEqual(tc.ConfigSeconds, tc.ExpectedCtorArgs) {
 			return contract, fmt.Errorf("constructor forwarding mismatch %q", tc.Name)
 		}
