@@ -1,6 +1,6 @@
 {
   "evidence": ["RC-BIN-003"],
-  "status": "red-unimplemented-status-reducer",
+  "status": "implemented-status-reducer",
   "cases": [
     {
       "name": "status three installs latch and reports transition",

@@ -31,8 +31,8 @@ type pingStatusVectors struct {
 	} `json:"cases"`
 }
 
-func TestPingStatusREDVectorsHaveStrictObservedShape(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-bin-003-status-red.json"))
+func TestPingStatusVectorsHaveStrictObservedShape(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-bin-003-status.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,8 +42,8 @@ func TestPingStatusREDVectorsHaveStrictObservedShape(t *testing.T) {
 	if err := dec.Decode(&vectors); err != nil {
 		t.Fatal(err)
 	}
-	if vectors.Status != "red-unimplemented-status-reducer" {
-		t.Fatalf("status=%q want red-unimplemented-status-reducer", vectors.Status)
+	if vectors.Status != "implemented-status-reducer" {
+		t.Fatalf("status=%q want implemented-status-reducer", vectors.Status)
 	}
 	if len(vectors.Evidence) != 1 || vectors.Evidence[0] != "RC-BIN-003" {
 		t.Fatalf("evidence=%v want [RC-BIN-003]", vectors.Evidence)
