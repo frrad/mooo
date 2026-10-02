@@ -34,6 +34,9 @@ someone restarts the bridge (see [`bridge/PLAN.md`](bridge/PLAN.md), phase B3).
 Each item names how to answer it. Static items come first, per the
 clean-room rule: trace the official client before any live experiment.
 
+The static items are expanded into detailed sub-questions, with the required
+answer format, in [`reconnect/STATIC-QUESTIONS.md`](reconnect/STATIC-QUESTIONS.md).
+
 ### Static analysis (Ghidra, Mac 26.8.0)
 
 1. **Recovery trigger.** Which component observes a carriage disconnect and

@@ -36,6 +36,9 @@ non-sensitive experiment identifier.
   LOCO authentication and reconnect.
 - `reconnect.md` is the entry point for reconnect: what is established, the
   open static and live questions, the build plan, and exit criteria.
+- `reconnect/` holds the detailed static-analysis questions, the answer
+  contract (evidence row, specification, conformance vectors), and later the
+  reconnect evidence ledger and specification.
 - `device-registration/` specifies secondary-device registration, including the
   recovered passcode and QR state machines, evidence, and open experiments.
 - `credential-storage/` determines how candidate macOS preference values are
