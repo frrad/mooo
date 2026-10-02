@@ -17,10 +17,12 @@ timer.
 The concrete PING method allocates an empty carriage packet and submits it
 through the manager's ordinary carriage request path. That ordinary path
 queues a main-queue cancellation of any delayed PING invocation for the same
-carriage target before continuing with its normal request/error handling. The
+request owner before continuing with its normal request/error handling. The
 cancellation is queued rather than executed inline, so ordering against a
-simultaneously eligible delayed invocation is not proven. The source chain does
-not prove that this path immediately re-arms the interval.
+simultaneously eligible delayed invocation is not proven. The cancellation is
+queued even when the request-owner status check takes the early failure path.
+The source chain does not prove that this path immediately re-arms the
+interval.
 
 The traced status-forwarding callback also posts interval-based PING scheduling
 to the main queue before forwarding the status event. Its disconnect-status
@@ -62,7 +64,8 @@ body-read timeout behavior are likewise open.
 ## Transfer boundaries
 
 Observed: zero-field PING construction through the ordinary carriage request
-path, queued cancellation of a delayed PING when that path is entered, status
+path, queued cancellation of a delayed PING for the same request owner when
+that path is entered (including its early failure path), status
 forwarding that queues interval-based scheduling before its handler, disconnect
 status queuing cancellation after disconnect bookkeeping, interval read plus
 delayed PING scheduling, cancellation of a prior delayed PING for the same
