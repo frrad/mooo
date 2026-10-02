@@ -119,10 +119,16 @@ func validateReceiveHeaderTimeoutContract(v receiveHeaderTimeoutContract) error 
 			}
 			identity := false
 			for _, effect := range c.Expect {
-				if effect == "derive_request_tag_identity" { identity = true }
+				if effect == "derive_request_tag_identity" {
+					identity = true
+				}
 			}
-			if identity && c.ExpectedTag == nil { return fmt.Errorf("identity expected tag missing: %q", c.Name) }
-			if identity && uint64(*c.ExpectedTag) != uint64(*c.PacketID) { return fmt.Errorf("identity tag=%d packet=%d: %q", *c.ExpectedTag, *c.PacketID, c.Name) }
+			if identity && c.ExpectedTag == nil {
+				return fmt.Errorf("identity expected tag missing: %q", c.Name)
+			}
+			if identity && uint64(*c.ExpectedTag) != uint64(*c.PacketID) {
+				return fmt.Errorf("identity tag=%d packet=%d: %q", *c.ExpectedTag, *c.PacketID, c.Name)
+			}
 		case "packet-production":
 			if c.ProducerStatus == nil || c.CompletionPresent == nil {
 				return fmt.Errorf("producer inputs missing: %q", c.Name)
