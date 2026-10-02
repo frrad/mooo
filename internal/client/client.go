@@ -171,6 +171,7 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 				if checkpointErr := checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
 					c.mu.Lock()
 					c.cleanupSession = session
+					c.closed = true
 					c.mu.Unlock()
 					_ = session.Close()
 					finish()
@@ -234,6 +235,7 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 			if checkpointErr := checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
 				c.mu.Lock()
 				c.cleanupSession = session
+				c.closed = true
 				c.mu.Unlock()
 				_ = session.Close()
 				finish()
@@ -584,7 +586,11 @@ func (c *Client) Close() error {
 	if c.connectActive || c.commitActive > 0 {
 		c.mu.Unlock()
 		if session != nil {
-			return session.Close()
+			err := session.Close()
+			if cleanup != nil && cleanup != session {
+				err = errors.Join(err, cleanup.Close())
+			}
+			return err
 		}
 		return nil
 	}
@@ -632,8 +638,9 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		c.shutdownDone = make(chan struct{})
 		c.closed = true
 		session := c.session
+		cleanup := c.cleanupSession
 		if session == nil {
-			session = c.cleanupSession
+			session, cleanup = cleanup, nil
 		}
 		var checkpoint *continuity.Store
 		var lease *profileLease
@@ -644,6 +651,9 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		var interruptErr error
 		if session != nil {
 			interruptErr = session.Close()
+		}
+		if cleanup != nil && cleanup != session {
+			interruptErr = errors.Join(interruptErr, cleanup.Close())
 		}
 
 		finish := func() {
@@ -674,13 +684,20 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		}
 		c.mu.Lock()
 		session = c.session
+		cleanup = c.cleanupSession
 		if session == nil {
-			session = c.cleanupSession
+			session, cleanup = cleanup, nil
 		}
 		checkpoint, lease = c.checkpoint, c.lease
 		c.mu.Unlock()
 		if session != nil {
 			if err := session.Shutdown(ctx); err != nil {
+				finish()
+				return errors.Join(interruptErr, err)
+			}
+		}
+		if cleanup != nil {
+			if err := cleanup.Shutdown(ctx); err != nil {
 				finish()
 				return errors.Join(interruptErr, err)
 			}
