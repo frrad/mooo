@@ -21,13 +21,14 @@ type StatusHandlerInput struct {
 	CallbackPresent bool
 	CompletionID    string
 	Error           string
-	PacketPresent   bool
+	ResultPresent   bool
 }
 
 // StatusHandlerState is the durable-free projection needed by the reviewed
 // status and pending-response cases. Pending entries are copied on output.
 type StatusHandlerState struct {
 	AgentID        string
+	ManagerID      string
 	AgentStatus    int8
 	InternalStatus int8
 	HandlerPresent bool
@@ -81,7 +82,6 @@ type StatusHandlerEffect struct {
 	ErrorUserInfoPresent bool
 	ResultPresent        bool
 	CompletionID         string
-	PacketPresent        bool
 	Selector             string
 }
 
@@ -104,6 +104,9 @@ func ReduceStatusHandler(state StatusHandlerState, input StatusHandlerInput) (St
 		effects := []StatusHandlerEffect{{Kind: StatusEffectCompareAgent}}
 		if state.AgentID == "" || input.CallbackAgent == "" || state.AgentID != input.CallbackAgent {
 			return state, append(effects, StatusHandlerEffect{Kind: StatusEffectNoEffects})
+		}
+		if state.ManagerID == "" {
+			return state, append(effects, StatusHandlerEffect{Kind: StatusEffectInvalidInput})
 		}
 		switch input.Status {
 		case 0:
@@ -128,7 +131,7 @@ func ReduceStatusHandler(state StatusHandlerState, input StatusHandlerInput) (St
 				effects = append(effects, StatusHandlerEffect{Kind: StatusEffectNoCallback})
 			}
 			effects = append(effects,
-				StatusHandlerEffect{Kind: StatusEffectQueueCancel, AgentID: agent, Selector: "PING"},
+				StatusHandlerEffect{Kind: StatusEffectQueueCancel, AgentID: state.ManagerID, Selector: "sendPingRequest:"},
 				StatusHandlerEffect{Kind: StatusEffectClearHandler, AgentID: agent},
 			)
 			return state, effects
@@ -177,17 +180,20 @@ func ReduceStatusHandler(state StatusHandlerState, input StatusHandlerInput) (St
 
 	case StatusHandlerPendingResponse:
 		effects := []StatusHandlerEffect{{Kind: StatusEffectLookupCompletion}}
+		if input.CompletionID == "" || !input.ResultPresent {
+			return state, append(effects, StatusHandlerEffect{Kind: StatusEffectInvalidInput})
+		}
 		if input.CompletionID != "" {
 			if _, ok := state.Pending[input.CompletionID]; ok {
 				delete(state.Pending, input.CompletionID)
 				return state, append(effects,
 					StatusHandlerEffect{Kind: StatusEffectRemoveCompletion, CompletionID: input.CompletionID},
-					StatusHandlerEffect{Kind: StatusEffectInvokeCompletion, CompletionID: input.CompletionID, PacketPresent: input.PacketPresent},
+					StatusHandlerEffect{Kind: StatusEffectInvokeCompletion, CompletionID: input.CompletionID, ResultPresent: input.ResultPresent},
 				)
 			}
 		}
 		if state.DefaultHandler {
-			return state, append(effects, StatusHandlerEffect{Kind: StatusEffectRouteDefault})
+			return state, append(effects, StatusHandlerEffect{Kind: StatusEffectRouteDefault, CompletionID: input.CompletionID, ResultPresent: input.ResultPresent})
 		}
 		return state, append(effects, StatusHandlerEffect{Kind: StatusEffectNoDefaultHandler})
 	default:
