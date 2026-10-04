@@ -16,9 +16,15 @@ func (q *inSegmentQueue) run() {
 	}
 }
 
-type inSegmentConfig struct{ timeout time.Duration }
+type inSegmentConfig struct {
+	timeout time.Duration
+	reads   int
+}
 
-func (c *inSegmentConfig) InSegmentTimeout() time.Duration { return c.timeout }
+func (c *inSegmentConfig) InSegmentTimeout() time.Duration {
+	c.reads++
+	return c.timeout
+}
 
 type inSegmentTimerFake struct {
 	fn      func()
@@ -87,6 +93,51 @@ func TestInSegmentTimeoutOwnerDisableAndAdmissionGate(t *testing.T) {
 	}
 	if len(q.work) != 0 {
 		t.Fatal("nonpositive admission queued work")
+	}
+}
+
+func TestInSegmentTimeoutOwnerDisableIgnoresStaleCallback(t *testing.T) {
+	q, clock, cfg := &inSegmentQueue{}, &inSegmentClock{}, &inSegmentConfig{timeout: time.Second}
+	fired := 0
+	owner, err := NewInSegmentTimeoutOwner(clock, q, cfg, func() { fired++ })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := owner.Toggle(1); err != nil || !ok {
+		t.Fatal(err)
+	}
+	q.run()
+	if ok, err := owner.Toggle(0); err != nil || !ok {
+		t.Fatal(err)
+	}
+	q.run()
+	clock.timers[0].fn()
+	if fired != 0 {
+		t.Fatalf("stale callback disconnected after disable: %d", fired)
+	}
+}
+
+func TestInSegmentTimeoutOwnerDisableDoesNotRereadExecutionConfig(t *testing.T) {
+	q, clock, cfg := &inSegmentQueue{}, &inSegmentClock{}, &inSegmentConfig{timeout: time.Second}
+	owner, err := NewInSegmentTimeoutOwner(clock, q, cfg, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := owner.Toggle(1); err != nil || !ok {
+		t.Fatal(err)
+	}
+	q.run()
+	readsAfterEnable := cfg.reads
+	if ok, err := owner.Toggle(0); err != nil || !ok {
+		t.Fatal(err)
+	}
+	readsAfterDisableAdmission := cfg.reads
+	q.run()
+	if readsAfterDisableAdmission != readsAfterEnable+1 {
+		t.Fatalf("disable admission reads=%d, want %d", readsAfterDisableAdmission, readsAfterEnable+1)
+	}
+	if cfg.reads != readsAfterDisableAdmission {
+		t.Fatalf("disable execution reread timeout: reads=%d, want %d", cfg.reads, readsAfterDisableAdmission)
 	}
 }
 
