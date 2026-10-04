@@ -55,8 +55,14 @@ func (c *Client) SyncMessages(ctx context.Context, request syncmsg.Request) (syn
 		return syncmsg.Response{}, err
 	}
 	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return syncmsg.Response{}, ErrClientClosed
+	}
 	checkpoint := c.checkpoint
+	endPersistence := c.beginPersistenceLocked()
 	c.mu.Unlock()
+	defer endPersistence()
 	if checkpoint != nil {
 		if _, err := checkpoint.CommitReadWatermark(request.ChatID, request.Max); err != nil {
 			return syncmsg.Response{}, err
@@ -72,8 +78,11 @@ func (c *Client) InitialSyncTargets(ctx context.Context) ([]syncmsg.Target, erro
 	if err != nil {
 		return nil, err
 	}
-	if c.checkpoint != nil {
-		known := c.checkpoint.Snapshot().SyncTargets()
+	c.mu.Lock()
+	checkpoint := c.checkpoint
+	c.mu.Unlock()
+	if checkpoint != nil {
+		known := checkpoint.Snapshot().SyncTargets()
 		targets := make([]syncmsg.Target, 0, len(known))
 		for _, target := range known {
 			if target.MaxLogID > 0 {
@@ -156,7 +165,7 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 	current := committedMax(checkpointState.Chats, chatID)
 	if current >= targetMax {
 		if hasGapThrough(checkpointState.HistoryGaps, chatID, targetMax) {
-			if err := checkpoint.ResolveGapThrough(chatID, targetMax); err != nil {
+			if err := c.checkpointWrite(func(checkpoint *continuity.Store) error { return checkpoint.ResolveGapThrough(chatID, targetMax) }); err != nil {
 				return nil, err
 			}
 		}
@@ -202,7 +211,7 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 		}
 		if current == targetMax {
 			if hasGapThrough(checkpointState.HistoryGaps, chatID, targetMax) {
-				if err := checkpoint.ResolveGapThrough(chatID, targetMax); err != nil {
+				if err := c.checkpointWrite(func(checkpoint *continuity.Store) error { return checkpoint.ResolveGapThrough(chatID, targetMax) }); err != nil {
 					return nil, err
 				}
 			}
@@ -213,13 +222,13 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 			return result, nil
 		}
 		if !progressed {
-			if err := checkpoint.RecordGap(chatID, gapStart, targetMax); err != nil {
+			if err := c.checkpointWrite(func(checkpoint *continuity.Store) error { return checkpoint.RecordGap(chatID, gapStart, targetMax) }); err != nil {
 				return nil, errors.Join(ErrGapUnresolved, err)
 			}
 			return nil, ErrGapUnresolved
 		}
 	}
-	if err := checkpoint.RecordGap(chatID, gapStart, targetMax); err != nil {
+	if err := c.checkpointWrite(func(checkpoint *continuity.Store) error { return checkpoint.RecordGap(chatID, gapStart, targetMax) }); err != nil {
 		return nil, errors.Join(ErrGapUnresolved, err)
 	}
 	return nil, ErrGapUnresolved

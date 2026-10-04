@@ -42,11 +42,16 @@ const (
 // repeated.
 type Client struct {
 	mu               sync.Mutex
+	connectActive    bool
+	connectDone      chan struct{}
+	shutdownActive   bool
+	shutdownDone     chan struct{}
 	state            authstate.State
 	store            *authstate.Store
 	checkpoint       *continuity.Store
 	http             friends.Doer
 	session          *Session
+	cleanupSession   *Session
 	closed           bool
 	renewalAttempted bool
 	dial             func(context.Context, authstate.State) (*Session, error)
@@ -54,6 +59,8 @@ type Client struct {
 	pushConsumer     pushConsumerMode
 	eventStream      chan events.Result
 	commitMu         sync.Mutex
+	commitActive     int
+	commitDone       chan struct{}
 	pendingCommits   map[int64][]int64
 	readMu           sync.Mutex
 }
@@ -121,45 +128,134 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 	if c == nil || ctx == nil {
 		return nil, ErrProtocol
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.closed {
-		return nil, ErrClientClosed
-	}
-	if c.session != nil {
-		return c.session, nil
-	}
-	session, err := c.dial(ctx, c.state)
-	if err == nil {
-		if c.checkpoint != nil {
-			if checkpointErr := c.checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
+	for {
+		c.mu.Lock()
+		if c.closed {
+			c.mu.Unlock()
+			return nil, ErrClientClosed
+		}
+		if c.session != nil {
+			session := c.session
+			c.mu.Unlock()
+			return session, nil
+		}
+		if c.connectActive {
+			done := c.connectDone
+			c.mu.Unlock()
+			select {
+			case <-done:
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		c.connectActive = true
+		c.connectDone = make(chan struct{})
+		state := c.state
+		dial := c.dial
+		c.mu.Unlock()
+
+		finish := func() {
+			c.mu.Lock()
+			c.connectActive = false
+			close(c.connectDone)
+			c.connectDone = nil
+			c.mu.Unlock()
+		}
+		session, err := dial(ctx, state)
+		if err == nil {
+			c.mu.Lock()
+			checkpoint := c.checkpoint
+			c.mu.Unlock()
+			if checkpoint != nil {
+				if checkpointErr := checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
+					c.mu.Lock()
+					c.cleanupSession = session
+					c.closed = true
+					c.mu.Unlock()
+					_ = session.Close()
+					finish()
+					return nil, checkpointErr
+				}
+			}
+			c.mu.Lock()
+			if c.closed {
+				// Keep a late session reachable so Shutdown can join its worker;
+				// closing the transport alone is not a worker-join guarantee.
+				c.session = session
+				c.mu.Unlock()
 				_ = session.Close()
+				finish()
+				return nil, ErrClientClosed
+			}
+			c.session = session
+			c.mu.Unlock()
+			finish()
+			return session, nil
+		}
+		var status StatusError
+		c.mu.Lock()
+		store := c.store
+		renewalAttempted := c.renewalAttempted
+		closed := c.closed
+		c.mu.Unlock()
+		if closed {
+			finish()
+			return nil, ErrClientClosed
+		}
+		if store == nil || renewalAttempted || !errors.As(err, &status) || status.Status != -950 {
+			finish()
+			return nil, err
+		}
+		c.mu.Lock()
+		c.renewalAttempted = true
+		c.mu.Unlock()
+		if renewErr := c.renewCredentials(ctx); renewErr != nil {
+			finish()
+			return nil, errors.Join(ErrCredentialRenewal, renewErr)
+		}
+		c.mu.Lock()
+		if c.closed {
+			c.mu.Unlock()
+			finish()
+			return nil, ErrClientClosed
+		}
+		state = c.state
+		dial = c.dial
+		c.mu.Unlock()
+		session, err = dial(ctx, state)
+		if err != nil {
+			finish()
+			return nil, err
+		}
+		c.mu.Lock()
+		checkpoint := c.checkpoint
+		c.mu.Unlock()
+		if checkpoint != nil {
+			if checkpointErr := checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
+				c.mu.Lock()
+				c.cleanupSession = session
+				c.closed = true
+				c.mu.Unlock()
+				_ = session.Close()
+				finish()
 				return nil, checkpointErr
 			}
 		}
+		c.mu.Lock()
+		if c.closed {
+			// Keep a late session reachable so Shutdown can join its worker.
+			c.session = session
+			c.mu.Unlock()
+			_ = session.Close()
+			finish()
+			return nil, ErrClientClosed
+		}
 		c.session = session
+		c.mu.Unlock()
+		finish()
 		return session, nil
 	}
-	var status StatusError
-	if c.store == nil || c.renewalAttempted || !errors.As(err, &status) || status.Status != -950 {
-		return nil, err
-	}
-	c.renewalAttempted = true
-	if renewErr := c.renewCredentials(ctx); renewErr != nil {
-		return nil, errors.Join(ErrCredentialRenewal, renewErr)
-	}
-	session, err = c.dial(ctx, c.state)
-	if err != nil {
-		return nil, err
-	}
-	if c.checkpoint != nil {
-		if checkpointErr := c.checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
-			_ = session.Close()
-			return nil, checkpointErr
-		}
-	}
-	c.session = session
-	return session, nil
 }
 
 // InitialChatData returns the synchronized login snapshot, connecting once if
@@ -219,8 +315,9 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 	stream := make(chan events.Result, requestLimit)
 	c.pushConsumer = pushConsumerTyped
 	c.eventStream = stream
+	checkpoint := c.checkpoint
 	c.mu.Unlock()
-	go decodeEventStreamWithContinuity(raw, stream, c.checkpoint, c.queueCommit)
+	go decodeEventStreamWithContinuity(raw, stream, checkpoint, c.queueCommit)
 	return stream, nil
 }
 
@@ -283,7 +380,9 @@ func (c *Client) CommitEvent(event events.Event) error {
 		return ErrClientClosed
 	}
 	checkpoint := c.checkpoint
+	endPersistence := c.beginPersistenceLocked()
 	c.mu.Unlock()
+	defer endPersistence()
 	if checkpoint == nil {
 		return ErrProtocol
 	}
@@ -302,6 +401,42 @@ func (c *Client) CommitEvent(event events.Event) error {
 		}
 	}
 	return err
+}
+
+// beginPersistenceLocked marks a checkpoint operation admitted before the
+// caller releases Client.mu. Shutdown waits for all admitted operations before
+// releasing profile ownership.
+func (c *Client) beginPersistenceLocked() func() {
+	if c.commitActive == 0 {
+		c.commitDone = make(chan struct{})
+	}
+	c.commitActive++
+	return func() {
+		c.mu.Lock()
+		c.commitActive--
+		if c.commitActive == 0 {
+			close(c.commitDone)
+			c.commitDone = nil
+		}
+		c.mu.Unlock()
+	}
+}
+
+func (c *Client) checkpointWrite(fn func(*continuity.Store) error) error {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return ErrClientClosed
+	}
+	checkpoint := c.checkpoint
+	if checkpoint == nil {
+		c.mu.Unlock()
+		return ErrProtocol
+	}
+	endPersistence := c.beginPersistenceLocked()
+	c.mu.Unlock()
+	defer endPersistence()
+	return fn(checkpoint)
 }
 
 func (c *Client) queueCommit(chatID, logID int64) {
@@ -442,21 +577,152 @@ func (c *Client) Close() error {
 		return nil
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.closed {
+		c.mu.Unlock()
 		return nil
 	}
 	c.closed = true
+	session, cleanup, checkpoint, lease := c.session, c.cleanupSession, c.checkpoint, c.lease
+	if c.connectActive || c.commitActive > 0 {
+		c.mu.Unlock()
+		if session != nil {
+			err := session.Close()
+			if cleanup != nil && cleanup != session {
+				err = errors.Join(err, cleanup.Close())
+			}
+			return err
+		}
+		return nil
+	}
+	c.mu.Unlock()
 	var err error
-	hadSession := c.session != nil
-	if hadSession {
-		err = c.session.Close()
+	if session != nil {
+		err = session.Close()
 	}
-	if hadSession && c.checkpoint != nil {
-		err = errors.Join(err, c.checkpoint.MarkClean())
+	if cleanup != nil && cleanup != session {
+		err = errors.Join(err, cleanup.Close())
 	}
-	if c.lease != nil {
-		err = errors.Join(err, c.lease.Close())
+	if session != nil && checkpoint != nil {
+		err = errors.Join(err, checkpoint.MarkClean())
+	}
+	if lease != nil {
+		err = errors.Join(err, lease.Close())
 	}
 	return err
+}
+
+// Shutdown marks the Client closed, interrupts its Session without holding
+// Client.mu, and joins the Session worker before releasing checkpoint and
+// profile ownership. A deadline leaves ownership intact so the caller can
+// retry Shutdown after the worker becomes joinable.
+func (c *Client) Shutdown(ctx context.Context) error {
+	if c == nil {
+		return nil
+	}
+	if ctx == nil {
+		return ErrProtocol
+	}
+	for {
+		c.mu.Lock()
+		if c.shutdownActive {
+			done := c.shutdownDone
+			c.mu.Unlock()
+			select {
+			case <-done:
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		c.shutdownActive = true
+		c.shutdownDone = make(chan struct{})
+		c.closed = true
+		session := c.session
+		cleanup := c.cleanupSession
+		if session == nil {
+			session, cleanup = cleanup, nil
+		}
+		var checkpoint *continuity.Store
+		var lease *profileLease
+		connectDone := c.connectDone
+		commitDone := c.commitDone
+		done := c.shutdownDone
+		c.mu.Unlock()
+		var interruptErr error
+		if session != nil {
+			interruptErr = session.Close()
+		}
+		if cleanup != nil && cleanup != session {
+			interruptErr = errors.Join(interruptErr, cleanup.Close())
+		}
+
+		finish := func() {
+			c.mu.Lock()
+			if c.shutdownDone == done {
+				c.shutdownActive = false
+				close(done)
+				c.shutdownDone = nil
+			}
+			c.mu.Unlock()
+		}
+
+		if connectDone != nil {
+			select {
+			case <-connectDone:
+			case <-ctx.Done():
+				finish()
+				return errors.Join(interruptErr, ctx.Err())
+			}
+		}
+		if commitDone != nil {
+			select {
+			case <-commitDone:
+			case <-ctx.Done():
+				finish()
+				return errors.Join(interruptErr, ctx.Err())
+			}
+		}
+		c.mu.Lock()
+		session = c.session
+		cleanup = c.cleanupSession
+		if session == nil {
+			session, cleanup = cleanup, nil
+		}
+		checkpoint, lease = c.checkpoint, c.lease
+		c.mu.Unlock()
+		if session != nil {
+			if err := session.Shutdown(ctx); err != nil {
+				finish()
+				return errors.Join(interruptErr, err)
+			}
+		}
+		if cleanup != nil {
+			if err := cleanup.Shutdown(ctx); err != nil {
+				finish()
+				return errors.Join(interruptErr, err)
+			}
+		}
+		if checkpoint != nil {
+			if err := checkpoint.MarkClean(); err != nil {
+				finish()
+				return errors.Join(interruptErr, err)
+			}
+		}
+		if lease != nil {
+			if err := lease.Close(); err != nil {
+				finish()
+				return errors.Join(interruptErr, err)
+			}
+		}
+		c.mu.Lock()
+		if c.session == session || c.cleanupSession == session {
+			c.session = nil
+			c.cleanupSession = nil
+			c.checkpoint = nil
+			c.lease = nil
+		}
+		c.mu.Unlock()
+		finish()
+		return interruptErr
+	}
 }
