@@ -16,15 +16,16 @@ type kickoutContract struct {
 	Cases    []kickoutCase `json:"cases"`
 }
 type kickoutCase struct {
-	Name        string   `json:"name"`
-	ReasonCode  int      `json:"reason_code"`
-	ErrMsg      bool     `json:"err_msg_present"`
-	ErrURL      bool     `json:"err_url_present"`
-	ErrURLLabel bool     `json:"err_url_label_present"`
-	Expect      []string `json:"expect"`
+	Name         string   `json:"name"`
+	CallbackMain bool     `json:"callback_on_main_thread"`
+	ReasonCode   int      `json:"reason_code"`
+	ErrMsg       bool     `json:"err_msg_present"`
+	ErrURL       bool     `json:"err_url_present"`
+	ErrURLLabel  bool     `json:"err_url_label_present"`
+	Expect       []string `json:"expect"`
 }
 
-var kickoutEffects = map[string]bool{"dispatch_main_queue": true, "insert_reason_code": true, "insert_err_msg": true, "insert_err_url": true, "insert_err_url_label": true, "create_error_type_36": true, "post_kicked_out_notification": true}
+var kickoutEffects = map[string]bool{"dispatch_main_queue": true, "invoke_projection": true, "invoke_projection_inline": true, "insert_reason_code": true, "insert_err_msg": true, "insert_err_url": true, "insert_err_url_label": true, "create_error_type_36": true, "post_kicked_out_notification": true}
 
 func loadKickoutContract(path string) (kickoutContract, error) {
 	b, e := os.ReadFile(path)
@@ -57,7 +58,11 @@ func validateKickoutContract(c kickoutContract) error {
 				return fmt.Errorf("unknown effect %q", e)
 			}
 		}
-		want := []string{"dispatch_main_queue", "insert_reason_code"}
+		want := []string{"invoke_projection_inline"}
+		if !tc.CallbackMain {
+			want = []string{"dispatch_main_queue", "invoke_projection"}
+		}
+		want = append(want, "insert_reason_code")
 		if tc.ErrMsg {
 			want = append(want, "insert_err_msg")
 		}
