@@ -24,7 +24,7 @@ type kickoutCase struct {
 	Expect      []string `json:"expect"`
 }
 
-var kickoutEffects = map[string]bool{"insert_reason_code": true, "insert_err_msg": true, "insert_err_url": true, "insert_err_url_label": true, "create_error_type_36": true, "post_kicked_out_notification": true}
+var kickoutEffects = map[string]bool{"dispatch_main_queue": true, "insert_reason_code": true, "insert_err_msg": true, "insert_err_url": true, "insert_err_url_label": true, "create_error_type_36": true, "post_kicked_out_notification": true}
 
 func loadKickoutContract(path string) (kickoutContract, error) {
 	b, e := os.ReadFile(path)
@@ -57,7 +57,7 @@ func validateKickoutContract(c kickoutContract) error {
 				return fmt.Errorf("unknown effect %q", e)
 			}
 		}
-		want := []string{"insert_reason_code"}
+		want := []string{"dispatch_main_queue", "insert_reason_code"}
 		if tc.ErrMsg {
 			want = append(want, "insert_err_msg")
 		}
