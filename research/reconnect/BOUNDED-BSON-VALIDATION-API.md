@@ -38,23 +38,30 @@ The bounded supported matrix is:
 | Element | Result | Source-compatible boundary |
 | --- | --- | --- |
 | `0x01` | `float64` | IEEE little-endian payload |
-| `0x02` | `string` | declared byte length and trailing NUL are checked |
+| `0x02` | `string` | value helper scans to first NUL; cursor advances declared length + 4 |
 | `0x03` | `map[string]any` | recursively decoded with `MaxDepth` |
-| `0x04` | `[]any` | numeric-key order is preserved |
-| `0x06`, `0x0a` | skipped element | no assignment; an earlier duplicate remains |
+| `0x04` | `[]any` | encounter order is preserved; numeric keys are not sorted |
+| `0x05`, `0x06`, `0x07`, `0x09`, `0x0a`, `0x0b`, `0x0c`, `0x0d`, `0x0e`, `0x0f`, `0x11` | skipped element | cursor recognizes and consumes the source-width payload; no assignment |
 | `0x08` | `bool` | any nonzero byte is true |
 | `0x10` | `int32` | four-byte little-endian payload |
 | `0x12` | `int64` | eight-byte little-endian payload |
 
-Unknown element types stop with the partial map. Duplicate ordinary values
-replace earlier values; a later null/undefined element does not overwrite an
-earlier value. Strings require a NUL within the supplied slice. The source
-cursor's raw NUL scanning is represented with this bounded equivalent; the
-declared BSON document length is still not used as the cursor limit.
+Unknown element types stop the local dictionary/array loop and return its
+partial value. For a nested document or array, the parent cursor then resumes
+at the nested element's declared container width; the nested partial value is
+retained and the unknown type is not propagated as a root partial result.
+Duplicate ordinary values replace earlier values; a later null/undefined or
+other recognized-but-value-less element does not overwrite an earlier value.
+The string value helper scans from its payload to the first NUL, while the
+cursor advances by the declared string length plus four bytes. The source
+cursor's raw reads are represented with bounded equivalents; the declared root
+BSON document length is still not used as the cursor limit.
 
 The synthetic tests cover scalar values, nonzero boolean normalization,
-duplicate/null preservation, partial unknown-type return, recursive document
-containers, and explicit byte/depth bounds. They are source-contract tests,
+duplicate/null preservation, recognized cursor-only skip types, string
+first-NUL/declared-width divergence, nested unknown continuation, array
+encounter order, partial unknown-type return, recursive document containers,
+and explicit byte/depth bounds. They are source-contract tests,
 not proof that every future typed notice accepts every BSON shape. Notice
 constructor validation, SGJson property coercion, and Session binding remain
 separate decisions.
