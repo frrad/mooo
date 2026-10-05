@@ -136,9 +136,16 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateProfileUnavailable})
 		return
 	}
+	// Retain the bootstrap owner before any potentially blocking Connect,
+	// catch-up, or Events call. Disconnect must be able to interrupt and join a
+	// client whose subscription has not returned yet.
+	kc.mu.Lock()
+	kc.cleanup = c
+	kc.cleanupDone = nil
+	kc.mu.Unlock()
 	stream, err := kc.connectAndSubscribe(ctx, c)
 	if err != nil {
-		_ = c.Close()
+		kc.shutdownBootstrap(c, "after connect failure", false)
 		kc.log().Err(err).Msg("Failed to connect to KakaoTalk")
 		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
 		return
@@ -147,7 +154,7 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	kc.mu.Lock()
 	if kc.stopping {
 		kc.mu.Unlock()
-		_ = c.Close()
+		kc.shutdownBootstrap(c, "stopped client", true)
 		return
 	}
 	kc.client = c
@@ -155,6 +162,28 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	kc.mu.Unlock()
 	kc.sendState(status.BridgeState{StateEvent: status.StateConnected})
 	go kc.run(c, stream, done)
+}
+
+// shutdownBootstrap releases an owner retained before bootstrap calls. A
+// concurrent Disconnect owns cleanup once it marks stopping, so Connect must
+// leave that shutdown and any retry to Disconnect.
+func (kc *KakaoClient) shutdownBootstrap(c kakaoClient, phase string, force bool) {
+	kc.mu.Lock()
+	owned := kc.cleanup == c && (force || !kc.stopping)
+	kc.mu.Unlock()
+	if !owned {
+		return
+	}
+	if err := shutdownKakaoClient(c); err != nil {
+		kc.log().Err(err).Msg("Failed to clean up Kakao client " + phase)
+		return
+	}
+	kc.mu.Lock()
+	if kc.cleanup == c {
+		kc.cleanup = nil
+		kc.cleanupDone = nil
+	}
+	kc.mu.Unlock()
 }
 
 // connectAndSubscribe logs in, recovers what was missed while disconnected,
