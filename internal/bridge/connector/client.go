@@ -138,8 +138,19 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	}
 	stream, err := kc.connectAndSubscribe(ctx, c)
 	if err != nil {
+		kc.mu.Lock()
+		kc.cleanup = c
+		kc.cleanupDone = nil
+		kc.mu.Unlock()
 		if shutdownErr := shutdownKakaoClient(c); shutdownErr != nil {
 			kc.log().Err(shutdownErr).Msg("Failed to clean up Kakao client after connect failure")
+		} else {
+			kc.mu.Lock()
+			if kc.cleanup == c {
+				kc.cleanup = nil
+				kc.cleanupDone = nil
+			}
+			kc.mu.Unlock()
 		}
 		kc.log().Err(err).Msg("Failed to connect to KakaoTalk")
 		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
@@ -149,8 +160,19 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	kc.mu.Lock()
 	if kc.stopping {
 		kc.mu.Unlock()
+		kc.mu.Lock()
+		kc.cleanup = c
+		kc.cleanupDone = nil
+		kc.mu.Unlock()
 		if shutdownErr := shutdownKakaoClient(c); shutdownErr != nil {
 			kc.log().Err(shutdownErr).Msg("Failed to clean up stopped Kakao client")
+		} else {
+			kc.mu.Lock()
+			if kc.cleanup == c {
+				kc.cleanup = nil
+				kc.cleanupDone = nil
+			}
+			kc.mu.Unlock()
 		}
 		return
 	}

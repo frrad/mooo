@@ -648,6 +648,33 @@ func TestConnectFailureUsesShutdownForCleanup(t *testing.T) {
 	}
 }
 
+func TestBootstrapShutdownTimeoutRetainsCleanupOwner(t *testing.T) {
+	fake := &fakeKakao{resumeErr: errors.New("synthetic bootstrap failure"), shutdownFailures: 1}
+	opens := 0
+	kc, _ := newTestClient(t, func() (kakaoClient, error) {
+		opens++
+		return fake, nil
+	})
+	kc.Connect(context.Background())
+	kc.mu.Lock()
+	retained := kc.cleanup == fake
+	kc.mu.Unlock()
+	if !retained {
+		t.Fatal("bootstrap timeout lost cleanup owner")
+	}
+	kc.Connect(context.Background())
+	if opens != 1 {
+		t.Fatalf("Connect reopened profile during cleanup: opens = %d, want 1", opens)
+	}
+	kc.Disconnect()
+	fake.mu.Lock()
+	shutdownCalls := fake.shutdownCalls
+	fake.mu.Unlock()
+	if shutdownCalls != 2 {
+		t.Fatalf("shutdown retry calls = %d, want 2", shutdownCalls)
+	}
+}
+
 func connectedClient(t *testing.T, fake *fakeKakao) *KakaoClient {
 	t.Helper()
 	fake.stream = make(chan events.Result)
