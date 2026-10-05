@@ -18,7 +18,11 @@ type pushReceiptCallbackCase struct {
 	Callback             string   `json:"callback"`
 	Tag                  int64    `json:"tag"`
 	ExpectedForwardedTag int64    `json:"expected_forwarded_tag"`
-	PendingState         int      `json:"pending_state"`
+	DataLength           int      `json:"data_length"`
+	SendStatus           int      `json:"send_status"`
+	PendingCountBefore   int      `json:"pending_count_before"`
+	ExpectedPendingCount int      `json:"expected_pending_count"`
+	ExpectedNextTag      int64    `json:"expected_next_tag"`
 	ExpectedEffects      []string `json:"expected_effects"`
 }
 
@@ -27,7 +31,17 @@ func expectedPushReceiptCallback(c pushReceiptCallbackCase) []string {
 	case "write":
 		return []string{"toggle_out_timeout_false", "forward_did_write_tag", "did_write_noop"}
 	case "pending_admission":
-		return []string{"synchronize_pending_map", "pending_state_two_branch", "record_pending_values", "update_pending_count"}
+		effects := []string{"synchronize_pending_map", "fetch_data_length", "update_pending_count"}
+		if c.DataLength == 0 {
+			return effects
+		}
+		effects = append(effects, "read_send_status")
+		if c.SendStatus == 2 {
+			effects = append(effects, "encrypt_data", "write_data")
+		} else {
+			effects = append(effects, "write_raw_data")
+		}
+		return append(effects, "record_pending_length", "increment_tag")
 	case "read":
 		if c.Tag == 0 {
 			return []string{"receive_zero_tag_update", "did_read_header"}
@@ -50,7 +64,7 @@ func TestPushReceiptCallbacksFixture(t *testing.T) {
 	if err = d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 7 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 9 {
 		t.Fatalf("fixture header = %#v", f)
 	}
 	seen := map[string]bool{}
@@ -67,6 +81,20 @@ func TestPushReceiptCallbacksFixture(t *testing.T) {
 		}
 		if c.Callback == "write" && c.ExpectedForwardedTag != c.Tag {
 			t.Errorf("%s forwarded tag = %d, want %d", c.Name, c.ExpectedForwardedTag, c.Tag)
+		}
+		if c.Callback == "pending_admission" {
+			if c.DataLength < 0 || c.PendingCountBefore < 0 {
+				t.Errorf("%s has invalid admission inputs", c.Name)
+			}
+			if c.ExpectedPendingCount != c.PendingCountBefore+1 {
+				t.Errorf("%s pending count = %d, want %d", c.Name, c.ExpectedPendingCount, c.PendingCountBefore+1)
+			}
+			if c.DataLength > 0 && c.ExpectedNextTag != c.Tag+1 {
+				t.Errorf("%s next tag = %d, want %d", c.Name, c.ExpectedNextTag, c.Tag+1)
+			}
+			if c.DataLength == 0 && c.ExpectedNextTag != c.Tag {
+				t.Errorf("%s zero-length next tag = %d, want %d", c.Name, c.ExpectedNextTag, c.Tag)
+			}
 		}
 	}
 }
