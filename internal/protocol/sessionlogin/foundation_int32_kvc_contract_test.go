@@ -116,7 +116,11 @@ func TestFoundationInt32KVCFixture(t *testing.T) {
 			expectedOutcome = "exception"
 		}
 		if outcome != expectedOutcome {
-			t.Errorf("%s outcome=%s want %s", c.Name, outcome, expectedOutcome)
+			t.Errorf("%s modeled outcome=%s want %s", c.Name, outcome, expectedOutcome)
+			continue
+		}
+		if c.Outcome != expectedOutcome {
+			t.Errorf("%s captured outcome=%s want derived %s", c.Name, c.Outcome, expectedOutcome)
 			continue
 		}
 		if expectedOutcome == "exception" {

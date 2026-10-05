@@ -63,8 +63,11 @@ The decoder-to-KVC input classes are also source-grounded. Decoder IMP
 `0x1017eb434` calls helper `0x1017eb504`; its BSON `0x10` branch invokes
 `NSNumber numberWithInt32:` through stub `0x1018f4420`, while BSON `0x12`
 invokes `NSNumber numberWithInt64:` through stub `0x1018f4440`. The app
-metadata contains no notice or `LocoModel` override for the KVC setter; the
-framework `SGJsonObject` implementation remains the untraced fallback.
+metadata contains no notice or `LocoModel` override for the KVC setter. The
+inspected SGJsonObject base and NSObject SGJsonKit category metadata also show
+no `setValue:forKey:` or `setValue:forUndefinedKey:` override. This scopes the
+source check to those inspected classes and does not claim that dynamic
+registration, swizzling, or other framework/runtime overrides are absent.
 
 The synthetic vector test records the input class and Objective-C type for all
 23 cases, including explicit `alloc/initWithInt:` int32 decoder-factory cases
