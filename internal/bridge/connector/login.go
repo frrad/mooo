@@ -484,7 +484,9 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 		complete := l.completeLogin
 		if complete == nil {
 			complete = func(ctx context.Context, userID int64) (*bridgev2.LoginStep, error) {
-				login, err := l.user.NewLogin(ctx, &database.UserLogin{ID: makeUserLoginID(userID), RemoteName: placeholderUserName(userID), Metadata: &UserLoginMetadata{Profile: l.profile}}, &bridgev2.NewLoginParams{LoadUserLogin: l.connector.LoadUserLogin})
+				// Enrollment is fail-closed: an existing login may own an active
+				// profile lease, so NewLogin must not silently replace its client.
+				login, err := l.user.NewLogin(ctx, &database.UserLogin{ID: makeUserLoginID(userID), RemoteName: placeholderUserName(userID), Metadata: &UserLoginMetadata{Profile: l.profile}}, &bridgev2.NewLoginParams{LoadUserLogin: l.connector.LoadUserLogin, DontReuseExisting: true})
 				if err != nil {
 					return nil, fmt.Errorf("connector: save QR login: %w", err)
 				}
@@ -695,6 +697,8 @@ func (l *importProfileLogin) SubmitUserInput(ctx context.Context, input map[stri
 		Metadata:   &UserLoginMetadata{Profile: name},
 	}, &bridgev2.NewLoginParams{
 		LoadUserLogin: l.connector.LoadUserLogin,
+		// Import must not overwrite an already-owned profile lease.
+		DontReuseExisting: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save login: %w", err)
