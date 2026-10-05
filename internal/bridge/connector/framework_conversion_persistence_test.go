@@ -116,6 +116,11 @@ func runFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T, gap eve
 	if got := len(fake.committed()); got != 1 {
 		t.Fatalf("source commits after successful replay = %d, want 1", got)
 	}
+	committedChatID, committedLogID, ok := events.MessagePosition(fake.committed()[0])
+	wantChatID, wantLogID, wantPosition := events.MessagePosition(gap)
+	if !ok || !wantPosition || committedChatID != wantChatID || committedLogID != wantLogID {
+		t.Fatalf("source commit position = (%d, %d, %t), want (%d, %d)", committedChatID, committedLogID, ok, wantChatID, wantLogID)
+	}
 	rows, err := bridge.DB.Message.GetAllPartsByID(ctx, login.ID, gapID)
 	if err != nil {
 		t.Fatal(err)
@@ -156,8 +161,22 @@ func runFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T, gap eve
 	if !kc2.handleEvent(&fakeKakao{}, gap) {
 		t.Fatalf("restart replay was not accepted as an ignored duplicate: result=%+v", restartResult)
 	}
+	if !restartResult.Ignored {
+		t.Fatalf("restart replay result = %+v, want ignored duplicate", restartResult)
+	}
 	if intent2.calls != 0 {
 		t.Fatalf("restart duplicate sent Matrix message %d times", intent2.calls)
+	}
+	rows2, err := bridge2.DB.Message.GetAllPartsByID(ctx, login2.ID, gapID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows2) != 1 {
+		t.Fatalf("database rows after restart = %d, want 1", len(rows2))
+	}
+	metadata2, ok := rows2[0].Metadata.(*KakaoMessageMetadata)
+	if !ok || metadata2.ConversionGap != wantGap {
+		t.Fatalf("reloaded metadata = %#v, want conversion gap %q", rows2[0].Metadata, wantGap)
 	}
 }
 
