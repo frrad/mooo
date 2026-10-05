@@ -66,8 +66,12 @@ homeserver, and start the bridge:
 
 ## Logging in
 
-Start a DM with the bridge bot and send `login import-profile`, then enter
-the profile's name. `list-logins` shows the login's connection state.
+Start a DM with the bridge bot and send `login` to select the QR enrollment
+flow. It creates a fresh bridge-owned profile; scan the displayed QR code with
+your authorized primary Kakao client and complete any displayed device approval.
+Controlled live validation of this new flow remains outstanding.
+
+Alternatively, send `login import-profile`, then enter the profile's name. `list-logins` shows the login's connection state.
 Stopping the bridge with an interrupt shuts it down cleanly even though the
 process exits with status 1. The name must be a single file name inside
 `profile_dir`, never a path.
@@ -79,13 +83,19 @@ and credentials, with its own lease and continuity checkpoint.
 While the bridge runs it holds the profile's lease, so research probes cannot
 use that profile until the bridge stops.
 
-## Current limits (B0)
+## Current validation and limits
 
-- Rooms have placeholder names and include only you and whoever has spoken.
-- Photos and unsupported message kinds arrive as notices.
-- Only plain text (and emotes) can be sent from Matrix.
-- A lost Kakao session is reported through bridge state, not reconnected. Restart
-  the bridge to reconnect; the restart performs one resumed login.
+- Initial names and member profiles/rosters are source-backed; direct/group live
+  metadata validation remains outstanding. Avatar and membership updates are in
+  review.
+- Text, replies, and supported JPEG/PNG photos can be sent from Matrix. Photos
+  use bounded transfer and encrypted Matrix media validation. Unsupported message
+  kinds become notices; image replies are rejected.
+- Reactions and automatic reconnect are in review. A lost Kakao session currently
+  requires a bridge restart for recovery.
 - Messages sent while the bridge is stopped are caught up on restart only for
-  chats the bridge has bridged before. History from other chats is not
-  backfilled.
+  previously committed chats. Other history is not backfilled. Catch-up may have
+  server read side effects; the local watermark discrepancy needs an A/B test.
+- Persistent conversion failures remain an open acceptance item. Failed Matrix
+  handling never authorizes checkpoint advancement.
+- See [the bridge plan](PLAN.md) for implementation versus live acceptance evidence.

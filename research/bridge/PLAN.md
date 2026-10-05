@@ -22,8 +22,8 @@ Status: active work plan, updated 2026-10-04. Framework decision:
   login flows, and the mapping between Kakao events and remote events.
 - `cmd/mooo-bridge`: the executable, built on the framework's standard main.
 - The connector talks to the Kakao client through a narrow interface. Fake-client
-  coverage is established; cross-package scripted-protocol integration is under
-  review and remains an acceptance gate.
+  coverage and cross-package scripted-protocol integration are established
+  (PR #163); controlled live acceptance remains separate.
 
 ## Mapping
 
@@ -48,8 +48,9 @@ distinguish implemented behavior from planned integrations.
 B0 is a working minimal text bridge, with recorded live validation against a
 throwaway Synapse on 2026-09-30. Text works in both directions, replies work
 inbound, and restart catch-up recovers missed messages for previously committed
-chats. Photos and unsupported message kinds become notices. Initial room/member
-metadata and outbound replies have since landed with synthetic validation;
+chats. Unsupported message kinds become notices. Initial room/member metadata,
+outbound replies, bridge-native QR enrollment, and bounded photo transfers
+have since landed with synthetic validation;
 their direct/group live validation remains outstanding. The framework supplies appservice, encryption,
 and double-puppeting machinery; that does not establish deployment validation
 for every homeserver or Beeper configuration.
@@ -120,9 +121,12 @@ tracked separately:
   direct/group messaging, offline recovery, reconnect, and restart tests; local
   checks, secret scanning, and required CI passing before squash merge.
 
-Native QR enrollment, photo conversion, and scripted-protocol connector tests are
-currently under review. Passing their synthetic tests does not complete the live
-acceptance criteria. Read receipts, historical backfill, cloud backup/restore,
+Native QR enrollment (PR #166), photo transfer (PR #167), and scripted-protocol
+connector tests (PR #163) have merged. Their synthetic tests do not complete
+the live acceptance criteria. Reconnect, avatars/membership updates, reactions,
+and login collision protection are in review. Container packaging has merged
+(PR #170); startup and restart smoke evidence is recorded in
+[deployment validation](DEPLOYMENT-VALIDATION.md). Read receipts, historical backfill, cloud backup/restore,
 and full official-client parity remain outside this alpha goal.
 
 ## Phases
@@ -136,9 +140,9 @@ and full official-client parity remain outside this alpha goal.
       repository.
 - [x] Import-profile login for an existing lab profile, restricted to bridge
       admins and to names inside the configured profile directory.
-- [x] Bridge text in both directions, and replies inbound. Photos and
-      unsupported kinds arrive as notices, so every message event is committed
-      in order.
+- [x] Bridge text in both directions, and replies inbound. Unsupported kinds
+      arrive as notices. Supported photos now use the B1 transfer path; every
+      successfully handled message event is committed in order.
 - [x] Spike: with `bridge.portal_event_buffer: 0` and `async_events: false`,
       `QueueRemoteEvent` handles the event inline and returns its real result.
       A queued or backgrounded result is not a commit signal. The connector
@@ -175,9 +179,10 @@ and full official-client parity remain outside this alpha goal.
       every `SYNCMSG`, including `cnt=0` recovery, which one run suggests does
       not mark messages read. Confirm with an A/B test before B4 read receipts
       rely on that watermark.
-- [ ] Exercise the connector through the scripted mock backend. That backend
-      lives in `internal/client` tests and is not yet reusable from other
-      packages.
+- [x] Exercise the connector through the reusable scripted protocol backend
+      in `internal/testsupport/loco` (PR #163): failed catch-up aborts before
+      live subscription, fresh-process replay precedes live messages, ambiguous
+      sends are attempted once, and shutdown releases profile ownership.
 
 ### B1: login and media
 
@@ -192,8 +197,13 @@ and full official-client parity remain outside this alpha goal.
 - [ ] Live-validate fresh bridge enrollment, device-authorization code,
       expiry/cancellation, and restart resume with the owned disposable
       account. No live account or network enrollment is part of this change.
-- [ ] Photos in both directions. Inbound photo events currently carry no
-      author or timestamp; resolve that in the client first.
+- [x] Bounded photos in both directions (PR #167): authenticated Matrix
+      streaming download with encrypted-media validation, Kakao upload/download,
+      transfer deadlines, and persisted photo source metadata. Optional inbound
+      author/timestamp fields have synthetic parser coverage; live encoding
+      remains an explicit gap. Image replies are rejected.
+- [ ] Live-validate direct/group photo transfers, encrypted Matrix media, and
+      author/timestamp attribution.
 - [x] Inbound reply conversion with chat-scoped source message IDs.
 - [x] Outbound replies with persisted source metadata, explicit missing-source
       rejection, chat/receiver guards, UTF-16-bounded previews, and single-attempt
@@ -240,8 +250,9 @@ Reconnect is planned in detail in [`../reconnect.md`](../reconnect.md).
 ### B4: polish and packaging
 
 - [ ] Read receipts in both directions, once the read-state dossier settles.
-- [ ] Docker image, example configuration, and documentation with no operator
-      values.
+- [x] Docker image, example configuration, and documentation with no operator
+      values (PR #170). Authenticated appservice startup/restart smoke passed;
+      full messaging deployment acceptance remains separate.
 - [ ] Choose and validate the deployment targets: standard appservice and/or
       Beeper self-hosting.
 
