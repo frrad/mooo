@@ -92,3 +92,27 @@ func TestProjectSGJSONObjectPropertySource(t *testing.T) {
 		t.Fatalf("projection=%#v want %#v", got, want)
 	}
 }
+
+func TestProjectSGJSONNamedPropertiesFiltersUndeclaredValues(t *testing.T) {
+	names := []string{"child", "base", "missing"}
+	values := map[string]any{
+		"child":      "child-value",
+		"base":       int32(0),
+		"undeclared": "ignored",
+	}
+	got, err := ProjectSGJSONNamedProperties(names, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"child":   "child-value",
+		"base":    int32(0),
+		"missing": SGJSONNull{},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("named projection=%#v want %#v", got, want)
+	}
+	if _, ok := got["undeclared"]; ok {
+		t.Fatal("undeclared property was projected")
+	}
+}

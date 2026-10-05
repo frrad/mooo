@@ -81,3 +81,15 @@ func ProjectSGJSONProperties(properties ...[]SGJSONProperty) (map[string]any, er
 	}
 	return out, nil
 }
+
+// ProjectSGJSONNamedProperties models the NSObject category's class-property
+// walk. Names are the runtime-enumerated dynamic-class and superclass keys;
+// values are read from the same receiver by KVC. Undeclared values are never
+// visited, and a declared getter returning nil becomes SGJSONNull.
+func ProjectSGJSONNamedProperties(names []string, values map[string]any) (map[string]any, error) {
+	properties := make([]SGJSONProperty, 0, len(names))
+	for _, name := range names {
+		properties = append(properties, SGJSONProperty{Name: name, Value: values[name]})
+	}
+	return ProjectSGJSONProperties(properties)
+}
