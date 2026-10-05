@@ -352,32 +352,22 @@ func TestQRLoginSamePendingCodeExpiresBeforeNextPoll(t *testing.T) {
 	if _, err := login.Wait(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	login.mu.Lock()
-	login.deadline = time.Now().Add(20 * time.Millisecond)
-	login.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	started := make(chan struct{})
-	backend.pollFn = func(ctx context.Context) (qrPollResult, error) {
-		close(started)
-		select {
-		case <-time.After(50 * time.Millisecond):
-			return qrPollResult{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: -150}}}, nil
-		case <-ctx.Done():
-			return qrPollResult{}, ctx.Err()
-		}
+	backend.pollFn = func(context.Context) (qrPollResult, error) {
+		login.mu.Lock()
+		login.deadline = time.Now().Add(20 * time.Millisecond)
+		login.mu.Unlock()
+		qrPollInterval = time.Hour
+		return qrPollResult{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: -150}}}, nil
 	}
-	backend.mu.Lock()
-	backend.pollStarted = nil
-	backend.mu.Unlock()
-	step, err := login.Wait(ctx)
+	step, err := login.Wait(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "challenge expired") || step != nil {
 		t.Fatalf("same pending code expiry = step %#v, err %v", step, err)
 	}
-	select {
-	case <-started:
-	default:
-		t.Fatal("expiry returned without attempting the already-due poll")
+	backend.mu.Lock()
+	pollCalls := backend.pollCalls
+	backend.mu.Unlock()
+	if pollCalls != 2 {
+		t.Fatalf("same pending code expiry poll calls = %d, want one response then deadline expiry", pollCalls)
 	}
 }
 
@@ -399,17 +389,22 @@ func TestQRLoginSameUnregisteredCodeExpiresBeforeNextPoll(t *testing.T) {
 	login.mu.Lock()
 	login.deadline = time.Now().Add(20 * time.Millisecond)
 	login.mu.Unlock()
-	backend.pollFn = func(ctx context.Context) (qrPollResult, error) {
-		select {
-		case <-time.After(50 * time.Millisecond):
-			return qrPollResult{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: -100}}, DeviceAuthCode: "A1B2", DeviceAuthRemainingSeconds: 60}, nil
-		case <-ctx.Done():
-			return qrPollResult{}, ctx.Err()
-		}
+	backend.pollFn = func(context.Context) (qrPollResult, error) {
+		login.mu.Lock()
+		login.deadline = time.Now().Add(20 * time.Millisecond)
+		login.mu.Unlock()
+		qrPollInterval = time.Hour
+		return qrPollResult{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: -100}}, DeviceAuthCode: "A1B2", DeviceAuthRemainingSeconds: 60}, nil
 	}
 	step, err := login.Wait(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "challenge expired") || step != nil {
 		t.Fatalf("same unregistered code expiry = step %#v, err %v", step, err)
+	}
+	backend.mu.Lock()
+	pollCalls := backend.pollCalls
+	backend.mu.Unlock()
+	if pollCalls != 2 {
+		t.Fatalf("same unregistered code expiry poll calls = %d, want one response then deadline expiry", pollCalls)
 	}
 }
 
@@ -417,7 +412,7 @@ func TestQRLoginChangedDeviceAuthCodeDisplaysNewStep(t *testing.T) {
 	backend := newFakeQRBackend(t, `{"status":0,"user":{"userId":42},"accessToken":"access","refreshToken":"refresh","tokenType":"bearer"}`)
 	backend.pollSequence = []qrPollResult{
 		{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: -100}}, DeviceAuthCode: "A1B2", DeviceAuthRemainingSeconds: 30},
-		{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: -150}}, DeviceAuthCode: "C3D4"},
+		{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: -100}}, DeviceAuthCode: "C3D4", DeviceAuthRemainingSeconds: 30},
 		backend.poll,
 	}
 	login := newQRTestLogin(t, backend)
