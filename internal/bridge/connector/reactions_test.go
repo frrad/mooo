@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"testing"
+	"time"
 
+	_ "github.com/mattn/go-sqlite3"
+	"go.mau.fi/util/dbutil"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/event"
@@ -151,6 +155,29 @@ func TestReactionEventRejectsOlderMembersRevision(t *testing.T) {
 	}
 }
 
+func TestReactionRevisionAdvancesOnlyAfterSuccessfulHandling(t *testing.T) {
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
+		Revision: 4, Members: map[reactions.Type][]int64{reactions.Heart: {42}}, Fields: map[string]json.RawMessage{"1": []byte(`[42]`)},
+	}}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
+	kc.client = backend
+	queued := 0
+	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		queued++
+		if queued == 1 {
+			return bridgev2.EventHandlingResultIgnored
+		}
+		return bridgev2.EventHandlingResultSuccess
+	}
+	change := events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 4}
+	if !kc.handleEvent(backend, change) || !kc.handleEvent(backend, change) {
+		t.Fatal("reaction handling failed")
+	}
+	if queued != 2 {
+		t.Fatalf("queued = %d, want 2; ignored handling advanced revision", queued)
+	}
+}
+
 func TestReactionEventPersistsAppliedMembersRevision(t *testing.T) {
 	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
 		Revision: 12,
@@ -174,6 +201,69 @@ func TestReactionEventPersistsAppliedMembersRevision(t *testing.T) {
 	}
 	if len(harness.queued) != 1 {
 		t.Fatalf("stale event queued again: %d", len(harness.queued))
+	}
+}
+
+func TestReactionRevisionSuppressesStaleEventAfterSQLiteReopen(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "reaction.db")
+	raw, err := dbutil.NewWithDialect(path, "sqlite3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := database.New("test", (&KakaoConnector{}).GetDBMetaTypes(), raw)
+	if err := db.Upgrade(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO ghost (bridge_id,id,name,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,contact_info_set,is_bot,identifiers,extra_profile,metadata) VALUES ('test','2000','sender','','','','',0,0,0,'[]',NULL,'{}')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO portal (bridge_id,id,receiver,mxid,parent_id,parent_receiver,relay_bridge_id,relay_login_id,other_user_id,name,topic,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,topic_set,name_is_custom,in_space,message_request,room_type,disappear_type,disappear_timer,cap_state,metadata) VALUES ('test','3000','1000',NULL,NULL,'','','','', '', '', '', '', '',0,0,0,0,0,0,'',NULL,NULL,NULL,'{}')`); err != nil {
+		t.Fatal(err)
+	}
+	message := &database.Message{
+		BridgeID: "test", ID: makeMessageID(testChatID, 99), PartID: "0", MXID: "$event",
+		Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID), SenderMXID: "@sender:test",
+		Timestamp: time.Unix(1700000000, 0), Metadata: newKakaoMessageMetadata(testChatID, 99, testOtherID, 1, "", 0),
+	}
+	if err := db.Message.Insert(ctx, message); err != nil {
+		t.Fatal(err)
+	}
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
+		Revision: 12, Members: map[reactions.Type][]int64{reactions.Heart: {42}}, Fields: map[string]json.RawMessage{"1": []byte(`[42]`)},
+	}}
+	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: db}}
+	kc := newKakaoClient(login, testSelfID, nil)
+	queued := 0
+	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		queued++
+		return bridgev2.EventHandlingResultSuccess
+	}
+	kc.client = backend
+	if !kc.handleEvent(backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 9}) || queued != 1 {
+		t.Fatalf("initial handle queued=%d", queued)
+	}
+	if err := raw.RawDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := dbutil.NewWithDialect(path, "sqlite3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reopened.RawDB.Close() }()
+	reopenedDB := database.New("test", (&KakaoConnector{}).GetDBMetaTypes(), reopened)
+	login2 := &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: reopenedDB}}
+	kc2 := newKakaoClient(login2, testSelfID, nil)
+	kc2.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		queued++
+		return bridgev2.EventHandlingResultSuccess
+	}
+	kc2.client = backend
+	if !kc2.handleEvent(backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 10}) {
+		t.Fatal("stale event was not handled")
+	}
+	if queued != 1 {
+		t.Fatalf("stale event was queued after reopen: %d", queued)
 	}
 }
 

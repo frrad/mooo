@@ -190,6 +190,9 @@ func (kc *KakaoClient) HandleMatrixReactionRemove(ctx context.Context, msg *brid
 	if kc == nil || kc.login == nil || msg == nil || msg.TargetReaction == nil || msg.Portal == nil || msg.Event == nil {
 		return errReactionTarget
 	}
+	if ctx == nil {
+		return errReactionLookup
+	}
 	if msg.Event.Sender != kc.login.UserMXID {
 		return errReactionSender
 	}
@@ -301,9 +304,11 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 	}
 	return &kakaoReactionSync{ReactionSync: simplevent.ReactionSync{
 		EventMeta: simplevent.EventMeta{
-			Type:         bridgev2.RemoteEventReactionSync,
-			PortalKey:    makePortalKey(change.ChatID, kc.login.ID),
-			CreatePortal: true,
+			Type:      bridgev2.RemoteEventReactionSync,
+			PortalKey: makePortalKey(change.ChatID, kc.login.ID),
+			// Reaction updates never create a portal or target placeholder. The
+			// framework ignores the event when the bridged message is absent.
+			CreatePortal: false,
 			StreamOrder:  change.Revision,
 		},
 		TargetMessage: makeMessageID(change.ChatID, change.LogID),
