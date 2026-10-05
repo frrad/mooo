@@ -1,6 +1,7 @@
 package sessionlogin
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -24,6 +25,9 @@ type pushReceiptRequestModelCase struct {
 	ExpectedMethod   string   `json:"expected_method"`
 	ExpectedPacketID uint32   `json:"expected_packet_id"`
 	ExpectedTag      int64    `json:"expected_tag"`
+	ExpectedRevision *int32   `json:"expected_revision"`
+	ExpectedPlus     *int32   `json:"expected_plus_revision"`
+	ConstructorOK    *bool    `json:"constructor_succeeds"`
 	ExpectedEffects  []string `json:"expected_effects"`
 }
 
@@ -36,6 +40,9 @@ func expectedPushReceiptRequestModel(c pushReceiptRequestModelCase) []string {
 		return e
 	}
 	e := []string{"delegate_callback_attempt", "construct_from_header"}
+	if c.ConstructorOK != nil && !*c.ConstructorOK {
+		return append(e, "constructor_returns_nil", "send_carriage_push_receipt")
+	}
 	if c.Handler == "hint" {
 		e = append(e, "copy_header_method", "copy_header_packet_id")
 	} else {
@@ -49,20 +56,25 @@ func TestPushReceiptRequestModelFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	var f pushReceiptRequestModelFixture
-	if err = json.Unmarshal(body, &f); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err = decoder.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 8 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 9 {
 		t.Fatalf("fixture header = %#v", f)
 	}
 	for _, c := range f.Cases {
 		if c.Handler != "hint" && c.Handler != "block_sync" && c.Handler != "send" {
 			t.Errorf("unsupported handler %q", c.Handler)
 		}
-		if c.Handler == "hint" || c.Handler == "block_sync" {
+		if (c.Handler == "hint" || c.Handler == "block_sync") && (c.ConstructorOK == nil || *c.ConstructorOK) {
 			if c.ExpectedMethod != c.HeaderMethod || c.ExpectedPacketID != c.HeaderPacketID {
 				t.Errorf("%s header projection = %q/%d, want %q/%d", c.Name, c.ExpectedMethod, c.ExpectedPacketID, c.HeaderMethod, c.HeaderPacketID)
 			}
+		}
+		if c.Handler == "block_sync" && (c.Revision == nil || c.PlusRevision == nil || c.ExpectedRevision == nil || c.ExpectedPlus == nil || *c.Revision != *c.ExpectedRevision || *c.PlusRevision != *c.ExpectedPlus) {
+			t.Errorf("%s revision projection does not match signed-32 inputs", c.Name)
 		}
 		if c.Handler == "send" && c.OwnerStatus == 3 && c.ExpectedTag != -int64(c.PacketID) {
 			t.Errorf("%s tag = %d, want %d", c.Name, c.ExpectedTag, -int64(c.PacketID))

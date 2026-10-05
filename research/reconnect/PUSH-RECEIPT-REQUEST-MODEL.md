@@ -4,13 +4,11 @@ Status: reviewed static source chain, runtime unexecuted. Observation date:
 2026-10-04. Client build: macOS KakaoTalk 26.8.0.
 
 The HINT handler constructs a request with `initWithPacketHeader:`. That
-initializer calls the base initializer, whose `initWithPacketHeader:` result is
-checked for non-null, then copies the supplied header's `method`
+initializer calls the base `init` initializer, checks its non-null result, then copies the supplied header's `method`
 into the request method, and copies its `packetId` into the request packet ID.
 The BLOCKSYNC handler constructs a request with
-`initWithPacketHeader:revision:plusRevision:`. Its base initializer receives the
-header through the same HINT request initializer path; the result is checked
-before the initializer stores the supplied revision and plus-revision
+`initWithPacketHeader:revision:plusRevision:`. Its base initializer calls `initWithPacketHeader:` and checks its non-null
+result before the initializer stores the supplied revision and plus-revision
 integers. The two handlers invoke their delegate callback attempt before these
 request constructors and call `sendCarriagePushReceipt:` only after construction.
 
