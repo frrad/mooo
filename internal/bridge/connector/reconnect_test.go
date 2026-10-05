@@ -148,6 +148,7 @@ func TestCleanupTimeoutRetainsOwnerUntilLaterRetry(t *testing.T) {
 		}
 		return nil, errors.New("replacement held for cleanup assertion")
 	})
+	t.Cleanup(kc.Disconnect)
 	kc.wait = func(context.Context, time.Duration) error { return nil }
 	kc.Connect(context.Background())
 	close(first.stream)

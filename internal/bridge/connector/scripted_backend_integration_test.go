@@ -74,6 +74,7 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	}
 	firstClient := &observedClient{kakaoClient: firstRaw}
 	kakao1, harness1 := newTestClient(t, func() (kakaoClient, error) { return firstClient, nil })
+	t.Cleanup(kakao1.Disconnect)
 	harness1.results = []bridgev2.EventHandlingResult{bridgev2.EventHandlingResultFailed}
 	kakao1.Connect(context.Background())
 	if got := harness1.lastState(); got.StateEvent != status.StateTransientDisconnect || got.Error != stateConnectFailed {
@@ -102,6 +103,7 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	}
 	secondClient := &observedClient{kakaoClient: secondRaw}
 	kakao2, harness2 := newTestClient(t, func() (kakaoClient, error) { return secondClient, nil })
+	t.Cleanup(kakao2.Disconnect)
 	kakao2.Connect(context.Background())
 	if got := secondClient.subscriptions(); got != 1 {
 		for _, backend := range secondBackends {
@@ -134,9 +136,9 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	if *writes != 1 {
 		t.Fatalf("ambiguous outbound WRITE count = %d, want 1", *writes)
 	}
-	if err := secondRaw.Shutdown(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	// Stop the connector supervisor before releasing the underlying session.
+	// Closing only the raw client would schedule recovery beyond this test.
+	kakao2.Disconnect()
 	waitBackends(t, secondBackends)
 	reloaded, err = continuity.Open(statePath + ".continuity")
 	if err != nil {
