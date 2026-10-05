@@ -617,8 +617,8 @@ func TestMalformedMessageGapNoticeCommitsOnlyAfterBridgeSuccess(t *testing.T) {
 			fake := &fakeKakao{}
 			gap := events.MessageGap{ChatID: testChatID, LogID: 100, AuthorID: testOtherID, SentAt: 1700000000, Type: 2}
 
-			if handled := kc.handleEvent(fake, gap); !handled {
-				t.Fatal("message gap was rejected before bridge handling")
+			if handled := kc.handleEvent(fake, gap); handled != (tc.commits == 1) {
+				t.Fatalf("message gap handled = %t, want %t", handled, tc.commits == 1)
 			}
 			if got := harness.queuedCount(); got != 1 {
 				t.Fatalf("queued events = %d, want 1", got)
