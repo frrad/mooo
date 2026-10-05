@@ -21,6 +21,7 @@ type incomingBlockSyncStateContract struct {
 type incomingBlockSyncUser struct {
 	friendType   int32
 	blockType    int32
+	userType     int32
 	favorite     bool
 	purged       bool
 	directChatID int64
@@ -54,11 +55,18 @@ func (s *incomingBlockSyncStateContract) applyPartial(ids []int64, blockTypes []
 			blockType = blockTypes[i]
 		}
 		user.friendType = -3
+		if user.userType == 0 {
+			user.userType = 1
+		}
 		user.blockType = blockType
 		user.favorite = false
 		user.purged = false
 		s.users[id] = user
-		s.chatFavorite[user.directChatID] = false
+		if user.directChatID != 0 {
+			if _, present := s.chatFavorite[user.directChatID]; present {
+				s.chatFavorite[user.directChatID] = false
+			}
+		}
 		// Resolved users are updated in place; only unresolved users are
 		// represented in the fallback member list.
 	}
@@ -88,11 +96,27 @@ func TestIncomingBlockSyncStateContractModelsFullAndPartialEffects(t *testing.T)
 	if err := s.applyPartial([]int64{2, 99}, []int32{7, 8}); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.users[2]; got.friendType != -3 || got.blockType != 7 || got.favorite || got.purged || s.chatFavorite[20] {
+	if got := s.users[2]; got.friendType != -3 || got.blockType != 7 || got.userType != 1 || got.favorite || got.purged || s.chatFavorite[20] {
 		t.Fatalf("partial-sync effects=%+v chatFavorite=%v", got, s.chatFavorite[20])
 	}
 	if got, want := s.memberIDs, []int64{99}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("member IDs=%v want unresolved fallback %v", got, want)
+	}
+}
+
+func TestIncomingBlockSyncStateContractSkipsMissingChatIdentity(t *testing.T) {
+	s := &incomingBlockSyncStateContract{
+		users:        map[int64]incomingBlockSyncUser{1: {directChatID: 0}, 2: {directChatID: 22}},
+		chatFavorite: map[int64]bool{22: true},
+	}
+	if err := s.applyPartial([]int64{1, 2}, []int32{3, 4}); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := s.chatFavorite[0]; present {
+		t.Fatalf("zero directChatID created chat entry: %v", s.chatFavorite)
+	}
+	if s.chatFavorite[22] {
+		t.Fatalf("resolved chat favorite was not cleared: %v", s.chatFavorite)
 	}
 }
 
