@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"maunium.net/go/mautrix/bridgev2"
+
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
@@ -53,5 +55,36 @@ func TestBootstrapIdentityFailureReportsTerminalState(t *testing.T) {
 	kc.connectOnce(context.Background(), 1, false)
 	if state := harness.lastState(); state.Error != stateUnidentifiableMsg {
 		t.Fatalf("bootstrap identity state = %#v, want terminal identity code", state)
+	}
+}
+
+func TestMalformedTypeGapCommitsOnlyAfterBridgeAcknowledgement(t *testing.T) {
+	fake := &fakeKakao{}
+	kc, _ := newTestClient(t, nil)
+	ack := false
+	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		if !ack {
+			return bridgev2.EventHandlingResult{}
+		}
+		return bridgev2.EventHandlingResult{Success: true}
+	}
+	gap := events.MessageGap{ChatID: testChatID, LogID: 100, Type: 0}
+	if kc.handleEvent(fake, gap) {
+		t.Fatal("gap committed before Matrix acknowledgement")
+	}
+	fake.mu.Lock()
+	if len(fake.commits) != 0 {
+		fake.mu.Unlock()
+		t.Fatal("gap advanced source checkpoint after failed handling")
+	}
+	fake.mu.Unlock()
+	ack = true
+	if !kc.handleEvent(fake, gap) {
+		t.Fatal("acknowledged gap was not handled")
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.commits) != 1 {
+		t.Fatalf("commits = %d, want 1 after acknowledgement", len(fake.commits))
 	}
 }
