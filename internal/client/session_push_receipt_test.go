@@ -36,6 +36,33 @@ type blockedReceiptCloser struct {
 	release chan struct{}
 }
 
+type countingReceiptCloser struct {
+	session *Session
+	entered chan struct{}
+	release chan struct{}
+	mu      sync.Mutex
+	count   int
+}
+
+func (s *countingReceiptCloser) Send(any) error { return nil }
+
+func (s *countingReceiptCloser) Close() {
+	s.mu.Lock()
+	s.count++
+	s.mu.Unlock()
+	close(s.entered)
+	if s.session != nil {
+		_ = s.session.Close()
+	}
+	<-s.release
+}
+
+func (s *countingReceiptCloser) calls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.count
+}
+
 func (s *blockedReceiptCloser) Send(any) error { return nil }
 
 func (s *blockedReceiptCloser) Close() {
@@ -226,6 +253,34 @@ func TestReceiptCloserHonorsShutdownBudget(t *testing.T) {
 		close(closer.release)
 		<-done
 		t.Fatal("injected receipt Close exceeded shutdown context budget")
+	}
+}
+
+func TestReceiptCloserIsRegisteredBeforeShutdownWaitAndRunsOnce(t *testing.T) {
+	session := &Session{}
+	closer := &countingReceiptCloser{session: session, entered: make(chan struct{}), release: make(chan struct{})}
+	if err := session.BindPushReceipt(closer, func(loco.Packet) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 8; i++ {
+		go func() { _ = session.Close() }()
+	}
+	select {
+	case <-closer.entered:
+	case <-time.After(time.Second):
+		t.Fatal("receipt closer did not start")
+	}
+	if got := closer.calls(); got != 1 {
+		t.Fatalf("receipt closer calls before release = %d, want 1", got)
+	}
+	close(closer.release)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := session.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown after closer release: %v", err)
+	}
+	if got := closer.calls(); got != 1 {
+		t.Fatalf("receipt closer calls after shutdown = %d, want 1", got)
 	}
 }
 
