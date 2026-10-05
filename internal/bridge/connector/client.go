@@ -127,13 +127,18 @@ type KakaoClient struct {
 	queue     func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult
 	sendState func(status.BridgeState)
 
-	mu                   sync.Mutex
-	disconnectGate       chan struct{}
-	client               kakaoClient
-	cleanup              kakaoClient
-	connecting           bool
-	stopping             bool
-	done                 chan struct{}
+	mu             sync.Mutex
+	disconnectGate chan struct{}
+	client         kakaoClient
+	cleanup        kakaoClient
+	connecting     bool
+	stopping       bool
+	done           chan struct{}
+	// cleanupPumpDone remains associated with cleanup while a Disconnect
+	// timeout leaves the event pump running. It must not be discarded when
+	// the active client fields are cleared: a later cleanup attempt must join
+	// the same generation before releasing the profile owner.
+	cleanupPumpDone      chan struct{}
 	cleanupDone          chan struct{}
 	cleanupBusy          bool
 	cleanupRetryCancel   context.CancelFunc
@@ -232,6 +237,7 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 		kc.mu.Lock()
 		if kc.cleanup == nil {
 			kc.cleanup = c
+			kc.cleanupPumpDone = nil
 			kc.cleanupDone = nil
 			kc.cleanupBusy = false
 		}
@@ -244,6 +250,7 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	// client whose subscription has not returned yet.
 	kc.mu.Lock()
 	kc.cleanup = c
+	kc.cleanupPumpDone = nil
 	kc.cleanupDone = nil
 	kc.cleanupBusy = false
 	kc.mu.Unlock()
@@ -408,6 +415,7 @@ func (kc *KakaoClient) shutdownBootstrap(c kakaoClient, phase string, force bool
 	kc.mu.Lock()
 	if kc.cleanup == c {
 		kc.cleanup = nil
+		kc.cleanupPumpDone = nil
 		kc.cleanupDone = nil
 	}
 	kc.mu.Unlock()
@@ -531,6 +539,7 @@ func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generatio
 	kc.done = nil
 	if !stopping {
 		kc.cleanup = c
+		kc.cleanupPumpDone = nil
 		kc.cleanupDone = make(chan struct{})
 		kc.cleanupBusy = true
 	}
@@ -548,6 +557,7 @@ func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generatio
 		}
 		if shutdownErr == nil {
 			kc.cleanup = nil
+			kc.cleanupPumpDone = nil
 		}
 	}
 	canRecover := shutdownErr == nil && !kc.stopping && kc.generation == generation
@@ -616,6 +626,7 @@ func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, ki
 			}
 			if err == nil {
 				kc.cleanup = nil
+				kc.cleanupPumpDone = nil
 			}
 		}
 		canRecover := err == nil && !kc.stopping && kc.generation == generation
@@ -758,11 +769,14 @@ func (kc *KakaoClient) Disconnect() {
 	kc.generation++
 	c := kc.client
 	done := kc.done
+	if c != nil && done != nil {
+		kc.cleanupPumpDone = done
+	}
 	if c == nil {
 		c = kc.cleanup
-		// cleanupDone belongs to the cleanup owner and is not the session
-		// event-loop completion signal. A retained owner is retried directly.
-		done = nil
+		// A retained owner keeps the original event-pump completion signal.
+		// Retry cleanup must join that same worker before releasing ownership.
+		done = kc.cleanupPumpDone
 	}
 	ownedByOther := c != nil && kc.cleanupBusy
 	kc.stopping = true
@@ -852,6 +866,7 @@ func (kc *KakaoClient) Disconnect() {
 			close(kc.cleanupDone)
 		}
 		kc.cleanup = nil
+		kc.cleanupPumpDone = nil
 		kc.cleanupDone = nil
 	}
 	kc.mu.Unlock()
