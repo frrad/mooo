@@ -25,7 +25,8 @@ type nwStateCase struct {
 	PathPresent                  bool     `json:"path_present"`
 	PathStatus                   string   `json:"path_status"`
 	ImmediateFailure             bool     `json:"immediate_failure"`
-	HelperFallbackPredicate      bool     `json:"helper_fallback_predicate"`
+	DispatcherErrorPredicate     bool     `json:"dispatcher_error_predicate"`
+	OwnerFallbackPredicate       bool     `json:"owner_fallback_predicate"`
 	OwnerFlagA                   bool     `json:"owner_flag_a"`
 	OwnerFlagB                   bool     `json:"owner_flag_b"`
 	ExpectedCancelID             string   `json:"expected_cancel_id"`
@@ -40,14 +41,16 @@ type nwStateResult struct {
 
 func projectNWState(c nwStateCase) nwStateResult {
 	effects := make([]string, 0)
+	cancelID := ""
 	if c.Operation == "setup" {
 		if c.CurrentConnectionPresent {
 			effects = append(effects, "cancel_previous_current", "release_previous_current")
+			cancelID = c.CurrentConnectionID
 		}
 		if c.ReplacementConnectionPresent {
 			effects = append(effects, "store_replacement", "start_on_queue")
 		}
-		return nwStateResult{Effects: effects}
+		return nwStateResult{Effects: effects, CancelID: cancelID}
 	}
 	if !c.OwnerPresent {
 		return nwStateResult{Effects: effects}
@@ -60,30 +63,23 @@ func projectNWState(c nwStateCase) nwStateResult {
 		// predicates.
 		if !c.OwnerFlagA && !c.OwnerFlagB && c.PathPresent &&
 			(c.PathStatus == "satisfied" || c.PathStatus == "requires_connection") &&
-			(c.HelperFallbackPredicate || c.ImmediateFailure) {
-			effects = append(effects, "invoke_failure_helper")
+			c.DispatcherErrorPredicate {
+			effects = append(effects, "extract_state_error", "invoke_failure_helper")
+			appendFailureHelperEffects(&effects, c)
+			cancelID = helperCancelID(c)
 		} else {
 			effects = append(effects, "log_state")
 		}
 	case "failed":
 		// failed always invokes the helper with allowFallback=true; the helper
 		// owns cleanup and the fallback/error split.
-		effects = append(effects, "invoke_failure_helper")
-		if c.ReceiveWorkItemPresent {
-			effects = append(effects, "cancel_receive_work_item")
-		}
-		if c.CurrentConnectionPresent {
-			effects = append(effects, "clear_state_handler", "cancel_current_connection")
-		}
-		if c.ImmediateFailure || !c.HelperFallbackPredicate || c.OwnerFlagA || c.OwnerFlagB {
-			effects = append(effects, "convert_nw_error", "construct_locoagent_error", "dispatch_main_queue")
-		} else {
-			effects = append(effects, "fallback_to_v2sl")
-		}
+		effects = append(effects, "extract_state_error", "invoke_failure_helper")
+		appendFailureHelperEffects(&effects, c)
+		return nwStateResult{Effects: effects, CancelID: helperCancelID(c)}
 	case "setup", "preparing":
 		effects = append(effects, "log_state")
 	case "ready":
-		effects = append(effects, "log_tls_version", "ready_followup")
+		effects = append(effects, "log_tls_version", "ready_followup", "read_header")
 	case "cancelled":
 		if c.ReceiveWorkItemPresent {
 			effects = append(effects, "cancel_receive_work_item")
@@ -92,7 +88,28 @@ func projectNWState(c nwStateCase) nwStateResult {
 	default:
 		effects = append(effects, "log_unknown_state")
 	}
-	return nwStateResult{Effects: effects}
+	return nwStateResult{Effects: effects, CancelID: cancelID}
+}
+
+func helperCancelID(c nwStateCase) string {
+	if c.CurrentConnectionPresent {
+		return c.CurrentConnectionID
+	}
+	return ""
+}
+
+func appendFailureHelperEffects(effects *[]string, c nwStateCase) {
+	if c.ReceiveWorkItemPresent {
+		*effects = append(*effects, "cancel_receive_work_item")
+	}
+	if c.CurrentConnectionPresent {
+		*effects = append(*effects, "clear_state_handler", "cancel_current_connection")
+	}
+	if c.ImmediateFailure || !c.OwnerFallbackPredicate || c.OwnerFlagA || c.OwnerFlagB {
+		*effects = append(*effects, "convert_nw_error", "set_status_error", "dispatch_main_queue", "construct_locoagent_error", "fail_pending_requests_with_error")
+	} else {
+		*effects = append(*effects, "fallback_to_v2sl")
+	}
 }
 
 func TestNWStateHandlerFixture(t *testing.T) {
@@ -106,7 +123,7 @@ func TestNWStateHandlerFixture(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 17 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 18 {
 		t.Fatalf("header %#v", f)
 	}
 	seen := map[string]bool{}
