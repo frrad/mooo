@@ -14,16 +14,16 @@ type pushReceiptCallbacksFixture struct {
 	Cases  []pushReceiptCallbackCase `json:"cases"`
 }
 type pushReceiptCallbackCase struct {
-	Name                 string   `json:"name"`
-	Callback             string   `json:"callback"`
-	Tag                  int64    `json:"tag"`
-	ExpectedForwardedTag int64    `json:"expected_forwarded_tag"`
-	DataLength           int      `json:"data_length"`
-	SendStatus           int      `json:"send_status"`
-	PendingCountBefore   int      `json:"pending_count_before"`
-	ExpectedPendingCount int      `json:"expected_pending_count"`
-	ExpectedNextTag      int64    `json:"expected_next_tag"`
-	ExpectedEffects      []string `json:"expected_effects"`
+	Name                  string   `json:"name"`
+	Callback              string   `json:"callback"`
+	Tag                   int64    `json:"tag"`
+	ExpectedForwardedTag  int64    `json:"expected_forwarded_tag"`
+	DataLength            int      `json:"data_length"`
+	SecureLayerType       int      `json:"secure_layer_type"`
+	WriteLocationBefore   int      `json:"write_location_before"`
+	ExpectedWriteLocation int      `json:"expected_write_location"`
+	ExpectedNextTag       int64    `json:"expected_next_tag"`
+	ExpectedEffects       []string `json:"expected_effects"`
 }
 
 func expectedPushReceiptCallback(c pushReceiptCallbackCase) []string {
@@ -31,12 +31,12 @@ func expectedPushReceiptCallback(c pushReceiptCallbackCase) []string {
 	case "write":
 		return []string{"toggle_out_timeout_false", "forward_did_write_tag", "did_write_noop"}
 	case "pending_admission":
-		effects := []string{"synchronize_pending_map", "fetch_data_length", "update_pending_count"}
+		effects := []string{"synchronize_pending_map", "fetch_chunk_length", "update_write_location"}
 		if c.DataLength == 0 {
 			return effects
 		}
-		effects = append(effects, "read_send_status")
-		if c.SendStatus == 2 {
+		effects = append(effects, "read_secure_layer_type")
+		if c.SecureLayerType == 2 {
 			effects = append(effects, "encrypt_data", "write_data")
 		} else {
 			effects = append(effects, "write_raw_data")
@@ -83,11 +83,11 @@ func TestPushReceiptCallbacksFixture(t *testing.T) {
 			t.Errorf("%s forwarded tag = %d, want %d", c.Name, c.ExpectedForwardedTag, c.Tag)
 		}
 		if c.Callback == "pending_admission" {
-			if c.DataLength < 0 || c.PendingCountBefore < 0 {
+			if c.DataLength < 0 || c.WriteLocationBefore < 0 {
 				t.Errorf("%s has invalid admission inputs", c.Name)
 			}
-			if c.ExpectedPendingCount != c.PendingCountBefore+1 {
-				t.Errorf("%s pending count = %d, want %d", c.Name, c.ExpectedPendingCount, c.PendingCountBefore+1)
+			if c.ExpectedWriteLocation != c.WriteLocationBefore+c.DataLength {
+				t.Errorf("%s write location = %d, want %d", c.Name, c.ExpectedWriteLocation, c.WriteLocationBefore+c.DataLength)
 			}
 			if c.DataLength > 0 && c.ExpectedNextTag != c.Tag+1 {
 				t.Errorf("%s next tag = %d, want %d", c.Name, c.ExpectedNextTag, c.Tag+1)

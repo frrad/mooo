@@ -22,26 +22,28 @@ lookup/removal and count updates, and branches into delegate/finish/header work
 according to the recovered callback state. These are distinct dispatch owners,
 not alternate readings of one method.
 
-The separate pending admission body `0x1015f8fb0` synchronizes its bookkeeping and
-updates the total count before testing the fetched data length. A zero-length
-payload takes the early path and does not write, record a pending-map length, or
-increment the tag. A nonzero payload reads the send status: status `2` selects
-the encrypt-and-write effects, while other statuses select the raw-write
-effects. The nonzero path then records the payload length under the current tag
-and increments the tag. The fixture derives the count and next-tag values from
-its inputs and includes zero-length, status-2, and other-status cases; it does
-not use a pending-state label as an oracle. The disconnect path `0x100d44f40`
-is separately observed to fan out failure handling across pending work. The
-reviewed receipts do not identify a receipt-specific ACK parser, retry policy,
-or durable state consumer. Those remain explicit gaps.
+The separate admission body `0x1015f8fb0` synchronizes its bookkeeping and
+fetches a bounded chunk length. It adds that length to `currentWriteLocation`
+(`0x1018c1b00`, setter `0x1019114c0`) before the zero-length branch. A zero
+length leaves the location unchanged and does not write, record a pending-map
+length, or increment the tag. A nonzero payload reads `secureLayerType`
+(`0x1019071c0`): value `2` selects the encrypt-and-write effects, while other
+values select raw write. The nonzero path then records the payload length under
+the current tag (`0x1018c1b20`) and increments that tag. The fixture derives
+the write-location and next-tag values from its inputs and includes zero-length,
+secure-layer-2, and other-layer cases; it does not use a pending-state label as
+an oracle. The disconnect path `0x100d44f40` is separately observed to fan out
+failure handling across pending work. The reviewed receipts do not identify a
+receipt-specific ACK parser, retry policy, or durable state consumer. Those
+remain explicit gaps.
 
 ## Synthetic contract
 
 The fixture covers write completion forwarding, the empty `didWrite:` endpoint,
-read tag-zero and nonzero branches, pending admission's zero/nonzero length and
-status branches, and disconnect failure fanout. It records observed effects and
-input-derived count/tag outputs; it does not infer an ACK or correlation result
-from a tag.
+read tag-zero and nonzero branches, admission's zero/nonzero length and
+secure-layer branches, and disconnect failure fanout. It records observed
+effects and input-derived write-location/tag outputs; it does not infer an ACK
+or correlation result from a tag.
 
 ## Provenance
 
@@ -50,5 +52,8 @@ from a tag.
   `0x101773b14`.
 - `LocoTrailerAgent` callback implementation: `0x1015f99e8`.
 - Pending write body: `0x1015f8fb0`; disconnect fanout: `0x100d44f40`.
+- Admission write-location getter/setter: `0x1018c1b00` / `0x1019114c0`;
+  secure-layer getter: `0x1019071c0`; current write-tag getter:
+  `0x1018c1b20`. The bounded chunk-length fetch begins at `0x1015f8ff4`.
 - `LocoNWAgent` Swift wrapper: `0x100d48dfc` → `0x100d49560`.
 - Private reports: `~/Library/Application Support/mooo-lab/ghidra/parity/rc-q5-write-callbacks/`, `reconnect-fail-pending/`, `reconnect-fail-pending-disconnect/`, and `socket-callbacks/`.
