@@ -201,6 +201,30 @@ func TestQRLoginApprovalPersistsClientOwnedCredentials(t *testing.T) {
 	}
 }
 
+func TestQRLoginCompletionErrorRetainsRecoveryCredentials(t *testing.T) {
+	backend := newFakeQRBackend(t, `{"status":0,"user":{"userId":42},"accessToken":"access","refreshToken":"refresh","tokenType":"bearer"}`)
+	login := newQRTestLogin(t, backend)
+	login.completeLogin = func(context.Context, int64) (*bridgev2.LoginStep, error) {
+		return nil, errors.New("synthetic SQLite conflict")
+	}
+	if _, err := login.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	original := qrPollInterval
+	qrPollInterval = 0
+	t.Cleanup(func() { qrPollInterval = original })
+	if _, err := login.Wait(context.Background()); err == nil {
+		t.Fatal("completion conflict unexpectedly succeeded")
+	}
+	state, err := login.store.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Credentials == nil || state.Credentials.UserID != 42 {
+		t.Fatalf("completion error discarded recovery credentials: %#v", state.Credentials)
+	}
+}
+
 func TestQRLoginDeviceAuthorizationDisplayPersistsAcrossPendingPoll(t *testing.T) {
 	backend := newFakeQRBackend(t, `{"status":0,"user":{"userId":42},"accessToken":"access","refreshToken":"refresh","tokenType":"bearer"}`)
 	pending := func(status int64) qrPollResult {
