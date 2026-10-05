@@ -33,13 +33,19 @@ type nwStateCase struct {
 	HandshakeDataPresent         bool     `json:"handshake_data_present"`
 	ReadyStatus                  uint8    `json:"ready_status"`
 	ExpectedCancelID             string   `json:"expected_cancel_id"`
+	ExpectedStatusUpdates        []uint8  `json:"expected_status_updates"`
+	ExpectedLocalErrorCode       *int     `json:"expected_local_error_code"`
+	ExpectedLocalErrorDomain     string   `json:"expected_local_error_domain"`
 	Expected                     []string `json:"expected_effects"`
 	PendingGap                   bool     `json:"pending_map_gap"`
 }
 
 type nwStateResult struct {
-	Effects  []string
-	CancelID string
+	Effects          []string
+	CancelID         string
+	StatusUpdates    []uint8
+	LocalErrorCode   *int
+	LocalErrorDomain string
 }
 
 func projectNWState(c nwStateCase) nwStateResult {
@@ -53,10 +59,10 @@ func projectNWState(c nwStateCase) nwStateResult {
 		if c.ReplacementConnectionPresent {
 			effects = append(effects, "store_replacement", "start_on_queue")
 		}
-		return nwStateResult{Effects: effects, CancelID: cancelID}
+		return nwStateResult{Effects: effects, CancelID: cancelID, StatusUpdates: []uint8{}}
 	}
 	if !c.OwnerPresent {
-		return nwStateResult{Effects: effects}
+		return nwStateResult{Effects: effects, StatusUpdates: []uint8{}}
 	}
 	switch c.State {
 	case "waiting":
@@ -78,7 +84,7 @@ func projectNWState(c nwStateCase) nwStateResult {
 		// owns cleanup and the fallback/error split.
 		effects = append(effects, "extract_state_error", "invoke_failure_helper")
 		appendFailureHelperEffects(&effects, c)
-		return nwStateResult{Effects: effects, CancelID: helperCancelID(c)}
+		cancelID = helperCancelID(c)
 	case "setup", "preparing":
 		effects = append(effects, "log_state")
 	case "ready":
@@ -108,7 +114,29 @@ func projectNWState(c nwStateCase) nwStateResult {
 	default:
 		effects = append(effects, "log_unknown_state")
 	}
-	return nwStateResult{Effects: effects, CancelID: cancelID}
+	result := nwStateResult{Effects: effects, CancelID: cancelID, StatusUpdates: []uint8{}}
+	if nwContainsEffect(effects, "set_status_error") {
+		status := uint8(0)
+		result.StatusUpdates = []uint8{status}
+	}
+	if nwContainsEffect(effects, "construct_locoagent_error") {
+		code := -1
+		result.LocalErrorCode = &code
+		result.LocalErrorDomain = "LocoAgent"
+	}
+	if c.State == "ready" {
+		result.StatusUpdates = []uint8{3}
+	}
+	return result
+}
+
+func nwContainsEffect(effects []string, want string) bool {
+	for _, effect := range effects {
+		if effect == want {
+			return true
+		}
+	}
+	return false
 }
 
 func helperCancelID(c nwStateCase) string {
@@ -159,7 +187,10 @@ func TestNWStateHandlerFixture(t *testing.T) {
 			t.Errorf("%s ready status=%d want 3", c.Name, c.ReadyStatus)
 		}
 		got := projectNWState(c)
-		if !reflect.DeepEqual(got.Effects, c.Expected) || got.CancelID != c.ExpectedCancelID {
+		if !reflect.DeepEqual(got.Effects, c.Expected) || got.CancelID != c.ExpectedCancelID ||
+			!reflect.DeepEqual(got.StatusUpdates, c.ExpectedStatusUpdates) ||
+			!reflect.DeepEqual(got.LocalErrorCode, c.ExpectedLocalErrorCode) ||
+			got.LocalErrorDomain != c.ExpectedLocalErrorDomain {
 			t.Errorf("%s result=%+v want effects=%v cancel=%q", c.Name, got, c.Expected, c.ExpectedCancelID)
 		}
 	}

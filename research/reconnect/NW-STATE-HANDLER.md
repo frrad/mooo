@@ -61,10 +61,15 @@ The main-queue thunk at `0x100d49960` captures the owner context and sends
 `cancelPreviousPerformRequestsWithTarget:` through the NSObject receiver. This
 is delayed-work cancellation for that owner, not a pending-request-map lookup.
 
-The raw state path now proves an owner `setStatus:error:` call and a
-`failPendingRequestsWithError:` fanout on the error path. It does not expose a
-request-generation comparison or pending-map lookup, so correlation details
-remain an explicit gap.
+The raw state path now proves an owner `setStatus:error:` call with status
+`0` on the error path, followed by the main-queue dispatch. After that enqueue,
+the callback constructs a separate `NSError` with domain `LocoAgent`, code
+`-1`, and nil userInfo, then calls `failPendingRequestsWithError:`. The
+underlying converted `NWError` passed to `setStatus:error:` and this local
+fanout error are distinct values. The ready path records status `3`. The
+fixture asserts these status updates and local error identity in addition to
+effect order. It does not expose a request-generation comparison or
+pending-map lookup, so correlation details remain an explicit gap.
 
 ## Synthetic contract
 
