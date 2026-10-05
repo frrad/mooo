@@ -132,11 +132,13 @@ The reviewed manager and carriage-agent owners are intentionally transport
 independent. The existing Session has no receipt callsite: unmatched packets
 leave `dispatchPacket` and enter the raw/typed push streams, while the existing
 asynchronous out-segment submitter is an opt-in writer for already serialized
-payloads. Neither seam can construct or infer a receipt packet yet.
+payloads. Separate typed body and plaintext packet builders are merged; neither
+transport seam calls them yet.
 
-Before binding receipts to Session, approve the source-derived request model and
-eligibility predicate. The integration must then add an opt-in callback at the
-unmatched-push boundary, injected before reader startup. It should receive only
+The source-derived receipt body and packet constructor contracts are reviewed.
+Before binding receipts to Session, resolve the incoming eligibility predicate
+through the official parser, notice decoder, and handler chain. The integration
+must then add an opt-in callback at the unmatched-push boundary, injected before reader startup. It should receive only
 an eligible, source-modeled push representation and compose the agent owner with
 the manager owner. Session must retain ordinary push delivery and must not
 activate this callback by default.
@@ -199,46 +201,58 @@ Required synthetic integration coverage after request approval:
 The manager/agent composition harness is tracked separately in PR138; this plan
 does not authorize Session binding, packet construction, or default activation.
 
-### Push-receipt builder boundary after scalar conformance
+### Push-receipt builders and remaining integration boundaries
 
-The merged BSON conformance slice verifies the reviewed scalar vectors by
-passing explicit typed Go values through the existing Mongo BSON encoder. It
-covers boolean, double (including signed negative zero), signed int32, signed
-int64, and null payload bytes and widths. Unsupported Objective-C encodings
-remain explicit fixture rejection cases; they do not justify a generic fallback
-converter.
+The merged scalar conformance tests cover boolean, double (including signed
+negative zero), signed int32, signed int64, and null BSON payload widths.
+Unsupported Objective-C encodings remain fixture rejection cases; they do not
+justify a generic fallback converter.
 
-The next builder boundary is therefore a typed, opt-in composition layer. A
-BLOCKSYNC model may carry signed `int32 revision` and `plusRevision`; after the
-reviewed SGJSON projection and static base-property removal, its mapping phase
-uses `plusRevision -> pr` and `revision -> r`. The builder must pass those typed
-values to the existing BSON encoder and assert the resulting element types and
-bytes. It must preserve ordinary opaque values and explicit-null guards from the
-projection/mapping helpers. It must not infer BSON key order, add HINT defaults,
-or serialize a receipt until the remaining superclass-property and field
-presence contract is approved.
+The merged typed `BuildReceiptBody` composes the reviewed SGJSON projection,
+static `method` / `packetId` removal, BLOCKSYNC renames, and production BSON
+encoder. HINT produces the canonical five-byte empty BSON document. BLOCKSYNC
+produces `r` and `pr` as signed BSON int32 values, including zero and signed
+boundary values; its body is 20 bytes. BSON map iteration does not establish a
+wire key order. The source contract is
+[`PUSH-RECEIPT-BODY-COMPOSITION.md`](research/reconnect/PUSH-RECEIPT-BODY-COMPOSITION.md).
 
-HINT has no declared subclass fields in the reviewed object inventory. Its body
-may be empty after the complete superclass projection and static `method` /
-`packetId` removal, but that is a pending source conclusion rather than a
-runtime default. A builder test must use an explicitly approved projected input
-and assert empty-body behavior only after that evidence is complete.
+The merged `BuildReceiptPacket` takes an explicit uint32 packet ID and method,
+copies them to the LOCO header, and frames the built body. It uses header status
+zero, BSON body type zero, and the actual body length. Tests cover exact HINT
+bytes and BLOCKSYNC field types and payloads independently of map order.
+The reviewed constructor boundary is
+[`PACKET-CONSTRUCTOR-CONTRACT.md`](research/reconnect/PACKET-CONSTRUCTOR-CONTRACT.md).
+Neither builder allocates request IDs, touches pending maps, encrypts, writes,
+or activates a Session path.
 
-The outer adapter should remain layered: typed receipt model -> SGJSON
+The outer adapter remains layered: typed receipt model -> SGJSON
 projection/mapping -> BSON body -> packet-data framing -> packet encryption ->
-connection write. Packet-header/ID allocation belongs to the transport adapter;
-the agent owner's signed admission tag remains a separate argument and must not
-be inserted into Session pending maps or silently substituted for the lower
-socket tag. Each layer needs injected seams for deterministic tests and must
-remain disabled unless an opt-in Session constructor path supplies it.
+connection write. The merged outer encryption specification records the
+no-crypto identity path and crypto length-prefix/append behavior in
+[`ENCRYPT-PACKET-CONTRACT.md`](research/reconnect/ENCRYPT-PACKET-CONTRACT.md).
+The AES-GCM primitive has a separate bounded contract in
+[`V2SL-GCM.md`](research/session-login/V2SL-GCM.md). These encryption
+contracts alone do not prove composed receive and caller failure handling.
+The agent owner's signed admission tag remains separate from the uint32 header
+ID and lower socket tag.
 
-Required integration tests after the source model is complete are: exact typed
-BLOCKSYNC `pr`/`r` BSON bytes; approved HINT empty-body behavior; packet ID and
-header allocation; encryption input/output and nil/error paths; ordered
-manager/agent owner admission; unmatched-push delivery remaining ordered; and
-shutdown/close generation invalidation while queued or active receipt work is
-present. No receipt acknowledgement, retry, default activation, or pending-map
-correlation should be added without a separate source contract.
+Before runtime binding, complete these remaining client boundaries:
+
+1. Trace incoming header/body parsing through HINT/BLOCKSYNC notice decoding
+   and handler dispatch. A framing-level zero-body packet and an outbound
+   empty BSON receipt do not establish typed incoming notice eligibility.
+2. Validate production encryption against the reviewed primitive, including
+   authentication failure without plaintext, and trace its surrounding caller
+   failure handling.
+3. Preserve manager scheduling/cancellation targets, execution-time agent
+   status, uint32 packet identity, and the reviewed lower transport callback
+   semantics through real receipt submission.
+4. Exercise ordered unmatched-push delivery, partial and ambiguous writes,
+   cancellation, and bounded shutdown through the composed opt-in path.
+
+Keep request correlation separate until an acknowledgement method/ID contract
+establishes it. Receipt sending remains opt-in and has no default Session
+activation.
 
 ### Default status/config owner binding proposal
 
