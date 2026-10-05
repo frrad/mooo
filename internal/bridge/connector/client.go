@@ -570,8 +570,9 @@ func userInfoForMember(profile chatmeta.Member) *bridgev2.UserInfo {
 
 func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Portal) *event.RoomFeatures {
 	return &event.RoomFeatures{
-		ID:            "com.github.frrad.mooo.capabilities.2026_09_30",
+		ID:            "com.github.frrad.mooo.capabilities.2026_10_04",
 		MaxTextLength: maxTextLength,
+		Reply:         event.CapLevelPartialSupport,
 	}
 }
 

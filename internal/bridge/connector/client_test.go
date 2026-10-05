@@ -998,6 +998,14 @@ func TestOutboundEmoteIsPrefixed(t *testing.T) {
 	}
 }
 
+func TestCapabilitiesAdvertisePartialReplies(t *testing.T) {
+	kc := connectedClient(t, &fakeKakao{})
+	features := kc.GetCapabilities(context.Background(), nil)
+	if features.Reply != event.CapLevelPartialSupport || features.ID != "com.github.frrad.mooo.capabilities.2026_10_04" {
+		t.Fatalf("capabilities = %+v", features)
+	}
+}
+
 func TestInboundMessagePersistsReplyMetadata(t *testing.T) {
 	kc, harness := newTestClient(t, nil)
 	kc.handleEvent(&fakeKakao{}, events.TextMessage{ChatID: testChatID, LogID: 12, AuthorID: testOtherID, Message: "source"})
