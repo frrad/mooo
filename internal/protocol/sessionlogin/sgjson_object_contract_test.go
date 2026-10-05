@@ -41,14 +41,16 @@ type sgJSONResult struct {
 // projectSGJSONObject models the observed SGJsonObject.JSONObject block. The
 // descriptors represent protocol objects, rather than treating every map or
 // slice as an SGJson implementation.
-func projectSGJSONObject(c sgJSONCase) (map[string]sgJSONResult, []string) {
+func projectSGJSONObject(c sgJSONCase) (map[string]sgJSONResult, []string, []string) {
 	properties := append(append([]string{}, c.SubclassProperties...), c.SuperclassProperties...)
 	out := make(map[string]sgJSONResult, len(c.Values))
 	values := make(map[string]sgJSONValue, len(c.Values))
+	getterCalls := make([]string, 0, len(properties))
 	for _, value := range c.Values {
 		values[value.Name] = value
 	}
 	for _, property := range properties {
+		getterCalls = append(getterCalls, property)
 		value, present := values[property]
 		if !present {
 			out[property] = sgJSONResult{Kind: "nsnull", Value: "NSNull"}
@@ -65,7 +67,7 @@ func projectSGJSONObject(c sgJSONCase) (map[string]sgJSONResult, []string) {
 			out[property] = sgJSONResult{Kind: "scalar", Value: value.ScalarResult}
 		}
 	}
-	return out, properties
+	return out, properties, getterCalls
 }
 
 func TestSGJSONObjectProjectionFixture(t *testing.T) {
@@ -77,16 +79,16 @@ func TestSGJSONObjectProjectionFixture(t *testing.T) {
 	if err := json.Unmarshal(body, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.Status != "reviewed-static-synthetic" || len(fixture.Cases) != 7 {
+	if fixture.Status != "reviewed-static-synthetic" || len(fixture.Cases) != 8 {
 		t.Fatalf("header %#v", fixture)
 	}
 	for _, c := range fixture.Cases {
-		got, properties := projectSGJSONObject(c)
+		got, properties, getterCalls := projectSGJSONObject(c)
 		if !reflect.DeepEqual(properties, c.ExpectedProperties) {
 			t.Errorf("%s properties=%v want %v", c.Name, properties, c.ExpectedProperties)
 		}
-		if !reflect.DeepEqual(properties, c.ExpectedGetterCalls) {
-			t.Errorf("%s getter calls=%v want %v", c.Name, properties, c.ExpectedGetterCalls)
+		if !reflect.DeepEqual(getterCalls, c.ExpectedGetterCalls) {
+			t.Errorf("%s getter calls=%v want %v", c.Name, getterCalls, c.ExpectedGetterCalls)
 		}
 		if !reflect.DeepEqual(got, c.Expected) {
 			t.Errorf("%s output=%#v want %#v", c.Name, got, c.Expected)

@@ -221,6 +221,35 @@
           "value": "NSNull"
         }
       }
+    },
+    {
+      "name": "duplicate_property_reads_each_getter",
+      "subclass_properties": [
+        "dup",
+        "dup"
+      ],
+      "superclass_properties": [],
+      "values": [
+        {
+          "name": "dup",
+          "kind": "scalar",
+          "scalar_result": "value"
+        }
+      ],
+      "expected_properties": [
+        "dup",
+        "dup"
+      ],
+      "expected_getter_calls": [
+        "dup",
+        "dup"
+      ],
+      "expected": {
+        "dup": {
+          "kind": "scalar",
+          "value": "value"
+        }
+      }
     }
   ]
 }
