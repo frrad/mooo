@@ -26,9 +26,15 @@ type receiptJSONMappingCase struct {
 	Effects        []string           `json:"effects"`
 }
 
-func projectReceiptJSONMapping(c receiptJSONMappingCase) map[string]*string {
+type receiptJSONMappingResult struct {
+	Dictionary map[string]*string
+	Opaque     *string
+	IsOpaque   bool
+}
+
+func projectReceiptJSONMapping(c receiptJSONMappingCase) receiptJSONMappingResult {
 	if c.InputKind != "dictionary" {
-		return nil
+		return receiptJSONMappingResult{Opaque: c.OpaqueInput, IsOpaque: true}
 	}
 	out := make(map[string]*string, len(c.Input))
 	for k, v := range c.Input {
@@ -48,7 +54,7 @@ func projectReceiptJSONMapping(c receiptJSONMappingCase) map[string]*string {
 		}
 		delete(out, source)
 	}
-	return out
+	return receiptJSONMappingResult{Dictionary: out}
 }
 
 func expectedReceiptJSONMappingEffects(c receiptJSONMappingCase) []string {
@@ -114,10 +120,12 @@ func TestPushReceiptJSONMappingFixture(t *testing.T) {
 		if c.InputKind == "non_dictionary" && c.OpaqueInput == nil {
 			t.Errorf("%s missing opaque superclass result", c.Name)
 		}
-		if c.InputKind == "non_dictionary" && !reflect.DeepEqual(c.OpaqueInput, c.ExpectedOpaque) {
-			t.Errorf("%s opaque=%v want %v", c.Name, c.OpaqueInput, c.ExpectedOpaque)
-		}
-		if got := projectReceiptJSONMapping(c); !reflect.DeepEqual(got, c.Expected) {
+		got := projectReceiptJSONMapping(c)
+		if c.InputKind == "non_dictionary" {
+			if !got.IsOpaque || !reflect.DeepEqual(got.Opaque, c.ExpectedOpaque) {
+				t.Errorf("%s opaque result=%v want %v", c.Name, got, c.ExpectedOpaque)
+			}
+		} else if !reflect.DeepEqual(got.Dictionary, c.Expected) {
 			t.Errorf("%s output=%v want %v", c.Name, got, c.Expected)
 		}
 		if got := c.Effects; !reflect.DeepEqual(got, expectedReceiptJSONMappingEffects(c)) {

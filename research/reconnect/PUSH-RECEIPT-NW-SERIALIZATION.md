@@ -65,10 +65,16 @@ order, HINT defaults, and packet-level omission policy remain unresolved.
 
 `LocoHintPushReceipt` declares no own methods or properties and inherits
 `LocoPushReceipt` directly. Consequently its local class contributes no
-mapping dictionary. `SGJsonKit` itself has no `nameMappingDictionary` method;
-the app-side inherited dispatch target is therefore still unlocated, and no
-HINT body key or default value is established. The static base removal is
-bounded to the `LocoPushReceipt` property list (`method` and `packetId`).
+mapping dictionary. A separate app `LocoModel` implementation of
+`nameMappingDictionary` at `0x10167bea0` returns nil, and its neighboring
+`0x10167bea8` implementation also returns nil; the `0x10167beb0`
+`initWithJSONObject:` path calls that selector while constructing a model.
+The class metadata places `LocoPushReceipt` directly under `SGJsonObject`,
+not under `LocoModel`, so this nil fallback is a bounded model fact and does
+not establish that HINT dispatches through `LocoModel`. `SGJsonKit` itself has
+no `nameMappingDictionary` method. No HINT body key or default value is
+established. The static base removal is bounded to the `LocoPushReceipt`
+property list (`method` and `packetId`).
 
 The NW send completion is a Swift `NWConnection.SendCompletion` closure at
 `0x100d4a840`. Its body weak-loads the owner and returns when that owner has
@@ -93,8 +99,9 @@ Framing cases derive the header body length, mutable-data capacity
 results; they cover zero-length omission and a deliberately different second
 conversion. NW cases then model only the wrapper's packet-data result guard,
 encryption nil path, connection gate, send scheduling, and timeout argument.
-The JSON-object projection fixture remains an explicit gap for the app-side
-mapping-dispatch default and final BSON policy. The observed mapping phase is
+The JSON-object projection fixture exercises the framework's observed
+property-contribution and conversion branches, while the app-side
+mapping-dispatch default and final BSON policy remain explicit gaps. The observed mapping phase is
 bounded separately: dictionary versus non-dictionary input, absent source,
 `NSNull` source, and ordinary source-to-destination rename are distinct cases
 and must not be collapsed into a generic field-copy operation.
@@ -114,6 +121,10 @@ cases use the recovered `pr`/`plusRevision` and `r`/`revision` pairs with zero
 and nonzero synthetic values and model static `method`/`packetId` removal
 before mapping. The fixture exercises each pair independently; it makes no
 claim about NSDictionary enumeration order.
+
+The framework conversion cases are in `rc-q5-sgjson-object.json`. They cover
+nil/`NSNull`, scalar zero, nested `SGJson` recursion, and ordered number-array
+projection as synthetic values; they do not claim app wire encoding.
 
 ## Provenance
 
@@ -138,3 +149,6 @@ claim about NSDictionary enumeration order.
 - First-party serializer implementation: private `sgjsonkit-source/decompile-object.txt`,
   `sgjsonkit-source/decompile-category.txt`, and `sgjsonkit-source/otool-objc.txt`
   from the bundled SGJsonKit arm64 slice.
+- App model mapping fallback: private `nw-loco-model/decompile.txt` and
+  `nw-loco-model/report.txt` for `0x10167bea0`, `0x10167bea8`, and
+  `0x10167beb0`.

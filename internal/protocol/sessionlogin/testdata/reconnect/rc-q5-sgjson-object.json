@@ -1,0 +1,25 @@
+{
+  "status": "reviewed-static-synthetic",
+  "cases": [
+    {
+      "name": "nil_and_nsnull_values_are_serialized_as_nsnull",
+      "input": {"nil_value": null, "explicit_nsnull": "NSNull"},
+      "expected": {"nil_value": "NSNull", "explicit_nsnull": "NSNull"}
+    },
+    {
+      "name": "ordinary_scalar_is_retained",
+      "input": {"method": "HINT", "packet_id": 7, "zero": 0},
+      "expected": {"method": "HINT", "packet_id": 7, "zero": 0}
+    },
+    {
+      "name": "nested_sgjson_value_is_projected_recursively",
+      "input": {"body": {"revision": 0, "plus_revision": 42}},
+      "expected": {"body": {"revision": 0, "plus_revision": 42}}
+    },
+    {
+      "name": "number_array_projection_retains_order_and_values",
+      "input": {"numbers": [0, -1, 4294967295]},
+      "expected": {"numbers": [0, -1, 4294967295]}
+    }
+  ]
+}
