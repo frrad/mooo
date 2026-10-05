@@ -1,6 +1,7 @@
 package sessionlogin
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -17,6 +18,10 @@ type syntheticBothSGProtocols struct{}
 
 func (syntheticBothSGProtocols) JSONObject() any  { return map[string]any{"winner": "json"} }
 func (syntheticBothSGProtocols) NumberArray() any { return []any{"number-array"} }
+
+type syntheticNilSGJSON struct{}
+
+func (syntheticNilSGJSON) JSONObject() any { return nil }
 
 type syntheticProperties struct{ properties []SGJSONProperty }
 
@@ -45,6 +50,12 @@ func TestProjectSGJSONObjectSourceFixtureCases(t *testing.T) {
 				t.Fatalf("projection=%#v want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestProjectSGJSONObjectRejectsNilProtocolResults(t *testing.T) {
+	if _, err := ProjectSGJSONObject(syntheticNilSGJSON{}); !errors.Is(err, ErrSGJSONNilProtocolResult) {
+		t.Fatalf("nil protocol result error=%v, want %v", err, ErrSGJSONNilProtocolResult)
 	}
 }
 

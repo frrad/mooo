@@ -1,6 +1,11 @@
 package sessionlogin
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+var ErrSGJSONNilProtocolResult = errors.New("sessionlogin: SGJson protocol returned nil")
 
 // SGJSON is the narrow clean-room projection hook observed in SGJsonKit.
 // Values implementing both SGJSON and SGNumberArray use SGJSON first.
@@ -42,10 +47,18 @@ func ProjectSGJSONObject(input any) (any, error) {
 		return SGJSONNull{}, nil
 	}
 	if object, ok := input.(SGJSON); ok {
-		return object.JSONObject(), nil
+		value := object.JSONObject()
+		if value == nil {
+			return nil, ErrSGJSONNilProtocolResult
+		}
+		return value, nil
 	}
 	if numbers, ok := input.(SGNumberArray); ok {
-		return numbers.NumberArray(), nil
+		value := numbers.NumberArray()
+		if value == nil {
+			return nil, ErrSGJSONNilProtocolResult
+		}
+		return value, nil
 	}
 	return input, nil
 }
