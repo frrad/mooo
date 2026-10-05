@@ -11,14 +11,16 @@ import (
 // datastore or a transport implementation: commit, rollback, retry, and
 // worker-error behavior remain untraced source gaps.
 type incomingBlockSyncStateContract struct {
-	users                 map[int64]incomingBlockSyncUser
-	chatFavorite          map[int64]bool
-	memberIDs             []int64
-	fullSynced            bool
-	revision              int32
-	revisionUpdates       int
-	memberCallbackPending bool
-	memberCallbackCount   int
+	users                  map[int64]incomingBlockSyncUser
+	chatFavorite           map[int64]bool
+	memberIDs              []int64
+	fullSynced             bool
+	revision               int32
+	revisionUpdates        int
+	memberCallbackPending  bool
+	memberCallbackCount    int
+	memberCallbackFull     bool
+	memberCallbackRevision int32
 }
 
 type incomingBlockSyncUser struct {
@@ -28,6 +30,7 @@ type incomingBlockSyncUser struct {
 	favorite     bool
 	purged       bool
 	hidden       bool
+	newlyAdded   bool
 	directChatID int64
 }
 
@@ -77,21 +80,19 @@ func (s *incomingBlockSyncStateContract) applyPartial(ids []int64, blockTypes []
 	return nil
 }
 
-// applyUnblock models the separately captured plus-unblock block. The final
-// friend-type guard is supplied by the caller because its source selector is
-// not yet identified; false means the observed -4 assignment is taken.
-func (s *incomingBlockSyncStateContract) applyUnblock(ids []int64, linkID int64, preserveFriendType bool) {
+// applyUnblock models the separately captured plus-unblock block. Its source
+// lookup passes linkID=0 and missing users are released without fallback work.
+func (s *incomingBlockSyncStateContract) applyUnblock(ids []int64) {
 	for _, id := range ids {
 		user, ok := s.users[id]
 		if !ok {
-			s.memberIDs = append(s.memberIDs, id)
 			continue
 		}
 		if user.userType == 0 {
 			user.userType = 1
 		}
 		user.hidden = false
-		if !preserveFriendType {
+		if !user.newlyAdded {
 			user.friendType = -4
 		}
 		s.users[id] = user
@@ -99,24 +100,29 @@ func (s *incomingBlockSyncStateContract) applyUnblock(ids []int64, linkID int64,
 }
 
 func (s *incomingBlockSyncStateContract) complete(isFull bool, revision int32) {
-	if isFull {
-		s.fullSynced = true
-	}
 	if len(s.memberIDs) == 0 {
+		if isFull {
+			s.fullSynced = true
+		}
 		s.revision = revision
 		s.revisionUpdates++
 		return
 	}
 	s.memberCallbackPending = true
+	s.memberCallbackFull = isFull
+	s.memberCallbackRevision = revision
 }
 
-func (s *incomingBlockSyncStateContract) finishMemberCallback(revision int32) {
+func (s *incomingBlockSyncStateContract) finishMemberCallback() {
 	if !s.memberCallbackPending {
 		return
 	}
 	s.memberCallbackPending = false
 	s.memberCallbackCount++
-	s.revision = revision
+	if s.memberCallbackFull {
+		s.fullSynced = true
+	}
+	s.revision = s.memberCallbackRevision
 	s.revisionUpdates++
 }
 
@@ -162,15 +168,18 @@ func TestIncomingBlockSyncStateContractSkipsMissingChatIdentity(t *testing.T) {
 
 func TestIncomingBlockSyncStateContractModelsUnblockGuards(t *testing.T) {
 	s := &incomingBlockSyncStateContract{
-		users:        map[int64]incomingBlockSyncUser{1: {friendType: -3, userType: 0, hidden: true}},
+		users:        map[int64]incomingBlockSyncUser{1: {friendType: -3, userType: 0, hidden: true}, 2: {friendType: -3, newlyAdded: true}},
 		chatFavorite: map[int64]bool{},
 	}
-	s.applyUnblock([]int64{1, 99}, 0, false)
+	s.applyUnblock([]int64{1, 2, 99})
 	if got := s.users[1]; got.userType != 1 || got.hidden || got.friendType != -4 {
 		t.Fatalf("unblock effects=%+v", got)
 	}
-	if !reflect.DeepEqual(s.memberIDs, []int64{99}) {
-		t.Fatalf("missing unblock fallback=%v", s.memberIDs)
+	if len(s.memberIDs) != 0 {
+		t.Fatalf("missing unblock unexpectedly queued work=%v", s.memberIDs)
+	}
+	if got := s.users[2]; got.friendType != -3 || got.hidden {
+		t.Fatalf("newly-added unblock effects=%+v", got)
 	}
 }
 
@@ -201,7 +210,7 @@ func TestIncomingBlockSyncStateContractUsesMemberCallbackBeforeRevision(t *testi
 	if !s.memberCallbackPending || s.memberCallbackCount != 0 || s.revisionUpdates != 0 {
 		t.Fatalf("nonempty fallback completed too early: %+v", s)
 	}
-	s.finishMemberCallback(12)
+	s.finishMemberCallback()
 	if s.memberCallbackPending || s.memberCallbackCount != 1 || s.revision != 12 || s.revisionUpdates != 1 {
 		t.Fatalf("member callback completion=%+v", s)
 	}

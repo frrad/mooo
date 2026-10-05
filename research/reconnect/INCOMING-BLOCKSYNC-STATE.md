@@ -24,20 +24,20 @@ implementation safety choice, not an official source error contract. A nil
 type array's modeled numeric conversion remains zero.
 
 The completion block (`0x101434018`) marks full synchronization only when the
-captured full-sync flag is set, and performs a separate revision update through
+captured full-sync flag is set. For nonempty member work, that flag update is
+deferred into the member callback; empty member work takes the immediate
+completion path. Both paths perform a separate revision update through
 `setPlusBlockRevision:` (`0x101921920`). The model therefore keeps state
 mutation and revision completion as distinct steps. The source trace does not establish transaction commit or rollback,
 retry behavior, worker exception propagation, or completion-error handling;
 those remain explicit gaps.
 
 The plus-unblock arrays are consumed by a separate nested block in the same
-write closure. The recovered block looks up users by ID and the captured link
-ID, assigns `userType = 1` when the current value is zero, clears `hidden`,
-and conditionally assigns `friendType = -4`; unresolved users contribute a
-numeric fallback. The final friend-type predicate selector is not yet named,
-so the synthetic model takes that predicate as an explicit input. Zero/empty
-array behavior, nil type handling, and the remaining unblock state effects are
-not yet traced. Likewise, the reviewed
+write closure. The recovered block looks up users by ID with a constant
+`linkId = 0`, assigns `userType = 1` when the current value is zero, clears
+`hidden`, and skips `friendType = -4` for `newlyAdded` users. Missing users are
+released without adding fallback work. Zero/empty array behavior, nil type
+handling, and the remaining unblock state effects are not yet traced. Likewise, the reviewed
 completion call proves a direct revision setter invocation but does not yet
 establish whether an empty update still invokes it or how a setter failure is
 reported. These are intentionally separate follow-up gaps rather than inferred
