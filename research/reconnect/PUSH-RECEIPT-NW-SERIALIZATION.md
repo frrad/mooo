@@ -128,6 +128,20 @@ other-error connection-cancel branch in
 `rc-q5-push-receipt-nw-completion.json`; they do not invent ACK or retry
 behavior.
 
+The NW state-handler setup is separately bounded at `0x100d454d8`: assigning a
+new `stateUpdateHandler` cancels and releases the previous current connection,
+stores the replacement, and starts it on a queue. The callback body at
+`0x100d45eac` again clears/cancels the current connection before evaluating
+its state/error payload. Its helper `0x100d462f8` checks POSIX code `0x3d`
+(61) for the immediate-failure predicate; the callback error path compares
+POSIX code `0x36` (54), checks the TLS error case, and can call fallback at
+`0x100d47238`. That fallback marks the fallback flag, performs endpoint and
+configuration work, and dispatches an asynchronous main-queue block before
+constructing a `LocoAgent` error. The raw callback does not expose a
+pending-request map or request-generation key; those downstream status and
+pending fanout effects remain separate base-carriage evidence and are not
+claimed here.
+
 The mapping cases are in
 `rc-q5-push-receipt-json-mapping.json`. They derive the non-dictionary return,
 absent-source no-op, `NSNull` removal, ordinary rename, and identity
@@ -165,6 +179,9 @@ live account or server observation.
   positive, negative, and signed-int32 boundary values.
 - Swift guard/timeout branch: private `nw-disasm.txt` receipt for
   `0x100d49560` through `0x100d498dc`.
+- NW state-handler setup/callback: private
+  `nw-state-handler-20261004.txt` (exact decompile of `0x100d454d8`,
+  `0x100d45eac`, `0x100d462f8`, `0x100d47238`, and `0x100d47a3c`).
 - Base comparison path: private `rc-q5-sendpacket-method/report.txt` and
   `rc-q5-sendpacket-method/decompile.txt`.
 - Object hierarchy and fields: private

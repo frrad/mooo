@@ -1,6 +1,7 @@
 package sessionlogin
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -44,16 +46,20 @@ func projectBSONScalar(c bsonScalarCase) (byte, []byte, error) {
 	}
 	switch c.ObjCType {
 	case "B", "c":
+		v, err := strconv.ParseBool(c.Value)
+		if err != nil {
+			return 0, nil, err
+		}
 		out = []byte{0}
-		if c.Value == "true" {
+		if v {
 			out[0] = 1
 		}
 	case "d":
-		var b [8]byte
-		v := 0.0
-		if c.Value == "1.5" {
-			v = 1.5
+		v, err := strconv.ParseFloat(c.Value, 64)
+		if err != nil {
+			return 0, nil, err
 		}
+		var b [8]byte
 		binary.LittleEndian.PutUint64(b[:], math.Float64bits(v))
 		out = b[:]
 	case "i":
@@ -86,13 +92,20 @@ func TestBSONScalarFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	var f bsonScalarFixture
-	if err := json.Unmarshal(body, &f); err != nil {
+	d := json.NewDecoder(bytes.NewReader(body))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-synthetic" || len(f.Cases) != 9 {
+	if f.Status != "reviewed-static-synthetic" || len(f.Cases) != 13 {
 		t.Fatalf("header %#v", f)
 	}
+	seen := map[string]bool{}
 	for _, c := range f.Cases {
+		if c.Name == "" || seen[c.Name] {
+			t.Fatalf("duplicate/empty case %q", c.Name)
+		}
+		seen[c.Name] = true
 		gotType, got, err := projectBSONScalar(c)
 		if err != nil {
 			t.Fatal(err)
