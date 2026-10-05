@@ -45,6 +45,28 @@ func TestBuildReceiptPacketCopiesExplicitHeaderAndBody(t *testing.T) {
 	}
 }
 
+func TestBuildReceiptPacketMatchesPlaintextGoldenFrame(t *testing.T) {
+	wire, err := BuildReceiptPacket(ReceiptPacket{
+		PacketID: 0x01020304,
+		Method:   "CUSTOM",
+		Body:     ReceiptBody{Kind: ReceiptBodyHint},
+	}, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{
+		0x04, 0x03, 0x02, 0x01, // uint32 packet ID, little-endian
+		0x00, 0x00, // status
+		'C', 'U', 'S', 'T', 'O', 'M', 0, 0, 0, 0, 0, // 11-byte method field
+		0x00,                   // BSON body type
+		0x05, 0x00, 0x00, 0x00, // body length
+		0x05, 0x00, 0x00, 0x00, 0x00, // canonical empty BSON document
+	}
+	if !bytes.Equal(wire, want) {
+		t.Fatalf("wire=%x want %x", wire, want)
+	}
+}
+
 func TestBuildReceiptPacketRejectsFramingInputs(t *testing.T) {
 	base := ReceiptPacket{PacketID: 17, Method: "HINT", Body: ReceiptBody{Kind: ReceiptBodyHint}}
 	for _, tc := range []struct {
