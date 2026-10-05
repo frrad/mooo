@@ -25,3 +25,22 @@ The bridge treats QR cancellation as fail closed: an HTTP 200 with an empty
 body or explicit status zero is accepted; a nonzero or malformed status body
 is rejected. This is an implementation safety policy, not a claim that the
 full official cancellation response contract has been recovered.
+
+## Presentation boundary and current live gap
+
+The connector preserves the complete server QR string in the bridgev2 display
+step. This matches the clean-room macOS renderer trace, which supplies that
+string unchanged to its QR generator, and the Android trace, which locates the
+account-info path and extracts the raw `id` suffix without requiring a scheme or
+host. The shared bridgev2 command currently owns PNG generation (including its
+error-correction and raster settings); the connector has no image-rendering
+hook and must not prepend an unproven host or rewrite the challenge.
+
+The first fresh bridge presentation was rejected by the owned Android client
+(`You cannot use this QR code.`). No scan or authorization was retried. The
+The failure's stage is unresolved: it may be image decoding, scanner route
+classification, QR-info lookup, or a later account-side policy response. No
+offline decoder differential or complete Android result-handler trace has yet
+isolated the cause. A controlled image comparison and the full scanner-to-info
+request path are required before changing the renderer or claiming payload
+normalization fixes enrollment.

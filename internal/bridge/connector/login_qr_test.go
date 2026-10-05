@@ -97,6 +97,23 @@ func TestMacQRPresentationValidatorAcceptsObservedRelativePayload(t *testing.T) 
 	}
 }
 
+func TestQRDisplayStepPreservesServerPayloadForFrameworkRenderer(t *testing.T) {
+	// The official macOS client supplies the complete server string directly to
+	// its QR renderer. In particular, a relative account-info URL must remain
+	// relative: the Mac host is unresolved and Android extracts the id from the
+	// path without requiring a scheme or host. The bridgev2 framework owns PNG
+	// rendering, so this assertion prevents a connector-side "normalization"
+	// from silently changing the signed challenge.
+	payload := "/talk/account/qrCodeLogin/info.json?id=a+b"
+	step := qrDisplayStep(payload)
+	if step == nil || step.DisplayAndWaitParams == nil {
+		t.Fatal("QR display step is missing display parameters")
+	}
+	if got := step.DisplayAndWaitParams.Data; got != payload {
+		t.Fatalf("QR renderer payload = %q, want original server payload %q", got, payload)
+	}
+}
+
 func TestMacQRPresentationValidatorMalformedPayloadDoesNotPanic(t *testing.T) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
