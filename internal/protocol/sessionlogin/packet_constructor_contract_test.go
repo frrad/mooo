@@ -19,6 +19,8 @@ type packetConstructorCase struct {
 	PacketID             uint32        `json:"packet_id"`
 	Method               string        `json:"method"`
 	BodyIdentity         string        `json:"body_identity"`
+	BodyPresent          bool          `json:"body_present"`
+	HeaderInitOK         bool          `json:"header_init_ok"`
 	ExpectedReturned     bool          `json:"expected_returned"`
 	ExpectedBodyIdentity string        `json:"expected_body_identity"`
 	ExpectedHeader       *packetHeader `json:"expected_header"`
@@ -26,7 +28,7 @@ type packetConstructorCase struct {
 }
 type packetHeader struct {
 	PacketID   uint32 `json:"packet_id"`
-	StatusCode int16  `json:"status_code"`
+	StatusCode uint16 `json:"status_code"`
 	Method     string `json:"method"`
 	BodyType   uint8  `json:"body_type"`
 	BodyLength uint32 `json:"body_length"`
@@ -36,7 +38,16 @@ func projectPacketConstructor(c packetConstructorCase) (bool, string, *packetHea
 	if !c.SuperInitOK {
 		return false, "", nil, []string{"super_init_returns_nil"}
 	}
-	return true, c.BodyIdentity, &packetHeader{PacketID: c.PacketID, Method: c.Method}, []string{"store_body", "init_header_with_defaults", "store_header"}
+	effects := []string{"store_body", "init_header_with_defaults"}
+	if !c.BodyPresent {
+		effects[0] = "store_body_nil"
+	}
+	if !c.HeaderInitOK {
+		effects = append(effects, "store_header_nil")
+		return true, c.BodyIdentity, nil, effects
+	}
+	effects = append(effects, "store_header")
+	return true, c.BodyIdentity, &packetHeader{PacketID: c.PacketID, Method: c.Method}, effects
 }
 func TestPacketConstructorContract(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-packet-constructor.json"))
@@ -49,7 +60,7 @@ func TestPacketConstructorContract(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 4 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 5 {
 		t.Fatalf("fixture header=%#v", f)
 	}
 	seen := map[string]bool{}
