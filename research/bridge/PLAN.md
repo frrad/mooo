@@ -128,8 +128,9 @@ Native QR enrollment (PR #166), photo transfer (PR #167), and scripted-protocol
 connector tests (PR #163) have merged. Their synthetic tests do not complete
 the live acceptance criteria. Avatars/membership updates (PR #173) and login
 collision protection (PR #175)
-have also merged with synthetic regression coverage. Reconnect (PR #172) and
-reactions (PR #179) remain held for delivery and cleanup corrections. Container
+have also merged with synthetic regression coverage. Reconnect (PR #172) has merged with real scripted recovery and shutdown
+regressions. Reactions (PR #179) remain in review; their actual framework
+failure/replay coverage has been extended. Container
 packaging has merged
 (PR #170); startup and restart smoke evidence is recorded in
 [deployment validation](DEPLOYMENT-VALIDATION.md). Read receipts, historical backfill, cloud backup/restore,
@@ -243,7 +244,8 @@ and full official-client parity remain outside this alpha goal.
 
 ### B3: lifecycle
 
-Reconnect is planned in detail in [`../reconnect.md`](../reconnect.md).
+The implemented supervisor and its bounded policy are documented in
+[`../bridge-reconnect-design.md`](../bridge-reconnect-design.md).
 
 - [x] Report connection state and distinguish terminal `CHANGESVR` and `KICKOUT`;
       stop accepting later events after either terminal notice.
@@ -252,12 +254,16 @@ Reconnect is planned in detail in [`../reconnect.md`](../reconnect.md).
 - [x] Complete bootstrap ownership before subscription and on failed connect;
       join/cancel the typed decoder on idle input and blocked output. Concurrent
       closed event admission is regression-tested (PR #160).
-- [ ] Reconnect state machine with bounded backoff, exclusive ownership, and
-      catch-up before live delivery. Current recovery requires a bridge restart.
+- [x] Reconnect state machine with bounded backoff, exclusive ownership, and
+      catch-up before live delivery (PR #172). The real scripted backend proves
+      missed-message recovery before subscription, old-lease release before
+      replacement, one outbound WRITE despite a dropped response, terminal
+      KICKOUT, and CHANGESVR recovery.
 - [x] Recorded live restart resume/catch-up validation for previously committed
       chats on 2026-09-30.
-- [ ] Extend resume/catch-up validation to automatic reconnect, terminal events,
-      delivery failures, and cleanup timeouts.
+- [ ] Extend controlled owned-account resume/catch-up validation to automatic
+      reconnect, terminal events, delivery failures, and cleanup timeouts.
+      Synthetic regressions cover these paths; live acceptance remains open.
 - [ ] Opt-in, bounded backfill with an explicit read-side-effect policy.
 
 ### B4: polish and packaging
@@ -266,15 +272,15 @@ Reconnect is planned in detail in [`../reconnect.md`](../reconnect.md).
 - [x] Docker image, example configuration, and documentation with no operator
       values (PR #170). Authenticated appservice startup/restart smoke passed;
       full messaging deployment acceptance remains separate.
-- [ ] Choose and validate the deployment targets: standard appservice and/or
-      Beeper self-hosting.
+- [ ] Validate both required deployment targets: standard Matrix appservice
+      installation and separate Beeper self-hosting.
 
 ## Open questions
 
-- A message that fails to bridge stays at the head of its chat's commit queue,
-  so later commits in that chat fail until a restart replays it. A persistent
-  conversion failure would therefore replay on every restart. Decide on a
-  bounded skip policy with an explicit gap record.
+- How should operator recovery surface an unidentifiable malformed MSG without
+  inventing a cursor? Typed photo notices are implemented, and parser-gap
+  continuity guards remain in review (PR #187). Infrastructure and Matrix
+  failures remain uncommitted and recoverable.
 - Database: the framework supports cgo SQLite (`sqlite3-fk-wal`) and
   Postgres. Is SQLite enough for the homelab target?
 - How should aggregate reaction updates reconcile with per-sender Matrix
