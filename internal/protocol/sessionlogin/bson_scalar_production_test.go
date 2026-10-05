@@ -2,6 +2,7 @@ package sessionlogin
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"os"
@@ -71,5 +72,30 @@ func TestProductionBSONScalarFixture(t *testing.T) {
 		if byte(raw.Type) != testCase.BSONType || !bytes.Equal(raw.Value, want) || len(raw.Value) != testCase.Width {
 			t.Errorf("%s: type=%d payload=%x width=%d want type=%d payload=%s width=%d", testCase.Name, raw.Type, raw.Value, len(raw.Value), testCase.BSONType, testCase.PayloadHex, testCase.Width)
 		}
+	}
+}
+
+func TestProductionBSONDocumentFraming(t *testing.T) {
+	empty, err := bson.Marshal(bson.D{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty) != 5 || !bytes.Equal(empty, []byte{5, 0, 0, 0, 0}) {
+		t.Fatalf("empty document=%x, want standard five-byte document", empty)
+	}
+	nested, err := bson.Marshal(bson.D{{Key: "nested", Value: bson.D{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nested) < 5 || nested[len(nested)-1] != 0 {
+		t.Fatalf("nested document lacks terminal zero: %x", nested)
+	}
+	declared := int(binary.LittleEndian.Uint32(nested[:4]))
+	if declared != len(nested) {
+		t.Fatalf("outer BSON length=%d, actual=%d", declared, len(nested))
+	}
+	value := bson.Raw(nested).Lookup("nested")
+	if value.Type != bson.TypeEmbeddedDocument || len(value.Value) != 5 || !bytes.Equal(value.Value, []byte{5, 0, 0, 0, 0}) {
+		t.Fatalf("nested empty value=%v/%x", value.Type, value.Value)
 	}
 }
