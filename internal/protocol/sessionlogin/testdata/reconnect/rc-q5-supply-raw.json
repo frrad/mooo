@@ -1,0 +1,154 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {
+      "name": "short_buffer_waits_for_header",
+      "initial_buffer_length": 0,
+      "append_length": 21,
+      "current_header_present": false,
+      "header_init_present": false,
+      "body_length": 0,
+      "packet_init_present": false,
+      "header_delegate_present": true,
+      "packet_delegate_present": true,
+      "expected_return": 0,
+      "expected_remaining": 0,
+      "expected_effects": [
+        "append_data"
+      ],
+      "expected_packet_data_present": false
+    },
+    {
+      "name": "header_body_incomplete_returns_remaining",
+      "initial_buffer_length": 0,
+      "append_length": 30,
+      "current_header_present": false,
+      "header_init_present": true,
+      "body_length": 16,
+      "packet_init_present": false,
+      "header_delegate_present": true,
+      "packet_delegate_present": true,
+      "expected_return": 8,
+      "expected_remaining": 30,
+      "expected_effects": [
+        "append_data",
+        "init_header_from_buffer",
+        "set_current_header"
+      ],
+      "expected_packet_data_present": false
+    },
+    {
+      "name": "zero_body_packet_consumes_header",
+      "initial_buffer_length": 0,
+      "append_length": 22,
+      "current_header_present": false,
+      "header_init_present": true,
+      "body_length": 0,
+      "packet_init_present": true,
+      "header_delegate_present": true,
+      "packet_delegate_present": true,
+      "expected_return": 0,
+      "expected_remaining": 0,
+      "expected_effects": [
+        "append_data",
+        "init_header_from_buffer",
+        "set_current_header",
+        "init_packet_data",
+        "consume_packet_bytes",
+        "produce_packet_header",
+        "produce_packet"
+      ],
+      "expected_packet_data_present": true
+    },
+    {
+      "name": "packet_init_nil_still_consumes_and_dispatches",
+      "initial_buffer_length": 0,
+      "append_length": 22,
+      "current_header_present": false,
+      "header_init_present": true,
+      "body_length": 0,
+      "packet_init_present": false,
+      "header_delegate_present": true,
+      "packet_delegate_present": true,
+      "expected_return": 0,
+      "expected_remaining": 0,
+      "expected_effects": [
+        "append_data",
+        "init_header_from_buffer",
+        "set_current_header",
+        "init_packet_data",
+        "consume_packet_bytes",
+        "produce_packet_header",
+        "produce_packet"
+      ],
+      "expected_packet_data_present": false
+    },
+    {
+      "name": "header_init_nil_uses_nil_header_body_zero",
+      "initial_buffer_length": 0,
+      "append_length": 22,
+      "current_header_present": false,
+      "header_init_present": false,
+      "body_length": 99,
+      "packet_init_present": true,
+      "header_delegate_present": false,
+      "packet_delegate_present": false,
+      "expected_return": 0,
+      "expected_remaining": 0,
+      "expected_effects": [
+        "append_data",
+        "init_header_from_buffer",
+        "set_current_header",
+        "init_packet_data",
+        "consume_packet_bytes"
+      ],
+      "expected_packet_data_present": true
+    },
+    {
+      "name": "existing_header_partial_waits_for_body",
+      "initial_buffer_length": 22,
+      "append_length": 0,
+      "current_header_present": true,
+      "header_init_present": true,
+      "body_length": 10,
+      "packet_init_present": true,
+      "header_delegate_present": true,
+      "packet_delegate_present": true,
+      "expected_return": 10,
+      "expected_remaining": 22,
+      "expected_effects": [
+        "append_data"
+      ],
+      "expected_packet_data_present": false
+    },
+    {
+      "name": "two_complete_packets_loop_and_dispatches_each",
+      "initial_buffer_length": 0,
+      "append_length": 44,
+      "current_header_present": false,
+      "header_init_present": true,
+      "body_length": 0,
+      "packet_init_present": true,
+      "header_delegate_present": true,
+      "packet_delegate_present": true,
+      "expected_return": 0,
+      "expected_remaining": 0,
+      "expected_effects": [
+        "append_data",
+        "init_header_from_buffer",
+        "set_current_header",
+        "init_packet_data",
+        "consume_packet_bytes",
+        "produce_packet_header",
+        "produce_packet",
+        "init_header_from_buffer",
+        "set_current_header",
+        "init_packet_data",
+        "consume_packet_bytes",
+        "produce_packet_header",
+        "produce_packet"
+      ],
+      "expected_packet_data_present": true
+    }
+  ]
+}
