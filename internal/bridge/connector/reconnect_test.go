@@ -176,6 +176,27 @@ func TestCleanupTimeoutRetainsOwnerUntilLaterRetry(t *testing.T) {
 	}
 }
 
+func TestCleanupRetryFailureLeavesOwnerRetryableWithoutChannelReuse(t *testing.T) {
+	first := &fakeKakao{stream: make(chan events.Result), shutdownFailures: 2}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return first, nil })
+	kc.wait = func(context.Context, time.Duration) error { return nil }
+	kc.Connect(context.Background())
+	close(first.stream)
+	waitFor(t, func() bool {
+		first.mu.Lock()
+		calls := first.shutdownCalls
+		first.mu.Unlock()
+		return calls >= 2
+	})
+	kc.Disconnect()
+	kc.mu.Lock()
+	retained := kc.cleanup != nil
+	kc.mu.Unlock()
+	if retained {
+		t.Fatal("explicit cleanup did not release the retained owner")
+	}
+}
+
 func TestRecoveryAttemptBudgetIsBounded(t *testing.T) {
 	if len(ordinaryRecoveryDelays) != maxRecoveryAttempts || len(rateLimitedRecoveryDelays) != maxRecoveryAttempts {
 		t.Fatalf("recovery policy lengths = %d/%d, want %d", len(ordinaryRecoveryDelays), len(rateLimitedRecoveryDelays), maxRecoveryAttempts)

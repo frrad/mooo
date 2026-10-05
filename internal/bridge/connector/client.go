@@ -41,6 +41,14 @@ type kakaoClient interface {
 	Shutdown(ctx context.Context) error
 }
 
+type bootstrapFailure struct {
+	stage string
+	err   error
+}
+
+func (e bootstrapFailure) Error() string { return e.stage + ": " + e.err.Error() }
+func (e bootstrapFailure) Unwrap() error { return e.err }
+
 func openProfileClient(statePath string) (kakaoClient, error) {
 	return client.Open(statePath, nil)
 }
@@ -323,6 +331,13 @@ func retryableRecoveryError(err error) bool {
 	if err == nil || errors.Is(err, client.ErrLogin) || errors.Is(err, client.ErrCredentialRenewal) {
 		return false
 	}
+	var bootstrapErr bootstrapFailure
+	if errors.As(err, &bootstrapErr) {
+		if bootstrapErr.stage == "catch-up" {
+			return false
+		}
+		err = bootstrapErr.err
+	}
 	var statusErr client.StatusError
 	if errors.As(err, &statusErr) {
 		return statusErr.Status == -328
@@ -369,12 +384,16 @@ func shutdownKakaoClient(c kakaoClient) error {
 // called the session buffers pushes, so nothing live is lost meanwhile.
 func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (<-chan events.Result, error) {
 	if err := c.Connect(ctx); err != nil {
-		return nil, err
+		return nil, bootstrapFailure{stage: "connect", err: err}
 	}
 	if err := kc.catchUp(ctx, c); err != nil {
-		return nil, err
+		return nil, bootstrapFailure{stage: "catch-up", err: err}
 	}
-	return c.Events(ctx)
+	stream, err := c.Events(ctx)
+	if err != nil {
+		return nil, bootstrapFailure{stage: "events", err: err}
+	}
+	return stream, nil
 }
 
 // catchUp bridges and commits, in order, the messages each previously
@@ -464,7 +483,7 @@ func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generatio
 	if stopping {
 		return
 	}
-	shutdownErr := c.Shutdown(contextWithDisconnectTimeout())
+	shutdownErr := shutdownWithRecoveryTimeout(c)
 	kc.mu.Lock()
 	if kc.cleanup == c {
 		kc.cleanupBusy = false
@@ -528,16 +547,16 @@ func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, ki
 			kc.cleanupDone = make(chan struct{})
 		}
 		kc.mu.Unlock()
-		err := c.Shutdown(contextWithDisconnectTimeout())
+		err := shutdownWithRecoveryTimeout(c)
 		kc.mu.Lock()
 		if kc.cleanup == c {
 			kc.cleanupBusy = false
 			if kc.cleanupDone != nil {
 				close(kc.cleanupDone)
+				kc.cleanupDone = nil
 			}
 			if err == nil {
 				kc.cleanup = nil
-				kc.cleanupDone = nil
 			}
 		}
 		canRecover := err == nil && !kc.stopping && kc.generation == generation
@@ -548,12 +567,10 @@ func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, ki
 	}()
 }
 
-func contextWithDisconnectTimeout() context.Context {
+func shutdownWithRecoveryTimeout(c kakaoClient) error {
 	ctx, cancel := context.WithTimeout(context.Background(), recoveryCleanupTimeout)
-	// Shutdown implementations must return before this context expires; the
-	// timer is intentionally owned by the context and need not be retained.
-	_ = cancel
-	return ctx
+	defer cancel()
+	return c.Shutdown(ctx)
 }
 
 func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
