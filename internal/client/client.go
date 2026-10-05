@@ -356,10 +356,6 @@ func (c *Client) interruptTerminal() {
 	}
 }
 
-func decodeEventStream(raw <-chan loco.Packet, output chan<- events.Result) {
-	decodeEventStreamWithContinuity(raw, output, nil, nil)
-}
-
 type messagePosition struct {
 	chatID int64
 	logID  int64
