@@ -34,8 +34,9 @@ reactions, restart/offline recovery, or fresh QR enrollment. It did not prove
 the full alpha acceptance sequence. The QR follow-up used source revision
 `324ad37caa52a3a56960c60acd8b63dc4b247220` (the PR183 head, rather than current
 main), a fresh profile, and exercised bounded expiry and profile cleanup after
-an invalid input selection. It produced no Matrix renderer lookup result and
-did not establish approval or a server-side cause.
+an invalid input selection. Android failed the scan before the QR-info lookup,
+so renderer comparison remained unknown; approval and a server-side cause were
+not established.
 
 ## Container smoke
 
