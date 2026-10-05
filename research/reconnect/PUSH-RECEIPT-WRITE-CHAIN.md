@@ -3,13 +3,13 @@
 Status: reviewed static source chain, runtime unexecuted. Observation date:
 2026-10-04. Client build: macOS KakaoTalk 26.8.0.
 
-`sendPacket:tag:` uses the same lower write path for receipt tags and ordinary
+`LocoAgent` implementation `sendPacket:tag:` at `0x101773670` uses the same lower write path for receipt tags and ordinary
 request tags. It obtains packet data, encrypts it, obtains the socket and packet
 header/ID, then calls `writeData:withTimeout:tag:` with timeout `-1.0`. The
 raw ABI loads the packet ID into the write-call tag register immediately before
 the call (`0x101773854` → `0x101773858` → `0x101773868`); the caller-supplied
 `tag` argument is not forwarded. The `mov w3,w0` at `0x101773858` zero-extends
-the packet ID, so the lower write receives the positive unsigned packet ID for
+the packet ID, so the lower write receives the nonnegative zero-extended uint32 packet ID for
 both receipt and ordinary sends. The signed negative tag is derived earlier by
 the receipt helper but is ignored by this `sendPacket:tag:` implementation.
 It then calls `toggleOutSegmentTimeout:YES`. There is no sign test or
@@ -49,3 +49,5 @@ It does not invent a receipt acknowledgement or correlation result.
 - `writeBinaryData` IMP `0x1015f8fb0`; socket connect/disconnect chain begins at
   `0x101774348`.
 - private Ghidra reports: `~/Library/Application Support/mooo-lab/ghidra/parity/receipt-request-model/`, `socket-write/`, `write-binary-chain/`, and `socket-write-block/`.
+
+The separate Swift-facing wrapper at `0x100d48dfc` delegates through `0x100d49560`; its ownership and dispatch relationship to the LocoAgent implementation remain a separate trace gap.

@@ -36,7 +36,7 @@
       ]
     },
     {
-      "name": "max_packet_id_negation",
+      "name": "max_packet_id_zero_extension",
       "owner_status": 3,
       "caller_tag": 42,
       "packet_id": 4294967295,
