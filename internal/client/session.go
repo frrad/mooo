@@ -108,11 +108,16 @@ type pushReceiptBinding struct {
 
 func (b *pushReceiptBinding) send(packet loco.Packet) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if b.closed || !b.eligible(packet) {
+		b.mu.Unlock()
 		return
 	}
-	_ = b.sender.Send(packet)
+	sender := b.sender
+	b.mu.Unlock()
+	// Sender execution is deliberately outside the binding lock. Injected
+	// owners may synchronously reenter Session or block on transport; Close
+	// must remain able to invalidate the binding in either case.
+	_ = sender.Send(packet)
 }
 
 func (b *pushReceiptBinding) close() {
