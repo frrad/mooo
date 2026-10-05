@@ -26,6 +26,24 @@ messaging, long-running recovery, or the complete standard-Matrix acceptance
 criteria. The prior native-binary text/catch-up experiment is recorded separately
 in [the bridge plan](PLAN.md).
 
+## Crypto startup and persistence smoke
+
+On 2026-10-05 (UTC), source revision
+`3c50c5415657063c59141448a4cea270266f1a33` was built with the pure-Go
+`goolm` backend and started against the same stopped, operator-owned bridge
+database and profile used by the preceding Docker resume. An external config
+enabled end-to-bridge crypto while leaving default room encryption disabled.
+The local Synapse/appservice ping returned HTTP 200; `CryptoHelper` upgraded or
+reopened its crypto schema, reused the existing bot device, loaded the goolm
+Olm account, and the bridge reached `CONNECTED`.
+
+The database retained 1 login, 1 portal, and 8 messages, plus 13 persisted
+`crypto_*` tables. SIGINT produced a clean `CryptoHelper.Stop` and bridge
+shutdown. No room state, encrypted-room event, message, media, reaction, QR,
+or phone UI action was performed. This validates crypto initialization and
+persistence only; it does not establish Matrix room E2EE or encrypted
+Kakao-to-Matrix messaging.
+
 ## Fresh QR enrollment: failed acceptance attempt
 
 On 2026-10-04, a fresh container installation with an empty profile directory
