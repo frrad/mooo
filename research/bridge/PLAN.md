@@ -41,7 +41,7 @@ distinguish implemented behavior from planned integrations.
 | Own messages | Messages written by the logged-in account on another device are sent through double puppeting. |
 | Connection | The bridge decides when to reconnect. Kakao gives it no reconnect of its own. Retries use exponential backoff and then run a bounded `CatchUp`. A dropped connection is reported as a transient disconnect; `KICKOUT` is reported as logged out or bad credentials. |
 | Read state | Matrix read receipts go to `MarkRead`. `DECUNREAD` becomes ghost read receipts. Catch-up and backfill use `SYNCMSG`, which can mark messages read on the server, so both are bounded and backfill is opt-in. |
-| Chat metadata | The connector uses `ChatInfo`, `MemberList`, and requested `Members` profiles for initial names and membership. Complete and partial rosters remain distinct; unsupported OpenChat links fail explicitly. Avatars and membership updates remain in B2, subject to encoding and parity gaps ([dossier](../chat-metadata.md)). Friend/contact sync remains separate. |
+| Chat metadata | The connector uses `ChatInfo`, `MemberList`, and requested `Members` profiles for initial names and membership. Complete and partial rosters remain distinct; unsupported OpenChat links fail explicitly. Avatars and membership updates are implemented (PR #173), with live encoding and parity gaps ([dossier](../chat-metadata.md)). Friend/contact sync remains separate. |
 
 ## Current baseline and execution order
 
@@ -88,9 +88,13 @@ complete official-client parity is not a prerequisite for all bridge work.
 
 Read receipts and opt-in historical backfill follow the alpha. Resolve the
 `SYNCMSG` read-side-effect and local watermark discrepancy before enabling either.
-Define persistent conversion-failure handling before release: a failed message
-currently blocks later commits in that chat, so any bounded skip must record an
-explicit gap rather than silently advance the cursor.
+Deterministic typed-photo failures now become persisted notices under their
+original source IDs (PR #181; [policy](conversion-failure-policy.md)). Transient
+transfer or Matrix failures remain uncommitted. Parser failures with validated source identities now become explicit notices;
+PR #187 has merged with continuity guards. Unidentifiable envelopes stop admission
+without inventing a cursor; operator recovery remains an open acceptance item.
+Neither a silent cursor advance nor an indefinite chat block satisfies alpha
+acceptance.
 
 ## Goal and acceptance evidence
 
@@ -123,8 +127,12 @@ tracked separately:
 
 Native QR enrollment (PR #166), photo transfer (PR #167), and scripted-protocol
 connector tests (PR #163) have merged. Their synthetic tests do not complete
-the live acceptance criteria. Reconnect, avatars/membership updates, reactions,
-and login collision protection are in review. Container packaging has merged
+the live acceptance criteria. Avatars/membership updates (PR #173) and login
+collision protection (PR #175)
+have also merged with synthetic regression coverage. Reconnect (PR #172) has merged with real scripted recovery and shutdown
+regressions. Reactions (PR #179) remain in review; their actual framework
+failure/replay coverage has been extended. Container
+packaging has merged
 (PR #170); startup and restart smoke evidence is recorded in
 [deployment validation](DEPLOYMENT-VALIDATION.md). Read receipts, historical backfill, cloud backup/restore,
 and full official-client parity remain outside this alpha goal.
@@ -196,7 +204,11 @@ and full official-client parity remain outside this alpha goal.
       claim official-client parity.
 - [ ] Live-validate fresh bridge enrollment, device-authorization code,
       expiry/cancellation, and restart resume with the owned disposable
-      account. No live account or network enrollment is part of this change.
+      account. The first bridge-native scan on 2026-10-04 displayed a QR in
+      Matrix, but Android rejected it before approval. No fresh credentials
+      were installed. Source tracing identifies the rejection as QR-info not found; the cause and
+      corrective regression remain open;
+      see [deployment validation](DEPLOYMENT-VALIDATION.md).
 - [x] Bounded photos in both directions (PR #167): authenticated Matrix
       streaming download with encrypted-media validation, Kakao upload/download,
       transfer deadlines, and persisted photo source metadata. Optional inbound
@@ -225,12 +237,17 @@ and full official-client parity remain outside this alpha goal.
       (PR #162). Complete versus partial membership is explicit; unrequested
       profiles and invalid IDs are rejected.
 - [ ] Live-validate initial metadata in direct and group portals.
-- [ ] Portal and ghost avatars, plus updates to existing portal metadata.
-- [ ] Membership events: `NEWMEM`, `DELMEM`, `LEFT`, `CHGCHATST`.
+- [x] Portal and ghost avatars, plus updates to existing portal metadata (PR #173).
+      HTTPS CDN policy, byte bounds, and redacted failures are synthetic-tested;
+      direct/group live validation remains outstanding.
+- [x] Membership events: `NEWMEM`, `DELMEM`, `LEFT`, `CHGCHATST` (PR #173).
+      Partial rosters preserve explicit joins/leaves even when profile lookup
+      fails. Existing-portal live validation remains outstanding.
 
 ### B3: lifecycle
 
-Reconnect is planned in detail in [`../reconnect.md`](../reconnect.md).
+The implemented supervisor and its bounded policy are documented in
+[`../bridge-reconnect-design.md`](../bridge-reconnect-design.md).
 
 - [x] Report connection state and distinguish terminal `CHANGESVR` and `KICKOUT`;
       stop accepting later events after either terminal notice.
@@ -239,12 +256,16 @@ Reconnect is planned in detail in [`../reconnect.md`](../reconnect.md).
 - [x] Complete bootstrap ownership before subscription and on failed connect;
       join/cancel the typed decoder on idle input and blocked output. Concurrent
       closed event admission is regression-tested (PR #160).
-- [ ] Reconnect state machine with bounded backoff, exclusive ownership, and
-      catch-up before live delivery. Current recovery requires a bridge restart.
+- [x] Reconnect state machine with bounded backoff, exclusive ownership, and
+      catch-up before live delivery (PR #172). The real scripted backend proves
+      missed-message recovery before subscription, old-lease release before
+      replacement, one outbound WRITE despite a dropped response, terminal
+      KICKOUT, and CHANGESVR recovery.
 - [x] Recorded live restart resume/catch-up validation for previously committed
       chats on 2026-09-30.
-- [ ] Extend resume/catch-up validation to automatic reconnect, terminal events,
-      delivery failures, and cleanup timeouts.
+- [ ] Extend controlled owned-account resume/catch-up validation to automatic
+      reconnect, terminal events, delivery failures, and cleanup timeouts.
+      Synthetic regressions cover these paths; live acceptance remains open.
 - [ ] Opt-in, bounded backfill with an explicit read-side-effect policy.
 
 ### B4: polish and packaging
@@ -253,15 +274,15 @@ Reconnect is planned in detail in [`../reconnect.md`](../reconnect.md).
 - [x] Docker image, example configuration, and documentation with no operator
       values (PR #170). Authenticated appservice startup/restart smoke passed;
       full messaging deployment acceptance remains separate.
-- [ ] Choose and validate the deployment targets: standard appservice and/or
-      Beeper self-hosting.
+- [ ] Validate both required deployment targets: standard Matrix appservice
+      installation and separate Beeper self-hosting.
 
 ## Open questions
 
-- A message that fails to bridge stays at the head of its chat's commit queue,
-  so later commits in that chat fail until a restart replays it. A persistent
-  conversion failure would therefore replay on every restart. Decide on a
-  bounded skip policy with an explicit gap record.
+- How should operator recovery surface an unidentifiable malformed MSG without
+  inventing a cursor? Typed photo notices are implemented, and parser-gap
+  continuity guards have merged (PR #187). Infrastructure and Matrix
+  failures remain uncommitted and recoverable.
 - Database: the framework supports cgo SQLite (`sqlite3-fk-wal`) and
   Postgres. Is SQLite enough for the homelab target?
 - How should aggregate reaction updates reconcile with per-sender Matrix
