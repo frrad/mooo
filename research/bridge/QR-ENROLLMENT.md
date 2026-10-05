@@ -115,24 +115,36 @@ host. The shared bridgev2 command currently owns PNG generation (including its
 error-correction and raster settings); the connector has no image-rendering
 hook and must not prepend an unproven host or rewrite the challenge.
 
-The modal/source trace assigns both failed scans to the scanner's QR-info
-`GENERAL_NOT_FOUND` branch. Offline decoding only proves that the recovered
-image preserved the server payload; the remaining cause is the server-side
-reason for that response, which is not exposed by the sanitized observations.
-The bridgev2 renderer is supplied by the framework rather than the connector.
+The controlled 2026-10-04 native bridge trial used the default framework Low
+renderer and a fresh client-owned profile. The Matrix PNG was 512x512; offline
+CoreImage decoding produced exactly the server event payload, and the selected
+Android MediaStore row/provider bytes matched that PNG. The scanner then showed
+the generic “You cannot use this QR code.” modal. No device-auth code,
+credentials, or resume state resulted. The bridge was stopped and the fresh
+profile, database, and transient media were removed.
 
-The observed modal can now be assigned to a concrete Android branch from the
-offline source audit. The scanner's QR item posts the invalid-message event
-only when its `qrCodeLogin/info` call raises a `GENERAL_NOT_FOUND`
-`TalkStatusException`. The active scanner fragment receives that event and
-constructs the modal dialog containing “You cannot use this QR code.” The same
-string is also used by the separate sub-device QR display fragment for its
-inline invalid state and accessibility description, so the string resource by
-itself is ambiguous; the modal presentation identifies the scanner event path.
-This proves that the observed attempt reached the scanner's QR-info error
-handling, subject to the source audit's clean-room interpretation. It does not
-expose the request URL, server response body, account policy cause, or prove
-that the bridge challenge would be accepted after a different presentation.
+Offline payload and provider equality rule out Matrix media corruption or a
+presentation-side payload mutation for this trial; they do not prove which
+Android decoder stage accepted or rejected the bytes. The Android source audit
+maps the modal's scanner event to the QR-info `GENERAL_NOT_FOUND` error handler,
+but the live run did not capture Android request/response traffic. Therefore
+the exact runtime stage is recorded as unknown between scanner routing and the
+QR-info response; this record does not claim that no QR-info request occurred,
+that the server returned `GENERAL_NOT_FOUND`, or that the rejection occurred
+before the request. The bridgev2 renderer is supplied by the framework rather
+than the connector.
+
+The offline source audit identifies the scanner branch that constructs the
+modal: its QR item posts the invalid-message event when the
+`qrCodeLogin/info` call raises a `GENERAL_NOT_FOUND` `TalkStatusException`, and
+the active scanner fragment constructs “You cannot use this QR code.” The same
+string is also used by the separate sub-device QR display fragment for inline
+invalid state and accessibility, so the string alone is ambiguous; the modal
+presentation is consistent with the scanner event path. The live observation did
+not instrument Android networking or capture the response, so it does not prove
+that the request occurred, what URL or status it used, or that the server
+returned `GENERAL_NOT_FOUND`. The account policy cause and acceptance after a
+different presentation remain unresolved.
 
 ### Official Android presentation and scan path (source audit)
 
