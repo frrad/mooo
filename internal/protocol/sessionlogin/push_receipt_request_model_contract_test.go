@@ -61,10 +61,15 @@ func TestPushReceiptRequestModelFixture(t *testing.T) {
 	if err = decoder.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 9 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 10 {
 		t.Fatalf("fixture header = %#v", f)
 	}
+	seen := map[string]bool{}
 	for _, c := range f.Cases {
+		if c.Name == "" || seen[c.Name] {
+			t.Errorf("duplicate or empty case name %q", c.Name)
+		}
+		seen[c.Name] = true
 		if c.Handler != "hint" && c.Handler != "block_sync" && c.Handler != "send" {
 			t.Errorf("unsupported handler %q", c.Handler)
 		}
@@ -74,7 +79,12 @@ func TestPushReceiptRequestModelFixture(t *testing.T) {
 			}
 		}
 		if c.Handler == "block_sync" && (c.Revision == nil || c.PlusRevision == nil || c.ExpectedRevision == nil || c.ExpectedPlus == nil || *c.Revision != *c.ExpectedRevision || *c.PlusRevision != *c.ExpectedPlus) {
-			t.Errorf("%s revision projection does not match signed-32 inputs", c.Name)
+			if c.ConstructorOK == nil || *c.ConstructorOK {
+				t.Errorf("%s revision projection does not match signed-32 inputs", c.Name)
+			}
+		}
+		if c.ConstructorOK != nil && !*c.ConstructorOK && (c.ExpectedMethod != "" || c.ExpectedPacketID != 0 || c.ExpectedRevision != nil || c.ExpectedPlus != nil) {
+			t.Errorf("%s failed constructor must have absent output fields", c.Name)
 		}
 		if c.Handler == "send" && c.OwnerStatus == 3 && c.ExpectedTag != -int64(c.PacketID) {
 			t.Errorf("%s tag = %d, want %d", c.Name, c.ExpectedTag, -int64(c.PacketID))

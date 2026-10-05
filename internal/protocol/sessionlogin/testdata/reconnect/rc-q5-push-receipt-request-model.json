@@ -133,6 +133,25 @@
         "queue_owner_block",
         "read_execution_status"
       ]
+    },
+    {
+      "name": "block_sync_super_init_failure_boundary",
+      "handler": "block_sync",
+      "header_method": "BLOCKSYNC",
+      "header_packet_id": 17,
+      "revision": 7,
+      "plus_revision": -3,
+      "constructor_succeeds": false,
+      "expected_method": "",
+      "expected_packet_id": 0,
+      "expected_revision": null,
+      "expected_plus_revision": null,
+      "expected_effects": [
+        "delegate_callback_attempt",
+        "construct_from_header",
+        "constructor_returns_nil",
+        "send_carriage_push_receipt"
+      ]
     }
   ]
 }
