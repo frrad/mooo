@@ -80,3 +80,29 @@ there is no observed comparison or branch guarding short input before that
 constructor. The public fixtures therefore use N≥28 only to keep the
 input-derived slice arithmetic representable. Short-input range behavior is
 still an explicit raw-runtime gap, not a claimed protocol validation rule.
+
+### Lower Swift receive completion boundary
+
+The `100d4955c` region is closure dispatch/destruction glue: its nearby branch
+entries route to `0x100d483dc` and cleanup thunks at `0x100d4aa7c` and
+`0x100d4aab8`, rather than being the complete receive implementation. The
+lower receive completion body is `0x100d47f10`. It weak-loads its owner first;
+a released owner exits before any data or error consumer runs.
+
+That body preserves the requested length and decodes the `NWError`/Data
+completion representation. Its error path classifies POSIX errors and treats
+POSIX code 0x59 specially, skipping the ordinary logging/cancellation branch.
+For a data branch it computes the received Data length and compares it with
+the saved requested length. The equality path bridges the Data to NSData and
+calls `didReadBody:`; the mismatch path performs cleanup and can cancel the
+current connection when the callback flag permits. The current connection is
+loaded from the owner at that point, so it is distinct from the connection
+that scheduled the receive. The block does not itself publish pending-map or
+manager status effects, and a re-request operation is not visible in this
+bounded body; those remain downstream/source-layer boundaries.
+
+These observations are from the private `credential-storage/raw/cs1`
+`disassembly.txt` ranges `0x100d47f10`–`0x100d4824c` and
+`0x100d49554`–`0x100d4955c`, with the Network receive ABI names resolved by
+its fixup table. They are source facts for the 26.8.0 arm64 build and do not
+claim behavior for other Network framework versions.
