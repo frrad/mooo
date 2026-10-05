@@ -3,7 +3,8 @@
 Status: reviewed static source chain, runtime unexecuted. Observation date:
 2026-10-04. Client build: macOS KakaoTalk 26.8.0.
 
-The bounded Ghidra selector inventory found for `sendCarriagePushReceipt:` are the
+The bounded Ghidra selector inventory found two static Objective-C callsites for
+`sendCarriagePushReceipt:`. They are the
 push notice handlers `handleHintPushNotice:packetHeader:` and
 `handleBlockSyncPushNotice:packetHeader:`. Both retain the notice and packet
 header, optionally notify a delegate when it responds to the corresponding
@@ -52,7 +53,8 @@ runtime eligibility through every dispatch or registration path.
 - delegate selectors: `locoManager:didReceiveHintPushNotice:` at callsite
   `0x10151532c`, and `locoManager:didReceiveBlockSyncPushNotice:` at
   `0x101517a50`.
-- packet initializers: `initWithPacketHeader:` at `0x101515338`, and
+- packet initializer calls: HINT alloc `0x101515338` followed by
+  `initWithPacketHeader:` at `0x101515340`, and
   `initWithPacketHeader:revision:plusRevision:` at `0x101517a88`.
 - LocoAgent `status` metadata/body: type `c16@0:8`, IMP `0x10151c384`,
   raw getter `ldrsb w0, [x0, #8]`; receipt gate raw load/compare:
