@@ -36,6 +36,14 @@ var (
 	ErrInvalidRequest  = errors.New("reactions: invalid request")
 	ErrInvalidResponse = errors.New("reactions: invalid response")
 	ErrRejected        = errors.New("reactions: request rejected")
+	ErrTransport       = errors.New("reactions: transport failure")
+	ErrLookupFailed    = errors.New("reactions: lookup failed")
+	// ErrOutcomeUnconfirmed means the server returned a response, but the
+	// response does not establish whether the requested state was applied.
+	ErrOutcomeUnconfirmed = errors.New("reactions: outcome unconfirmed")
+	// ErrOutcomeUnknown covers transport and malformed-response failures where
+	// the mutation result cannot be established. Callers must not retry it.
+	ErrOutcomeUnknown = errors.New("reactions: outcome unknown")
 )
 
 type ClientProfile struct {
@@ -174,7 +182,7 @@ func Send(ctx context.Context, doer Doer, profile ClientProfile, reaction Reques
 	}
 	resp, err := doer.Do(req)
 	if err != nil {
-		return Response{}, fmt.Errorf("reactions: transport: %w", err)
+		return Response{}, fmt.Errorf("%w: %w", ErrTransport, err)
 	}
 	if resp == nil || resp.Body == nil {
 		return Response{}, ErrInvalidResponse
@@ -247,7 +255,7 @@ func FetchMembers(ctx context.Context, doer Doer, profile ClientProfile, chatID,
 	}
 	resp, err := doer.Do(req)
 	if err != nil {
-		return MembersResponse{}, fmt.Errorf("reactions: members transport: %w", err)
+		return MembersResponse{}, fmt.Errorf("%w: %w", ErrTransport, err)
 	}
 	if resp == nil || resp.Body == nil {
 		return MembersResponse{}, ErrInvalidResponse

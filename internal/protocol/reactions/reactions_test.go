@@ -171,3 +171,17 @@ func TestSendDoesNotRetryTransportFailure(t *testing.T) {
 		t.Fatalf("err=%v attempts=%d", err, attempts)
 	}
 }
+
+func TestSendHTTP500IsRejectedWithoutClaimingMutationState(t *testing.T) {
+	requests := 0
+	_, err := Send(t.Context(), doerFunc(func(*http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(strings.NewReader("gateway"))}, nil
+	}), testProfile(), Request{ChatID: 42, LogID: 99, Type: Heart, RequestID: 1234})
+	if !errors.Is(err, ErrRejected) {
+		t.Fatalf("error = %v, want ErrRejected", err)
+	}
+	if requests != 1 {
+		t.Fatalf("HTTP requests = %d, want 1", requests)
+	}
+}

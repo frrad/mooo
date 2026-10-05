@@ -147,7 +147,7 @@ func FetchDetails(ctx context.Context, doer Doer, profile ClientProfile, chatID,
 	}
 	resp, err := doer.Do(req)
 	if err != nil {
-		return DetailsResponse{}, fmt.Errorf("reactions: details transport: %w", err)
+		return DetailsResponse{}, fmt.Errorf("%w: %w", ErrTransport, err)
 	}
 	if resp == nil || resp.Body == nil {
 		return DetailsResponse{}, ErrInvalidResponse
