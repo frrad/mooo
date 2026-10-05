@@ -1,0 +1,41 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {
+      "name": "plain_body_supplies_without_decrypt",
+      "crypto_present": false,
+      "input_present": true,
+      "input_length": 22,
+      "decrypt_result_present": true,
+      "expected_cipher_length": null,
+      "expected_effects": ["supply_raw_without_decrypt"]
+    },
+    {
+      "name": "secure_body_decrypts_iv_cipher_tag",
+      "crypto_present": true,
+      "input_present": true,
+      "input_length": 35,
+      "decrypt_result_present": true,
+      "expected_cipher_length": 7,
+      "expected_effects": ["construct_iv_data_length_12", "construct_cipher_data_offset_12", "construct_cipher_data_length_input_minus_28", "construct_tag_data_tail_length_16", "invoke_decrypt_gcm", "supply_decrypt_result"]
+    },
+    {
+      "name": "secure_auth_failure_still_supplies_decrypt_result",
+      "crypto_present": true,
+      "input_present": true,
+      "input_length": 28,
+      "decrypt_result_present": false,
+      "expected_cipher_length": 0,
+      "expected_effects": ["construct_iv_data_length_12", "construct_cipher_data_offset_12", "construct_cipher_data_length_input_minus_28", "construct_tag_data_tail_length_16", "invoke_decrypt_gcm", "supply_decrypt_result"]
+    },
+    {
+      "name": "secure_body_longer_cipher",
+      "crypto_present": true,
+      "input_present": true,
+      "input_length": 64,
+      "decrypt_result_present": true,
+      "expected_cipher_length": 36,
+      "expected_effects": ["construct_iv_data_length_12", "construct_cipher_data_offset_12", "construct_cipher_data_length_input_minus_28", "construct_tag_data_tail_length_16", "invoke_decrypt_gcm", "supply_decrypt_result"]
+    }
+  ]
+}
