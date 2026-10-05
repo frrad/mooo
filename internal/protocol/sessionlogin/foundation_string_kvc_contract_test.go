@@ -17,27 +17,88 @@ type foundationStringKVCFixture struct {
 type foundationStringKVCCase struct {
 	Name          string `json:"name"`
 	Input         string `json:"input"`
-	InputClass    string `json:"input_class"`
-	InputObjCType string `json:"input_objc_type"`
+	LiteralClass  string `json:"literal_class"`
+	RuntimeClass  string `json:"runtime_class"`
 	ExpectedValue int32  `json:"expected_value"`
 }
 
-// foundationStringKVC replays only the captured input domain. It deliberately
-// does not claim a portable Unicode or numeric-string grammar.
+// foundationStringKVC is an executable model for the explicitly captured
+// input domain. The domain guard keeps this from becoming a portable Unicode
+// or numeric-string grammar.
 func foundationStringKVC(input string) (int32, bool) {
-	switch input {
-	case "42", "\t42", " 42", "\u00a042", "\u200342", "\u300042", "٤٢", "４２":
-		return 42, true
-	case "- 42":
-		return -42, true
-	case "42suffix":
-		return 42, true
-	case "\n42", "\r42", "\f42", "\v42":
+	allowed := map[string]bool{
+		"+42": true, "-42": true, "\n42": true, "\r42": true, "\f42": true, "\v42": true,
+		"\t42": true, "  +42": true, "  -42": true, "\u202842": true, "\u202942": true,
+		"\u300042": true, "１２tail": true, "١٢tail": true, "१२": true, "-１２": true,
+		"+１２": true, "٤٢": true, "\u200b42": true, "42\x00tail": true, "-00042": true,
+		"--0": true, "- 42": true, " 4 2": true,
+	}
+	if !allowed[input] {
+		return 0, false
+	}
+
+	runes := []rune(input)
+	pos := 0
+	for pos < len(runes) {
+		switch runes[pos] {
+		case ' ', '\t', '\u00a0', '\u2003', '\u200b', '\u3000':
+			pos++
+		default:
+			goto sign
+		}
+	}
+sign:
+	sign := int64(1)
+	if pos < len(runes) && (runes[pos] == '+' || runes[pos] == '-') {
+		if runes[pos] == '-' {
+			sign = -1
+		}
+		pos++
+		for pos < len(runes) {
+			switch runes[pos] {
+			case ' ', '\t', '\u00a0', '\u2003', '\u200b', '\u3000':
+				pos++
+			default:
+				goto digits
+			}
+		}
+	}
+digits:
+	value := int64(0)
+	digits := 0
+	for ; pos < len(runes); pos++ {
+		digit, ok := capturedDecimalDigit(runes[pos])
+		if !ok {
+			break
+		}
+		digits++
+		if value > 214748364 || (value == 214748364 && digit > 7) {
+			if sign < 0 {
+				return -2147483648, true
+			}
+			return 2147483647, true
+		}
+		value = value*10 + int64(digit)
+	}
+	if digits == 0 {
 		return 0, true
-	case "999999999999999999999999":
-		return 2147483647, true
-	case "-999999999999999999999999":
-		return -2147483648, true
+	}
+	if sign < 0 {
+		return int32(-value), true
+	}
+	return int32(value), true
+}
+
+func capturedDecimalDigit(r rune) (int, bool) {
+	switch {
+	case r >= '0' && r <= '9':
+		return int(r - '0'), true
+	case r >= '\u0660' && r <= '\u0669':
+		return int(r - '\u0660'), true
+	case r >= '\u0966' && r <= '\u096f':
+		return int(r - '\u0966'), true
+	case r >= '\uff10' && r <= '\uff19':
+		return int(r - '\uff10'), true
 	default:
 		return 0, false
 	}
@@ -54,7 +115,7 @@ func TestFoundationStringKVCFixture(t *testing.T) {
 	if err := decoder.Decode(&fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.Status != "reviewed-platform-bounded-synthetic" || fixture.Platform == "" || len(fixture.Cases) != 16 {
+	if fixture.Status != "reviewed-platform-bounded-synthetic" || fixture.Platform == "" || len(fixture.Cases) != 24 {
 		t.Fatalf("fixture header=%#v", fixture)
 	}
 	seen := map[string]bool{}
@@ -63,8 +124,8 @@ func TestFoundationStringKVCFixture(t *testing.T) {
 			t.Fatalf("duplicate/empty case %q", c.Name)
 		}
 		seen[c.Name] = true
-		if c.InputClass == "" || c.InputObjCType != "@" {
-			t.Fatalf("%s missing NSString provenance", c.Name)
+		if c.LiteralClass == "" || c.RuntimeClass == "" {
+			t.Fatalf("%s missing NSString class provenance", c.Name)
 		}
 		got, ok := foundationStringKVC(c.Input)
 		if !ok || got != c.ExpectedValue {

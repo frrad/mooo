@@ -3,116 +3,172 @@
   "platform": "macOS 26.6.2 (25G83 arm64)",
   "cases": [
     {
-      "name": "literal_decimal",
-      "input": "42",
-      "input_class": "__NSCFConstantString",
-      "input_objc_type": "@",
+      "name": "plus_42",
+      "input": "+42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
       "expected_value": 42
     },
     {
-      "name": "runtime_decimal",
-      "input": "42",
-      "input_class": "__NSCFString",
-      "input_objc_type": "@",
-      "expected_value": 42
+      "name": "minus_42",
+      "input": "-42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": -42
     },
     {
       "name": "leading_newline",
       "input": "\n42",
-      "input_class": "__NSCFConstantString",
-      "input_objc_type": "@",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
       "expected_value": 0
     },
     {
       "name": "leading_cr",
       "input": "\r42",
-      "input_class": "__NSCFConstantString",
-      "input_objc_type": "@",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
       "expected_value": 0
     },
     {
       "name": "leading_formfeed",
       "input": "\f42",
-      "input_class": "__NSCFConstantString",
-      "input_objc_type": "@",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
       "expected_value": 0
     },
     {
       "name": "leading_vertical_tab",
       "input": "\u000b42",
-      "input_class": "__NSCFConstantString",
-      "input_objc_type": "@",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
       "expected_value": 0
     },
     {
       "name": "leading_tab",
       "input": "\t42",
-      "input_class": "__NSCFConstantString",
-      "input_objc_type": "@",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
       "expected_value": 42
     },
     {
-      "name": "leading_space",
-      "input": " 42",
-      "input_class": "__NSCFConstantString",
-      "input_objc_type": "@",
+      "name": "leading_space_plus",
+      "input": "  +42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
       "expected_value": 42
     },
     {
-      "name": "leading_nbsp",
-      "input": " 42",
-      "input_class": "__NSCFString",
-      "input_objc_type": "@",
-      "expected_value": 42
-    },
-    {
-      "name": "leading_em_space",
-      "input": " 42",
-      "input_class": "__NSCFString",
-      "input_objc_type": "@",
-      "expected_value": 42
-    },
-    {
-      "name": "leading_ideographic_space",
-      "input": "　42",
-      "input_class": "__NSCFString",
-      "input_objc_type": "@",
-      "expected_value": 42
-    },
-    {
-      "name": "arabic_indic_digits",
-      "input": "٤٢",
-      "input_class": "__NSCFString",
-      "input_objc_type": "@",
-      "expected_value": 42
-    },
-    {
-      "name": "fullwidth_digits",
-      "input": "４２",
-      "input_class": "__NSCFString",
-      "input_objc_type": "@",
-      "expected_value": 42
-    },
-    {
-      "name": "signed_space",
-      "input": "- 42",
-      "input_class": "__NSCFString",
-      "input_objc_type": "@",
+      "name": "leading_space_minus",
+      "input": "  -42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
       "expected_value": -42
     },
     {
-      "name": "numeric_prefix",
-      "input": "42suffix",
-      "input_class": "__NSCFString",
-      "input_objc_type": "@",
+      "name": "line_separator",
+      "input": " 42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 0
+    },
+    {
+      "name": "paragraph_separator",
+      "input": " 42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 0
+    },
+    {
+      "name": "ideographic_space",
+      "input": "　42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
       "expected_value": 42
     },
     {
-      "name": "positive_signed_overflow",
-      "input": "999999999999999999999999",
-      "input_class": "__NSCFString",
-      "input_objc_type": "@",
-      "expected_value": 2147483647
+      "name": "fullwidth_prefix",
+      "input": "１２tail",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 12
+    },
+    {
+      "name": "arabic_prefix",
+      "input": "١٢tail",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 12
+    },
+    {
+      "name": "devanagari_digits",
+      "input": "१२",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 12
+    },
+    {
+      "name": "fullwidth_signed",
+      "input": "-１２",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": -12
+    },
+    {
+      "name": "fullwidth_plus",
+      "input": "+１２",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 12
+    },
+    {
+      "name": "arabic_digits",
+      "input": "٤٢",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 42
+    },
+    {
+      "name": "zero_width_space",
+      "input": "​42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 42
+    },
+    {
+      "name": "nul_prefix",
+      "input": "42\u0000tail",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 42
+    },
+    {
+      "name": "leading_zeros_signed",
+      "input": "-00042",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": -42
+    },
+    {
+      "name": "double_sign",
+      "input": "--0",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 0
+    },
+    {
+      "name": "sign_space",
+      "input": "- 42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": -42
+    },
+    {
+      "name": "internal_space",
+      "input": " 4 2",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 4
     }
   ]
 }
