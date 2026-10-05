@@ -47,7 +47,7 @@ func projectNWReadBody(c nwReadBodyCase) nwReadBodyProjection {
 	if c.Connection {
 		effects = append(effects, "toggle_in_segment_timeout_true")
 		if c.Length&(uint64(1)<<63) != 0 {
-			return nwReadBodyProjection{Effects: effects}
+			return nwReadBodyProjection{Effects: append(effects, "trap_signed_length_before_receive")}
 		}
 		effects = append(effects, "receive_minimum_length_1", "receive_maximum_length_input")
 	}
@@ -79,6 +79,9 @@ func projectNWReadBody(c nwReadBodyCase) nwReadBodyProjection {
 		}(), Effects: append(effects, "toggle_in_segment_timeout_false", "bridge_data_to_nsdata", "did_read_body", "read_header")}
 	case "error":
 		if c.ErrorKind == "posix" && c.ErrorCode == 89 {
+			if !c.Connection {
+				return nwReadBodyProjection{Effects: effects}
+			}
 			return nwReadBodyProjection{ReceiveMinimum: &minimum, ReceiveMaximum: &c.Length, Effects: effects}
 		}
 		effects = append(effects, "log_read_body_error")
@@ -126,7 +129,7 @@ func TestNWReadBodyContract(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 9 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 10 {
 		t.Fatalf("fixture header=%#v", f)
 	}
 	seen := map[string]bool{}

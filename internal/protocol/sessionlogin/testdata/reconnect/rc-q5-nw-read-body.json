@@ -151,7 +151,8 @@
       "expected_receive_maximum": null,
       "expected_cancelled_connection": "",
       "expected": [
-        "toggle_in_segment_timeout_true"
+        "toggle_in_segment_timeout_true",
+        "trap_signed_length_before_receive"
       ],
       "completion_owner_present": true
     },
@@ -174,6 +175,22 @@
         "receive_minimum_length_1",
         "receive_maximum_length_input"
       ]
+    },
+    {
+      "name": "posix_89_completion_without_scheduled_connection_has_no_receive_bounds",
+      "owner_present": true,
+      "completion_owner_present": true,
+      "connection_present": false,
+      "length": 35,
+      "completion": "error",
+      "error_kind": "posix",
+      "error_code": 89,
+      "current_connection_present": false,
+      "current_connection_identity": "",
+      "expected_receive_minimum": null,
+      "expected_receive_maximum": null,
+      "expected_cancelled_connection": "",
+      "expected": []
     }
   ]
 }

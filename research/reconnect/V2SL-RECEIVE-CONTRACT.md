@@ -110,3 +110,12 @@ These observations are from the private `credential-storage/raw/cs1`
 `0x100d49554`–`0x100d4955c`, with the Network receive ABI names resolved by
 its fixup table. They are source facts for the 26.8.0 arm64 build and do not
 claim behavior for other Network framework versions.
+
+The synthetic NW cases keep scheduling and completion as separate operations:
+`connection_present` controls whether the helper emits timeout/receive bounds,
+while `completion_owner_present` controls whether a later weak-owner callback
+can consume its result. An error callback with no scheduled connection does not
+inherit receive bounds; a callback-time current connection is a separate input
+used only for cancellation. A high-bit requested length records the observed
+post-timeout trap before the receive call rather than masquerading as a normal
+maximum length.
