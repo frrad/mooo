@@ -43,8 +43,9 @@
       "name": "block_sync_nsnull_fields_keep_defaults",
       "model": "block_sync",
       "body": "dictionary_with_nsnull_fields",
-      "mapping_input": {"r": null, "revision": 7},
-      "mapping_expected": {"revision": 7},
+      "mapping_input": {"r": null, "pr": null},
+      "mapping_expected": {},
+      "decoded_expected": {"revision": 0, "plusRevision": 0},
       "expected_effects": [
         "method_lookup",
         "construct_notice",
@@ -63,6 +64,7 @@
       "body": "dictionary_with_typed_int32_fields",
       "input_fields": {"r": -2147483648, "pr": 2147483647},
       "expected_fields": {"revision": -2147483648, "plusRevision": 2147483647},
+      "decoded_expected": {"revision": -2147483648, "plusRevision": 2147483647},
       "expected_effects": [
         "method_lookup",
         "construct_notice",

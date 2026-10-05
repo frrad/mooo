@@ -37,10 +37,15 @@ empty dictionary distinct from a nil body. The HINT nested chat-log initializer
 receives the same dictionary object; no separate body or synthesized fields are
 introduced by this contract.
 
-The static receive handlers call the optional delegate first. They then build
-the corresponding push receipt and call the carriage receipt sender. The
-synthetic effects record this order for HINT and BLOCKSYNC; runtime receipt
-transport is intentionally not enabled here.
+The static receive handlers call the optional delegate first, passing the
+notice and original packet header. They then build the corresponding push
+receipt from that same header (and BLOCKSYNC's decoded signed int32 fields)
+and call the carriage receipt sender. The synthetic callbacks assert the
+notice/header arguments and this order for HINT and BLOCKSYNC. A nil HINT
+initializer result is separately modeled as still reaching the callback and
+receipt path when the owner selector gate accepts it; the nil-body exception
+case never reaches that point. Runtime receipt transport is intentionally not
+enabled here.
 
 ## BLOCKSYNC input mapping
 

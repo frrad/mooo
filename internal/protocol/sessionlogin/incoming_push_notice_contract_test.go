@@ -25,6 +25,7 @@ type incomingPushNoticeCase struct {
 	ExpectedFields  map[string]int32 `json:"expected_fields"`
 	MappingInput    map[string]any   `json:"mapping_input"`
 	MappingExpected map[string]any   `json:"mapping_expected"`
+	DecodedExpected map[string]int32 `json:"decoded_expected"`
 	ExpectedEffects []string         `json:"expected_effects"`
 }
 
@@ -52,8 +53,13 @@ func applyIncomingBlockSyncMapping(input map[string]any, mappings [][2]string) m
 type incomingNoticeHooks struct {
 	super    func(any) (any, error)
 	nested   func(any) error
-	delegate func()
-	receipt  func()
+	delegate func(any, *incomingNoticeHeader)
+	receipt  func(*incomingNoticeHeader, any)
+}
+
+type incomingNoticeHeader struct {
+	Method   string
+	PacketID uint32
 }
 
 // constructIncomingNotice is the constructor half of the traced call chain.
@@ -78,15 +84,32 @@ func constructIncomingNotice(model string, body any, hooks incomingNoticeHooks) 
 	return decoded, nil
 }
 
-func dispatchIncomingNotice(model string, notice any, hooks incomingNoticeHooks) error {
+func dispatchIncomingNotice(model string, notice any, header *incomingNoticeHeader, hooks incomingNoticeHooks) error {
 	if hooks.receipt == nil {
 		return errors.New("missing receipt hook")
 	}
 	if hooks.delegate != nil {
-		hooks.delegate()
+		hooks.delegate(notice, header)
 	}
-	hooks.receipt()
+	hooks.receipt(header, notice)
 	return nil
+}
+
+func decodeIncomingBlockSyncFields(input map[string]any, mappings [][2]string) (map[string]int32, error) {
+	mapped := applyIncomingBlockSyncMapping(input, mappings)
+	decoded := map[string]int32{"revision": 0, "plusRevision": 0}
+	for _, field := range []string{"revision", "plusRevision"} {
+		value, present := mapped[field]
+		if !present || value == nil {
+			continue
+		}
+		intValue, ok := value.(int32)
+		if !ok {
+			return nil, errors.New("unsupported non-int32 BLOCKSYNC field")
+		}
+		decoded[field] = intValue
+	}
+	return decoded, nil
 }
 
 func TestIncomingPushNoticeSourceContractFixture(t *testing.T) {
@@ -192,9 +215,20 @@ func TestIncomingNoticeModelStopsAndPreservesOrdering(t *testing.T) {
 	if err != nil || notice == nil || nestedBody != body || !reflect.DeepEqual(calls, []string{"super", "nested"}) {
 		t.Fatalf("HINT body identity/order calls=%v nested=%p body=%p err=%v", calls, nestedBody, body, err)
 	}
-	err = dispatchIncomingNotice("hint", notice, incomingNoticeHooks{
-		delegate: func() { calls = append(calls, "delegate") },
-		receipt:  func() { calls = append(calls, "receipt") },
+	header := &incomingNoticeHeader{Method: "HINT", PacketID: 17}
+	err = dispatchIncomingNotice("hint", notice, header, incomingNoticeHooks{
+		delegate: func(got any, gotHeader *incomingNoticeHeader) {
+			if got != notice || gotHeader != header {
+				t.Errorf("delegate args notice=%p header=%p", got, gotHeader)
+			}
+			calls = append(calls, "delegate")
+		},
+		receipt: func(gotHeader *incomingNoticeHeader, got any) {
+			if got != notice || gotHeader != header {
+				t.Errorf("receipt args notice=%p header=%p", got, gotHeader)
+			}
+			calls = append(calls, "receipt")
+		},
 	})
 	if err != nil || !reflect.DeepEqual(calls, []string{"super", "nested", "delegate", "receipt"}) {
 		t.Fatalf("delegate/receipt order calls=%v err=%v", calls, err)
@@ -206,8 +240,13 @@ func TestIncomingNoticeModelStopsAndPreservesOrdering(t *testing.T) {
 	if err != nil || notice == nil {
 		t.Fatalf("BLOCKSYNC construction err=%v", err)
 	}
-	err = dispatchIncomingNotice("block_sync", notice, incomingNoticeHooks{
-		receipt: func() { noDelegateCalls = append(noDelegateCalls, "receipt") },
+	err = dispatchIncomingNotice("block_sync", notice, header, incomingNoticeHooks{
+		receipt: func(gotHeader *incomingNoticeHeader, got any) {
+			if got != notice || gotHeader != header {
+				t.Errorf("receipt args notice=%p header=%p", got, gotHeader)
+			}
+			noDelegateCalls = append(noDelegateCalls, "receipt")
+		},
 	})
 	if err != nil || !reflect.DeepEqual(noDelegateCalls, []string{"super", "receipt"}) {
 		t.Fatalf("missing delegate suppressed receipt calls=%v err=%v", noDelegateCalls, err)
@@ -221,9 +260,19 @@ func TestIncomingNoticeModelStopsAndPreservesOrdering(t *testing.T) {
 		t.Fatalf("nil super result continued downstream calls=%v err=%v", nilSuperCalls, err)
 	}
 	var nilNoticeCalls []string
-	if err := dispatchIncomingNotice(emptyCase.Model, nil, incomingNoticeHooks{
-		delegate: func() { nilNoticeCalls = append(nilNoticeCalls, "delegate") },
-		receipt:  func() { nilNoticeCalls = append(nilNoticeCalls, "receipt") },
+	if err := dispatchIncomingNotice(emptyCase.Model, nil, header, incomingNoticeHooks{
+		delegate: func(got any, gotHeader *incomingNoticeHeader) {
+			if got != nil || gotHeader != header {
+				t.Errorf("nil delegate args notice=%p header=%p", got, gotHeader)
+			}
+			nilNoticeCalls = append(nilNoticeCalls, "delegate")
+		},
+		receipt: func(gotHeader *incomingNoticeHeader, got any) {
+			if got != nil || gotHeader != header {
+				t.Errorf("nil receipt args notice=%p header=%p", got, gotHeader)
+			}
+			nilNoticeCalls = append(nilNoticeCalls, "receipt")
+		},
 	}); err != nil || !reflect.DeepEqual(nilNoticeCalls, []string{"delegate", "receipt"}) {
 		t.Fatalf("nil initializer result was incorrectly suppressed calls=%v err=%v", nilNoticeCalls, err)
 	}
@@ -254,6 +303,10 @@ func TestIncomingBlockSyncMappingRenamesAndRemovesSourceKeys(t *testing.T) {
 		if !reflect.DeepEqual(got, expected) {
 			t.Fatalf("mapped fields=%v want %v", got, expected)
 		}
+		decoded, err := decodeIncomingBlockSyncFields(input, fixture.BlockSyncMapping)
+		if err != nil || !reflect.DeepEqual(decoded, c.DecodedExpected) {
+			t.Fatalf("typed decoded=%v err=%v want %v", decoded, err, c.DecodedExpected)
+		}
 		for _, source := range []string{"r", "pr"} {
 			if _, ok := got[source]; ok {
 				t.Errorf("source key %q survived mapping: %v", source, got)
@@ -280,6 +333,10 @@ func TestIncomingBlockSyncMappingHandlesNSNullAndExistingDestination(t *testing.
 		if got := applyIncomingBlockSyncMapping(c.MappingInput, fixture.BlockSyncMapping); !reflect.DeepEqual(got, c.MappingExpected) {
 			t.Fatalf("fixture NSNull mapping=%v want %v", got, c.MappingExpected)
 		}
+		decoded, err := decodeIncomingBlockSyncFields(c.MappingInput, fixture.BlockSyncMapping)
+		if err != nil || !reflect.DeepEqual(decoded, c.DecodedExpected) {
+			t.Fatalf("fixture NSNull decoded=%v err=%v want %v", decoded, err, c.DecodedExpected)
+		}
 	}
 	input := map[string]any{"r": nil, "revision": int32(7), "pr": int32(9)}
 	got := applyIncomingBlockSyncMapping(input, [][2]string{{"r", "revision"}, {"pr", "plusRevision"}})
@@ -290,5 +347,16 @@ func TestIncomingBlockSyncMappingHandlesNSNullAndExistingDestination(t *testing.
 	ordinary := applyIncomingBlockSyncMapping(map[string]any{"r": int32(11), "revision": int32(7)}, [][2]string{{"r", "revision"}})
 	if got := ordinary["revision"]; got != int32(11) {
 		t.Fatalf("ordinary source did not override destination: %v", ordinary)
+	}
+}
+
+func TestIncomingBlockSyncTypedFieldsDecodeExplicitInt32Only(t *testing.T) {
+	input := map[string]any{"r": int32(-2147483648), "pr": int32(2147483647)}
+	got, err := decodeIncomingBlockSyncFields(input, [][2]string{{"r", "revision"}, {"pr", "plusRevision"}})
+	if err != nil || !reflect.DeepEqual(got, map[string]int32{"revision": -2147483648, "plusRevision": 2147483647}) {
+		t.Fatalf("typed int32 decoded=%v err=%v", got, err)
+	}
+	if _, err := decodeIncomingBlockSyncFields(map[string]any{"r": int64(1)}, [][2]string{{"r", "revision"}}); err == nil {
+		t.Fatal("unsupported non-int32 input was accepted")
 	}
 }
