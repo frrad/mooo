@@ -1,6 +1,6 @@
 # Matrix bridge plan
 
-Status: active work plan, updated 2026-10-04. Framework decision:
+Status: active work plan, updated 2026-10-05. Framework decision:
 [ADR 0003](../../docs/adr/0003-bridge-on-mautrix-bridgev2.md).
 
 ## Goals
@@ -215,8 +215,11 @@ and full official-client parity remain outside this alpha goal.
       expiry/cancellation, and restart resume with the owned disposable
       account. The first bridge-native scan on 2026-10-04 displayed a QR in
       Matrix, but Android rejected it before approval. No fresh credentials
-      were installed. Source tracing identifies the rejection as QR-info not found; the cause and
-      corrective regression remain open;
+      were installed. PR #221 records a fresh default Low-renderer trial with
+      exact selected-image identity and payload equality; Android rejected it,
+      and the failing stage and underlying cause remain unknown. No QR-info
+      endpoint conclusion is established from this run, and the corrective
+      regression remains open;
       see [deployment validation](DEPLOYMENT-VALIDATION.md).
 - [x] Bounded photos in both directions (PR #167): authenticated Matrix
       streaming download with encrypted-media validation, Kakao upload/download,
@@ -235,9 +238,10 @@ and full official-client parity remain outside this alpha goal.
 - [x] Reactions in both directions, with checked aggregate-to-per-sender
       reconciliation, replay-safe revisions, and explicit Matrix failure
       handling (PR #179). Live direct/group acceptance remains outstanding; the
-      Docker heart probe produced the connector's generic mutation failure; the
-      retained evidence cannot distinguish server rejection from transport or
-      another ambiguous outcome, and it was not retried.
+      Docker heart probe produced the connector's generic mutation failure
+      (PR #219); the retained evidence cannot distinguish server rejection
+      from transport or another ambiguous outcome, so no server-rejection
+      claim is made and it was not retried.
 
 ### B2: chat metadata (protocol research first)
 
@@ -269,6 +273,9 @@ The implemented supervisor and its bounded policy are documented in
       stop accepting later events after either terminal notice.
 - [x] Bound active-session disconnect and retain cleanup ownership after a
       shutdown timeout; concurrent disconnects share the admission/deadline gate.
+      PR #223 additionally covers a real framework delivery blocked during the
+      event pump: repeated cleanup retains the same owner until that pump joins,
+      then admits a fresh connection.
 - [x] Complete bootstrap ownership before subscription and on failed connect;
       join/cancel the typed decoder on idle input and blocked output. Concurrent
       closed event admission is regression-tested (PR #160).
@@ -290,6 +297,11 @@ The implemented supervisor and its bounded policy are documented in
 
 ### B4: polish and packaging
 
+- [x] Crypto startup and persistence smoke (PR #224): goolm-backed
+      `CryptoHelper` schema/device reopening and clean shutdown are validated
+      against the existing bridge database. This scope covers initialization
+      and persistence only; it does not prove Matrix room E2EE or encrypted
+      message/media delivery.
 - [ ] Read receipts in both directions, once the read-state dossier settles.
 - [x] Docker image, example configuration, and documentation with no operator
       values (PR #170). Authenticated appservice startup/restart smoke passed;
