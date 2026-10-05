@@ -153,7 +153,7 @@ The signed tag derived by the agent owner is an admission/send argument. It
 must be tracked separately from any lower socket-write tag. The base
 `LocoAgent` lower socket path zero-extends the uint32 packet-header ID and
 ignores the signed admission tag; an override exists in `LocoNWAgent`.
-Active carriage transport selection and runtime callback mapping remain
+The active NW carriage selection and runtime callback mapping remain
 unresolved, so this plan does not prescribe a wire-tag field.
 
 The current implementation confirms this boundary concretely: `OutSegmentSubmitter`
@@ -237,20 +237,15 @@ session. Bridge integration follows only after this Session proof; it must
 reuse the existing retained cleanup owner and bounded retry semantics rather
 than introducing a second lifecycle owner.
 
-The retained bootstrap-cleanup audit found no separate ownership loss in the
-stopped-connect path: Connect records the opened client before bounded
-Shutdown, and Disconnect serializes against that cleanup owner. In that path
-the event loop has not been launched, so there is no `done` channel to join;
-Session.Shutdown remains the worker-join boundary. A regression should still
-exercise a pending Events subscription plus concurrent Disconnect when the
-bootstrap fake exposes that seam, proving the client handle remains retained
-through a timeout and Connect cannot reopen it. This is a lifecycle proof,
-not a reason to add a new bridge-side close or reset effect. The audit also
-finds a precise boundary: if `Events(ctx)` itself blocks before Connect stores
-the cleanup owner, Disconnect cannot see that local client. The production
-Events implementation must return a subscription promptly or honor context
-cancellation; otherwise the next bridge fix must register the bootstrap owner
-before that call and retain it through the same bounded shutdown path.
+The bootstrap-cleanup audit found a real ownership loss: Connect previously
+stored the opened client only after Connect, catch-up, and Events returned, so
+Disconnect could not interrupt a blocked subscription. PR148 fixes this by
+registering the bootstrap owner immediately after open; it also joins the typed
+event decoder before releasing ownership. The stopped-connect path still has
+no bridge event-loop `done` channel to join, while Session.Shutdown and the
+decoder join are the worker boundaries. A follow-up regression must keep the
+bootstrap goroutine active through Disconnect and block replacement Connect
+until the old goroutine exits; PR149 covers that admission race.
 
 The manager/agent composition harness is tracked separately in PR138; this plan
 does not authorize Session binding, packet construction, or default activation.
