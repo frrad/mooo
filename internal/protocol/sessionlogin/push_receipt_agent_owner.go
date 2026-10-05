@@ -29,11 +29,13 @@ type PushReceiptSender interface {
 // by this clean-room owner because the reviewed source chain does not specify
 // downstream error propagation.
 type PushReceiptAgentOwner struct {
-	mu       sync.Mutex
-	queue    PushReceiptAgentQueue
-	status   PushReceiptAgentStatus
-	accessor PushReceiptPacketAccessor
-	sender   PushReceiptSender
+	mu         sync.Mutex
+	queue      PushReceiptAgentQueue
+	status     PushReceiptAgentStatus
+	accessor   PushReceiptPacketAccessor
+	sender     PushReceiptSender
+	closed     bool
+	generation uint64
 }
 
 func NewPushReceiptAgentOwner(queue PushReceiptAgentQueue, status PushReceiptAgentStatus, accessor PushReceiptPacketAccessor, sender PushReceiptSender) (*PushReceiptAgentOwner, error) {
@@ -49,11 +51,18 @@ func (o *PushReceiptAgentOwner) Send(packet any) error {
 	}
 	o.mu.Lock()
 	queue, status, accessor, sender := o.queue, o.status, o.accessor, o.sender
+	generation, closed := o.generation, o.closed
 	o.mu.Unlock()
 	if queue == nil || status == nil || accessor == nil || sender == nil {
 		return fmt.Errorf("sessionlogin: incomplete push-receipt agent owner")
 	}
+	if closed {
+		return nil
+	}
 	queue.Enqueue(func() {
+		if !o.active(generation) {
+			return
+		}
 		if status.Status() != 3 {
 			return
 		}
@@ -61,9 +70,29 @@ func (o *PushReceiptAgentOwner) Send(packet any) error {
 		if err != nil {
 			return
 		}
+		if !o.active(generation) {
+			return
+		}
 		sender.SendPushReceipt(packet, TagForPushReceiptPacketID(packetID))
 	})
 	return nil
+}
+
+func (o *PushReceiptAgentOwner) active(generation uint64) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return !o.closed && o.generation == generation
+}
+
+// Close invalidates queued status checks and future receipt sends.
+func (o *PushReceiptAgentOwner) Close() {
+	if o == nil {
+		return
+	}
+	o.mu.Lock()
+	o.closed = true
+	o.generation++
+	o.mu.Unlock()
 }
 
 // TagForPushReceiptPacketID preserves uint32 identity before signed negation.
