@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"unicode/utf8"
 )
 
 var (
@@ -101,6 +102,11 @@ type QRPollResult struct {
 	Kind        QRPollResultKind
 	Success     *QRLoginSuccess
 	ServerError *ServerErrorEnvelope
+	// DeviceAuthCode and DeviceAuthRemainingSeconds are present only for the
+	// observed unregistered-device response branch. The bridge owns conversion
+	// from the server number to a local deadline.
+	DeviceAuthCode             string
+	DeviceAuthRemainingSeconds float64
 }
 
 func (r QRPollResult) String() string {
@@ -146,11 +152,53 @@ func (s *QRRegistrationService) Poll(ctx context.Context, request QRLoginRequest
 	}
 	serverError, serverErr := DecodeServerErrorEnvelope(response.Body)
 	if serverErr == nil {
-		return QRPollResult{
+		result := QRPollResult{
 			HTTPStatus:  response.StatusCode,
 			Kind:        QRPollServerError,
 			ServerError: &serverError,
-		}, nil
+		}
+		if result.ServerError.QROutcome() == OutcomeUnregisteredDevice {
+			object, objectErr := decodeJSONObject(response.Body)
+			if objectErr != nil {
+				return QRPollResult{}, objectErr
+			}
+			if raw, ok := object["passcode"]; ok {
+				code, codeErr := decodeString(raw)
+				if codeErr != nil || !validDeviceAuthCode(code) {
+					return QRPollResult{}, ErrWrongJSONType
+				}
+				result.DeviceAuthCode = code
+			} else if nested, ok := object["response"]; ok {
+				inner, innerErr := decodeJSONObject(nested)
+				if innerErr != nil {
+					return QRPollResult{}, innerErr
+				}
+				raw, present := inner["passcode"]
+				code, codeErr := decodeString(raw)
+				if !present || codeErr != nil || !validDeviceAuthCode(code) {
+					return QRPollResult{}, ErrWrongJSONType
+				}
+				result.DeviceAuthCode = code
+				if _, present := inner["remainingSeconds"]; present {
+					remaining, remainingErr := requiredPositiveFiniteNumber(inner, "remainingSeconds")
+					if remainingErr != nil {
+						return QRPollResult{}, remainingErr
+					}
+					result.DeviceAuthRemainingSeconds = remaining
+				}
+			}
+			if result.DeviceAuthCode == "" {
+				return QRPollResult{}, ErrMissingJSONField
+			}
+			if _, ok := object["remainingSeconds"]; ok {
+				remaining, remainingErr := requiredPositiveFiniteNumber(object, "remainingSeconds")
+				if remainingErr != nil {
+					return QRPollResult{}, remainingErr
+				}
+				result.DeviceAuthRemainingSeconds = remaining
+			}
+		}
+		return result, nil
 	}
 	// Preserve the more specific success-decoder failure for malformed
 	// success-shaped bodies; neither decoder's values are included in errors.
@@ -158,4 +206,11 @@ func (s *QRRegistrationService) Poll(ctx context.Context, request QRLoginRequest
 		return QRPollResult{}, successErr
 	}
 	return QRPollResult{}, serverErr
+}
+
+func validDeviceAuthCode(code string) bool {
+	if !utf8.ValidString(code) || utf8.RuneCountInString(code) != 4 {
+		return false
+	}
+	return true
 }
