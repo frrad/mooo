@@ -115,8 +115,13 @@ host. The shared bridgev2 command currently owns PNG generation (including its
 error-correction and raster settings); the connector has no image-rendering
 hook and must not prepend an unproven host or rewrite the challenge.
 
-The controlled 2026-10-04 native bridge trial used the default framework Low
-renderer and a fresh client-owned profile. The Matrix PNG was 512x512; offline
+### Default Low-renderer trial (2026-10-05 UTC)
+
+The controlled 2026-10-05 UTC native bridge trial used the default framework
+Low renderer and a fresh client-owned profile. It ran source commit
+`8cbda07ecf338b6bfa1d99aaae85e4f495ecbcda` (binary SHA-256
+`1853902cdb5fc3efd44f3d4e80c5956757690f1d867a1c3ca9fb672dbc6f47e8`). The
+Matrix PNG was 512x512; offline
 CoreImage decoding produced exactly the server event payload, and the selected
 Android MediaStore row/provider bytes matched that PNG. The scanner then showed
 the generic “You cannot use this QR code.” modal. In sanitized timing, the
