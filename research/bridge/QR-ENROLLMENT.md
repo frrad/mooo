@@ -40,6 +40,30 @@ body or explicit status zero is accepted; a nonzero or malformed status body
 is rejected. This is an implementation safety policy, not a claim that the
 full official cancellation response contract has been recovered.
 
+### Successful clean-room runner comparison
+
+The private clean-room runner used for the 2026-09-28 successful Mac QR flow
+is `/Users/frederick/Projects/mooo/.lab/qr_login_probe.go`; its source and
+invocation records remain outside the repository. Static comparison shows it
+loads an existing snapshot identity, derives the wire UUID from that identity,
+uses `BuildQRGenerateRequest`, the same Mac header profile, a 15-second HTTP
+client timeout, a 90-second outer context, and three-second polling. It does
+not add a check-key field, override, or imported official credential. The QR
+image was produced by the private CoreImage renderer with its own correction
+and scaling settings, then the complete server payload was passed unchanged.
+
+Bridgev2 uses a newly created client-owned identity, the same request builder
+and header construction, a 30-second HTTP client timeout, challenge-derived
+deadline handling, and the same three-second poll cadence. Its display step
+uses the framework QR renderer rather than the private CoreImage command.
+Therefore the concrete remaining runtime differential is renderer/configuration
+and identity lifecycle (existing snapshot versus fresh profile), not a missing
+check-key request parameter. The private runner's successful persistence path
+also writes credentials through `authstate` before subsequent session use;
+bridgev2 performs its equivalent persistence only after the typed success
+handoff. No check-key getter invocation or field override appears in the
+successful runner source.
+
 ### Mac check-key boundary (static correction)
 
 A fresh Mach-O metadata pass on the owned macOS 26.8.0 binary resolves the
