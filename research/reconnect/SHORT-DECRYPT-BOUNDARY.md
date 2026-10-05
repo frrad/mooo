@@ -41,3 +41,18 @@ explicit policy in the caller; this experiment does not establish whether the
 official client catches, terminates on, or prevents those inputs before the
 helper is reached. The private probe source and raw output remain outside the
 repository.
+
+## Source provenance and scope
+
+The slice helper is `LocoV2SLCrypto`'s `decrypt:` implementation at
+`0x101685970`. The selected receive consumer is `didReadBody:` at
+`0x101773aa0`; its decrypt call is at `0x101773acc`, followed by the
+unconditional `supplyRawData:` call. The source resolves the crypto operation
+as `decryptAES128GCMWithKey:iv:aad:tag:`. These addresses and selector mappings
+are cross-checked in the merged [V2SL receive/decrypt contract](V2SL-RECEIVE-CONTRACT.md)
+and [secure framing contract](SECURE-FRAMING.md).
+
+`N >= 28` is only the clean-room precondition that makes the three source
+slices representable. It does not verify the authentication tag, establish a
+successful GCM decrypt, or prove that the caller accepts the resulting frame.
+Tag verification and decrypt-result handling remain separate source contracts.
