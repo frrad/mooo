@@ -27,10 +27,13 @@ over `LocoPushReceipt`, which is a `LocoModel`/`SGJsonObject`. The base receipt
 declares `method` (`NSString`) and `packetId` (`uint32`); HINT adds no object
 fields. BLOCKSYNC declares signed 32-bit `revision` and `plusRevision`. The
 constructor receipts show method/packet-ID copying and revision setter calls.
-The synthetic object-field vectors cover zero and nonzero packet IDs, zero
-revisions, and signed revision values. `sendPacket:tag:` obtains `packetData`
-and passes it through `encryptPacketData:` before socket write; the exact
-serialized key encoding and encryption output remain outside this source slice.
+The synthetic fixture checks only this object-field inventory. Value propagation
+for method, packet ID, and signed revisions is covered by the constructor
+contract in `PUSH-RECEIPT-REQUEST-MODEL.md`. `sendPacket:tag:` obtains
+`packetData` and passes it through `encryptPacketData:` before socket write;
+the exact serialized key encoding and encryption output remain outside this
+source slice. This packet path is the base `LocoAgent` comparison path; the
+selected manager route uses the distinct `LocoNWAgent` wrapper.
 Constructor nil-failure boundaries are documented in the request-model slice.
 
 ## Synthetic contract

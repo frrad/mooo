@@ -1,0 +1,41 @@
+{
+  "status": "reviewed-static-object-field-inventory-unexecuted-runtime",
+  "cases": [
+    {
+      "name": "hint_object_fields",
+      "model": "hint_push_receipt",
+      "expected_object_fields": [
+        "method",
+        "packetId"
+      ]
+    },
+    {
+      "name": "hint_object_fields_duplicate",
+      "model": "hint_push_receipt",
+      "expected_object_fields": [
+        "method",
+        "packetId"
+      ]
+    },
+    {
+      "name": "block_sync_object_fields",
+      "model": "block_sync_push_receipt",
+      "expected_object_fields": [
+        "method",
+        "packetId",
+        "revision",
+        "plusRevision"
+      ]
+    },
+    {
+      "name": "block_sync_object_fields_duplicate",
+      "model": "block_sync_push_receipt",
+      "expected_object_fields": [
+        "method",
+        "packetId",
+        "revision",
+        "plusRevision"
+      ]
+    }
+  ]
+}

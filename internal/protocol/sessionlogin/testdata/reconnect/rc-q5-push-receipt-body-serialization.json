@@ -1,9 +1,0 @@
-{
-  "status": "reviewed-static-object-field-inventory-unexecuted-runtime",
-  "cases": [
-    {"name":"hint_zero_packet_id","model":"hint_push_receipt","method":"HINT","packet_id":0,"expected_object_fields":["method","packetId"]},
-    {"name":"hint_nonzero_packet_id","model":"hint_push_receipt","method":"HINT","packet_id":4294967295,"expected_object_fields":["method","packetId"]},
-    {"name":"block_sync_zero_revisions","model":"block_sync_push_receipt","method":"BLOCKSYNC","packet_id":0,"revision":0,"plus_revision":0,"expected_object_fields":["method","packetId","revision","plusRevision"]},
-    {"name":"block_sync_signed_revisions","model":"block_sync_push_receipt","method":"BLOCKSYNC","packet_id":17,"revision":-1,"plus_revision":2147483647,"expected_object_fields":["method","packetId","revision","plusRevision"]}
-  ]
-}
