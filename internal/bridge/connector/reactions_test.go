@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,6 +29,7 @@ type reactionTestBackend struct {
 	*fakeKakao
 	members     reactions.MembersResponse
 	err         error
+	memberCalls int
 	requests    []reactions.Request
 	mutationErr error
 }
@@ -99,6 +101,7 @@ func (b *reactionTestBackend) React(_ context.Context, request reactions.Request
 }
 
 func (b *reactionTestBackend) ReactionMembers(context.Context, int64, int64) (reactions.MembersResponse, error) {
+	b.memberCalls++
 	return b.members, b.err
 }
 
@@ -686,5 +689,121 @@ func TestMatrixReactionMutationAmbiguousTransportIsSentOnce(t *testing.T) {
 	}
 	if len(backend.requests) != 1 {
 		t.Fatalf("mutation requests = %d, want 1", len(backend.requests))
+	}
+}
+
+func TestMatrixReactionMutationErrorCategoriesAreRedacted(t *testing.T) {
+	const secret = "https://example.invalid/reaction?access_token=synthetic-secret"
+	tests := []struct {
+		name       string
+		cause      error
+		category   error
+		reason     error
+		contextErr error
+	}{
+		{name: "transport", cause: errors.New(secret), category: reactions.ErrOutcomeUnknown},
+		{name: "wrapped transport", cause: fmt.Errorf("%w: %s", reactions.ErrTransport, secret), category: reactions.ErrOutcomeUnknown, reason: reactions.ErrTransport},
+		{name: "rejected", cause: reactions.ErrRejected, category: reactions.ErrOutcomeUnconfirmed, reason: reactions.ErrRejected},
+		{name: "wrapped rejected", cause: fmt.Errorf("%w: %s", reactions.ErrRejected, secret), category: reactions.ErrOutcomeUnconfirmed, reason: reactions.ErrRejected},
+		{name: "malformed", cause: reactions.ErrInvalidResponse, category: reactions.ErrOutcomeUnknown, reason: reactions.ErrInvalidResponse},
+		{name: "wrapped malformed", cause: fmt.Errorf("%w: %s", reactions.ErrInvalidResponse, secret), category: reactions.ErrOutcomeUnknown, reason: reactions.ErrInvalidResponse},
+		{name: "canceled", cause: context.Canceled, category: reactions.ErrOutcomeUnknown, contextErr: context.Canceled},
+		{name: "wrapped canceled", cause: fmt.Errorf("%w: %s", context.Canceled, secret), category: reactions.ErrOutcomeUnknown, contextErr: context.Canceled},
+		{name: "deadline", cause: context.DeadlineExceeded, category: reactions.ErrOutcomeUnknown, contextErr: context.DeadlineExceeded},
+		{name: "invalid request", cause: reactions.ErrInvalidRequest, category: reactions.ErrInvalidRequest, reason: reactions.ErrInvalidRequest},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, mutationErr: tc.cause}
+			kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
+			kc.login.UserMXID = id.UserID("@self:test")
+			kc.client = backend
+			portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, kc.login.ID)}}
+			msg := &bridgev2.MatrixReaction{
+				MatrixEventBase: bridgev2.MatrixEventBase[*event.ReactionEventContent]{
+					Event:   &event.Event{Sender: kc.login.UserMXID},
+					Content: &event.ReactionEventContent{RelatesTo: event.RelatesTo{Key: "👍"}},
+					Portal:  portal,
+				},
+				TargetMessage: &database.Message{ID: makeMessageID(testChatID, 99)},
+			}
+			_, err := kc.HandleMatrixReaction(context.Background(), msg)
+			if !errors.Is(err, errReactionMutation) || !errors.Is(err, tc.category) {
+				t.Fatalf("error = %v, want mutation + category", err)
+			}
+			if tc.contextErr != nil && !errors.Is(err, tc.contextErr) {
+				t.Fatalf("error = %v, want context identity", err)
+			}
+			if tc.reason != nil && !errors.Is(err, tc.reason) {
+				t.Fatalf("error = %v, want safe reason identity", err)
+			}
+			for _, rendered := range []string{fmt.Sprintf("%v", err), fmt.Sprintf("%+v", err), fmt.Sprintf("%#v", err)} {
+				if strings.Contains(rendered, secret) {
+					t.Fatalf("error rendering leaked backend detail: %q", rendered)
+				}
+			}
+			if len(backend.requests) != 1 {
+				t.Fatalf("mutation requests = %d, want 1", len(backend.requests))
+			}
+		})
+	}
+}
+
+func TestMatrixReactionRemoveLookupFailureIsDistinctAndDoesNotMutate(t *testing.T) {
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, err: errors.New("lookup https://example.invalid token=secret")}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
+	kc.login.UserMXID = id.UserID("@self:test")
+	kc.client = backend
+	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, kc.login.ID)}}
+	remove := &bridgev2.MatrixReactionRemove{
+		MatrixEventBase: bridgev2.MatrixEventBase[*event.RedactionEventContent]{Event: &event.Event{Sender: kc.login.UserMXID}, Portal: portal},
+		TargetReaction:  &database.Reaction{MessageID: makeMessageID(testChatID, 99), SenderID: makeUserID(testSelfID), EmojiID: "kakao:legacy:1"},
+	}
+	err := kc.HandleMatrixReactionRemove(context.Background(), remove)
+	if !errors.Is(err, errReactionLookup) || !errors.Is(err, reactions.ErrLookupFailed) {
+		t.Fatalf("error = %v, want distinct lookup category", err)
+	}
+	if len(backend.requests) != 0 {
+		t.Fatalf("mutation requests after lookup failure = %d, want 0", len(backend.requests))
+	}
+	if strings.Contains(fmt.Sprintf("%#v", err), "token=secret") {
+		t.Fatalf("lookup error leaked backend detail: %#v", err)
+	}
+}
+
+func TestMatrixReactionRemoveMutationCategoriesAreSingleAttempt(t *testing.T) {
+	causes := []struct {
+		name     string
+		cause    error
+		category error
+		reason   error
+	}{
+		{name: "transport", cause: fmt.Errorf("%w: dropped", reactions.ErrTransport), category: reactions.ErrOutcomeUnknown, reason: reactions.ErrTransport},
+		{name: "rejected", cause: reactions.ErrRejected, category: reactions.ErrOutcomeUnconfirmed, reason: reactions.ErrRejected},
+		{name: "canceled", cause: context.Canceled, category: reactions.ErrOutcomeUnknown, reason: context.Canceled},
+	}
+	for _, tc := range causes {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := &reactionTestBackend{
+				fakeKakao:   &fakeKakao{},
+				members:     reactions.MembersResponse{Revision: 1, Members: map[reactions.Type][]int64{reactions.Heart: {testSelfID}}},
+				mutationErr: tc.cause,
+			}
+			kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
+			kc.login.UserMXID = id.UserID("@self:test")
+			kc.client = backend
+			portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, kc.login.ID)}}
+			remove := &bridgev2.MatrixReactionRemove{
+				MatrixEventBase: bridgev2.MatrixEventBase[*event.RedactionEventContent]{Event: &event.Event{Sender: kc.login.UserMXID}, Portal: portal},
+				TargetReaction:  &database.Reaction{MessageID: makeMessageID(testChatID, 99), SenderID: makeUserID(testSelfID), EmojiID: "kakao:legacy:1"},
+			}
+			err := kc.HandleMatrixReactionRemove(context.Background(), remove)
+			if !errors.Is(err, errReactionMutation) || !errors.Is(err, tc.category) || !errors.Is(err, tc.reason) {
+				t.Fatalf("error = %v, want mutation/category/reason", err)
+			}
+			if backend.memberCalls != 1 || len(backend.requests) != 1 || backend.requests[0].Type != reactions.Cancel {
+				t.Fatalf("lookup/mutation counts = %d/%d, want 1/1", backend.memberCalls, len(backend.requests))
+			}
+		})
 	}
 }
