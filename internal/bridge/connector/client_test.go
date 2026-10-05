@@ -503,6 +503,9 @@ func TestDisconnectRetainsCleanupOwnerAfterShutdownTimeout(t *testing.T) {
 	if !retained {
 		t.Fatal("timed-out shutdown did not retain cleanup owner")
 	}
+	if kc.IsLoggedIn() {
+		t.Fatal("timed-out cleanup owner remained logged in")
+	}
 	kc.Connect(context.Background())
 	kc.mu.Lock()
 	if kc.client != nil {
@@ -517,6 +520,42 @@ func TestDisconnectRetainsCleanupOwnerAfterShutdownTimeout(t *testing.T) {
 	kc.mu.Unlock()
 	if retained {
 		t.Fatal("successful retry retained cleanup owner")
+	}
+}
+
+func TestConcurrentDisconnectRetriesRetainedOwner(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result), shutdownFailures: 1}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.Connect(context.Background())
+	go func() {
+		for {
+			fake.mu.Lock()
+			closed := fake.closeCalls > 0
+			fake.mu.Unlock()
+			if closed {
+				close(fake.stream)
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() { defer wg.Done(); kc.Disconnect() }()
+	}
+	wg.Wait()
+	fake.mu.Lock()
+	shutdownCalls := fake.shutdownCalls
+	fake.mu.Unlock()
+	if shutdownCalls != 2 {
+		t.Fatalf("shutdown calls = %d, want serialized retry", shutdownCalls)
+	}
+	kc.mu.Lock()
+	retained := kc.cleanup != nil
+	kc.mu.Unlock()
+	if retained {
+		t.Fatal("concurrent disconnect left cleanup owner retained after success")
 	}
 }
 

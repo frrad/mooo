@@ -74,13 +74,14 @@ type KakaoClient struct {
 	queue     func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult
 	sendState func(status.BridgeState)
 
-	mu          sync.Mutex
-	client      kakaoClient
-	cleanup     kakaoClient
-	connecting  bool
-	stopping    bool
-	done        chan struct{}
-	cleanupDone chan struct{}
+	mu           sync.Mutex
+	disconnectMu sync.Mutex
+	client       kakaoClient
+	cleanup      kakaoClient
+	connecting   bool
+	stopping     bool
+	done         chan struct{}
+	cleanupDone  chan struct{}
 }
 
 var (
@@ -263,6 +264,8 @@ func committable(result bridgev2.EventHandlingResult) bool {
 }
 
 func (kc *KakaoClient) Disconnect() {
+	kc.disconnectMu.Lock()
+	defer kc.disconnectMu.Unlock()
 	kc.mu.Lock()
 	c := kc.client
 	done := kc.done
