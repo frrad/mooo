@@ -8,8 +8,9 @@ transport behavior.
 The recovered `supplyRawData:` implementation has return type `Q24@0:8@16`.
 It appends the supplied data to its buffer. A buffer shorter than 22 bytes
 returns zero without constructing a packet header. When no current header is
-present, it initializes one from the buffered data and stores it. It reads the
-header body length and waits until the buffer contains `bodyLength + 22` bytes;
+present, it initializes one from the buffered data and stores it. It invokes the optional header producer immediately after header initialization,
+before checking whether the body is complete. It then reads the header body
+length and waits until the buffer contains `bodyLength + 22` bytes;
 when incomplete, it returns the remaining byte count.
 
 For a complete frame it initializes packet data, removes the consumed bytes,
@@ -25,7 +26,8 @@ length, appended length, current-header presence, header initializer result,
 body length, packet initializer result, and delegate method availability.
 Packet initializer nil is represented separately from the consumed-byte and
 delegate dispatch effects because the raw call sequence has no observed guard
-that suppresses those later optional delegate checks. Header initializer nil
+that suppresses those later optional delegate checks. The header callback is
+therefore observable even when the body remains incomplete. Header initializer nil
 and malformed header behavior require separate runtime or lower-level source
 proof and are not generalized here; the bounded fixture records only the
 observed nil-message boundary.

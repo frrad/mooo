@@ -47,6 +47,9 @@ func projectSupplyRaw(c supplyRawCase) supplyRawProjection {
 		bodyLength := c.BodyLength
 		if !c.CurrentHeaderPresent {
 			effects = append(effects, "init_header_from_buffer", "set_current_header")
+			if c.HeaderDelegatePresent {
+				effects = append(effects, "produce_packet_header")
+			}
 			if !c.HeaderInitPresent {
 				bodyLength = 0
 			}
@@ -58,9 +61,6 @@ func projectSupplyRaw(c supplyRawCase) supplyRawProjection {
 		effects = append(effects, "init_packet_data", "consume_packet_bytes")
 		packetDataPresent := c.PacketInitPresent
 		buffer -= required
-		if c.HeaderDelegatePresent {
-			effects = append(effects, "produce_packet_header")
-		}
 		if c.PacketDelegatePresent {
 			effects = append(effects, "produce_packet")
 		}
