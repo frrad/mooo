@@ -8,8 +8,10 @@ request tags. It obtains packet data, encrypts it, obtains the socket and packet
 header/ID, then calls `writeData:withTimeout:tag:` with timeout `-1.0`. The
 raw ABI loads the packet ID into the write-call tag register immediately before
 the call (`0x101773854` → `0x101773858` → `0x101773868`); the caller-supplied
-`tag` argument is not forwarded. The write tag is therefore the signed
-negation of the unsigned 32-bit packet ID for both receipt and ordinary sends.
+`tag` argument is not forwarded. The `mov w3,w0` at `0x101773858` zero-extends
+the packet ID, so the lower write receives the positive unsigned packet ID for
+both receipt and ordinary sends. The signed negative tag is derived earlier by
+the receipt helper but is ignored by this `sendPacket:tag:` implementation.
 It then calls `toggleOutSegmentTimeout:YES`. There is no sign test or
 negative-tag branch in this method.
 
@@ -30,7 +32,7 @@ or pending-map operations.
 ## Synthetic contract
 
 The fixture compares receipt and ordinary calls with different caller tag
-inputs but the same packet-ID-derived write tag. It also records the owner-status
+inputs but the same positive packet-ID-derived write tag. It also records the owner-status
 suppression before packet access and the explicit `-1.0` write timeout / outbound
 timeout toggle.
 It does not invent a receipt acknowledgement or correlation result.

@@ -48,8 +48,8 @@ func TestPushReceiptWriteChainFixture(t *testing.T) {
 		t.Fatal("negative and positive caller tags must share packet-ID write path")
 	}
 	for _, c := range f.Cases {
-		if c.OwnerStatus == 3 && c.ExpectedWriteTag != -int64(c.PacketID) {
-			t.Errorf("%s write tag = %d, want packet-ID negation %d", c.Name, c.ExpectedWriteTag, -int64(c.PacketID))
+		if c.OwnerStatus == 3 && c.ExpectedWriteTag != int64(c.PacketID) {
+			t.Errorf("%s write tag = %d, want packet-ID zero-extended value %d", c.Name, c.ExpectedWriteTag, int64(c.PacketID))
 		}
 	}
 }
