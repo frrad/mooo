@@ -103,7 +103,7 @@ func TestQRDisplayStepPreservesServerPayloadForFrameworkRenderer(t *testing.T) {
 	// relative: the Mac host is unresolved and Android extracts the id from the
 	// path without requiring a scheme or host. The bridgev2 framework owns PNG
 	// rendering, so this assertion prevents a connector-side "normalization"
-	// from silently changing the signed challenge.
+	// from silently changing the server-issued challenge.
 	payload := "/talk/account/qrCodeLogin/info.json?id=a+b"
 	step := qrDisplayStep(payload)
 	if step == nil || step.DisplayAndWaitParams == nil {
