@@ -98,11 +98,20 @@ func TestProjectIncomingReceiptBody(t *testing.T) {
 			wantErr: ErrReceiptMethodMismatch,
 		},
 		{
-			name: "unsupported numeric coercion remains dependency",
+			name: "int64 low word wraps to signed int32",
 			input: IncomingReceiptInput{
 				Header: loco.Header{PacketID: 14, Method: "BLOCKSYNC"},
 				Method: "BLOCKSYNC",
-				Body:   map[string]any{"revision": int64(14)},
+				Body:   map[string]any{"r": int64(2147483648)},
+			},
+			want: ReceiptBody{Kind: ReceiptBodyBlockSync, PacketID: 14, Revision: math.MinInt32},
+		},
+		{
+			name: "unsupported scalar remains explicit",
+			input: IncomingReceiptInput{
+				Header: loco.Header{PacketID: 15, Method: "BLOCKSYNC"},
+				Method: "BLOCKSYNC",
+				Body:   map[string]any{"r": float64(14)},
 			},
 			wantErr: ErrReceiptFieldType,
 		},
@@ -177,5 +186,32 @@ func TestProjectIncomingReceiptBodyPreservesHeaderIdentityThroughBuilder(t *test
 	}
 	if len(wire) != loco.HeaderSize+5 {
 		t.Fatalf("wire length=%d, want empty BSON frame length %d", len(wire), loco.HeaderSize+5)
+	}
+}
+
+func TestReceiptInt32AcceptsApprovedInt64LowWordDomain(t *testing.T) {
+	cases := []struct {
+		name string
+		in   int64
+		want int32
+	}{
+		{name: "int32 minimum", in: -2147483648, want: -2147483648},
+		{name: "int32 maximum", in: 2147483647, want: 2147483647},
+		{name: "one above int32 maximum", in: 2147483648, want: -2147483648},
+		{name: "one below int32 minimum", in: -2147483649, want: 2147483647},
+		{name: "two to the thirty second", in: 4294967296, want: 0},
+		{name: "int64 maximum", in: 9223372036854775807, want: -1},
+		{name: "int64 minimum", in: -9223372036854775808, want: 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := receiptInt32(tc.in, "revision")
+			if err != nil {
+				t.Fatalf("receiptInt32() error=%v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("receiptInt32(%d)=%d, want %d", tc.in, got, tc.want)
+			}
+		})
 	}
 }

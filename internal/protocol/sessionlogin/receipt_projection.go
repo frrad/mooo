@@ -30,8 +30,9 @@ type IncomingReceiptInput struct {
 // projection: unrelated nested fields and complete eligibility are outside
 // this boundary. HINT accepts an allocated empty dictionary. BLOCKSYNC
 // revision fields default to signed int32 zero when absent or represented by
-// SGJSONNull. Unsupported NSNumber coercions remain a separate dependency
-// (207); this bounded unit accepts int32 only.
+// SGJSONNull. The approved platform-bounded NSNumber int64 wrapper preserves
+// the low 32 bits as a signed int32; other NSNumber/string coercions remain
+// outside this boundary.
 func ProjectIncomingReceiptBody(input IncomingReceiptInput) (ReceiptBody, error) {
 	if input.Method != "HINT" && input.Method != "BLOCKSYNC" {
 		return ReceiptBody{}, fmt.Errorf("%w: %q", ErrReceiptNotEligible, input.Method)
@@ -79,9 +80,14 @@ func projectReceiptInt32Field(fields map[string]any, source, destination string)
 }
 
 func receiptInt32(value any, field string) (int32, error) {
-	result, ok := value.(int32)
-	if !ok {
-		return 0, fmt.Errorf("%w: %s has %T; NSNumber coercion is outside this contract", ErrReceiptFieldType, field, value)
+	switch value := value.(type) {
+	case int32:
+		return value, nil
+	case int64:
+		// Source factory path is NSNumber numberWithInt64: -> initWithLong:
+		// (q on arm64), followed by Ti KVC low-word signed storage.
+		return int32(uint32(value)), nil
+	default:
+		return 0, fmt.Errorf("%w: %s has %T; unsupported scalar coercion", ErrReceiptFieldType, field, value)
 	}
-	return result, nil
 }
