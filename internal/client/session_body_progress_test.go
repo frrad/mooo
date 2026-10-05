@@ -95,3 +95,22 @@ func TestSessionBodyProgressBindingDoesNotArmOnBlockedHeader(t *testing.T) {
 		t.Fatalf("header toggles=%v, want none", owner.toggles)
 	}
 }
+
+func TestSessionZeroPlainBodyDoesNotArmWatchdog(t *testing.T) {
+	header, err := (loco.Header{PacketID: 1, Method: "PING", BodyLen: 0}).MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := &bodyProgressOwnerSpy{}
+	session := newSession(nil)
+	if err := session.BindInSegmentTimeout(owner); err != nil {
+		t.Fatal(err)
+	}
+	wire := &wireConn{c: &chunkConn{Reader: bytes.NewReader(header)}}
+	if _, err := wire.readWithHeaderObserverAndProgress(nil, session.bodyProgressCallbacks()); err != nil {
+		t.Fatal(err)
+	}
+	if len(owner.toggles) != 0 {
+		t.Fatalf("zero body armed watchdog: %v", owner.toggles)
+	}
+}

@@ -1154,6 +1154,13 @@ func (w *wireConn) readWithHeaderObserverAndProgress(observe func(loco.Header), 
 // reports each transport body transition in source order. A short read resets
 // the watchdog; completion only disables it after the requested body is full.
 func readBodyWithProgress(r io.Reader, body []byte, progress bodyProgressCallbacks) error {
+	if len(body) == 0 {
+		return nil
+	}
+	if progress.schedule == nil && progress.partial == nil && progress.complete == nil {
+		_, err := io.ReadFull(r, body)
+		return err
+	}
 	if progress.schedule != nil {
 		progress.schedule()
 	}
