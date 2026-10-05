@@ -119,9 +119,14 @@ The controlled 2026-10-04 native bridge trial used the default framework Low
 renderer and a fresh client-owned profile. The Matrix PNG was 512x512; offline
 CoreImage decoding produced exactly the server event payload, and the selected
 Android MediaStore row/provider bytes matched that PNG. The scanner then showed
-the generic “You cannot use this QR code.” modal. No device-auth code,
-credentials, or resume state resulted. The bridge was stopped and the fresh
-profile, database, and transient media were removed.
+the generic “You cannot use this QR code.” modal. In sanitized timing, the
+first Matrix image was emitted about one second after the command, the owned
+picker selection occurred about thirty seconds after the command, and the
+bridge failure notice arrived about fifty-nine seconds after the command. The
+server lifetime field was not retained in this record, so these timings do not
+reconstruct or extend the challenge deadline. No device-auth code, credentials,
+or resume state resulted. The bridge was stopped and the fresh profile,
+database, and transient media were removed.
 
 Offline payload and provider equality rule out Matrix media corruption or a
 presentation-side payload mutation for this trial; they do not prove which
