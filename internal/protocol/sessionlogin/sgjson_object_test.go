@@ -77,11 +77,11 @@ func TestProjectSGJSONObjectTypedNilAndOpaqueContainers(t *testing.T) {
 		t.Fatalf("ordinary slice was recursively projected: %#v err=%v", got, err)
 	}
 	var nilMap map[string]any
-	if got, err := ProjectSGJSONObject(nilMap); err != nil || got != nil {
+	if got, err := ProjectSGJSONObject(nilMap); err != nil || !reflect.DeepEqual(got, nilMap) {
 		t.Fatalf("ordinary nil map changed: %#v err=%v", got, err)
 	}
 	var nilSlice []any
-	if got, err := ProjectSGJSONObject(nilSlice); err != nil || got != nil {
+	if got, err := ProjectSGJSONObject(nilSlice); err != nil || !reflect.DeepEqual(got, nilSlice) {
 		t.Fatalf("ordinary nil slice changed: %#v err=%v", got, err)
 	}
 }
