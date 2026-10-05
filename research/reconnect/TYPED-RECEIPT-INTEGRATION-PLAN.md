@@ -1,8 +1,8 @@
 # Typed receipt integration boundary
 
 Status: design contract only; no runtime binding or default activation is
-proposed by this document. This slice depends on the reviewed incoming
-eligibility contract (held in PR203) and the merged receipt body, packet,
+proposed by this document. This slice depends on the reviewed incoming scalar
+projection contract (PR209, pending final merge) and the merged receipt body, packet,
 encryption, and Session lifecycle contracts.
 
 The existing Session seam is already generic and opt-in. Its current
@@ -64,12 +64,12 @@ before runtime binding:
   path is conditional on the delegate returning normally; it does not forbid
   the resulting zero-valued receipt.
 
-Strict BSON rejection is an explicit clean-room implementation-policy choice,
-not an observed official-client rule. The source BSON decoder returns the
-documented partial dictionary on an unknown element type; this is separate from
-the SGJson mapping phase. An adapter may choose strict typed decoding, but it
-must label that choice as a policy and preserve the original packet for the
-ordinary push path. The
+Strict BSON rejection is not part of this source contract. The source BSON
+decoder returns the documented partial dictionary on an unknown element type;
+that observed behavior remains the compatibility boundary and is separate from
+the SGJson mapping phase. Any future stricter clean-room policy would require a
+separate review and must preserve the original packet for the ordinary push
+path. The
 current builders intentionally encode only their typed inputs; this plan does
 not broaden them into a generic JSON converter.
 
