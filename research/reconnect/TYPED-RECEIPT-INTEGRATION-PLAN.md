@@ -2,7 +2,7 @@
 
 Status: design contract only; no runtime binding or default activation is
 proposed by this document. This slice depends on the reviewed incoming scalar
-projection contract (PR209, pending final merge) and the merged receipt body, packet,
+projection contract (merged PR209) and the merged receipt body, packet,
 encryption, and Session lifecycle contracts.
 
 The existing Session seam is already generic and opt-in. Its current
