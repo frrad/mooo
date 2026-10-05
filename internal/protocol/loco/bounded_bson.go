@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"unicode/utf8"
 )
 
 // BSONDecodeOptions bounds the clean-room safety envelope around the
@@ -13,6 +14,10 @@ import (
 type BSONDecodeOptions struct {
 	MaxBytes int
 	MaxDepth int
+	// MaxWork bounds cursor element visits across the whole recursive decode.
+	// It is a Go safety limit for source cursors that can resume at a parent
+	// declared width after a nested cursor terminates early.
+	MaxWork int
 }
 
 // BSONDecodeResult preserves the official decoder's partial-dictionary result
@@ -25,8 +30,9 @@ type BSONDecodeResult struct {
 }
 
 var (
-	ErrBSONDecodeBounds    = errors.New("loco: BSON decode bounds exceeded")
-	ErrBSONDecodeMalformed = errors.New("loco: malformed BSON")
+	ErrBSONDecodeBounds     = errors.New("loco: BSON decode bounds exceeded")
+	ErrBSONDecodeMalformed  = errors.New("loco: malformed BSON")
+	ErrBSONDecodeInvalidKey = errors.New("loco: invalid BSON key")
 )
 
 // DecodeObservedBSON decodes the source-supported BSON element subset for a
@@ -40,26 +46,33 @@ func DecodeObservedBSON(src []byte, options BSONDecodeOptions) (BSONDecodeResult
 	if options.MaxDepth <= 0 {
 		options.MaxDepth = 32
 	}
+	if options.MaxWork <= 0 {
+		options.MaxWork = max(1024, len(src)*64)
+	}
 	if len(src) > options.MaxBytes {
 		return BSONDecodeResult{}, ErrBSONDecodeBounds
 	}
 	if len(src) < 4 {
 		return BSONDecodeResult{}, ErrBSONDecodeMalformed
 	}
-	value, _, unknown, err := decodeObservedDocument(src, 4, len(src), options, 0, false, true)
+	work := 0
+	value, _, unknown, err := decodeObservedDocument(src, 4, len(src), options, &work, 0, false, true)
 	if err != nil {
 		return BSONDecodeResult{}, err
 	}
 	return BSONDecodeResult{Document: value.(map[string]any), Partial: unknown != 0, UnknownType: unknown}, nil
 }
 
-func decodeObservedDocument(src []byte, pos, limit int, options BSONDecodeOptions, depth int, array, propagateUnknown bool) (any, int, byte, error) {
+func decodeObservedDocument(src []byte, pos, limit int, options BSONDecodeOptions, work *int, depth int, array, propagateUnknown bool) (any, int, byte, error) {
 	if depth > options.MaxDepth {
 		return nil, pos, 0, ErrBSONDecodeBounds
 	}
 	if array {
 		out := []any{}
 		for {
+			if err := spendBSONWork(options, work); err != nil {
+				return nil, pos, 0, err
+			}
 			if pos >= limit || pos >= len(src) {
 				return nil, pos, 0, ErrBSONDecodeMalformed
 			}
@@ -68,10 +81,10 @@ func decodeObservedDocument(src []byte, pos, limit int, options BSONDecodeOption
 				return out, pos + 1, 0, nil
 			}
 			_, valueStart, err := readCString(src, pos+1)
-			if err != nil {
+			if err != nil && !errors.Is(err, ErrBSONDecodeInvalidKey) {
 				return nil, pos, 0, err
 			}
-			value, next, unknown, err := decodeObservedElement(src, valueStart, typ, options, depth)
+			value, next, unknown, err := decodeObservedElement(src, valueStart, typ, options, work, depth)
 			if err != nil {
 				return nil, pos, 0, err
 			}
@@ -89,6 +102,9 @@ func decodeObservedDocument(src []byte, pos, limit int, options BSONDecodeOption
 	}
 	out := make(map[string]any)
 	for {
+		if err := spendBSONWork(options, work); err != nil {
+			return nil, pos, 0, err
+		}
 		if pos >= limit || pos >= len(src) {
 			return nil, pos, 0, ErrBSONDecodeMalformed
 		}
@@ -97,10 +113,11 @@ func decodeObservedDocument(src []byte, pos, limit int, options BSONDecodeOption
 			return out, pos + 1, 0, nil
 		}
 		key, valueStart, err := readCString(src, pos+1)
-		if err != nil {
+		invalidKey := errors.Is(err, ErrBSONDecodeInvalidKey)
+		if err != nil && !invalidKey {
 			return nil, pos, 0, err
 		}
-		value, next, unknown, err := decodeObservedElement(src, valueStart, typ, options, depth)
+		value, next, unknown, err := decodeObservedElement(src, valueStart, typ, options, work, depth)
 		if err != nil {
 			return nil, pos, 0, err
 		}
@@ -113,6 +130,9 @@ func decodeObservedDocument(src []byte, pos, limit int, options BSONDecodeOption
 		// Source null/undefined elements consume their type/key but do not
 		// assign, preserving an earlier duplicate value.
 		if value != skipBSONValue {
+			if invalidKey {
+				return nil, pos, 0, ErrBSONDecodeInvalidKey
+			}
 			out[key] = value
 		}
 		pos = next
@@ -123,7 +143,7 @@ type skipValue struct{}
 
 var skipBSONValue = skipValue{}
 
-func decodeObservedElement(src []byte, pos int, typ byte, options BSONDecodeOptions, depth int) (any, int, byte, error) {
+func decodeObservedElement(src []byte, pos int, typ byte, options BSONDecodeOptions, work *int, depth int) (any, int, byte, error) {
 	switch typ {
 	case 0x05, 0x06, 0x07, 0x09, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x11:
 		// These recognized cursor types have no value branch in the observed
@@ -176,6 +196,9 @@ func decodeObservedElement(src []byte, pos int, typ byte, options BSONDecodeOpti
 		if nul < 0 {
 			return nil, pos, 0, ErrBSONDecodeMalformed
 		}
+		if !utf8.Valid(body[:nul]) {
+			return skipBSONValue, pos + 4 + int(length), 0, nil
+		}
 		return string(body[:nul]), pos + 4 + int(length), 0, nil
 	case 0x03:
 		if len(src)-pos < 4 {
@@ -188,7 +211,7 @@ func decodeObservedElement(src []byte, pos int, typ byte, options BSONDecodeOpti
 		// The source recursive cursor receives no container-end argument. It
 		// stops on the nested zero terminator (bounded here only by src), while
 		// the parent advances by the declared container width.
-		value, _, unknown, err := decodeObservedDocument(src, pos+4, len(src), options, depth+1, false, false)
+		value, _, unknown, err := decodeObservedDocument(src, pos+4, len(src), options, work, depth+1, false, false)
 		return value, pos + int(length), unknown, err
 	case 0x04:
 		if len(src)-pos < 4 {
@@ -198,13 +221,28 @@ func decodeObservedElement(src []byte, pos int, typ byte, options BSONDecodeOpti
 		if length < 5 || length > int64(len(src)-pos) {
 			return nil, pos, 0, ErrBSONDecodeMalformed
 		}
-		value, _, unknown, err := decodeObservedDocument(src, pos+4, len(src), options, depth+1, true, false)
+		value, _, unknown, err := decodeObservedDocument(src, pos+4, len(src), options, work, depth+1, true, false)
 		return value, pos + int(length), unknown, err
 	default:
 		// The official helper returns no value for an unknown type; the outer
 		// loop returns the dictionary accumulated before that element.
 		return nil, pos, typ, nil
 	}
+}
+
+func spendBSONWork(options BSONDecodeOptions, work *int) error {
+	*work++
+	if *work > options.MaxWork {
+		return ErrBSONDecodeBounds
+	}
+	return nil
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func skipObservedValue(src []byte, pos int, typ byte) (int, error) {
@@ -281,6 +319,9 @@ func skipObservedValue(src []byte, pos int, typ byte) (int, error) {
 func readCString(src []byte, pos int) (string, int, error) {
 	for i := pos; i < len(src); i++ {
 		if src[i] == 0 {
+			if !utf8.Valid(src[pos:i]) {
+				return "", i + 1, ErrBSONDecodeInvalidKey
+			}
 			return string(src[pos:i]), i + 1, nil
 		}
 	}

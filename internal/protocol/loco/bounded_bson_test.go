@@ -136,3 +136,26 @@ func TestDecodeObservedBSONGlobalWorkBound(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestDecodeObservedBSONInvalidUTF8ValueSkipsAndKeyErrorsOnlyForValue(t *testing.T) {
+	value := []byte{1, 0, 0, 0, 0x10, 'r', 0, 1, 0, 0, 0,
+		0x02, 's', 0, 3, 0, 0, 0, 0xff, 0, 0,
+		0x10, 'n', 0, 2, 0, 0, 0, 0}
+	got, err := DecodeObservedBSON(value, BSONDecodeOptions{})
+	if err != nil || got.Document["r"] != int32(1) || got.Document["s"] != nil || got.Document["n"] != int32(2) {
+		t.Fatalf("result=%#v err=%v", got, err)
+	}
+	invalidKeyNull := []byte{1, 0, 0, 0, 0x0a, 0xff, 0, 0}
+	if _, err := DecodeObservedBSON(invalidKeyNull, BSONDecodeOptions{}); err != nil {
+		t.Fatalf("invalid key with nil value should skip: %v", err)
+	}
+	invalidKeyValue := []byte{1, 0, 0, 0, 0x10, 0xff, 0, 1, 0, 0, 0, 0}
+	if !errors.Is(mustDecodeErr(invalidKeyValue), ErrBSONDecodeInvalidKey) {
+		t.Fatal("invalid key with value must fail")
+	}
+}
+
+func mustDecodeErr(src []byte) error {
+	_, err := DecodeObservedBSON(src, BSONDecodeOptions{})
+	return err
+}

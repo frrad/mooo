@@ -14,6 +14,7 @@ The proposed API is:
 type BSONDecodeOptions struct {
     MaxBytes int
     MaxDepth int
+    MaxWork  int
 }
 
 type BSONDecodeResult struct {
@@ -24,6 +25,12 @@ type BSONDecodeResult struct {
 
 func DecodeObservedBSON([]byte, BSONDecodeOptions) (BSONDecodeResult, error)
 ```
+
+`MaxWork` is a shared element-visit budget across recursive cursors. This is a
+Go safety choice: the source nested cursor has no end pointer and the parent
+resumes at the declared container width, so an input with overlapping declared
+widths can revisit suffix bytes. The default is bounded from input size; callers
+may lower it for stricter resource envelopes.
 
 The result is intentionally separate from an error. An unrecognized element
 type returns the dictionary accumulated before that element with `Partial` and
@@ -61,12 +68,18 @@ The string value helper scans from its payload to the first NUL, while the
 cursor advances by the declared string length plus four bytes. The source
 cursor's raw reads are represented with bounded equivalents; the declared root
 BSON document length is still not used as the cursor limit.
+The clean-room adapter treats invalid UTF-8 in a value string as a skipped nil
+value, preserving earlier duplicates and allowing later elements to be visited.
+Invalid UTF-8 in a key is tolerated when that value is also skipped; for a
+nonnil value it returns an explicit adapter error rather than attempting to
+insert a nil key.
 
 The synthetic tests cover scalar values, nonzero boolean normalization,
 duplicate/null preservation, recognized cursor-only skip types, string
 first-NUL/declared-width divergence, nested unknown continuation, array
 encounter order, partial unknown-type return, recursive document containers,
-and explicit byte/depth bounds. They are source-contract tests,
+and explicit byte/depth/work bounds, including invalid UTF-8 skip/error
+branches. They are source-contract tests,
 not proof that every future typed notice accepts every BSON shape. Notice
 constructor validation, SGJson property coercion, and Session binding remain
 separate decisions.
