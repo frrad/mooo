@@ -115,8 +115,12 @@ results; they cover zero-length omission and a deliberately different second
 conversion. NW cases then model only the wrapper's packet-data result guard,
 encryption nil path, connection gate, send scheduling, and timeout argument.
 The JSON-object projection fixture exercises the framework's observed
-property-contribution and conversion branches, while the app-side
-mapping-dispatch default and final BSON policy remain explicit gaps. The observed mapping phase is
+property-contribution and conversion branches. SGJsonKit directly assigns each
+property's `JSONObject` or `numberArray` hook result; it does not generically
+traverse returned containers. The fixture models supplied-property traversal,
+getter calls, and protocol precedence, without claiming runtime property
+enumeration order. The app-side mapping fallback is observed as nil; final BSON
+policy remains an explicit gap. The observed mapping phase is
 bounded separately: dictionary versus non-dictionary input, absent source,
 `NSNull` source, and ordinary source-to-destination rename are distinct cases
 and must not be collapsed into a generic field-copy operation.
@@ -138,8 +142,10 @@ before mapping. The fixture exercises each pair independently; it makes no
 claim about NSDictionary enumeration order.
 
 The framework conversion cases are in `rc-q5-sgjson-object.json`. They cover
-nil/`NSNull`, scalar zero, nested `SGJson` recursion, and ordered number-array
-projection as synthetic values; they do not claim app wire encoding.
+nil/`NSNull`, scalar zero, direct `SGJson.JSONObject` and
+`SGNumberArray.numberArray` result assignment, supplied-property getter calls,
+and protocol precedence as synthetic values; they do not claim app wire
+encoding or generic recursion.
 
 The scalar BSON vectors are in `rc-q5-bson-scalars.json`. They assert the
 observed BSON element type, little-endian payload bytes, and payload width for
