@@ -1,7 +1,9 @@
 # V2SL receive/decrypt boundary
 
 Status: reviewed static source contract; synthetic tests only. Provenance is
-KakaoTalk 26.8.0 arm64 (2026-10-05). This slice
+KakaoTalk 26.8.0 arm64. Receipt filenames containing 20261005 identify the
+private extraction batch; this document does not assign a runtime experiment
+date. This slice
 extends the merged read-header/body routing contract with the secure body
 decrypt operation. It does not claim pending-map teardown or connection
 replacement behavior.
@@ -46,7 +48,7 @@ The selected manager transport is `LocoNWAgent`. Its `readHeader` path calls
 the header receive helper at `0x100d47e28`; its `readBody:` path calls the
 separate body receive helper at `0x100d48298`. The helper reads the current
 `connection` ivar at callback time. A missing owner or connection
-returns before scheduling a receive. With a connection it enables the outgoing
+returns before scheduling a receive. With a connection it enables the incoming
 segment timeout and calls `NWConnection.receive` with minimum length 1 and
 maximum length equal to the requested input length. The raw helper tests the signed high bit of that length after enabling the timeout; a set high bit traps before the receive call. There is no zero-length guard in this slice.
 
