@@ -162,6 +162,8 @@ type Session struct {
 	receiveHeaderTimeout       receiveHeaderTimeoutController
 	inSegmentTimeout           InSegmentTimeoutController
 	pushReceipt                *pushReceiptBinding
+	receiptWorkers             int
+	receiptDone                chan struct{}
 	receiveHeaderTimeoutEnable func(command string, packetID uint32) (byte, bool)
 	receiveHeaderTimeoutState  map[uint32]*receiveHeaderTimeoutToken
 	initialChatData            []bson.Raw
@@ -880,9 +882,24 @@ func (s *Session) BindPushReceipt(sender PushReceiptSender, eligible func(loco.P
 func (s *Session) dispatchPushReceipt(packet loco.Packet) {
 	s.mu.Lock()
 	binding := s.pushReceipt
+	if binding != nil {
+		if s.receiptWorkers == 0 {
+			s.receiptDone = make(chan struct{})
+		}
+		s.receiptWorkers++
+	}
+	done := s.receiptDone
 	s.mu.Unlock()
 	if binding != nil {
-		binding.send(packet)
+		go func() {
+			binding.send(packet)
+			s.mu.Lock()
+			s.receiptWorkers--
+			if s.receiptWorkers == 0 {
+				close(done)
+			}
+			s.mu.Unlock()
+		}()
 	}
 }
 
@@ -1075,9 +1092,10 @@ func (s *Session) Close() error {
 	return wire.close()
 }
 
-// Shutdown interrupts the Session and then joins the opt-in asynchronous
-// submission worker. Callers must not invoke Shutdown from a submission
-// callback; callback-side Close remains interrupt-only to avoid self-join.
+// Shutdown interrupts the Session and then joins opt-in asynchronous
+// submission and receipt workers. Callers must not invoke Shutdown from an
+// injected callback; callback-side Close remains interrupt-only to avoid
+// self-join.
 func (s *Session) Shutdown(ctx context.Context) error {
 	if s == nil {
 		return nil
@@ -1093,7 +1111,18 @@ func (s *Session) Shutdown(ctx context.Context) error {
 	if submitter != nil {
 		waitErr = submitter.Wait(ctx)
 	}
-	return errors.Join(closeErr, waitErr)
+	s.mu.Lock()
+	receiptDone := s.receiptDone
+	s.mu.Unlock()
+	var receiptErr error
+	if receiptDone != nil {
+		select {
+		case <-receiptDone:
+		case <-ctx.Done():
+			receiptErr = ctx.Err()
+		}
+	}
+	return errors.Join(closeErr, waitErr, receiptErr)
 }
 
 type wireConn struct {
