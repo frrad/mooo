@@ -21,9 +21,9 @@ Status: active work plan, updated 2026-10-04. Framework decision:
 - `internal/bridge/connector`: `NetworkConnector`, per-login `NetworkAPI`,
   login flows, and the mapping between Kakao events and remote events.
 - `cmd/mooo-bridge`: the executable, built on the framework's standard main.
-- The connector talks to the Kakao client through a narrow interface. This keeps
-  it testable with fakes and with the existing scripted mock backend, without a
-  homeserver.
+- The connector talks to the Kakao client through a narrow interface. Fake-client
+  coverage is established; cross-package scripted-protocol integration is under
+  review and remains an acceptance gate.
 
 ## Mapping
 
@@ -41,15 +41,16 @@ distinguish implemented behavior from planned integrations.
 | Own messages | Messages written by the logged-in account on another device are sent through double puppeting. |
 | Connection | The bridge decides when to reconnect. Kakao gives it no reconnect of its own. Retries use exponential backoff and then run a bounded `CatchUp`. A dropped connection is reported as a transient disconnect; `KICKOUT` is reported as logged out or bad credentials. |
 | Read state | Matrix read receipts go to `MarkRead`. `DECUNREAD` becomes ghost read receipts. Catch-up and backfill use `SYNCMSG`, which can mark messages read on the server, so both are bounded and backfill is opt-in. |
-| Chat metadata | `Client.ChatInfo`, `Client.Members`, and `Client.MemberList` exist, but the connector still returns placeholder room and user names. Wire these APIs into portals and ghosts in B2, subject to the remaining encoding and parity gaps ([dossier](../chat-metadata.md)). Friend/contact sync remains separate. |
+| Chat metadata | The connector uses `ChatInfo`, `MemberList`, and requested `Members` profiles for initial names and membership. Complete and partial rosters remain distinct; unsupported OpenChat links fail explicitly. Avatars and membership updates remain in B2, subject to encoding and parity gaps ([dossier](../chat-metadata.md)). Friend/contact sync remains separate. |
 
 ## Current baseline and execution order
 
 B0 is a working minimal text bridge, with recorded live validation against a
 throwaway Synapse on 2026-09-30. Text works in both directions, replies work
 inbound, and restart catch-up recovers missed messages for previously committed
-chats. Photos and unsupported message kinds become notices. Rooms and ghosts
-still have placeholder metadata. The framework supplies appservice, encryption,
+chats. Photos and unsupported message kinds become notices. Initial room/member
+metadata and outbound replies have since landed with synthetic validation;
+their direct/group live validation remains outstanding. The framework supplies appservice, encryption,
 and double-puppeting machinery; that does not establish deployment validation
 for every homeserver or Beeper configuration.
 
@@ -89,6 +90,40 @@ Read receipts and opt-in historical backfill follow the alpha. Resolve the
 Define persistent conversion-failure handling before release: a failed message
 currently blocks later commits in that chat, so any bounded skip must record an
 explicit gap rather than silently advance the cursor.
+
+## Goal and acceptance evidence
+
+Deliver a usable, self-hostable single-user KakaoTalk–Matrix bridge that enrolls
+its own device, presents recognizable conversations, exchanges everyday messages,
+and recovers safely across disconnects and restarts.
+
+Completion requires all of the following, with implementation and live evidence
+tracked separately:
+
+- Fresh bridge-native QR enrollment, cancellation/expiry, secure persistence,
+  and subsequent login without repeating enrollment.
+- Correct direct/group names, supported avatars, sender profiles, initial
+  membership, and membership changes on existing portals.
+- Text, replies, photos, and supported reactions in both directions, with tested
+  missing-target, unsupported-kind, and reaction-lookup failure behavior.
+- Recovery before live delivery in previously bridged chats; replay deduplication;
+  reported unrecoverable intervals; a bounded persistent-conversion-failure policy
+  that records gaps rather than silently moving the cursor.
+- Exclusive session/checkpoint ownership, bounded cleanup and reconnect, retained
+  ownership on cleanup timeout, and distinct server-change/revocation handling.
+- Commit only after successful Matrix handling; no automatic resend after an
+  ambiguous mutation; a documented and validated catch-up read-side-effect policy.
+- A reproducible Docker installation with persistent database/profile storage,
+  standard Matrix deployment validation, and separate Beeper compatibility
+  evidence with supported configurations and limitations.
+- Real scripted-protocol connector tests and controlled owned-account enrollment,
+  direct/group messaging, offline recovery, reconnect, and restart tests; local
+  checks, secret scanning, and required CI passing before squash merge.
+
+Native QR enrollment, photo conversion, and scripted-protocol connector tests are
+currently under review. Passing their synthetic tests does not complete the live
+acceptance criteria. Read receipts, historical backfill, cloud backup/restore,
+and full official-client parity remain outside this alpha goal.
 
 ## Phases
 
@@ -150,7 +185,10 @@ explicit gap rather than silently advance the cursor.
 - [ ] Photos in both directions. Inbound photo events currently carry no
       author or timestamp; resolve that in the client first.
 - [x] Inbound reply conversion with chat-scoped source message IDs.
-- [ ] Outbound replies, including missing-source behavior and single-attempt sends.
+- [x] Outbound replies with persisted source metadata, explicit missing-source
+      rejection, chat/receiver guards, UTF-16-bounded previews, and single-attempt
+      sends. Synthetic connector and SQLite round-trip tests pass (PR #164).
+- [ ] Live-validate outbound replies, including reply after bridge restart.
 - [ ] Reactions in both directions, with the aggregate-to-per-sender strategy.
 
 ### B2: chat metadata (protocol research first)
@@ -163,7 +201,11 @@ explicit gap rather than silently advance the cursor.
 - [ ] Client APIs for them, with synthetic fixtures.
       `Client.ChatInfo`, `Client.Members`, and `Client.MemberList` exist
       (`internal/protocol/chatmeta`); friend/contact sync APIs remain.
-- [ ] Portal names, avatars, and members. Group portals.
+- [x] Initial portal names and member profiles/rosters from existing client APIs
+      (PR #162). Complete versus partial membership is explicit; unrequested
+      profiles and invalid IDs are rejected.
+- [ ] Live-validate initial metadata in direct and group portals.
+- [ ] Portal and ghost avatars, plus updates to existing portal metadata.
 - [ ] Membership events: `NEWMEM`, `DELMEM`, `LEFT`, `CHGCHATST`.
 
 ### B3: lifecycle
@@ -174,9 +216,9 @@ Reconnect is planned in detail in [`../reconnect.md`](../reconnect.md).
       stop accepting later events after either terminal notice.
 - [x] Bound active-session disconnect and retain cleanup ownership after a
       shutdown timeout; concurrent disconnects share the admission/deadline gate.
-- [ ] Complete bootstrap ownership before subscription and on failed connect;
-      join/cancel the typed decoder on idle input and blocked output. These
-      lifecycle fixes remain separate from the merged active-session shutdown.
+- [x] Complete bootstrap ownership before subscription and on failed connect;
+      join/cancel the typed decoder on idle input and blocked output. Concurrent
+      closed event admission is regression-tested (PR #160).
 - [ ] Reconnect state machine with bounded backoff, exclusive ownership, and
       catch-up before live delivery. Current recovery requires a bridge restart.
 - [x] Recorded live restart resume/catch-up validation for previously committed
