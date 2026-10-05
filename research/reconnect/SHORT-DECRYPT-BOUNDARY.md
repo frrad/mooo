@@ -15,7 +15,9 @@ The synthetic probe ran on macOS 26.6.2 (build 25G83), arm64, using the system
 Foundation framework. Each case ran in a forked child with a 128 MiB address
 space limit, a two-second alarm, and Objective-C exception capture. The input
 was either nil or synthetic bytes; no account, message, credential, or Kakao
-runtime state was used.
+runtime state was used. A nil NSData object always has effective length zero;
+the nil column therefore does not represent a nil object paired with a nonzero
+requested length.
 
 | Input length `N` | Synthetic nonnil NSData | Nil NSData |
 | ---: | --- | --- |
