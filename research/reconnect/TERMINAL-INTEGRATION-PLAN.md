@@ -20,6 +20,16 @@ and a later stream close is reported as an ordinary transient disconnect. The
 bridge's `kakaoClient` interface also exposes no route-clear, logout, reset, or
 recovery-generation operation.
 
+The Session event stream does not close a terminal stream from the carriage by
+itself: the reader forwards the typed notice to `Client.Events`, and only a
+transport close closes the raw push channel. Without an owner action, the
+profile session remains usable for `SendText` and the profile lease remains
+held. A synthetic `net.Pipe` carriage reproduced this path. The client now
+closes its owned Session when the typed decoder emits CHANGESVR or KICKOUT;
+`SendText` then fails with `ErrClientClosed`, and the event stream closes after
+the owned carriage is interrupted. This is bounded transport/session shutdown
+only; it does not clear routes, reset storage, or reconnect.
+
 This leaves two integration gaps:
 
 1. CHANGESVR needs an injected manager/recovery effect boundary that can clear

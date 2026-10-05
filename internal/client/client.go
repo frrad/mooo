@@ -317,7 +317,11 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 	c.eventStream = stream
 	checkpoint := c.checkpoint
 	c.mu.Unlock()
-	go decodeEventStreamWithContinuity(raw, stream, checkpoint, c.queueCommit)
+	go decodeEventStreamWithTerminal(raw, stream, checkpoint, c.queueCommit, func() {
+		// Terminal notices end the authenticated session. Close is interrupt-only
+		// and does not wait on the reader that delivered the notice.
+		_ = c.Close()
+	})
 	return stream, nil
 }
 
@@ -333,6 +337,10 @@ type messagePosition struct {
 const observedPositionLimit = 4096
 
 func decodeEventStreamWithContinuity(raw <-chan loco.Packet, output chan<- events.Result, checkpoint *continuity.Store, delivered func(int64, int64)) {
+	decodeEventStreamWithTerminal(raw, output, checkpoint, delivered, nil)
+}
+
+func decodeEventStreamWithTerminal(raw <-chan loco.Packet, output chan<- events.Result, checkpoint *continuity.Store, delivered func(int64, int64), terminal func()) {
 	defer close(output)
 	seen := make(map[messagePosition]struct{})
 	order := make([]messagePosition, 0, observedPositionLimit)
@@ -359,6 +367,15 @@ func decodeEventStreamWithContinuity(raw <-chan loco.Packet, output chan<- event
 			}
 		}
 		output <- events.Result{Event: event, Err: err}
+		if err == nil {
+			switch event.(type) {
+			case events.ChangeServer, events.Kickout:
+				if terminal != nil {
+					terminal()
+				}
+				return
+			}
+		}
 	}
 }
 
