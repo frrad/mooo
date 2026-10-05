@@ -39,8 +39,8 @@ func TestProjectIncomingReceiptBody(t *testing.T) {
 				Header: loco.Header{PacketID: 8, Method: "BLOCKSYNC"},
 				Method: "BLOCKSYNC",
 				Body: map[string]any{
-					"revision":     int32(math.MinInt32),
-					"plusRevision": int32(math.MaxInt32),
+					"r":  int32(math.MinInt32),
+					"pr": int32(math.MaxInt32),
 				},
 			},
 			want: ReceiptBody{Kind: ReceiptBodyBlockSync, PacketID: 8, Revision: math.MinInt32, PlusRevision: math.MaxInt32},
@@ -51,10 +51,10 @@ func TestProjectIncomingReceiptBody(t *testing.T) {
 				Header: loco.Header{PacketID: 9, Method: "BLOCKSYNC"},
 				Method: "BLOCKSYNC",
 				Body: map[string]any{
-					"r":            int32(11),
-					"pr":           int32(12),
-					"revision":     SGJSONNull{},
-					"plusRevision": SGJSONNull{},
+					"revision":     int32(11),
+					"plusRevision": int32(12),
+					"r":            SGJSONNull{},
+					"pr":           SGJSONNull{},
 				},
 			},
 			want: ReceiptBody{Kind: ReceiptBodyBlockSync, PacketID: 9, Revision: 11, PlusRevision: 12},
@@ -65,8 +65,8 @@ func TestProjectIncomingReceiptBody(t *testing.T) {
 				Header: loco.Header{PacketID: 10, Method: "BLOCKSYNC"},
 				Method: "BLOCKSYNC",
 				Body: map[string]any{
-					"r":        int32(11),
-					"revision": int32(13),
+					"revision": int32(11),
+					"r":        int32(13),
 				},
 			},
 			want: ReceiptBody{Kind: ReceiptBodyBlockSync, PacketID: 10, Revision: 13},
@@ -106,6 +106,18 @@ func TestProjectIncomingReceiptBody(t *testing.T) {
 			},
 			wantErr: ErrReceiptFieldType,
 		},
+		{
+			name: "source replaces invalid stale destination",
+			input: IncomingReceiptInput{
+				Header: loco.Header{PacketID: 16, Method: "BLOCKSYNC"},
+				Method: "BLOCKSYNC",
+				Body: map[string]any{
+					"revision": []byte{1},
+					"r":        int32(17),
+				},
+			},
+			want: ReceiptBody{Kind: ReceiptBodyBlockSync, PacketID: 16, Revision: 17},
+		},
 	}
 
 	for _, tc := range cases {
@@ -135,5 +147,35 @@ func TestProjectIncomingReceiptBodyRejectsNilHeaderMethodWithoutTransportEffects
 	})
 	if !errors.Is(err, ErrReceiptMethodMismatch) {
 		t.Fatalf("error=%v, want header mismatch", err)
+	}
+}
+
+func TestProjectIncomingReceiptBodyPreservesHeaderIdentityThroughBuilder(t *testing.T) {
+	input := IncomingReceiptInput{
+		Header: loco.Header{PacketID: ^uint32(0), Method: "HINT"},
+		Method: "HINT",
+		Body:   map[string]any{},
+	}
+	body, err := ProjectIncomingReceiptBody(input)
+	if err != nil {
+		t.Fatalf("projection error=%v", err)
+	}
+	wire, err := BuildReceiptPacket(ReceiptPacket{
+		PacketID: input.Header.PacketID,
+		Method:   input.Method,
+		Body:     body,
+	}, 64)
+	if err != nil {
+		t.Fatalf("packet build error=%v", err)
+	}
+	header, err := loco.ParseHeader(wire, 64)
+	if err != nil {
+		t.Fatalf("header parse error=%v", err)
+	}
+	if header.PacketID != input.Header.PacketID || header.Method != input.Method {
+		t.Fatalf("header=%+v, want packetID=%d method=%q", header, input.Header.PacketID, input.Method)
+	}
+	if len(wire) != loco.HeaderSize+5 {
+		t.Fatalf("wire length=%d, want empty BSON frame length %d", len(wire), loco.HeaderSize+5)
 	}
 }

@@ -14,9 +14,10 @@ var (
 	ErrReceiptFieldType      = errors.New("sessionlogin: unsupported receipt field type")
 )
 
-// IncomingReceiptInput is the boundary after LOCO framing and BSON decoding.
-// A nil Body is distinct from an allocated empty dictionary. This type does
-// not decode BSON, allocate an ID, or retain transport state.
+// IncomingReceiptInput is the scalar-projection boundary after LOCO framing,
+// BSON decoding, and the source notice constructor/validation. A nil Body is
+// distinct from an allocated empty dictionary. This type does not decode BSON,
+// validate nested notice fields, allocate an ID, or retain transport state.
 type IncomingReceiptInput struct {
 	Header loco.Header
 	Method string
@@ -24,10 +25,13 @@ type IncomingReceiptInput struct {
 }
 
 // ProjectIncomingReceiptBody converts one source-qualified HINT or BLOCKSYNC
-// notice into the existing typed receipt input. HINT accepts an allocated
-// empty dictionary. BLOCKSYNC revision fields default to signed int32 zero
-// when absent or represented by SGJSONNull. Unsupported NSNumber coercions
-// remain a separate dependency (207); this bounded unit accepts int32 only.
+// notice that has already passed its notice-level constructor/validation into
+// the existing typed receipt input. It is deliberately only a scalar
+// projection: unrelated nested fields and complete eligibility are outside
+// this boundary. HINT accepts an allocated empty dictionary. BLOCKSYNC
+// revision fields default to signed int32 zero when absent or represented by
+// SGJSONNull. Unsupported NSNumber coercions remain a separate dependency
+// (207); this bounded unit accepts int32 only.
 func ProjectIncomingReceiptBody(input IncomingReceiptInput) (ReceiptBody, error) {
 	if input.Method != "HINT" && input.Method != "BLOCKSYNC" {
 		return ReceiptBody{}, fmt.Errorf("%w: %q", ErrReceiptNotEligible, input.Method)
@@ -45,11 +49,13 @@ func ProjectIncomingReceiptBody(input IncomingReceiptInput) (ReceiptBody, error)
 		return body, nil
 	}
 	body.Kind = ReceiptBodyBlockSync
-	revision, err := projectReceiptInt32Field(input.Body, "revision", "r")
+	// The incoming source mapping is the reverse of the outgoing builder:
+	// source r/pr become typed revision/plusRevision fields.
+	revision, err := projectReceiptInt32Field(input.Body, "r", "revision")
 	if err != nil {
 		return ReceiptBody{}, err
 	}
-	plusRevision, err := projectReceiptInt32Field(input.Body, "plusRevision", "pr")
+	plusRevision, err := projectReceiptInt32Field(input.Body, "pr", "plusRevision")
 	if err != nil {
 		return ReceiptBody{}, err
 	}
@@ -59,23 +65,17 @@ func ProjectIncomingReceiptBody(input IncomingReceiptInput) (ReceiptBody, error)
 }
 
 func projectReceiptInt32Field(fields map[string]any, source, destination string) (int32, error) {
-	var result int32
-	if value, ok := fields[destination]; ok {
-		if !isReceiptJSONNull(value) {
-			var err error
-			result, err = receiptInt32(value, destination)
-			if err != nil {
-				return 0, err
-			}
-		}
-	}
 	if value, ok := fields[source]; ok {
-		if isReceiptJSONNull(value) {
-			return result, nil
+		if !isReceiptJSONNull(value) {
+			// Source mapping replaces the destination before typed KVC. An
+			// invalid stale destination must not reject a valid source.
+			return receiptInt32(value, source)
 		}
-		return receiptInt32(value, source)
 	}
-	return result, nil
+	if value, ok := fields[destination]; ok && !isReceiptJSONNull(value) {
+		return receiptInt32(value, destination)
+	}
+	return 0, nil
 }
 
 func receiptInt32(value any, field string) (int32, error) {
