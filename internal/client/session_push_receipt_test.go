@@ -132,6 +132,23 @@ func TestPushReceiptBindingCloseDoesNotDeadlockSenderReentry(t *testing.T) {
 	}
 }
 
+func TestPushReceiptBindingNilWireCloseInvalidatesOwner(t *testing.T) {
+	session := newSession(nil)
+	sender := &receiptSenderSpy{}
+	if err := session.BindPushReceipt(sender, func(loco.Packet) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sender.mu.Lock()
+	closed := sender.closed
+	sender.mu.Unlock()
+	if !closed {
+		t.Fatal("nil-wire session close did not invalidate receipt binding")
+	}
+}
+
 func TestPushReceiptBindingCloseDoesNotWaitForBlockedSender(t *testing.T) {
 	session := newSession(nil)
 	sender := &blockedReceiptSender{started: make(chan struct{}), release: make(chan struct{})}
