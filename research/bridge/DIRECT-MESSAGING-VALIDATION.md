@@ -61,8 +61,9 @@ unencrypted portal was downloaded, decrypted, and delivered as a Kakao photo;
 the resulting source event had a positive log ID and persisted photo metadata.
 The one reply attempt used a synthetic target whose Matrix event ID was
 newline-contaminated by the test harness, so it was rejected before Kakao
-mutation; this does not establish a product missing-target failure. The one
-heart reaction mutation and reported a generic failure. Retained evidence
+mutation; this does not establish a product missing-target failure. The
+connector attempted one heart reaction mutation and reported a generic failure.
+Retained evidence
 cannot distinguish server rejection from transport or another ambiguous
 outcome; neither operation was retried.
 
