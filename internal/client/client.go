@@ -59,6 +59,7 @@ type Client struct {
 	pushConsumer     pushConsumerMode
 	eventStream      chan events.Result
 	eventDone        chan struct{}
+	eventStop        chan struct{}
 	commitMu         sync.Mutex
 	commitActive     int
 	commitDone       chan struct{}
@@ -317,14 +318,16 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 	}
 	stream := make(chan events.Result, requestLimit)
 	done := make(chan struct{})
+	stop := make(chan struct{})
 	c.pushConsumer = pushConsumerTyped
 	c.eventStream = stream
 	c.eventDone = done
+	c.eventStop = stop
 	checkpoint := c.checkpoint
 	c.mu.Unlock()
 	go func() {
 		defer close(done)
-		decodeEventStreamWithTerminal(raw, stream, checkpoint, c.queueCommit, c.interruptTerminal)
+		decodeEventStreamWithTerminalStop(raw, stream, checkpoint, c.queueCommit, c.interruptTerminal, stop)
 	}()
 	return stream, nil
 }
@@ -361,6 +364,10 @@ func decodeEventStreamWithContinuity(raw <-chan loco.Packet, output chan<- event
 }
 
 func decodeEventStreamWithTerminal(raw <-chan loco.Packet, output chan<- events.Result, checkpoint *continuity.Store, delivered func(int64, int64), terminal func()) {
+	decodeEventStreamWithTerminalStop(raw, output, checkpoint, delivered, terminal, nil)
+}
+
+func decodeEventStreamWithTerminalStop(raw <-chan loco.Packet, output chan<- events.Result, checkpoint *continuity.Store, delivered func(int64, int64), terminal func(), stop <-chan struct{}) {
 	defer close(output)
 	seen := make(map[messagePosition]struct{})
 	order := make([]messagePosition, 0, observedPositionLimit)
@@ -392,11 +399,28 @@ func decodeEventStreamWithTerminal(raw <-chan loco.Packet, output chan<- events.
 				if terminal != nil {
 					terminal()
 				}
-				output <- events.Result{Event: event, Err: err}
+				if !emitEventResult(output, events.Result{Event: event, Err: err}, stop) {
+					return
+				}
 				return
 			}
 		}
-		output <- events.Result{Event: event, Err: err}
+		if !emitEventResult(output, events.Result{Event: event, Err: err}, stop) {
+			return
+		}
+	}
+}
+
+func emitEventResult(output chan<- events.Result, result events.Result, stop <-chan struct{}) bool {
+	if stop == nil {
+		output <- result
+		return true
+	}
+	select {
+	case output <- result:
+		return true
+	case <-stop:
+		return false
 	}
 }
 
@@ -742,7 +766,12 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		}
 		c.mu.Lock()
 		eventDone := c.eventDone
+		eventStop := c.eventStop
+		c.eventStop = nil
 		c.mu.Unlock()
+		if eventStop != nil {
+			close(eventStop)
+		}
 		if eventDone != nil {
 			select {
 			case <-eventDone:
