@@ -1,7 +1,7 @@
 # Push-receipt body composition
 
 Status: reviewed static source chain, runtime unexecuted. This contract covers
-object-to-dictionary composition before the existing `packetData` framing
+object-to-dictionary composition before the `LocoPacket`/`packetData` framing
 contract.
 
 The inherited `JSONObject` implementation at `0x101355b04` starts from the
@@ -15,8 +15,18 @@ the exact five-byte document `05 00 00 00 00`.
 `LocoBlockSyncPushReceipt` contributes signed int32 `revision` and
 `plusRevision`. Its static mapping phase maps those source properties to the
 wire keys `r` and `pr`, preserving signed int32 values including zero and
-negative values. The source receipts establish the keys and widths; BSON
+negative values. These property facts and the no-own-property HINT fact are
+version-scoped to the inspected macOS client build. The source receipts establish the keys and widths; BSON
 mapping key order remains an encoder concern and is not asserted here.
+
+The receipt-to-packet chain is two-stage. The receipt-side method at
+`0x101355cac` reads `packetId` and `method`, obtains the receipt's
+`JSONObject`, and calls `initWithPacketId:method:body:`. That initializer is
+`LocoPacket` IMP `0x10175a0f8` with Objective-C types
+`@36@0:8I16@20@28`; its `packetId` input is uint32 and its body is the
+JSONObject. The packet's `body` getter is IMP `0x10175a3ac`, and `packetData`
+then obtains that body and calls `BSONData` before framing. Thus the receipt
+projection and packet framing are separate objects and separate guards.
 
 The composition test constructs the inherited header property dictionary from
 synthetic method/packet inputs, applies static removal, maps BLOCKSYNC fields,
@@ -34,7 +44,10 @@ proves header/body framing and the second BSON conversion guard.
   phase and BLOCKSYNC mapping IMP `0x1016bb150`.
 - `reconnect-conf-model/otool-objc.txt`: class hierarchy, properties, and
   signed/unsigned field metadata.
-- `nw-body-methods.txt`: the receipt `body` selector dispatches to the
-  inherited object-to-dictionary path before BSON conversion.
+- `nw-body-methods.txt`: selector/class metadata for `body` and
+  `initWithPacketId:method:body:`; the exact LocoPacket getter and initializer
+  traces are in the private wire-chain receipts.
+- `nw-receipt-wire-chain-2026-10-05/receipt-init.txt` and `body-getter.txt`:
+  the two-stage receipt JSONObject → LocoPacket construction and body getter.
 - `nw-receipt-wire-chain-2026-10-05/packetdata-parity.txt`: `body` → BSONData
   → header/body framing selector order.
