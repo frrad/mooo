@@ -20,3 +20,15 @@ model therefore keeps state mutation and revision completion as distinct
 steps. The source trace does not establish transaction commit or rollback,
 retry behavior, worker exception propagation, or completion-error handling;
 those remain explicit gaps.
+
+The recovered `MKNest performBlockAndWait:` implementation does establish the
+operation boundary. It obtains the database and operation queue, invokes the
+write block inline when the current queue matches, and otherwise wraps it with
+`createWriteBlock:` (`0x10146d580`), creates an `NSBlockOperation`, and calls
+`addOperations:waitUntilFinished:YES`. The wrapper invokes the captured write
+block with a weakly retained owner, then calls `processChangedObjects`
+(`0x1018fb440`) before draining its autorelease pool. A missing database or
+queue skips the write block without an exposed error. This proves synchronous
+completion of the operation wrapper when the context exists, but it does not
+prove that the underlying store has committed, nor does it reveal rollback or
+retry behavior.
