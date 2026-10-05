@@ -2,6 +2,7 @@ package sessionlogin
 
 import (
 	"bytes"
+	"encoding/binary"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -22,7 +23,7 @@ func TestBuildReceiptBodyHintIsCanonicalEmptyDocument(t *testing.T) {
 func TestBuildReceiptBodyBlockSyncUsesRenamedInt32Fields(t *testing.T) {
 	body, err := BuildReceiptBody(ReceiptBody{
 		Kind: ReceiptBodyBlockSync, PacketID: 17,
-		Revision: -1, PlusRevision: 2147483647,
+		Revision: -2147483648, PlusRevision: 2147483647,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -34,10 +35,26 @@ func TestBuildReceiptBodyBlockSyncUsesRenamedInt32Fields(t *testing.T) {
 	if got := raw.Lookup("packetId"); got.Type != 0 {
 		t.Fatalf("packetId survived mapping: %v", got.Type)
 	}
-	for key, want := range map[string]int32{"r": -1, "pr": 2147483647} {
-		got := raw.Lookup(key)
-		if got.Type != bson.TypeInt32 || got.Int32() != want {
-			t.Fatalf("%s=%v/%d want BSON int32(%d)", key, got.Type, got.Int32(), want)
+	expected := map[string]int32{"r": -2147483648, "pr": 2147483647}
+	elements, err := raw.Elements()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elements) != len(expected) {
+		t.Fatalf("final keys=%d want exactly %d", len(elements), len(expected))
+	}
+	for _, element := range elements {
+		want, ok := expected[element.Key()]
+		if !ok {
+			t.Fatalf("unexpected final key %q", element.Key())
+		}
+		value := element.Value()
+		if value.Type != bson.TypeInt32 || len(value.Value) != 4 {
+			t.Fatalf("%s=%v/%d bytes want BSON int32/4 bytes", element.Key(), value.Type, len(value.Value))
+		}
+		got := int32(binary.LittleEndian.Uint32(value.Value))
+		if got != want {
+			t.Fatalf("%s payload=%d want %d", element.Key(), got, want)
 		}
 	}
 }
