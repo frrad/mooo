@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -19,14 +20,42 @@ type receiptBodyCase struct {
 }
 
 // projectReceiptBody models the source-observed static property removal and
-// BLOCKSYNC mapping phase. It intentionally leaves BSON element order to the
-// encoder; the source receipt proves the keys/types, while the empty HINT
-// document is an exact five-byte vector.
+// BLOCKSYNC mapping phase. The input starts with the inherited header
+// properties, removes method/packetId, then applies the receipt mapping before
+// encoding the resulting int32 dictionary as BSON.
 func projectReceiptBody(c receiptBodyCase) (map[string]int32, []byte) {
+	properties := map[string]int32{"method": int32(len(c.method)), "packetId": int32(c.packetID)}
 	if c.kind == "hint" {
-		return map[string]int32{}, []byte{5, 0, 0, 0, 0}
+		delete(properties, "method")
+		delete(properties, "packetId")
+		return properties, encodeInt32BSON(properties)
 	}
-	return map[string]int32{"r": c.revision, "pr": c.plus}, nil
+	delete(properties, "method")
+	delete(properties, "packetId")
+	properties["r"] = c.revision
+	properties["pr"] = c.plus
+	return properties, encodeInt32BSON(properties)
+}
+
+func encodeInt32BSON(values map[string]int32) []byte {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	body := make([]byte, 0, len(values)*10+1)
+	for _, key := range keys {
+		body = append(body, 0x10)
+		body = append(body, key...)
+		body = append(body, 0)
+		var value [4]byte
+		binary.LittleEndian.PutUint32(value[:], uint32(values[key]))
+		body = append(body, value[:]...)
+	}
+	body = append(body, 0)
+	out := make([]byte, 4, len(body)+4)
+	binary.LittleEndian.PutUint32(out, uint32(len(body)+4))
+	return append(out, body...)
 }
 
 func TestPushReceiptBodyComposition(t *testing.T) {
@@ -62,5 +91,17 @@ func TestPushReceiptBodyComposition(t *testing.T) {
 				t.Errorf("%s signed revision width", c.name)
 			}
 		}
+	}
+}
+
+func TestPushReceiptBodyRequiresStaticHeaderRemoval(t *testing.T) {
+	input := receiptBodyCase{kind: "hint", method: "HINT", packetID: 17}
+	projected, body := projectReceiptBody(input)
+	if len(projected) != 0 || !bytes.Equal(body, []byte{5, 0, 0, 0, 0}) {
+		t.Fatalf("static removal projection=%v bson=%x", projected, body)
+	}
+	withoutRemoval := map[string]int32{"method": int32(len(input.method)), "packetId": int32(input.packetID)}
+	if bytes.Equal(encodeInt32BSON(withoutRemoval), body) {
+		t.Fatal("negative control unexpectedly matched empty HINT body")
 	}
 }
