@@ -108,3 +108,20 @@ func TestDecodeObservedBSONArrayKeepsEncounterOrder(t *testing.T) {
 		t.Fatalf("result=%#v", got)
 	}
 }
+
+func TestDecodeObservedBSONRecognizedDBPointerUsesDeclaredWidth(t *testing.T) {
+	data := []byte{
+		1, 0, 0, 0,
+		0x0c, 'p', 0, 4, 0, 0, 0, 'a', 'b', 'c', 0,
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+		0x10, 'r', 0, 5, 0, 0, 0,
+		0,
+	}
+	got, err := DecodeObservedBSON(data, BSONDecodeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Partial || got.Document["r"] != int32(5) || len(got.Document) != 1 {
+		t.Fatalf("result=%#v", got)
+	}
+}

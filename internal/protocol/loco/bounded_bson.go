@@ -185,7 +185,10 @@ func decodeObservedElement(src []byte, pos int, typ byte, options BSONDecodeOpti
 		if length < 5 || length > int64(len(src)-pos) {
 			return nil, pos, 0, ErrBSONDecodeMalformed
 		}
-		value, _, unknown, err := decodeObservedDocument(src, pos+4, pos+int(length), options, depth+1, false, false)
+		// The source recursive cursor receives no container-end argument. It
+		// stops on the nested zero terminator (bounded here only by src), while
+		// the parent advances by the declared container width.
+		value, _, unknown, err := decodeObservedDocument(src, pos+4, len(src), options, depth+1, false, false)
 		return value, pos + int(length), unknown, err
 	case 0x04:
 		if len(src)-pos < 4 {
@@ -195,7 +198,7 @@ func decodeObservedElement(src []byte, pos int, typ byte, options BSONDecodeOpti
 		if length < 5 || length > int64(len(src)-pos) {
 			return nil, pos, 0, ErrBSONDecodeMalformed
 		}
-		value, _, unknown, err := decodeObservedDocument(src, pos+4, pos+int(length), options, depth+1, true, false)
+		value, _, unknown, err := decodeObservedDocument(src, pos+4, len(src), options, depth+1, true, false)
 		return value, pos + int(length), unknown, err
 	default:
 		// The official helper returns no value for an unknown type; the outer
@@ -240,11 +243,16 @@ func skipObservedValue(src []byte, pos int, typ byte) (int, error) {
 		}
 		return readCStringEnd(end)
 	case 0x0c:
-		end, err := readCStringEnd(pos)
-		if err != nil {
-			return pos, err
+		if len(src)-pos < 4 {
+			return pos, ErrBSONDecodeMalformed
 		}
-		return readN((end - pos) + 12)
+		n := int64(int32(binary.LittleEndian.Uint32(src[pos : pos+4])))
+		if n < 0 {
+			return pos, ErrBSONDecodeMalformed
+		}
+		// DBPointer cursor width is declared string length + 16 bytes;
+		// unlike the value helper, it does not scan for the string NUL.
+		return readN(16 + int(n))
 	case 0x0d, 0x0e:
 		if len(src)-pos < 4 {
 			return pos, ErrBSONDecodeMalformed

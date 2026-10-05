@@ -47,9 +47,14 @@ The bounded supported matrix is:
 | `0x12` | `int64` | eight-byte little-endian payload |
 
 Unknown element types stop the local dictionary/array loop and return its
-partial value. For a nested document or array, the parent cursor then resumes
-at the nested element's declared container width; the nested partial value is
-retained and the unknown type is not propagated as a root partial result.
+partial value. Recursive cursors are bounded here by the supplied Go slice and
+their own zero terminator, matching the source helper's lack of a nested end
+pointer. The parent cursor then resumes at the nested element's declared
+container width; the nested partial value is retained and the unknown type is
+not propagated as a root partial result. A DBPointer (`0x0c`) is skipped by its
+declared string length plus sixteen bytes; its value helper does not scan for a
+NUL. Other recognized cursor-only widths are represented by the synthetic
+vectors and remain separate from unknown-type handling.
 Duplicate ordinary values replace earlier values; a later null/undefined or
 other recognized-but-value-less element does not overwrite an earlier value.
 The string value helper scans from its payload to the first NUL, while the
