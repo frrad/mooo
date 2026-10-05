@@ -23,20 +23,20 @@ This exception behavior is a direct KVC result. SGJson projection separately
 filters `NSNull` before KVC for declared properties, so these object inputs do
 not imply a whole-chain failure when they arrive through that projection path.
 
-The official model metadata identifies `LocoBlockSyncPushReceipt.revision`
-and `plusRevision` as signed 32-bit properties (`Ti`, width 4), with ivars of
-the same type. The SGJson path enumerates declared properties, reads each
-value by KVC, then passes the resulting value to the scalar BSON conversion
-branch. This note records the conversion boundary only; it does not claim a
-default HINT/BLOCKSYNC activation policy or a server-side acceptance rule.
+The official incoming model metadata identifies
+`LocoBlockSyncPushNotice.revision` and `plusRevision` as signed 32-bit
+properties (`Ti`, width 4), with ivars of the same type. Its `initJSONObject:`
+path reads dictionary values and routes the typed values through
+`setValue:forKey:`. The SGJsonObject null guard skips `NSNull` before that KVC
+write; the outer behavior for array or dictionary inputs remains untraced.
+This note records the conversion boundary only; it does not claim a default
+notice activation policy or a server-side acceptance rule.
 
-The reviewed static chain places the inherited `LocoPushReceipt` JSON
-implementation at `0x101355b04`; its mutable-dictionary path removes the
-class properties before applying the mapping dictionary. The
-`LocoBlockSyncPushReceipt` mapping override is at `0x1016bb150`. These source
-receipts establish where the typed property value enters projection and
-mapping; they do not turn the local Foundation coercion result into a claim
-about every model class or every platform release.
+The reviewed incoming source receipts cover the `SGJsonObject` initializer
+and the `LocoBlockSyncPushNotice` typed-property path. Neither the notice nor
+the app-level `LocoModel` metadata shows an app override of
+`setValue:forKey:` or `setValue:forUndefinedKey:`; framework fallback and
+outer exception handling remain separate boundaries.
 
 The synthetic vector test records the input class and Objective-C type for all
 21 cases, including the seven factory-created signed-64-bit inputs. It is

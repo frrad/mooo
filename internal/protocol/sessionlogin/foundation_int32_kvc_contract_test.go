@@ -38,7 +38,8 @@ type foundationInt32KVCCase struct {
 // probe. It is a test fixture for platform behavior, not a production KVC
 // policy and not a claim about every Apple platform version.
 func foundationInt32KVC(c foundationInt32KVCCase) (int32, string, error) {
-	if c.Outcome == "exception" {
+	switch c.InputKind {
+	case "NSNull", "NSArray", "NSDictionary":
 		return c.InitialValue, "exception", nil
 	}
 	switch c.InputKind {
@@ -103,8 +104,23 @@ func TestFoundationInt32KVCFixture(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", c.Name, err)
 		}
-		if outcome != c.Outcome || got != c.InitialValue && c.ExpectedValue == nil || c.ExpectedValue != nil && got != *c.ExpectedValue {
-			t.Errorf("%s got=(%d,%s) want=(%v,%s)", c.Name, got, outcome, c.ExpectedValue, c.Outcome)
+		expectedOutcome := "value"
+		switch c.InputKind {
+		case "NSNull", "NSArray", "NSDictionary":
+			expectedOutcome = "exception"
+		}
+		if outcome != expectedOutcome {
+			t.Errorf("%s outcome=%s want %s", c.Name, outcome, expectedOutcome)
+			continue
+		}
+		if expectedOutcome == "exception" {
+			if got != c.InitialValue {
+				t.Errorf("%s exception changed value=%d want initial %d", c.Name, got, c.InitialValue)
+			}
+			continue
+		}
+		if c.ExpectedValue == nil || got != *c.ExpectedValue {
+			t.Errorf("%s got=%d want=%v", c.Name, got, c.ExpectedValue)
 		}
 	}
 }
