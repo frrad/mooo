@@ -444,7 +444,17 @@ func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 		EventSender: kc.selfSender(),
 		Membership:  event.MembershipJoin,
 	})
+	requested := make(map[int64]struct{}, len(userIDs))
+	for _, userID := range userIDs {
+		requested[userID] = struct{}{}
+	}
 	for _, profile := range profiles {
+		if profile.UserID <= 0 || profile.UserID == kc.userID {
+			continue
+		}
+		if _, ok := requested[profile.UserID]; !ok {
+			continue
+		}
 		kc.mu.Lock()
 		kc.profiles[profile.UserID] = profile
 		kc.mu.Unlock()
@@ -471,10 +481,14 @@ func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 	}
 
 	info := &bridgev2.ChatInfo{Members: &bridgev2.ChatMemberList{
-		IsFull:           completeRoster,
-		MemberMap:        members,
-		TotalMemberCount: len(members),
+		IsFull:    completeRoster,
+		MemberMap: members,
 	}}
+	if completeRoster {
+		info.Members.TotalMemberCount = len(members)
+	} else if data.ActiveMemberCount > 0 {
+		info.Members.TotalMemberCount = int(data.ActiveMemberCount)
+	}
 	if name := chatName(data); name != "" {
 		info.Name = &name
 	}
@@ -500,10 +514,16 @@ func (kc *KakaoClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 func (kc *KakaoClient) metadataClient() (kakaoClient, error) {
 	kc.mu.Lock()
 	defer kc.mu.Unlock()
+	if kc.client != nil {
+		return kc.client, nil
+	}
+	if kc.cleanup != nil {
+		return kc.cleanup, nil
+	}
 	if kc.client == nil {
 		return nil, bridgev2.ErrNotLoggedIn
 	}
-	return kc.client, nil
+	return nil, bridgev2.ErrNotLoggedIn
 }
 
 func chatName(data chatmeta.ChatData) string {

@@ -262,7 +262,10 @@ func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
 			Meta:             &chatmeta.RoomMeta{Name: "Source room"},
 		}},
 		memberList: chatmeta.MemberListResponse{Token: 9, MemberIDs: []int64{testSelfID, testOtherID}},
-		members:    []chatmeta.Member{{UserID: testOtherID, Nickname: "Source user"}},
+		members: []chatmeta.Member{
+			{UserID: testOtherID, Nickname: "Source user"},
+			{UserID: 9999, Nickname: "Unexpected"},
+		},
 	}
 	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
 	kc.client = fake
@@ -283,7 +286,7 @@ func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
 		t.Fatalf("other member = %+v, want source profile", other)
 	}
 	if _, ok := info.Members.MemberMap[makeUserID(9999)]; ok {
-		t.Fatal("metadata invented a member")
+		t.Fatal("metadata admitted a profile outside the requested roster")
 	}
 	if got := fake.metadataCalls; fmt.Sprint(got) != "[ChatInfo(3000) MemberList(3000,0) Members(3000,2)]" {
 		t.Fatalf("metadata calls = %v", got)
@@ -296,12 +299,34 @@ func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
 	}
 }
 
+func TestCatchUpMetadataCallbackUsesBootstrapOwner(t *testing.T) {
+	stream := make(chan events.Result)
+	missed := events.TextMessage{ChatID: testChatID, LogID: 41, AuthorID: testOtherID, Message: "missed"}
+	fake := &fakeKakao{
+		stream:        stream,
+		resumeTargets: []syncmsg.Target{{ChatID: testChatID, MaxLogID: 41}},
+		catchUps:      map[int64]catchUpResult{testChatID: {events: []events.Event{missed}}},
+		chatInfo:      chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: testChatID, Meta: &chatmeta.RoomMeta{Name: "Room"}}},
+	}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.queue = func(evt bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		if _, err := kc.GetChatInfo(context.Background(), &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, makeUserLoginID(testSelfID))}}); err != nil {
+			t.Errorf("metadata callback during catch-up: %v", err)
+		}
+		return bridgev2.EventHandlingResultSuccess
+	}
+	kc.Connect(context.Background())
+	close(stream)
+	waitForState(t, harness, status.StateTransientDisconnect)
+}
+
 func TestGetChatInfoKeepsDisplayOnlyRosterPartial(t *testing.T) {
 	fake := &fakeKakao{
 		chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{
-			ChatID:           testChatID,
-			DisplayUserIDs:   []int64{testOtherID},
-			DisplayNicknames: []string{"Display user"},
+			ChatID:            testChatID,
+			ActiveMemberCount: 3,
+			DisplayUserIDs:    []int64{testOtherID},
+			DisplayNicknames:  []string{"Display user"},
 		}},
 		members: []chatmeta.Member{{UserID: testOtherID, Nickname: "Display user"}},
 	}
@@ -318,6 +343,9 @@ func TestGetChatInfoKeepsDisplayOnlyRosterPartial(t *testing.T) {
 	}
 	if info.Members.IsFull {
 		t.Fatal("display-only IDs were marked as a complete roster")
+	}
+	if info.Members.TotalMemberCount != 3 {
+		t.Fatalf("partial roster total = %d, want source active-member count", info.Members.TotalMemberCount)
 	}
 }
 
