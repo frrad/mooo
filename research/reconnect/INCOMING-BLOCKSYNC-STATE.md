@@ -49,7 +49,9 @@ nonempty fallback list, which first crosses the
 `doPlusBlockMemberWithUserIds:completion:` callback boundary. The callback and
 revision ordering is represented as a source-effect fixture; it does not claim
 that the callback persists data or that worker failures propagate to the
-caller.
+caller. Both completion forms update the full-sync flag before entering the
+nested revision operation; absent DB or queue context therefore skips only the
+revision setter in the model.
 
 The recovered `MKNest performBlockAndWait:` implementation does establish the
 operation boundary. It obtains the database and operation queue, invokes the
