@@ -5,14 +5,21 @@ proposed by this document. This slice depends on the reviewed incoming
 eligibility contract (held in PR203) and the merged receipt body, packet,
 encryption, and Session lifecycle contracts.
 
-The existing Session seam is already generic and opt-in. `BindPushReceipt`
+The existing Session seam is already generic and opt-in. Its current
+`EligiblePushReceiptPacket` helper only checks the reviewed method names and
+nonzero body-length consistency; it deliberately admits arbitrary consistent
+raw bytes for seam tests and is not the final typed upstream eligibility
+contract. `BindPushReceipt`
 accepts a `PushReceiptSender` (`Send(packet any) error`) and an injected
 `func(loco.Packet) bool` eligibility predicate before reader startup. When
 `dispatchPacket` cannot correlate an incoming packet, `readLoopBody` forwards
 the original `loco.Packet` to `dispatchPushReceipt`; the normal unsolicited push
 stream continues independently. `Session.Shutdown` joins the binding worker
 and any optional sender owner. The seam does not allocate IDs, build packets,
-choose wire tags, encrypt, retry, or insert pending-map entries.
+choose wire tags, encrypt, retry, or insert pending-map entries. `readLoopBody`
+queues the receipt callback before enqueueing the ordinary push stream, but the
+worker is asynchronous; that queue order does not establish typed-consumer
+completion before sending.
 
 A future typed adapter should therefore have one source-qualified eligibility
 boundary and one explicit composition boundary:
@@ -25,9 +32,11 @@ boundary and one explicit composition boundary:
    treating all of them as Go zero values.
 2. The adapter receives a caller-owned `uint32` packet ID and a typed
    `sessionlogin.ReceiptBody`. `BuildReceiptBody` produces the reviewed BSON
-   body; `BuildReceiptPacket` copies the same explicit ID and method into the
-   plaintext LOCO header. Neither function allocates an ID or touches pending
-   request state.
+   body; `BuildReceiptPacket` copies the caller-supplied explicit ID and method
+   into the plaintext LOCO header. The source-qualified adapter should select a
+   matching method/body-kind pair before calling it; the constructor itself does
+   not prove or add a generic method/kind validation rule. Neither function
+   allocates an ID or touches pending request state.
 3. The existing reviewed encryption and write owners compose around the
    plaintext packet. The signed receipt admission tag stays separate from the
    uint32 header ID and from any lower socket-write tag. The adapter reports
