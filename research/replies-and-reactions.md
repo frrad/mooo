@@ -157,9 +157,10 @@ The caller's reaction limit is one, matching the observed cancellation model.
 
 Incoming `CHGLOGMETA` updates always fetch the legacy members response, including
 when the aggregate `rx` list is empty. A complete supported response requires a
-positive members revision, positive user IDs, and no conflicting user buckets.
-Only then does the connector emit a full `ReactionSync`; the applied revision is
-stored with the bridged message and advanced after Matrix handling succeeds.
+positive members revision at least as new as the triggering event, positive user
+IDs, and no conflicting user buckets. Only then does the connector emit a full
+`ReactionSync`; the exact members revision applied is stored with the bridged
+message and advanced after Matrix handling succeeds.
 Unknown or malformed numeric buckets, mini/custom items, and lookup failures
 preserve existing Matrix state and produce a bounded room notice. The connector
 never treats an aggregate item's `o` identifier as a legacy selection value.
