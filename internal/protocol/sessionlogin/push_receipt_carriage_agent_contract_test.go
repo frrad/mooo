@@ -20,6 +20,7 @@ type carriageAgentCase struct {
 	NewAgentIdentity        string   `json:"new_agent_identity"`
 	CallbackArgIdentity     string   `json:"callback_arg_identity"`
 	ExpectedCurrentIdentity string   `json:"expected_current_identity"`
+	ConcreteClass           string   `json:"concrete_class"`
 	ExpectedEffects         []string `json:"expected_effects"`
 }
 
@@ -30,7 +31,7 @@ func expectedCarriageAgent(c carriageAgentCase) []string {
 	case "connect_set":
 		return []string{"construct_carriage_agent", "disable_fallback", "set_carriage_agent", "install_status_handler", "set_manager_status", "connect_agent"}
 	case "factory_selection":
-		return []string{"factory_selection_unproven"}
+		return []string{"factory_select_loco_nw_agent"}
 	default:
 		return nil
 	}
@@ -67,12 +68,12 @@ func TestPushReceiptCarriageAgentFixture(t *testing.T) {
 				t.Errorf("%s receipt identity handoff=%q callback=%q expected=%q", c.Name, c.CurrentAgentIdentity, c.CallbackArgIdentity, c.ExpectedCurrentIdentity)
 			}
 		case "connect_set":
-			if c.NewAgentIdentity == "" || c.CallbackArgIdentity != c.NewAgentIdentity || c.ExpectedCurrentIdentity != c.NewAgentIdentity {
+			if c.NewAgentIdentity == "" || c.CallbackArgIdentity != c.NewAgentIdentity || c.ExpectedCurrentIdentity != c.NewAgentIdentity || c.ConcreteClass != "LocoNWAgent" {
 				t.Errorf("%s connect identity current=%q new=%q callback=%q expected=%q", c.Name, c.CurrentAgentIdentity, c.NewAgentIdentity, c.CallbackArgIdentity, c.ExpectedCurrentIdentity)
 			}
 		case "factory_selection":
-			if c.ExpectedCurrentIdentity != "" || c.NewAgentIdentity != "" || c.CallbackArgIdentity != "" {
-				t.Errorf("%s unproven factory must not invent identities", c.Name)
+			if c.ConcreteClass != "LocoNWAgent" {
+				t.Errorf("%s concrete class=%q, want LocoNWAgent", c.Name, c.ConcreteClass)
 			}
 		}
 	}
