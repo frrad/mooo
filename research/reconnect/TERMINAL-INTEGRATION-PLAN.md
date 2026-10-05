@@ -51,6 +51,12 @@ reports an admitted CHANGESVR as a distinct transient-disconnect error after
 the stream ends, preserving the no-auto-reconnect policy; this is a reporting
 boundary, not route mutation.
 
+Once either terminal notice is observed, later stream events are discarded
+until the stream closes. Repeated terminal notices are therefore idempotent,
+and a normal message cannot be committed after terminal ownership has begun.
+An explicit `Disconnect` still wins over terminal reporting through the
+existing stopping guard, so shutdown does not emit a second state.
+
 * CHANGESVR records clear-route, ticket-cursor selection, logout, and carriage
   disconnect in source order; no automatic reconnect is inferred.
 * KICKOUT rejects unauthenticated or already-logging-out input, records the

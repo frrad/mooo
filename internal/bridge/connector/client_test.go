@@ -400,6 +400,37 @@ func TestChangeServerReportsDistinctTerminalDisconnect(t *testing.T) {
 	}
 }
 
+func TestTerminalNoticeStopsLaterEvents(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		event events.Event
+		state status.BridgeStateEvent
+		want  status.BridgeStateErrorCode
+	}{
+		{name: "change-server", event: events.ChangeServer{}, state: status.StateTransientDisconnect, want: stateChangeServer},
+		{name: "kickout", event: events.Kickout{Reason: 7}, state: status.StateBadCredentials, want: stateKickedOut},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeKakao{stream: make(chan events.Result, 3)}
+			kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+
+			kc.Connect(context.Background())
+			fake.stream <- events.Result{Event: tc.event}
+			fake.stream <- events.Result{Event: events.TextMessage{ChatID: testChatID, LogID: 22, AuthorID: testOtherID, Message: "after-terminal"}}
+			fake.stream <- events.Result{Event: tc.event}
+			close(fake.stream)
+
+			waitForState(t, harness, tc.state)
+			if got := harness.lastState().Error; got != tc.want {
+				t.Fatalf("error = %q, want %q", got, tc.want)
+			}
+			if got := fake.committed(); len(got) != 0 {
+				t.Fatalf("commits after terminal notice = %v, want none", got)
+			}
+		})
+	}
+}
+
 func TestDisconnectClosesClientWithoutReportingFailure(t *testing.T) {
 	fake := &fakeKakao{stream: make(chan events.Result)}
 	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
