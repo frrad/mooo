@@ -6,7 +6,7 @@ Status: reviewed static source chain, runtime unexecuted. Observation date:
 The reviewed `logoutForChangeServer` body clears the cached carriage address,
 checks for another ticket address, advances that cursor only when one exists,
 and then sends `logout`. The downstream manager `logout` implementation
- disconnects the ticket agent and then the carriage agent, in that order. This
+disconnects the ticket agent and then the carriage agent, in that order. This
 establishes route-change teardown ordering; it does not establish whether a new
 booking or login is automatically started afterward.
 
@@ -21,8 +21,8 @@ their implementations.
 The `locoDidKickout:` consumer is a separate downstream chain. Its raw guards
 suppress all later work when `isLoggedIn` is false or `isLoggingOut` is true. For
 an admitted event it reads the reason and three optional user-info fields,
-unconditionally prepares the outer localized message, takes an additional
-reason-zero fallback path, and retains the URL independently, while including the optional label only
+unconditionally prepares the outer localized message, takes additional
+missing-message and reason-zero fallback paths, and retains the URL independently, while including the optional label only
 when both raw guard values are present. It then passes `reason == 1 || reason == 10` as the exact reset
 boolean to `logoutWithResetDatabase:`, and queues a consumer wrapper on the
 main queue. That wrapper queues a second main-queue block for the final alert projection.
@@ -36,7 +36,7 @@ post sequence is attributed to this consumer without evidence. The synthetic
 fixture records each optional and window branch explicitly.
 
 The final-alert raw receipts are `0x1013ad37c`/`0x1013ad3a0` for the bundle
-lookup and localized fallback message, `0x1013ad3f8`/`0x1013ad408`/`0x1013ad418`
+lookup and localized alert string, `0x1013ad3f8`/`0x1013ad408`/`0x1013ad418`
 for core, main-window-controller, and window lookup, `0x1013ad448` for the
 window-result guard after `0x1013ad418`, `0x1013ad48c` for the sheet path, and
 `0x1013ad4d4`/`0x1013ad4dc` for the handler/modal path.
