@@ -15,12 +15,13 @@ type receiptJSONMappingFixture struct {
 }
 
 type receiptJSONMappingCase struct {
-	Name      string             `json:"name"`
-	InputKind string             `json:"input_kind"`
-	Input     map[string]*string `json:"input,omitempty"`
-	Mappings  [][2]string        `json:"mappings,omitempty"`
-	Expected  map[string]*string `json:"expected,omitempty"`
-	Effects   []string           `json:"effects"`
+	Name       string             `json:"name"`
+	InputKind  string             `json:"input_kind"`
+	Input      map[string]*string `json:"input,omitempty"`
+	BaseRemove []string           `json:"base_remove,omitempty"`
+	Mappings   [][2]string        `json:"mappings,omitempty"`
+	Expected   map[string]*string `json:"expected,omitempty"`
+	Effects    []string           `json:"effects"`
 }
 
 func projectReceiptJSONMapping(c receiptJSONMappingCase) map[string]*string {
@@ -30,6 +31,9 @@ func projectReceiptJSONMapping(c receiptJSONMappingCase) map[string]*string {
 	out := make(map[string]*string, len(c.Input))
 	for k, v := range c.Input {
 		out[k] = v
+	}
+	for _, key := range c.BaseRemove {
+		delete(out, key)
 	}
 	for _, mapping := range c.Mappings {
 		destination, source := mapping[0], mapping[1]
@@ -50,6 +54,9 @@ func expectedReceiptJSONMappingEffects(c receiptJSONMappingCase) []string {
 		return []string{"return_super_result_unchanged"}
 	}
 	effects := []string{"mutable_dictionary"}
+	for range c.BaseRemove {
+		effects = append(effects, "remove_static_property")
+	}
 	for _, mapping := range c.Mappings {
 		_, source := mapping[0], mapping[1]
 		value, present := c.Input[source]
@@ -79,7 +86,7 @@ func TestPushReceiptJSONMappingFixture(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 5 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 7 {
 		t.Fatalf("header %#v", f)
 	}
 	seen := map[string]bool{}

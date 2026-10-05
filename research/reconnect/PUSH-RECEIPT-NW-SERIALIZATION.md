@@ -60,6 +60,14 @@ including its missing and `NSNull` guards; it does not yet prove the complete
 superclass JSON property contribution, HINT defaults, BSON key order, or final
 field omission policy.
 
+`LocoHintPushReceipt` declares no own methods or properties and inherits
+`LocoPushReceipt` directly. Consequently its local class contributes no
+mapping dictionary; the exact `SGJsonObject` default returned by the inherited
+`nameMappingDictionary` dispatch is outside the analyzed app image. The static
+base removal observed above is therefore bounded to the `LocoPushReceipt`
+property list (`method` and `packetId`); it does not establish a HINT body key
+or default value.
+
 The NW send completion is a Swift `NWConnection.SendCompletion` closure at
 `0x100d4a840`. Its body weak-loads the owner and returns when that owner has
 gone away. With an owner, it invokes `toggleOutSegmentTimeout:false` and then
@@ -99,7 +107,11 @@ behavior.
 The mapping cases are in
 `rc-q5-push-receipt-json-mapping.json`. They derive the non-dictionary return,
 absent-source no-op, `NSNull` removal, ordinary rename, and identity
-assign-then-remove behavior from the observed guard order.
+assign-then-remove behavior from the observed guard order. The two BLOCKSYNC
+cases use the recovered `pr`/`plusRevision` and `r`/`revision` pairs with zero
+and nonzero synthetic values and model static `method`/`packetId` removal
+before mapping. The fixture exercises each pair independently; it makes no
+claim about NSDictionary enumeration order.
 
 ## Provenance
 
