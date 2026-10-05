@@ -199,6 +199,12 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	kickedOut := false
 	changeServer := false
 	for result := range stream {
+		if kickedOut || changeServer {
+			// A terminal notice ends the session's event acceptance window. The
+			// stream still has to close so the owner can publish its terminal
+			// bridge state, but later packets must not be committed.
+			continue
+		}
 		if result.Err != nil {
 			kc.log().Warn().Err(result.Err).Msg("Dropped undecodable Kakao event")
 			continue
