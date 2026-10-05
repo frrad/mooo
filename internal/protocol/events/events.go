@@ -40,6 +40,14 @@ const (
 
 var ErrMalformedEvent = errors.New("events: malformed event")
 
+// ErrUnidentifiableMessage means a MSG packet could not be admitted because
+// its chat/log identity could not be established unambiguously. Callers must
+// stop delivery rather than inventing a cursor position or silently skip it.
+// It wraps ErrMalformedEvent so strict parser callers retain their broad
+// malformed-event classification while delivery callers can distinguish this
+// continuity-breaking case.
+var ErrUnidentifiableMessage = fmt.Errorf("%w: message identity unavailable", ErrMalformedEvent)
+
 // Event is implemented by every typed unsolicited event.
 type Event interface {
 	Kind() Kind

@@ -4,8 +4,10 @@ Status: implementation policy for the Kakao/Matrix bridge alpha.
 
 The strict protocol decoder remains the source of typed events. Delivery uses a
 separate boundary that may recover only a validated message envelope: a
-positive `chatId`, positive `logId`, and positive message `type` with no
-duplicate or conflicting identity fields. The delivery boundary never retains
+positive `chatId` and positive `logId`, with no duplicate or conflicting
+identity fields. Message `type` is content metadata: missing, non-positive,
+wrong-typed, or duplicated values become `Type=0` gaps rather than stopping a
+chat with a valid position. The delivery boundary never retains
 malformed BSON, attachments, URLs, parser text, or other payload fragments.
 
 When a message payload is malformed but its envelope identity is unambiguous,
@@ -17,7 +19,7 @@ before `CommitEvent` advances the per-chat checkpoint; a queue or conversion
 failure leaves the event replayable and blocks later commits in that chat.
 
 If the envelope is missing, duplicated, conflicting, non-positive, or wrongly
-typed, the client fails closed. It reports the decode error, stops admitting
+typed in its chat/log identity, the client fails closed. It reports the decode error, stops admitting
 later live packets, and interrupts the owned session when that callback is
 available. It does not invent a cursor or advance durable state. Catch-up
 returns the error without a synthetic gap, leaving the existing checkpoint for

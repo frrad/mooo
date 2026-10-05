@@ -96,10 +96,32 @@ func TestLiveMessageWithConflictingIdentityStopsAdmission(t *testing.T) {
 	interrupted := false
 	decodeEventStreamWithTerminal(raw, out, nil, nil, func() { interrupted = true })
 	result := <-out
-	if !errors.Is(result.Err, events.ErrMalformedEvent) || result.Event != nil {
+	if !errors.Is(result.Err, events.ErrUnidentifiableMessage) || result.Event != nil {
 		t.Fatalf("result = %#v, want identity failure", result)
 	}
 	if !interrupted {
 		t.Fatal("conflicting message identity did not interrupt live admission")
+	}
+}
+
+func TestDuplicateContentFieldBecomesGapWithoutAmbiguousAttribution(t *testing.T) {
+	body, err := bson.Marshal(bson.D{
+		{Key: "chatId", Value: int64(42)},
+		{Key: "chatLog", Value: bson.D{
+			{Key: "logId", Value: int64(100)}, {Key: "type", Value: int32(1)},
+			{Key: "message", Value: "first"}, {Key: "message", Value: "second"},
+			{Key: "authorId", Value: int64(7)}, {Key: "authorId", Value: int64(8)},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := events.DecodeForDelivery(loco.Packet{Header: loco.Header{Method: "MSG"}, Body: body})
+	if err != nil {
+		t.Fatalf("duplicate content error = %v, want explicit gap", err)
+	}
+	gap, ok := event.(events.MessageGap)
+	if !ok || gap.ChatID != 42 || gap.LogID != 100 || gap.AuthorID != 0 {
+		t.Fatalf("event = %#v, want identity-only gap", event)
 	}
 }

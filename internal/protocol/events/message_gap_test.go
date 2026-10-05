@@ -2,6 +2,7 @@ package events
 
 import (
 	"errors"
+	"fmt"
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -51,6 +52,32 @@ func TestDecodeForDeliveryRejectsAmbiguousIdentity(t *testing.T) {
 		if got != nil || !errors.Is(e, ErrMalformedEvent) {
 			t.Fatalf("case%d=%#v/%v", i, got, e)
 		}
+	}
+}
+
+func TestDecodeForDeliveryInvalidTypeKeepsValidatedPosition(t *testing.T) {
+	for _, typ := range []any{int32(0), int32(-1), "wrong"} {
+		t.Run(fmt.Sprint(typ), func(t *testing.T) {
+			p := gapPacket(t, bson.D{{Key: "chatId", Value: int64(42)}}, bson.D{{Key: "logId", Value: int64(100)}, {Key: "type", Value: typ}, {Key: "message", Value: "ambiguous subtype"}})
+			got, err := DecodeForDelivery(p)
+			if err != nil {
+				t.Fatalf("error = %v, want identity-bearing gap", err)
+			}
+			if gap, ok := got.(MessageGap); !ok || gap.ChatID != 42 || gap.LogID != 100 || gap.Type != 0 {
+				t.Fatalf("event = %#v, want Type=0 gap", got)
+			}
+		})
+	}
+}
+
+func TestDecodeForDeliveryDuplicateTypeKeepsValidatedPosition(t *testing.T) {
+	p := gapPacket(t, bson.D{{Key: "chatId", Value: int64(42)}}, bson.D{{Key: "logId", Value: int64(100)}, {Key: "type", Value: int32(1)}, {Key: "type", Value: int32(2)}, {Key: "message", Value: "ambiguous subtype"}})
+	got, err := DecodeForDelivery(p)
+	if err != nil {
+		t.Fatalf("error = %v, want identity-bearing gap", err)
+	}
+	if gap, ok := got.(MessageGap); !ok || gap.ChatID != 42 || gap.LogID != 100 || gap.Type != 0 {
+		t.Fatalf("event = %#v, want Type=0 gap", got)
 	}
 }
 
