@@ -4,7 +4,7 @@
     "default_receive_handler": "0x10152049c",
     "method_lookup": "packet.header.method then objectForKeyedSubscript:",
     "typed_constructor": "alloc then initWithPacket:",
-    "selector_derivation": "NSStringFromClass then substringFromIndex:4 then stringWithFormat:handle%@:packetHeader: then NSSelectorFromString"
+    "selector_derivation": "NSStringFromClass then substringFromIndex:4 then stringWithFormat:handle%@:packetHeader: then NSSelectorFromString; nil class probes as handle(null):packetHeader:"
   },
   "cases": [
     {
@@ -23,7 +23,7 @@
     }
   ],
   "gaps": [
-    "Foundation behavior for NSStringFromClass(nil), substringFromIndex:4, and a nil-derived selector remains unexecuted",
+    "production owner registration for the nil-derived handle(null):packetHeader: selector remains untraced",
     "runtime Foundation nil-message behavior is modeled, not executed",
     "outer callback exception and disconnect policy are untraced"
   ]

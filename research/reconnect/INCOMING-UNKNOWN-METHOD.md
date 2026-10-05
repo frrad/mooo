@@ -20,8 +20,13 @@ therefore reaches the selector derivation/gate with no usable notice. The
 source proves only the conditional owner gate: a false gate skips
 `performSelector`, while a true gate would receive the nil notice and original
 header. It does not prove an unconditional unknown-method drop or the later
-delegate/receipt behavior. Foundation behavior for a nil class name and the
-outer callback exception/disconnect policy remain gaps.
+delegate/receipt behavior. An account-free Foundation probe of this exact
+expression produced `NSStringFromClass(nil) == nil`, a nil suffix, the
+formatted selector `handle(null):packetHeader:`, and a non-nil `SEL`. A normal
+owner did not respond; an owner dynamically given that selector did respond and
+received a nil notice plus the original header. This confirms the gate is
+conditional without claiming that production owners register that selector.
+Callback exception and disconnect policy remain gaps.
 
 This path is distinct from a recognized HINT initializer that returns nil for a
 nonnull body: the default block does not check the initializer result before
