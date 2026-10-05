@@ -40,20 +40,23 @@ type catchUpResult struct {
 }
 
 type fakeKakao struct {
-	mu               sync.Mutex
-	connectErr       error
-	resumeTargets    []syncmsg.Target
-	resumeErr        error
-	catchUps         map[int64]catchUpResult
-	calls            []string
-	stream           chan events.Result
-	commits          []events.Event
-	sends            []sentText
-	sendResp         chat.WriteResponse
-	sendErr          error
-	closeCalls       int
-	shutdownCalls    int
-	shutdownFailures int
+	mu                sync.Mutex
+	connectErr        error
+	resumeTargets     []syncmsg.Target
+	resumeErr         error
+	catchUps          map[int64]catchUpResult
+	calls             []string
+	stream            chan events.Result
+	commits           []events.Event
+	sends             []sentText
+	sendResp          chat.WriteResponse
+	sendErr           error
+	closeCalls        int
+	shutdownCalls     int
+	shutdownFailures  int
+	shutdownWait      <-chan struct{}
+	shutdownEntered   chan struct{}
+	shutdownEnterOnce sync.Once
 }
 
 func (f *fakeKakao) Connect(ctx context.Context) error { return f.connectErr }
@@ -104,12 +107,24 @@ func (f *fakeKakao) Close() error {
 func (f *fakeKakao) Shutdown(ctx context.Context) error {
 	f.mu.Lock()
 	f.shutdownCalls++
+	entered := f.shutdownEntered
 	if f.shutdownFailures > 0 {
 		f.shutdownFailures--
 		f.mu.Unlock()
 		return context.DeadlineExceeded
 	}
+	wait := f.shutdownWait
 	f.mu.Unlock()
+	if entered != nil {
+		f.shutdownEnterOnce.Do(func() { close(entered) })
+	}
+	if wait != nil {
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	return f.Close()
 }
 
@@ -557,6 +572,36 @@ func TestConcurrentDisconnectRetriesRetainedOwner(t *testing.T) {
 	if retained {
 		t.Fatal("concurrent disconnect left cleanup owner retained after success")
 	}
+}
+
+func TestConcurrentDisconnectSharesOverallTimeoutBudget(t *testing.T) {
+	previous := terminalDisconnectTimeout
+	terminalDisconnectTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { terminalDisconnectTimeout = previous })
+	block := make(chan struct{})
+	shutdownEntered := make(chan struct{})
+	fake := &fakeKakao{stream: make(chan events.Result), shutdownWait: block, shutdownEntered: shutdownEntered}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.Connect(context.Background())
+	go kc.Disconnect()
+	select {
+	case <-shutdownEntered:
+	case <-time.After(time.Second):
+		t.Fatal("first shutdown did not start")
+	}
+	startedAt := time.Now()
+	kc.Disconnect()
+	if elapsed := time.Since(startedAt); elapsed > 100*time.Millisecond {
+		t.Fatalf("second Disconnect exceeded shared timeout budget: %v", elapsed)
+	}
+	fake.mu.Lock()
+	shutdownCalls := fake.shutdownCalls
+	fake.mu.Unlock()
+	if shutdownCalls != 1 {
+		t.Fatalf("shutdown calls = %d, want only first admitted call", shutdownCalls)
+	}
+	close(block)
+	kc.Disconnect()
 }
 
 func TestConnectFailuresAreReportedWithoutRetry(t *testing.T) {
