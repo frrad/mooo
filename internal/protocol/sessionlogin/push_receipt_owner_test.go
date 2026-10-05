@@ -53,7 +53,7 @@ func TestPushReceiptOwnerPreservesManagerOrderingAndExecutionDelay(t *testing.T)
 	events := []string{}
 	q, scheduler, config := &pushReceiptOwnerQueue{events: &events}, &pushReceiptOwnerScheduler{}, &pushReceiptOwnerConfig{interval: 12 * time.Second}
 	var sent []pushReceiptOwnerCall
-	owner, err := NewPushReceiptOwner("manager-1", "agent-1", q, scheduler, config, func(target string, packet any) {
+	owner, err := NewPushReceiptOwner("manager-1", func() string { return "agent-1" }, q, scheduler, config, func(target string, packet any) {
 		events = append(events, "inline")
 		sent = append(sent, pushReceiptOwnerCall{target: target, object: packet})
 	})
@@ -88,7 +88,7 @@ func TestPushReceiptOwnerPreservesManagerOrderingAndExecutionDelay(t *testing.T)
 }
 
 func TestPushReceiptOwnerRejectsIncompleteDependencies(t *testing.T) {
-	if _, err := NewPushReceiptOwner("manager", "agent", nil, &pushReceiptOwnerScheduler{}, &pushReceiptOwnerConfig{}, func(string, any) {}); err == nil {
+	if _, err := NewPushReceiptOwner("manager", func() string { return "agent" }, nil, &pushReceiptOwnerScheduler{}, &pushReceiptOwnerConfig{}, func(string, any) {}); err == nil {
 		t.Fatal("nil queue accepted")
 	}
 }
@@ -97,11 +97,11 @@ func TestPushReceiptOwnersKeepManagerTargetsDistinctOnSharedScheduler(t *testing
 	q := &pushReceiptOwnerQueue{}
 	scheduler := &pushReceiptOwnerScheduler{}
 	config := &pushReceiptOwnerConfig{interval: time.Second}
-	first, err := NewPushReceiptOwner("manager-1", "agent-1", q, scheduler, config, func(string, any) {})
+	first, err := NewPushReceiptOwner("manager-1", func() string { return "agent-1" }, q, scheduler, config, func(string, any) {})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := NewPushReceiptOwner("manager-2", "agent-2", q, scheduler, config, func(string, any) {})
+	second, err := NewPushReceiptOwner("manager-2", func() string { return "agent-2" }, q, scheduler, config, func(string, any) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestPushReceiptOwnersKeepManagerTargetsDistinctOnSharedScheduler(t *testing
 
 func TestPushReceiptOwnerAllowsReverseQueueExecutionWithoutChangingCapturedTarget(t *testing.T) {
 	q, scheduler, config := &pushReceiptOwnerQueue{}, &pushReceiptOwnerScheduler{}, &pushReceiptOwnerConfig{interval: 0}
-	owner, err := NewPushReceiptOwner("manager", "agent", q, scheduler, config, func(string, any) {})
+	owner, err := NewPushReceiptOwner("manager", func() string { return "agent" }, q, scheduler, config, func(string, any) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,5 +138,34 @@ func TestPushReceiptOwnerAllowsReverseQueueExecutionWithoutChangingCapturedTarge
 	q.work[1]()
 	if scheduler.schedule.target != "manager" || scheduler.schedule.selector != "sendPingRequest:" || scheduler.schedule.object != nil || scheduler.schedule.delay != 0 {
 		t.Fatalf("reverse schedule=%+v", scheduler.schedule)
+	}
+}
+
+func TestPushReceiptOwnerResolvesAgentAtEachSend(t *testing.T) {
+	q, scheduler, config := &pushReceiptOwnerQueue{}, &pushReceiptOwnerScheduler{}, &pushReceiptOwnerConfig{interval: time.Second}
+	agent := "agent-1"
+	var sent []string
+	owner, err := NewPushReceiptOwner("manager", func() string { return agent }, q, scheduler, config, func(target string, _ any) {
+		sent = append(sent, target)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Send(nil); err != nil {
+		t.Fatal(err)
+	}
+	q.runOne()
+	q.runOne()
+	agent = "agent-2"
+	if err := owner.Send(nil); err != nil {
+		t.Fatal(err)
+	}
+	q.runOne()
+	q.runOne()
+	if !reflect.DeepEqual(sent, []string{"agent-1", "agent-2"}) {
+		t.Fatalf("resolved agents=%v", sent)
+	}
+	if scheduler.cancel.target != "manager" || scheduler.schedule.target != "manager" {
+		t.Fatalf("manager target changed: cancel=%q schedule=%q", scheduler.cancel.target, scheduler.schedule.target)
 	}
 }
