@@ -201,7 +201,7 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 			if err != nil {
 				return nil, ErrProtocol
 			}
-			event, err := events.Decode(loco.Packet{Header: loco.Header{Method: "MSG"}, Body: body})
+			event, err := events.DecodeForDelivery(loco.Packet{Header: loco.Header{Method: "MSG"}, Body: body})
 			if err != nil {
 				return nil, err
 			}

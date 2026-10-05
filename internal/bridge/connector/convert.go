@@ -49,6 +49,12 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 	case events.PhotoMessage:
 		chatID, logID := evt.Message.ChatID, evt.Message.LogID
 		return newMessage(kc.messageMeta(chatID, logID, evt.Message.AuthorID, evt.Message.SentAt), makeMessageID(chatID, logID), evt, convertPhoto)
+	case events.MessageGap:
+		metadata := newKakaoMessageMetadata(evt.ChatID, evt.LogID, evt.AuthorID, evt.Type, "[message unavailable]", 0)
+		metadata.ConversionGap = "malformed_payload"
+		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), noticeData{
+			Body: "A KakaoTalk message could not be displayed (malformed_payload).", Metadata: metadata,
+		}, convertNoticeWithMetadata)
 	case events.UnsupportedMessage:
 		notice := fmt.Sprintf("A KakaoTalk message of unsupported type %d was sent.", evt.Type)
 		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, 0, 0), makeMessageID(evt.ChatID, evt.LogID), noticeData{

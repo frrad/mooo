@@ -16,27 +16,24 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func TestDecodeEventStreamContinuesAfterMalformedPacket(t *testing.T) {
+func TestDecodeEventStreamStopsAfterUnidentifiableMessage(t *testing.T) {
 	raw := make(chan loco.Packet, 2)
 	output := make(chan events.Result, 2)
 	malformed, _ := bson.Marshal(bson.D{{Key: "chatId", Value: int64(42)}})
-	unknown, _ := bson.Marshal(bson.D{{Key: "status", Value: int32(0)}})
 	raw <- loco.Packet{Header: loco.Header{Method: "MSG"}, Body: malformed}
-	raw <- loco.Packet{Header: loco.Header{Method: "KICKOUT"}, Body: unknown}
+	raw <- loco.Packet{Header: loco.Header{Method: "KICKOUT"}, Body: []byte{5, 0, 0, 0, 0}}
 	close(raw)
-	decodeEventStream(raw, output)
-
+	called := false
+	decodeEventStreamWithTerminal(raw, output, nil, nil, func() { called = true })
 	first := <-output
 	if !errors.Is(first.Err, events.ErrMalformedEvent) || first.Event != nil {
-		t.Fatalf("first result = %#v", first)
+		t.Fatalf("result=%#v", first)
 	}
-	second := <-output
-	kickout, ok := second.Event.(events.Kickout)
-	if second.Err != nil || !ok || kickout.Reason != 0 {
-		t.Fatalf("second result = %#v", second)
+	if !called {
+		t.Fatal("invalid message identity did not interrupt session")
 	}
 	if _, ok := <-output; ok {
-		t.Fatal("event output did not close")
+		t.Fatal("later packet admitted past unidentified message")
 	}
 }
 

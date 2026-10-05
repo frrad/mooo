@@ -394,7 +394,16 @@ func decodeEventStreamWithTerminalStop(raw <-chan loco.Packet, output chan<- eve
 		if !ok {
 			return
 		}
-		event, err := events.Decode(packet)
+		event, err := events.DecodeForDelivery(packet)
+		if err != nil && packet.Header.Method == "MSG" {
+			// Without a trustworthy position no later commit can prove that
+			// it did not cross this message. Stop admission and retain cursors.
+			if terminal != nil {
+				terminal()
+			}
+			_ = emitEventResult(output, events.Result{Err: err}, stop)
+			return
+		}
 		if err == nil {
 			if chatID, logID, ok := events.MessagePosition(event); ok {
 				position := messagePosition{chatID: chatID, logID: logID}
