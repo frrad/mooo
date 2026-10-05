@@ -19,21 +19,29 @@ type receiptBodyCase struct {
 	expectedBSON []byte
 }
 
+func receiptSourceProperties(c receiptBodyCase) map[string]any {
+	return map[string]any{
+		"method":       c.method,
+		"packetId":     c.packetID,
+		"revision":     c.revision,
+		"plusRevision": c.plus,
+	}
+}
+
 // projectReceiptBody models the source-observed static property removal and
-// BLOCKSYNC mapping phase. The input starts with the inherited header
-// properties, removes method/packetId, then applies the receipt mapping before
-// encoding the resulting int32 dictionary as BSON.
+// BLOCKSYNC mapping phase. The input starts with typed inherited/header and
+// receipt properties, removes method/packetId, then renames the signed source
+// fields before encoding the resulting int32 dictionary as BSON.
 func projectReceiptBody(c receiptBodyCase) (map[string]int32, []byte) {
-	properties := map[string]int32{"method": int32(len(c.method)), "packetId": int32(c.packetID)}
+	source := receiptSourceProperties(c)
+	delete(source, "method")
+	delete(source, "packetId")
+	properties := make(map[string]int32)
 	if c.kind == "hint" {
-		delete(properties, "method")
-		delete(properties, "packetId")
 		return properties, encodeInt32BSON(properties)
 	}
-	delete(properties, "method")
-	delete(properties, "packetId")
-	properties["r"] = c.revision
-	properties["pr"] = c.plus
+	properties["r"] = source["revision"].(int32)
+	properties["pr"] = source["plusRevision"].(int32)
 	return properties, encodeInt32BSON(properties)
 }
 
@@ -62,8 +70,8 @@ func TestPushReceiptBodyComposition(t *testing.T) {
 	cases := []receiptBodyCase{
 		{name: "hint_empty_with_header_fields_removed", kind: "hint", method: "HINT", packetID: 17, expected: map[string]int32{}, expectedBSON: []byte{5, 0, 0, 0, 0}},
 		{name: "hint_zero_header_fields_still_empty", kind: "hint", method: "HINT", packetID: 0, expected: map[string]int32{}, expectedBSON: []byte{5, 0, 0, 0, 0}},
-		{name: "blocksync_signed_values", kind: "block_sync", method: "BLOCKSYNC", packetID: 9, revision: -1, plus: 2147483647, expected: map[string]int32{"r": -1, "pr": 2147483647}},
-		{name: "blocksync_zero_values", kind: "block_sync", method: "BLOCKSYNC", packetID: 9, expected: map[string]int32{"r": 0, "pr": 0}},
+		{name: "blocksync_signed_values", kind: "block_sync", method: "BLOCKSYNC", packetID: 9, revision: -1, plus: 2147483647, expected: map[string]int32{"r": -1, "pr": 2147483647}, expectedBSON: []byte{20, 0, 0, 0, 0x10, 'p', 'r', 0, 0xff, 0xff, 0xff, 0x7f, 0x10, 'r', 0, 0xff, 0xff, 0xff, 0xff, 0}},
+		{name: "blocksync_zero_values", kind: "block_sync", method: "BLOCKSYNC", packetID: 9, expected: map[string]int32{"r": 0, "pr": 0}, expectedBSON: []byte{20, 0, 0, 0, 0x10, 'p', 'r', 0, 0, 0, 0, 0, 0x10, 'r', 0, 0, 0, 0, 0, 0}},
 	}
 	for _, c := range cases {
 		got, body := projectReceiptBody(c)
@@ -96,12 +104,22 @@ func TestPushReceiptBodyComposition(t *testing.T) {
 
 func TestPushReceiptBodyRequiresStaticHeaderRemoval(t *testing.T) {
 	input := receiptBodyCase{kind: "hint", method: "HINT", packetID: 17}
+	source := receiptSourceProperties(input)
+	if source["method"] != input.method || source["packetId"] != input.packetID {
+		t.Fatalf("typed source fields=%#v", source)
+	}
 	projected, body := projectReceiptBody(input)
 	if len(projected) != 0 || !bytes.Equal(body, []byte{5, 0, 0, 0, 0}) {
 		t.Fatalf("static removal projection=%v bson=%x", projected, body)
 	}
-	withoutRemoval := map[string]int32{"method": int32(len(input.method)), "packetId": int32(input.packetID)}
-	if bytes.Equal(encodeInt32BSON(withoutRemoval), body) {
-		t.Fatal("negative control unexpectedly matched empty HINT body")
+	withoutRemoval := receiptSourceProperties(input)
+	if _, ok := withoutRemoval["method"]; !ok {
+		t.Fatal("negative control did not retain method")
+	}
+	if _, ok := withoutRemoval["packetId"]; !ok {
+		t.Fatal("negative control did not retain packetId")
+	}
+	if len(withoutRemoval) == len(projected) {
+		t.Fatal("omitting static removal was not distinguishable")
 	}
 }
