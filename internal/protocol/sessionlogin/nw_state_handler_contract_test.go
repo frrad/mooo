@@ -24,9 +24,8 @@ type nwStateCase struct {
 	ReceiveWorkItemPresent       bool     `json:"receive_work_item_present"`
 	PathPresent                  bool     `json:"path_present"`
 	PathStatus                   string   `json:"path_status"`
-	ImmediateFailureCode         int      `json:"immediate_failure_code"`
-	DispatcherErrorCode          int      `json:"dispatcher_error_code"`
-	DispatcherTLSError           bool     `json:"dispatcher_tls_error"`
+	ErrorKind                    string   `json:"error_kind"`
+	ErrorCode                    int      `json:"error_code"`
 	OwnerFallbackPredicate       bool     `json:"owner_fallback_predicate"`
 	OwnerFlagA                   bool     `json:"owner_flag_a"`
 	OwnerFlagB                   bool     `json:"owner_flag_b"`
@@ -161,16 +160,16 @@ func appendFailureHelperEffects(effects *[]string, c nwStateCase) {
 	}
 }
 
-// These predicates are sourced from the actual error payload. The dispatcher
+// These predicates are sourced from one actual NWError payload. The dispatcher
 // compares POSIX code 0x36 (54) or the TLS error case; the helper's immediate
-// failure check compares POSIX code 0x3d (61). Adjacent codes do not satisfy
-// either comparison.
+// failure check compares POSIX code 0x3d (61). Adjacent codes and non-POSIX
+// errors do not satisfy either numeric comparison.
 func dispatcherErrorPredicate(c nwStateCase) bool {
-	return c.DispatcherErrorCode == 54 || c.DispatcherTLSError
+	return (c.ErrorKind == "posix" && c.ErrorCode == 54) || c.ErrorKind == "tls"
 }
 
 func immediateFailurePredicate(c nwStateCase) bool {
-	return c.ImmediateFailureCode == 61
+	return c.ErrorKind == "posix" && c.ErrorCode == 61
 }
 
 func TestNWStateHandlerFixture(t *testing.T) {
@@ -211,18 +210,24 @@ func TestNWStateHandlerFixture(t *testing.T) {
 
 func TestNWStateErrorPredicatesUseObservedCodeBoundaries(t *testing.T) {
 	for _, code := range []int{53, 55, 60, 62} {
-		c := nwStateCase{DispatcherErrorCode: code, ImmediateFailureCode: code}
+		c := nwStateCase{ErrorKind: "posix", ErrorCode: code}
 		if dispatcherErrorPredicate(c) || immediateFailurePredicate(c) {
 			t.Fatalf("adjacent code %d unexpectedly matched", code)
 		}
 	}
-	if !dispatcherErrorPredicate(nwStateCase{DispatcherErrorCode: 54}) {
+	if !dispatcherErrorPredicate(nwStateCase{ErrorKind: "posix", ErrorCode: 54}) {
 		t.Fatal("POSIX 54 dispatcher error did not match")
 	}
-	if !dispatcherErrorPredicate(nwStateCase{DispatcherTLSError: true}) {
+	if !dispatcherErrorPredicate(nwStateCase{ErrorKind: "tls", ErrorCode: 54}) {
 		t.Fatal("TLS dispatcher error did not match")
 	}
-	if !immediateFailurePredicate(nwStateCase{ImmediateFailureCode: 61}) {
+	if !immediateFailurePredicate(nwStateCase{ErrorKind: "posix", ErrorCode: 61}) {
 		t.Fatal("POSIX 61 immediate failure did not match")
+	}
+	if immediateFailurePredicate(nwStateCase{ErrorKind: "dns", ErrorCode: 61}) {
+		t.Fatal("DNS 61 incorrectly matched POSIX immediate failure")
+	}
+	if dispatcherErrorPredicate(nwStateCase{ErrorKind: "other", ErrorCode: 54}) {
+		t.Fatal("non-POSIX 54 incorrectly matched dispatcher predicate")
 	}
 }

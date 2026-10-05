@@ -27,9 +27,8 @@
       "expected_status_updates": [],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     },
     {
       "name": "setup_replaces_previous_connection",
@@ -59,9 +58,8 @@
       "expected_status_updates": [],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     },
     {
       "name": "owner_lifetime_guard",
@@ -86,9 +84,8 @@
       "expected_status_updates": [],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     },
     {
       "name": "waiting_extracts_error_without_fallback",
@@ -126,9 +123,8 @@
       ],
       "expected_local_error_code": -1,
       "expected_local_error_domain": "LocoAgent",
-      "immediate_failure_code": 61,
-      "dispatcher_error_code": 54,
-      "dispatcher_tls_error": false
+      "error_kind": "posix",
+      "error_code": 54
     },
     {
       "name": "failed_allows_fallback_input",
@@ -160,9 +156,8 @@
       "expected_status_updates": [],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     },
     {
       "name": "setup_state_logs_only",
@@ -189,9 +184,8 @@
       "expected_status_updates": [],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     },
     {
       "name": "preparing_state_logs_only",
@@ -218,9 +212,8 @@
       "expected_status_updates": [],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     },
     {
       "name": "ready_logs_tls_and_followup",
@@ -257,9 +250,8 @@
       ],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     },
     {
       "name": "cancelled_cancels_work_and_dispatches_error",
@@ -292,9 +284,8 @@
       ],
       "expected_local_error_code": -1,
       "expected_local_error_domain": "LocoAgent",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     },
     {
       "name": "unknown_state_logs",
@@ -321,9 +312,8 @@
       "expected_status_updates": [],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     },
     {
       "name": "failed_owner_virtual_predicate_forces_error",
@@ -361,9 +351,8 @@
       ],
       "expected_local_error_code": -1,
       "expected_local_error_domain": "LocoAgent",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     },
     {
       "name": "failed_owner_flags_force_error",
@@ -401,9 +390,8 @@
       ],
       "expected_local_error_code": -1,
       "expected_local_error_domain": "LocoAgent",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     },
     {
       "name": "waiting_path_absent_logs_only",
@@ -430,9 +418,8 @@
       "expected_status_updates": [],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 61,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "posix",
+      "error_code": 61
     },
     {
       "name": "waiting_unsatisfied_path_logs_only",
@@ -459,9 +446,8 @@
       "expected_status_updates": [],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 61,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "posix",
+      "error_code": 61
     },
     {
       "name": "waiting_flags_block_helper",
@@ -488,9 +474,8 @@
       "expected_status_updates": [],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 61,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "posix",
+      "error_code": 61
     },
     {
       "name": "waiting_predicates_false_logs_only",
@@ -517,9 +502,8 @@
       "expected_status_updates": [],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     },
     {
       "name": "failed_without_work_or_connection",
@@ -554,9 +538,8 @@
       ],
       "expected_local_error_code": -1,
       "expected_local_error_domain": "LocoAgent",
-      "immediate_failure_code": 61,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "posix",
+      "error_code": 61
     },
     {
       "name": "waiting_path_predicate_invokes_fallback_helper",
@@ -588,9 +571,8 @@
       "expected_status_updates": [],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 54,
-      "dispatcher_tls_error": false
+      "error_kind": "posix",
+      "error_code": 54
     },
     {
       "name": "waiting_immediate_predicate_invokes_helper",
@@ -628,9 +610,8 @@
       ],
       "expected_local_error_code": -1,
       "expected_local_error_domain": "LocoAgent",
-      "immediate_failure_code": 61,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "posix",
+      "error_code": 61
     },
     {
       "name": "ready_crypto_without_connection",
@@ -664,9 +645,8 @@
       ],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     },
     {
       "name": "ready_connection_nil_handshake_sends_none",
@@ -703,9 +683,8 @@
       ],
       "expected_local_error_code": null,
       "expected_local_error_domain": "",
-      "immediate_failure_code": 0,
-      "dispatcher_error_code": 0,
-      "dispatcher_tls_error": false
+      "error_kind": "other",
+      "error_code": 0
     }
   ]
 }
