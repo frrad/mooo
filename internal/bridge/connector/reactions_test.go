@@ -170,7 +170,10 @@ func TestReactionRevisionAdvancesOnlyAfterSuccessfulHandling(t *testing.T) {
 		return bridgev2.EventHandlingResultSuccess
 	}
 	change := events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 4}
-	if !kc.handleEvent(backend, change) || !kc.handleEvent(backend, change) {
+	if !kc.handleEvent(backend, change) {
+		t.Fatal("ignored reaction handling failed")
+	}
+	if !kc.handleEvent(backend, change) {
 		t.Fatal("reaction handling failed")
 	}
 	if queued != 2 {
