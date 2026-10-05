@@ -1,6 +1,10 @@
 package sessionlogin
 
-import "testing"
+import (
+	"errors"
+	"reflect"
+	"testing"
+)
 
 // incomingBlockSyncStateContract is a small executable model of the state
 // effects recovered from the BLOCKSYNC write block. It is deliberately not a
@@ -30,14 +34,13 @@ func (s *incomingBlockSyncStateContract) applyFull(ids []int64) {
 		user.friendType = -4
 		user.purged = false
 		s.users[id] = user
-		s.memberIDs = append(s.memberIDs, id)
 	}
 }
 
-func (s *incomingBlockSyncStateContract) applyPartial(ids []int64, blockTypes []int32) {
+func (s *incomingBlockSyncStateContract) applyPartial(ids []int64, blockTypes []int32) error {
 	for i, id := range ids {
 		if i >= len(blockTypes) {
-			break
+			return errIncomingBlockSyncShortTypes
 		}
 		user, ok := s.users[id]
 		if !ok {
@@ -51,14 +54,18 @@ func (s *incomingBlockSyncStateContract) applyPartial(ids []int64, blockTypes []
 		user.purged = false
 		s.users[id] = user
 		s.chatFavorite[id] = false
-		s.memberIDs = append(s.memberIDs, id)
+		// Resolved users are updated in place; only unresolved users are
+		// represented in the fallback member list.
 	}
+	return nil
 }
 
-func (s *incomingBlockSyncStateContract) complete(revision int32) {
-	s.fullSynced = true
+func (s *incomingBlockSyncStateContract) complete(isFull bool, revision int32) {
+	s.fullSynced = isFull
 	s.revision = revision
 }
+
+var errIncomingBlockSyncShortTypes = errors.New("BLOCKSYNC block type vector is shorter than block IDs")
 
 func TestIncomingBlockSyncStateContractModelsFullAndPartialEffects(t *testing.T) {
 	s := &incomingBlockSyncStateContract{
@@ -66,26 +73,41 @@ func TestIncomingBlockSyncStateContractModelsFullAndPartialEffects(t *testing.T)
 		chatFavorite: map[int64]bool{1: true, 2: true},
 	}
 	s.applyFull([]int64{1})
-	if got := s.users[1]; got.friendType != -4 || got.purged || len(s.memberIDs) != 1 {
+	if got := s.users[1]; got.friendType != -4 || got.purged || len(s.memberIDs) != 0 {
 		t.Fatalf("full-sync effects=%+v members=%v", got, s.memberIDs)
 	}
-	s.applyPartial([]int64{2, 99}, []int32{7, 8})
+	if err := s.applyPartial([]int64{2, 99}, []int32{7, 8}); err != nil {
+		t.Fatal(err)
+	}
 	if got := s.users[2]; got.friendType != -3 || got.blockType != 7 || got.favorite || got.purged || s.chatFavorite[2] {
 		t.Fatalf("partial-sync effects=%+v chatFavorite=%v", got, s.chatFavorite[2])
 	}
-	if got, want := s.memberIDs, []int64{1, 2, 99}; len(got) != len(want) || got[2] != want[2] {
+	if got, want := s.memberIDs, []int64{99}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("member IDs=%v want unresolved fallback %v", got, want)
 	}
 }
 
 func TestIncomingBlockSyncStateContractRevisionCompletionIsSeparate(t *testing.T) {
 	s := &incomingBlockSyncStateContract{users: map[int64]incomingBlockSyncUser{}}
-	s.applyPartial([]int64{7}, []int32{3})
+	if err := s.applyPartial([]int64{7}, []int32{3}); err != nil {
+		t.Fatal(err)
+	}
 	if s.fullSynced || s.revision != 0 {
 		t.Fatalf("state completed before completion callback: %+v", s)
 	}
-	s.complete(-2147483648)
-	if !s.fullSynced || s.revision != -2147483648 {
+	s.complete(false, -2147483648)
+	if s.fullSynced || s.revision != -2147483648 {
 		t.Fatalf("completion state=%+v", s)
+	}
+	s.complete(true, 7)
+	if !s.fullSynced || s.revision != 7 {
+		t.Fatalf("full completion state=%+v", s)
+	}
+}
+
+func TestIncomingBlockSyncStateContractRejectsShortBlockTypes(t *testing.T) {
+	s := &incomingBlockSyncStateContract{users: map[int64]incomingBlockSyncUser{1: {}}}
+	if err := s.applyPartial([]int64{1}, nil); !errors.Is(err, errIncomingBlockSyncShortTypes) {
+		t.Fatalf("short block types error=%v", err)
 	}
 }

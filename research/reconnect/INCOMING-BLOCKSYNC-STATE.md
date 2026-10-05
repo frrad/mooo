@@ -11,13 +11,15 @@ plusIsFull:plusRevision:` (`0x10140a9ac`) through
 `0x101433b48`. In the full-sync branch, matching users receive `friendType =
 -4` and `purged = 0`. In the partial branch, resolved users receive
 `friendType = -3`, the captured block type, `favorite = 0`, and `purged = 0`;
-the corresponding chat-room favorite is also cleared. An unresolved user is
-represented in the member list by a numeric fallback.
+the corresponding chat-room favorite is also cleared. Resolved users are
+updated in place; only an unresolved user is represented in the member list by
+a numeric fallback. The incoming block-ID/type vectors are indexed together;
+a short type vector is an exceptional path rather than a silent truncation.
 
-The completion block (`0x101434018`) marks full synchronization and performs a
-separate revision update through `setPlusBlockRevision:` (`0x101921920`). The
-model therefore keeps state mutation and revision completion as distinct
-steps. The source trace does not establish transaction commit or rollback,
+The completion block (`0x101434018`) marks full synchronization only when the
+captured full-sync flag is set, and performs a separate revision update through
+`setPlusBlockRevision:` (`0x101921920`). The model therefore keeps state
+mutation and revision completion as distinct steps. The source trace does not establish transaction commit or rollback,
 retry behavior, worker exception propagation, or completion-error handling;
 those remain explicit gaps.
 
