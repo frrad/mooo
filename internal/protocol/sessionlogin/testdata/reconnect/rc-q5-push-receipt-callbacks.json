@@ -1,0 +1,10 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {"name":"write_completion_tagged","callback":"write","tag":-17,"pending_state":1,"expected_effects":["toggle_out_timeout_false","forward_did_write_tag","did_write_noop"]},
+    {"name":"read_completion_zero_tag","callback":"read","tag":0,"pending_state":0,"expected_effects":["toggle_in_timeout_false","receive_zero_tag_update"]},
+    {"name":"read_completion_nonzero_tag","callback":"read","tag":-17,"pending_state":1,"expected_effects":["toggle_in_timeout_false","receive_tagged_update","read_header"]},
+    {"name":"pending_state_two","callback":"write","tag":42,"pending_state":2,"expected_effects":["synchronize_pending_map","pending_state_two_branch","record_pending_values","update_pending_count"]},
+    {"name":"disconnect_pending_fanout","callback":"disconnect","tag":-17,"pending_state":2,"expected_effects":["disconnect_failure_fanout","pending_entries_failure_path"]}
+  ]
+}
