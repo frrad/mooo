@@ -96,7 +96,7 @@ func TestLiveMessageWithConflictingIdentityStopsAdmission(t *testing.T) {
 	interrupted := false
 	decodeEventStreamWithTerminal(raw, out, nil, nil, func() { interrupted = true })
 	result := <-out
-	if !errors.Is(result.Err, events.ErrMalformedEvent) || result.Event != nil {
+	if !errors.Is(result.Err, events.ErrUnidentifiableMessage) || result.Event != nil {
 		t.Fatalf("result = %#v, want identity failure", result)
 	}
 	if !interrupted {

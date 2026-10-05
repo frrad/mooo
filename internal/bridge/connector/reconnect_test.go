@@ -179,6 +179,62 @@ func TestCleanupTimeoutRetainsOwnerUntilLaterRetry(t *testing.T) {
 	}
 }
 
+func TestUnidentifiableMessageStopsRecoveryButRetriesOwnerCleanup(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result), shutdownFailures: 1}
+	var opened atomic.Int32
+	kc, harness := newTestClient(t, func() (kakaoClient, error) {
+		opened.Add(1)
+		return fake, nil
+	})
+	kc.wait = func(context.Context, time.Duration) error { return nil }
+	kc.mu.Lock()
+	kc.client = fake
+	kc.cleanup = fake
+	kc.generation = 1
+	kc.mu.Unlock()
+	done := make(chan struct{})
+	go kc.run(fake, func() <-chan events.Result {
+		stream := make(chan events.Result, 1)
+		stream <- events.Result{Err: events.ErrUnidentifiableMessage}
+		close(stream)
+		return stream
+	}(), done, 1)
+	waitFor(t, func() bool {
+		fake.mu.Lock()
+		calls := fake.shutdownCalls
+		fake.mu.Unlock()
+		return calls >= 2
+	})
+	if opened.Load() != 0 {
+		t.Fatalf("recovery opened %d replacement clients", opened.Load())
+	}
+	if got := harness.lastState(); got.Error != stateUnidentifiableMsg || got.StateEvent != status.StateUnknownError {
+		t.Fatalf("terminal state = %#v, want stable unidentifiable-message error", got)
+	}
+	kc.mu.Lock()
+	retained := kc.cleanup != nil
+	tries := kc.recoveryTry
+	kc.mu.Unlock()
+	if retained || tries != 0 {
+		t.Fatalf("cleanup=%v recovery attempts=%d, want released owner and no reconnect", retained, tries)
+	}
+}
+
+func TestCatchUpUnidentifiableMessageIsPermanentAdmissionFailure(t *testing.T) {
+	fake := &fakeKakao{
+		resumeTargets: []syncmsg.Target{{ChatID: testChatID, MaxLogID: 9}},
+		catchUps:      map[int64]catchUpResult{testChatID: {err: events.ErrUnidentifiableMessage}},
+	}
+	kc, _ := newTestClient(t, nil)
+	err := kc.catchUp(context.Background(), fake)
+	if !isUnidentifiableMessageError(err) {
+		t.Fatalf("catch-up error = %v, want permanent unidentifiable-message error", err)
+	}
+	if retryableRecoveryError(bootstrapFailure{stage: "catch-up", err: err}) {
+		t.Fatal("unidentifiable catch-up failure is retryable")
+	}
+}
+
 func TestCleanupRetryFailureLeavesOwnerRetryableWithoutChannelReuse(t *testing.T) {
 	first := &fakeKakao{stream: make(chan events.Result), shutdownFailures: 2}
 	kc, _ := newTestClient(t, func() (kakaoClient, error) { return first, nil })

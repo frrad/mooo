@@ -26,20 +26,20 @@ func DecodeForDelivery(packet loco.Packet) (Event, error) {
 	raw := bson.Raw(packet.Body)
 	chatID, logID, typ, log, envelopeErr := messageEnvelope(raw)
 	if envelopeErr != nil || !uniqueKeys(raw) || !uniqueKeys(log) {
-		return nil, ErrMalformedEvent
+		return nil, ErrUnidentifiableMessage
 	}
 	// A malformed inner ID must not be replaced by an outer fallback.
 	if _, lookupErr := log.LookupErr("logId"); lookupErr == nil {
 		inner, e := requiredInt64(log, "logId")
 		if e != nil || inner != logID {
-			return nil, ErrMalformedEvent
+			return nil, ErrUnidentifiableMessage
 		}
 	}
 	// If both locations carry an ID, disagreement is not a recoverable identity.
 	if _, lookupErr := raw.LookupErr("logId"); lookupErr == nil {
 		outer, e := requiredInt64(raw, "logId")
 		if e != nil || outer != logID {
-			return nil, ErrMalformedEvent
+			return nil, ErrUnidentifiableMessage
 		}
 	}
 	result, err := Decode(packet)

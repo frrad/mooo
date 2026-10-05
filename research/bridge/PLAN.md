@@ -92,7 +92,9 @@ Deterministic typed-photo failures now become persisted notices under their
 original source IDs (PR #181; [policy](conversion-failure-policy.md)). Transient
 transfer or Matrix failures remain uncommitted. Parser failures with validated source identities now become explicit notices;
 PR #187 has merged with continuity guards. Unidentifiable envelopes stop admission
-without inventing a cursor; operator recovery remains an open acceptance item.
+without inventing a cursor and report the stable `kakao-unidentifiable-message`
+state without automatic reconnect; operator recovery remains an open acceptance
+item ([policy](continuity-failure-policy.md)).
 Neither a silent cursor advance nor an indefinite chat block satisfies alpha
 acceptance.
 

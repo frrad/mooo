@@ -63,6 +63,7 @@ const (
 	stateProfileUnavailable status.BridgeStateErrorCode = "kakao-profile-unavailable"
 	stateConnectFailed      status.BridgeStateErrorCode = "kakao-connect-failed"
 	stateDisconnected       status.BridgeStateErrorCode = "kakao-disconnected"
+	stateUnidentifiableMsg  status.BridgeStateErrorCode = "kakao-unidentifiable-message"
 	stateKickedOut          status.BridgeStateErrorCode = "kakao-kicked-out"
 	stateChangeServer       status.BridgeStateErrorCode = "kakao-change-server"
 )
@@ -80,11 +81,28 @@ var errChatInfoMismatch = errors.New("connector: CHATINFO returned a different c
 var errInvalidMemberRoster = errors.New("connector: MEMLIST returned an invalid member ID")
 var errUnsupportedImageReply = errors.New("connector: image replies are not supported")
 
+// permanentAdmissionError marks a continuity failure that cannot be safely
+// recovered by reconnecting. The owner is still cleaned up, but no new
+// session is opened until an operator intervenes.
+type permanentAdmissionError struct{ err error }
+
+func (e permanentAdmissionError) Error() string { return e.err.Error() }
+func (e permanentAdmissionError) Unwrap() error { return e.err }
+
+func unidentifiableMessageError() error {
+	return permanentAdmissionError{err: events.ErrUnidentifiableMessage}
+}
+
+func isUnidentifiableMessageError(err error) bool {
+	return errors.Is(err, events.ErrUnidentifiableMessage)
+}
+
 func init() {
 	status.BridgeStateHumanErrors.Update(status.BridgeStateErrorMap{
 		stateProfileUnavailable: "The Kakao profile could not be opened; it may be in use by another process.",
 		stateConnectFailed:      "Connecting to KakaoTalk failed.",
 		stateDisconnected:       "The KakaoTalk session ended. Restart the bridge to reconnect.",
+		stateUnidentifiableMsg:  "Kakao delivered a message whose identity could not be established safely. Review the bridge logs and repair continuity before reconnecting.",
 		stateKickedOut:          "KakaoTalk ended this device's session.",
 		stateChangeServer:       "KakaoTalk requested a server change. Restart the bridge to reconnect.",
 	})
@@ -233,6 +251,12 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	if err != nil {
 		kc.shutdownBootstrap(c, "after connect failure", false)
 		kc.log().Err(err).Msg("Failed to connect to KakaoTalk")
+		if isUnidentifiableMessageError(err) {
+			if kc.isCurrent(generation, ctx) {
+				kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateUnidentifiableMsg})
+			}
+			return
+		}
 		if recovering && retryableRecoveryError(err) && kc.retryAfter(err, generation) {
 			return
 		}
@@ -433,6 +457,9 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 			}
 			continue
 		} else if err != nil {
+			if isUnidentifiableMessageError(err) {
+				return unidentifiableMessageError()
+			}
 			return fmt.Errorf("catch up chat: %w", err)
 		}
 		for _, evt := range missed {
@@ -450,6 +477,7 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan struct{}, generation uint64) {
 	kickedOut := false
 	changeServer := false
+	var terminalErr error
 	for result := range stream {
 		if kickedOut || changeServer {
 			// A terminal notice ends the session's event acceptance window. The
@@ -458,6 +486,10 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 			continue
 		}
 		if result.Err != nil {
+			if isUnidentifiableMessageError(result.Err) {
+				terminalErr = unidentifiableMessageError()
+				break
+			}
 			kc.log().Warn().Err(result.Err).Msg("Dropped undecodable Kakao event")
 			continue
 		}
@@ -474,6 +506,8 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	kc.mu.Unlock()
 	switch {
 	case stopping:
+	case terminalErr != nil:
+		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateUnidentifiableMsg})
 	case kickedOut:
 		kc.sendState(status.BridgeState{StateEvent: status.StateBadCredentials, Error: stateKickedOut})
 	case changeServer:
@@ -481,10 +515,10 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	default:
 		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDisconnected})
 	}
-	kc.sessionEnded(c, done, generation, kickedOut, changeServer)
+	kc.sessionEnded(c, done, generation, kickedOut, changeServer, terminalErr)
 }
 
-func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generation uint64, kickedOut, changeServer bool) {
+func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generation uint64, kickedOut, changeServer bool, terminalErr error) {
 	close(done)
 	kc.mu.Lock()
 	if kc.generation != generation || kc.client != c {
@@ -519,10 +553,10 @@ func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generatio
 	kc.mu.Unlock()
 	if shutdownErr != nil {
 		kc.log().Err(shutdownErr).Msg("Failed to close Kakao client before recovery")
-		kc.scheduleCleanupRetry(c, generation, kickedOut)
+		kc.scheduleCleanupRetry(c, generation, kickedOut, terminalErr == nil)
 		return
 	}
-	if kickedOut {
+	if kickedOut || terminalErr != nil {
 		return
 	}
 	if canRecover {
@@ -533,7 +567,7 @@ func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generatio
 // scheduleCleanupRetry keeps a timed-out profile owner attached and permits
 // one later cleanup attempt. No replacement can be opened while this owner is
 // retained; this is deliberately separate from the recovery attempt budget.
-func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, kickedOut bool) {
+func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, kickedOut, recover bool) {
 	kc.mu.Lock()
 	if kc.cleanup != c || kc.stopping || kc.cleanupRetryCancel != nil || kc.cleanupRetryAttempts >= 1 {
 		kc.mu.Unlock()
@@ -585,7 +619,7 @@ func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, ki
 		}
 		canRecover := err == nil && !kc.stopping && kc.generation == generation
 		kc.mu.Unlock()
-		if canRecover && !kickedOut {
+		if canRecover && !kickedOut && recover {
 			kc.retryAfter(client.ErrClosed, generation)
 		}
 	}()
