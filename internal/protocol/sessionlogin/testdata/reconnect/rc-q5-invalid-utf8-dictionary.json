@@ -1,0 +1,39 @@
+{
+  "status": "reviewed-platform-bounded-synthetic",
+  "cases": [
+    {
+      "name": "invalid_value_then_later",
+      "bson_hex": "1a00000002720003000000c32800027072000300000034320000",
+      "expected": {"pr": 42},
+      "outcome": "ok"
+    },
+    {
+      "name": "duplicate_invalid_then_valid",
+      "bson_hex": "20000000026669656c640003000000c32800026669656c640002000000370000",
+      "expected": {
+        "field": 7
+      },
+      "outcome": "ok"
+    },
+    {
+      "name": "duplicate_valid_then_invalid",
+      "bson_hex": "20000000026669656c6400020000003700026669656c640003000000c3280000",
+      "expected": {
+        "field": 7
+      },
+      "outcome": "ok"
+    },
+    {
+      "name": "invalid_key_invalid_value",
+      "bson_hex": "1000000002c3280003000000e2280000",
+      "expected": {},
+      "outcome": "ok"
+    },
+    {
+      "name": "invalid_key_valid_value",
+      "bson_hex": "1000000002c328000300000034320000",
+      "expected": {},
+      "outcome": "error"
+    }
+  ]
+}
