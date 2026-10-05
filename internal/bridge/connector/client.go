@@ -277,6 +277,9 @@ func (kc *KakaoClient) Disconnect() {
 	select {
 	case gate <- struct{}{}:
 		defer func() { <-gate }()
+		if err := ctx.Err(); err != nil {
+			return
+		}
 	case <-ctx.Done():
 		return
 	}
