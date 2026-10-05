@@ -591,6 +591,9 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	if err != nil {
 		return nil, err
 	}
+	if msg.ReplyTo == nil && msg.Content.RelatesTo != nil && msg.Content.RelatesTo.GetReplyTo() != "" {
+		return nil, errMissingReplyMetadata
+	}
 	kc.mu.Lock()
 	c := kc.client
 	kc.mu.Unlock()

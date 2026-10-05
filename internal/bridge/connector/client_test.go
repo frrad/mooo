@@ -1065,6 +1065,7 @@ func TestOutboundReplyRejectsOldCrossChatAndUnresolvedTargets(t *testing.T) {
 		{name: "old row", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID)}, want: errMissingReplyMetadata},
 		{name: "cross chat", reply: &database.Message{ID: makeMessageID(4000, 11), Room: makePortalKey(4000, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(4000, 11, testOtherID, chat.TextType, "source", 0)}, want: errCrossChatReply},
 		{name: "sender mismatch", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(9999), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0)}, want: errReplySenderMismatch},
+		{name: "receiver mismatch", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, makeUserLoginID(9999)), SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0)}, want: errCrossChatReply},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1080,6 +1081,20 @@ func TestOutboundReplyRejectsOldCrossChatAndUnresolvedTargets(t *testing.T) {
 				t.Fatalf("sent unresolved reply: sends=%v replies=%v", fake.sends, fake.replies)
 			}
 		})
+	}
+}
+
+func TestOutboundReplyRejectsUnresolvedMatrixRelation(t *testing.T) {
+	fake := &fakeKakao{sendResp: chat.WriteResponse{LogID: 36}}
+	kc := connectedClient(t, fake)
+	msg := matrixMessage(event.MsgText, "answer")
+	msg.Content.RelatesTo = &event.RelatesTo{}
+	msg.Content.RelatesTo.SetReplyTo("$missing")
+	if _, err := kc.HandleMatrixMessage(context.Background(), msg); !errors.Is(err, errMissingReplyMetadata) {
+		t.Fatalf("error = %v, want unresolved reply error", err)
+	}
+	if len(fake.sends) != 0 || len(fake.replies) != 0 {
+		t.Fatal("unresolved relation was sent")
 	}
 }
 

@@ -2,6 +2,7 @@ package connector
 
 import (
 	"errors"
+	"fmt"
 	"unicode/utf16"
 
 	"maunium.net/go/mautrix/bridgev2/database"
@@ -28,6 +29,12 @@ type KakaoMessageMetadata struct {
 	Preview  string `json:"preview"`
 	LinkID   int64  `json:"link_id,omitempty"`
 }
+
+func (m KakaoMessageMetadata) String() string {
+	return fmt.Sprintf("KakaoMessageMetadata{chatId=%d, logId=%d, authorId=%d, type=%d, preview=<redacted>, linkId=%d}", m.ChatID, m.LogID, m.AuthorID, m.Type, m.LinkID)
+}
+
+func (m KakaoMessageMetadata) GoString() string { return m.String() }
 
 var _ database.MetaMerger = (*KakaoMessageMetadata)(nil)
 
@@ -71,7 +78,7 @@ func metadataFromMessage(message *database.Message) (*KakaoMessageMetadata, erro
 }
 
 func replyTargetFor(message *database.Message, portal networkid.PortalKey) (chat.ReplyTarget, error) {
-	if message == nil || message.Room.ID != "" && message.Room.ID != portal.ID {
+	if message == nil || message.Room.ID != "" && (message.Room.ID != portal.ID || message.Room.Receiver != "" && message.Room.Receiver != portal.Receiver) {
 		return chat.ReplyTarget{}, errCrossChatReply
 	}
 	metadata, err := metadataFromMessage(message)
