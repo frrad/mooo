@@ -29,6 +29,7 @@ type nwStateCase struct {
 	OwnerFallbackPredicate       bool     `json:"owner_fallback_predicate"`
 	OwnerFlagA                   bool     `json:"owner_flag_a"`
 	OwnerFlagB                   bool     `json:"owner_flag_b"`
+	ReadyInitialSendEnabled      bool     `json:"ready_initial_send_enabled"`
 	ExpectedCancelID             string   `json:"expected_cancel_id"`
 	Expected                     []string `json:"expected_effects"`
 	PendingGap                   bool     `json:"pending_map_gap"`
@@ -63,7 +64,7 @@ func projectNWState(c nwStateCase) nwStateResult {
 		// predicates.
 		if !c.OwnerFlagA && !c.OwnerFlagB && c.PathPresent &&
 			(c.PathStatus == "satisfied" || c.PathStatus == "requires_connection") &&
-			c.DispatcherErrorPredicate {
+			(c.DispatcherErrorPredicate || c.ImmediateFailure) {
 			effects = append(effects, "extract_state_error", "invoke_failure_helper")
 			appendFailureHelperEffects(&effects, c)
 			cancelID = helperCancelID(c)
@@ -79,12 +80,20 @@ func projectNWState(c nwStateCase) nwStateResult {
 	case "setup", "preparing":
 		effects = append(effects, "log_state")
 	case "ready":
-		effects = append(effects, "log_tls_version", "ready_followup", "read_header")
+		effects = append(effects, "log_tls_version", "ready_followup")
+		if c.ReceiveWorkItemPresent {
+			effects = append(effects, "cancel_receive_work_item")
+		}
+		effects = append(effects, "set_ready_owner_flag")
+		if c.ReadyInitialSendEnabled && c.CurrentConnectionPresent {
+			effects = append(effects, "send_initial_ping")
+		}
+		effects = append(effects, "read_header")
 	case "cancelled":
 		if c.ReceiveWorkItemPresent {
 			effects = append(effects, "cancel_receive_work_item")
 		}
-		effects = append(effects, "construct_locoagent_error", "dispatch_main_queue")
+		effects = append(effects, "set_status_error", "dispatch_main_queue", "construct_locoagent_error", "fail_pending_requests_with_error")
 	default:
 		effects = append(effects, "log_unknown_state")
 	}
@@ -123,7 +132,7 @@ func TestNWStateHandlerFixture(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 18 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 19 {
 		t.Fatalf("header %#v", f)
 	}
 	seen := map[string]bool{}

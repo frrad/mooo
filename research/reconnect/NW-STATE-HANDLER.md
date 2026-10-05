@@ -37,14 +37,14 @@ immediate-failure predicate at `0x100d462f8`); only that branch calls
 inside the helper. Other waiting callbacks log/return. These dispatcher
 predicates and the helper's own guard are separate source stages.
 
-The ready follow-up at `0x100d47508` cancels and clears the stored receive
-work item when present, sets the observed owner flag, and, when the second owner
-flag is set and a current connection is available, sends data with the Network
+The ready follow-up at `0x100d47508` logs TLS state, cancels and clears the
+stored receive work item when present, sets the observed owner flag, and calls
+`readHeader` after its guarded initial-send section. When the second owner flag
+is set and a current connection is available, it sends data with the Network
 `contentProcessed` completion, default-message context, and `isComplete=true`.
 Its completion callback is a weak-owner closure at `0x100d4998c`; that closure
 filters POSIX error 0x59, logs other completion errors, and logs successful
-connectivity. The ready follow-up then calls `readHeader` unconditionally.
-The callback does not expose a pending-map lookup.
+connectivity. The callback does not expose a pending-map lookup.
 
 The V2SL fallback at `0x100d47238` sets the fallback owner flag, attempts to
 derive and validate an endpoint port, and calls the replacement setup path
@@ -64,7 +64,8 @@ failure, the helper fallback predicate, current/replacement connection
 presence, dispatcher-error predicate, owner-fallback predicate, and
 receive-work-item presence. It asserts ordered effects and keeps
 setup replacement, waiting dispatch gating, failed-helper cleanup/decision, and
-cancelled cleanup separate. Each case marks pending-map/status fanout as a gap.
+cancelled cleanup separate. Each case keeps pending-map correlation details as a gap; the observed
+`setStatus:error:` and `failPendingRequestsWithError:` effects are asserted.
 The fixture is static and synthetic; it does not activate a runtime transport
 or claim server behavior.
 
