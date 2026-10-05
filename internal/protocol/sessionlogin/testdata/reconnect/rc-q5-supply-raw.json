@@ -18,7 +18,9 @@
       ],
       "expected_packet_data_present": false,
       "expected_packet_data_by_frame": [],
-      "frames": []
+      "frames": [],
+      "expected_current_header": false,
+      "expected_frame_input_exhausted": false
     },
     {
       "name": "header_body_incomplete_returns_remaining",
@@ -40,7 +42,9 @@
       ],
       "expected_packet_data_present": false,
       "expected_packet_data_by_frame": [],
-      "frames": []
+      "frames": [],
+      "expected_current_header": true,
+      "expected_frame_input_exhausted": false
     },
     {
       "name": "zero_body_packet_consumes_header",
@@ -68,7 +72,9 @@
       "expected_packet_data_by_frame": [
         true
       ],
-      "frames": []
+      "frames": [],
+      "expected_current_header": false,
+      "expected_frame_input_exhausted": false
     },
     {
       "name": "packet_init_nil_still_consumes_and_dispatches",
@@ -96,7 +102,9 @@
       "expected_packet_data_by_frame": [
         false
       ],
-      "frames": []
+      "frames": [],
+      "expected_current_header": false,
+      "expected_frame_input_exhausted": false
     },
     {
       "name": "header_init_nil_uses_nil_header_body_zero",
@@ -122,7 +130,9 @@
       "expected_packet_data_by_frame": [
         true
       ],
-      "frames": []
+      "frames": [],
+      "expected_current_header": false,
+      "expected_frame_input_exhausted": false
     },
     {
       "name": "existing_header_partial_waits_for_body",
@@ -141,7 +151,9 @@
       ],
       "expected_packet_data_present": false,
       "expected_packet_data_by_frame": [],
-      "frames": []
+      "frames": [],
+      "expected_current_header": true,
+      "expected_frame_input_exhausted": false
     },
     {
       "name": "two_complete_packets_loop_and_dispatches_each",
@@ -188,6 +200,43 @@
           "body_length": 0,
           "packet_init_present": false
         }
+      ],
+      "expected_current_header": false,
+      "expected_frame_input_exhausted": false
+    },
+    {
+      "name": "trailing_frame_requires_explicit_description",
+      "initial_buffer_length": 0,
+      "append_length": 44,
+      "current_header_present": false,
+      "header_init_present": true,
+      "body_length": 0,
+      "packet_init_present": true,
+      "header_delegate_present": false,
+      "packet_delegate_present": false,
+      "frames": [
+        {
+          "header_init_present": true,
+          "body_length": 0,
+          "packet_init_present": true
+        }
+      ],
+      "expected_return": 0,
+      "expected_remaining": 22,
+      "expected_packet_data_present": true,
+      "expected_packet_data_by_frame": [
+        true
+      ],
+      "expected_current_header": false,
+      "expected_frame_input_exhausted": true,
+      "expected_effects": [
+        "append_data",
+        "init_header_from_buffer",
+        "set_current_header",
+        "clear_current_header",
+        "init_packet_data",
+        "consume_packet_bytes",
+        "frame_input_exhausted"
       ]
     }
   ]

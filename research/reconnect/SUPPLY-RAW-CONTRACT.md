@@ -14,7 +14,7 @@ header producer immediately after header initialization, before checking
 whether the body is complete. It then reads the header body length as the
 source's unsigned 32-bit field and waits until the buffer contains
 `bodyLength + 22` bytes; when incomplete, it returns the remaining byte count
-and preserves the buffered length.
+and preserves the buffered length and current-header state. A complete frame clears the current header before packet-data initialization.
 
 For a complete frame it clears the current header, initializes packet data,
 removes the consumed bytes, and conditionally invokes delegate methods when the
