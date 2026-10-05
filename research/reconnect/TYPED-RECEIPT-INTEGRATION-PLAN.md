@@ -47,18 +47,22 @@ boundary and one explicit composition boundary:
 The source contract has four distinct value cases that must remain separate
 before runtime binding:
 
-* HINT's observed empty projected dictionary is a normal successful value. It
-  is not a nil-body error and must encode as the reviewed empty BSON document.
-* An observed `NSNull` field is skipped by the reviewed projection/mapping
-  phase. It is not a Go zero value and does not, by itself, reject the notice.
-* A nil body/notice projection that reaches a source operation which raises or
-  returns no object needs a typed Go error outcome, while the original input
-  packet remains available to ordinary push delivery.
-* A nil result from the packet initializer is a separate source boundary: the
-  callback path has no packet object to consume, but the handler's receipt
-  attempt is not suppressed merely because the optional delegate callback
-  forwarded a nil notice. This is a lower-initializer failure, not permission
-  to convert the notice into an empty HINT or zero-valued BLOCKSYNC.
+* An empty input dictionary in the HINT nested `ChatLog` path is a normal
+  successful value. It is not a nil-body error and must encode as the reviewed
+  empty BSON document.
+* An observed `NSNull` source key is removed without assigning its destination;
+  the SGJson projection skips remaining `NSNull` values. It is not a Go zero
+  value and does not, by itself, reject the notice.
+* A nil body that reaches the observed SGJson operation raises. A future typed
+  adapter must expose that as a Go error while retaining the original input
+  packet for ordinary push delivery.
+* A nil notice returned by the notice initializer is a separate boundary. The
+  original packet/header remains available: the default handler can pass the
+  nil notice and original header to the optional delegate, then continue to
+  receipt construction. HINT receipt construction uses the header; BLOCKSYNC
+  nil revision getters yield zero before receipt construction. This source
+  path is conditional on the delegate returning normally; it does not forbid
+  the resulting zero-valued receipt.
 
 Strict BSON rejection is an explicit clean-room implementation-policy choice,
 not an observed official-client rule. The approved source mapping permits the
@@ -103,13 +107,14 @@ rejects an input.
 The reviewed handler chain is narrower than a typed receipt consumer. In the
 macOS 26.8.0 source inventory, `handleHintPushNotice:packetHeader:` (IMP
 `0x101515264`) and `handleBlockSyncPushNotice:packetHeader:` (IMP
-`0x101517988`) retain the notice/header, construct their notice packet, and
-attempt the optional manager callbacks
+`0x101517988`) retain the notice/header and first attempt the optional
+delegate callbacks
 `locoManager:didReceiveHintPushNotice:` (callsite `0x10151532c`) and
 `locoManager:didReceiveBlockSyncPushNotice:` (callsite `0x101517a50`) under
-their respective responds-to-selector checks. The `sendCarriagePushReceipt:`
-call follows packet construction and the delegate attempt in both handlers;
-absence of a delegate does not suppress that receipt attempt.
+their respective responds-to-selector checks. They then construct their notice
+packet and call `sendCarriagePushReceipt:`. Absence of a delegate does not
+suppress that receipt attempt. The callback recipient is the captured
+delegate; this paragraph does not identify it as the manager object itself.
 
 This is ordering evidence, not proof of the manager's downstream consumer.
 The callback's persistence, queue handoff, and failure handling after the
