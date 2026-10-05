@@ -41,7 +41,7 @@ distinguish implemented behavior from planned integrations.
 | Own messages | Messages written by the logged-in account on another device are sent through double puppeting. |
 | Connection | The bridge decides when to reconnect. Kakao gives it no reconnect of its own. Retries use exponential backoff and then run a bounded `CatchUp`. A dropped connection is reported as a transient disconnect; `KICKOUT` is reported as logged out or bad credentials. |
 | Read state | Matrix read receipts go to `MarkRead`. `DECUNREAD` becomes ghost read receipts. Catch-up and backfill use `SYNCMSG`, which can mark messages read on the server, so both are bounded and backfill is opt-in. |
-| Chat metadata | The connector uses `ChatInfo`, `MemberList`, and requested `Members` profiles for initial names and membership. Complete and partial rosters remain distinct; unsupported OpenChat links fail explicitly. Avatars and membership updates remain in B2, subject to encoding and parity gaps ([dossier](../chat-metadata.md)). Friend/contact sync remains separate. |
+| Chat metadata | The connector uses `ChatInfo`, `MemberList`, and requested `Members` profiles for initial names and membership. Complete and partial rosters remain distinct; unsupported OpenChat links fail explicitly. Avatars and membership updates are implemented (PR #173), with live encoding and parity gaps ([dossier](../chat-metadata.md)). Friend/contact sync remains separate. |
 
 ## Current baseline and execution order
 
@@ -123,8 +123,11 @@ tracked separately:
 
 Native QR enrollment (PR #166), photo transfer (PR #167), and scripted-protocol
 connector tests (PR #163) have merged. Their synthetic tests do not complete
-the live acceptance criteria. Reconnect, avatars/membership updates, reactions,
-and login collision protection are in review. Container packaging has merged
+the live acceptance criteria. Avatars/membership updates (PR #173) and login
+collision protection (PR #175)
+have also merged with synthetic regression coverage. Reconnect (PR #172) and
+reactions (PR #179) remain held for delivery and cleanup corrections. Container
+packaging has merged
 (PR #170); startup and restart smoke evidence is recorded in
 [deployment validation](DEPLOYMENT-VALIDATION.md). Read receipts, historical backfill, cloud backup/restore,
 and full official-client parity remain outside this alpha goal.
@@ -196,7 +199,10 @@ and full official-client parity remain outside this alpha goal.
       claim official-client parity.
 - [ ] Live-validate fresh bridge enrollment, device-authorization code,
       expiry/cancellation, and restart resume with the owned disposable
-      account. No live account or network enrollment is part of this change.
+      account. The first bridge-native scan on 2026-10-04 displayed a QR in
+      Matrix, but Android rejected it before approval. No fresh credentials
+      were installed. The failing stage and corrective regression remain open;
+      see [deployment validation](DEPLOYMENT-VALIDATION.md).
 - [x] Bounded photos in both directions (PR #167): authenticated Matrix
       streaming download with encrypted-media validation, Kakao upload/download,
       transfer deadlines, and persisted photo source metadata. Optional inbound
@@ -225,8 +231,12 @@ and full official-client parity remain outside this alpha goal.
       (PR #162). Complete versus partial membership is explicit; unrequested
       profiles and invalid IDs are rejected.
 - [ ] Live-validate initial metadata in direct and group portals.
-- [ ] Portal and ghost avatars, plus updates to existing portal metadata.
-- [ ] Membership events: `NEWMEM`, `DELMEM`, `LEFT`, `CHGCHATST`.
+- [x] Portal and ghost avatars, plus updates to existing portal metadata (PR #173).
+      HTTPS CDN policy, byte bounds, and redacted failures are synthetic-tested;
+      direct/group live validation remains outstanding.
+- [x] Membership events: `NEWMEM`, `DELMEM`, `LEFT`, `CHGCHATST` (PR #173).
+      Partial rosters preserve explicit joins/leaves even when profile lookup
+      fails. Existing-portal live validation remains outstanding.
 
 ### B3: lifecycle
 

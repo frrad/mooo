@@ -26,6 +26,22 @@ messaging, long-running recovery, or the complete standard-Matrix acceptance
 criteria. The prior native-binary text/catch-up experiment is recorded separately
 in [the bridge plan](PLAN.md).
 
+## Fresh QR enrollment: failed acceptance attempt
+
+On 2026-10-04, a fresh container installation with an empty profile directory
+received the bridge-native QR through its Matrix management room. The owned
+Android 26.8.2 client imported that image through its QR scanner's album route
+and displayed “You cannot use this QR code.” No device approval or credential
+persistence followed. The bridge container was stopped and transient QR and
+screen captures were removed from the lab devices.
+
+This does not establish a rendering defect. Previous successful clean-room
+registration and the official macOS presentation path both preserve the
+server-issued payload unchanged. The rejection stage remains unresolved:
+image decoding, route classification, QR-info lookup, or subsequent account
+policy. Fresh enrollment acceptance requires identifying the cause, adding a
+regression, and completing a controlled retry followed by restart/resume.
+
 ## Beeper: independent gate
 
 Beeper validation has not run. The current official
@@ -36,9 +52,10 @@ and run the bridge. Appservice websockets are provided by bridgev2.
 
 The documentation explicitly identifies incomplete Matrix API support as a
 potential compatibility limit. Standard Synapse success therefore does not prove
-Beeper compatibility. At inspection time there was no local `bbctl` executable
-or login configuration; an operator-selected Beeper account is needed for the
-live gate. No service credentials were requested or written into tracked files.
+Beeper compatibility. `bbctl` v0.15.0 has since been downloaded from its
+official release and its release checksum verified. There is no local login configuration; an
+operator-selected Beeper account is needed for the live gate. No service
+credentials were requested or written into tracked files.
 
 Before claiming Beeper support, validate configuration generation, websocket
 connectivity, bot interaction, encrypted direct/group messaging, media transfer,
