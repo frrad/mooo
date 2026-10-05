@@ -7,9 +7,7 @@ import (
 )
 
 const (
-	PushReceiptManagerTarget = "manager_request_owner"
-	PushReceiptAgentTarget   = "carriage_agent"
-	PushReceiptPingSelector  = "sendPingRequest:"
+	PushReceiptPingSelector = "sendPingRequest:"
 )
 
 // PushReceiptQueue is the injected main-queue hop. Enqueue must only record or
@@ -30,17 +28,19 @@ type PushReceiptPingConfig interface{ PingInterval() time.Duration }
 // agent status gate and packet-tag derivation are outside this owner.
 type PushReceiptOwner struct {
 	mu        sync.Mutex
+	manager   string
+	agent     string
 	queue     PushReceiptQueue
 	scheduler PushReceiptPingScheduler
 	config    PushReceiptPingConfig
 	send      func(target string, packet any)
 }
 
-func NewPushReceiptOwner(queue PushReceiptQueue, scheduler PushReceiptPingScheduler, config PushReceiptPingConfig, send func(target string, packet any)) (*PushReceiptOwner, error) {
-	if queue == nil || scheduler == nil || config == nil || send == nil {
+func NewPushReceiptOwner(managerTarget, agentTarget string, queue PushReceiptQueue, scheduler PushReceiptPingScheduler, config PushReceiptPingConfig, send func(target string, packet any)) (*PushReceiptOwner, error) {
+	if managerTarget == "" || agentTarget == "" || queue == nil || scheduler == nil || config == nil || send == nil {
 		return nil, fmt.Errorf("sessionlogin: incomplete push-receipt owner")
 	}
-	return &PushReceiptOwner{queue: queue, scheduler: scheduler, config: config, send: send}, nil
+	return &PushReceiptOwner{manager: managerTarget, agent: agentTarget, queue: queue, scheduler: scheduler, config: config, send: send}, nil
 }
 
 // Send enqueues manager PING cancellation, invokes the carriage-agent send
@@ -58,11 +58,11 @@ func (o *PushReceiptOwner) Send(packet any) error {
 		return fmt.Errorf("sessionlogin: incomplete push-receipt owner")
 	}
 	queue.Enqueue(func() {
-		scheduler.Cancel(PushReceiptManagerTarget, PushReceiptPingSelector, nil)
+		scheduler.Cancel(o.manager, PushReceiptPingSelector, nil)
 	})
-	send(PushReceiptAgentTarget, packet)
+	send(o.agent, packet)
 	queue.Enqueue(func() {
-		scheduler.Schedule(PushReceiptManagerTarget, PushReceiptPingSelector, nil, config.PingInterval())
+		scheduler.Schedule(o.manager, PushReceiptPingSelector, nil, config.PingInterval())
 	})
 	return nil
 }
