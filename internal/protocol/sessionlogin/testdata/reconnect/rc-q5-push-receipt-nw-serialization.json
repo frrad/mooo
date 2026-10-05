@@ -1,6 +1,9 @@
 {
   "status": "reviewed-static-unexecuted-runtime",
   "cases": [
-    {"name":"nw_send_packet_data_to_completion","operation":"nw_send","expected_effects":["read_body","bson_data","set_header_body_length","read_header_data","append_header_data","append_bson_body_data","bridge_packet_data_to_foundation_data","encrypt_packet_data","bridge_encrypted_data","nw_send_default_message_complete","toggle_out_timeout_false"]}
+    {"name":"packet_data_nil_returns","operation":"nw_send","packet_data_present":false,"encrypted_data_present":false,"connection_present":true,"expected_effects":["packet_data_nil_return"]},
+    {"name":"packet_data_encrypted_connection_send","operation":"nw_send","packet_data_present":true,"encrypted_data_present":true,"connection_present":true,"expected_effects":["read_body","bson_data","set_header_body_length","read_header_data","append_header_data","append_bson_body_data","bridge_packet_data_to_foundation_data","encrypt_packet_data","bridge_encrypted_data","nw_send_default_message_complete","toggle_out_timeout_true"]},
+    {"name":"packet_data_encryption_nil_connection_send","operation":"nw_send","packet_data_present":true,"encrypted_data_present":false,"connection_present":true,"expected_effects":["read_body","bson_data","set_header_body_length","read_header_data","append_header_data","append_bson_body_data","bridge_packet_data_to_foundation_data","encrypt_packet_data","encrypted_data_nil_path","nw_send_default_message_complete","toggle_out_timeout_true"]},
+    {"name":"packet_data_without_connection","operation":"nw_send","packet_data_present":true,"encrypted_data_present":true,"connection_present":false,"expected_effects":["read_body","bson_data","set_header_body_length","read_header_data","append_header_data","append_bson_body_data","bridge_packet_data_to_foundation_data","encrypt_packet_data","bridge_encrypted_data","toggle_out_timeout_true"]}
   ]
 }

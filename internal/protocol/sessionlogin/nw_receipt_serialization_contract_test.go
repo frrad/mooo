@@ -14,23 +14,28 @@ type nwReceiptFixture struct {
 	Cases  []nwReceiptCase `json:"cases"`
 }
 type nwReceiptCase struct {
-	Name            string   `json:"name"`
-	Operation       string   `json:"operation"`
-	ExpectedEffects []string `json:"expected_effects"`
+	Name                 string   `json:"name"`
+	Operation            string   `json:"operation"`
+	PacketDataPresent    bool     `json:"packet_data_present"`
+	EncryptedDataPresent bool     `json:"encrypted_data_present"`
+	ConnectionPresent    bool     `json:"connection_present"`
+	ExpectedEffects      []string `json:"expected_effects"`
 }
 
-var nwSendEffects = []string{
-	"read_body",
-	"bson_data",
-	"set_header_body_length",
-	"read_header_data",
-	"append_header_data",
-	"append_bson_body_data",
-	"bridge_packet_data_to_foundation_data",
-	"encrypt_packet_data",
-	"bridge_encrypted_data",
-	"nw_send_default_message_complete",
-	"toggle_out_timeout_false",
+func expectedNWSendEffects(c nwReceiptCase) []string {
+	if !c.PacketDataPresent {
+		return []string{"packet_data_nil_return"}
+	}
+	effects := []string{"read_body", "bson_data", "set_header_body_length", "read_header_data", "append_header_data", "append_bson_body_data", "bridge_packet_data_to_foundation_data", "encrypt_packet_data"}
+	if c.EncryptedDataPresent {
+		effects = append(effects, "bridge_encrypted_data")
+	} else {
+		effects = append(effects, "encrypted_data_nil_path")
+	}
+	if c.ConnectionPresent {
+		effects = append(effects, "nw_send_default_message_complete")
+	}
+	return append(effects, "toggle_out_timeout_true")
 }
 
 func TestNWReceiptSerializationFixture(t *testing.T) {
@@ -44,7 +49,7 @@ func TestNWReceiptSerializationFixture(t *testing.T) {
 	if err = d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 1 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 4 {
 		t.Fatalf("header %#v", f)
 	}
 	seen := map[string]bool{}
@@ -56,8 +61,8 @@ func TestNWReceiptSerializationFixture(t *testing.T) {
 		if c.Operation != "nw_send" {
 			t.Fatalf("%s operation=%q", c.Name, c.Operation)
 		}
-		if !reflect.DeepEqual(c.ExpectedEffects, nwSendEffects) {
-			t.Errorf("%s effects=%v want %v", c.Name, c.ExpectedEffects, nwSendEffects)
+		if got, want := c.ExpectedEffects, expectedNWSendEffects(c); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s effects=%v want %v", c.Name, got, want)
 		}
 	}
 }

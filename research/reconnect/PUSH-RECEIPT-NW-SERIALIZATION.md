@@ -13,8 +13,12 @@ result to Foundation `Data`, calls inherited `encryptPacketData:`
 (`0x100d497b8`), bridges the encrypted data back, and calls
 `NWConnection.send(content:contentContext:isComplete:completion:)`
 (`0x100d498a0`). The content context is `NWConnection.ContentContext.defaultMessage`
-and `isComplete` is true. After scheduling the send it calls
-`toggleOutSegmentTimeout:false` (`0x100d498dc`). The `packetData` implementation
+and `isComplete` is true. The raw branch checks the `packetData` result before
+continuing; a nil result returns without sending or toggling. A nonnil encrypted
+result is bridged into the send content; a nil encryption result takes a
+separate nil-content path. The connection presence gates the NW send. After
+that guarded send section, the wrapper calls `toggleOutSegmentTimeout:true`
+(`0x100d498dc`, `w2 = 1`). The `packetData` implementation
 is `0x10175a1c0`: it reads `body`, calls `BSONData`, obtains the BSON length,
 sets the header body length, reads header `data`, and appends header bytes
 followed by BSON body bytes to mutable output. The source proves this framing
@@ -38,10 +42,11 @@ belong to the base Objective-C path and are kept as a separate explicit gap.
 
 ## Synthetic contract
 
-The fixture checks the observed NW packet-data framing and send scheduling
-sequence. It records BSON key order/defaults, completion closure behavior, and
-pending correlation as explicit gaps rather than inventing wire fields, ACK
-behavior, or retry behavior.
+The fixture checks the observed NW packet-data framing, nil-result guards,
+encryption nil path, connection gate, send scheduling, and timeout argument.
+It records BSON key order/defaults, completion closure behavior, and pending
+correlation as explicit gaps rather than inventing wire fields, ACK behavior,
+or retry behavior.
 
 ## Provenance
 
@@ -51,6 +56,8 @@ behavior, or retry behavior.
   `socket-callbacks/report.txt` and `socket-callbacks/decompile.txt`.
 - `packetData` framing implementation: private Ghidra decompile of
   `0x10175a1c0` and parity trace for `packetData`.
+- Swift guard/timeout branch: private `nw-disasm.txt` receipt for
+  `0x100d49560` through `0x100d498dc`.
 - Base comparison path: private `rc-q5-sendpacket-method/report.txt` and
   `rc-q5-sendpacket-method/decompile.txt`.
 - Object hierarchy and fields: private
