@@ -123,9 +123,13 @@ Low renderer and a fresh client-owned profile. It ran source commit
 `1853902cdb5fc3efd44f3d4e80c5956757690f1d867a1c3ca9fb672dbc6f47e8`). The
 Matrix PNG was 512x512; offline
 CoreImage decoding produced exactly the server event payload, and the selected
-Android MediaStore row/provider bytes matched that PNG. The scanner then showed
+Android MediaStore row/provider bytes matched that PNG. Anchoring the retained
+image events to this command found 17 subsequent QR-image updates with one
+payload hash and one dimension/size tuple; the selected image matched that
+same payload hash. The scanner then showed
 the generic “You cannot use this QR code.” modal. In sanitized timing, the
-first Matrix image was emitted about one second after the command, the owned
+bridge image upload began about one second after the command; the first
+retained Matrix image event was about four seconds after the command. The owned
 picker selection occurred about thirty seconds after the command, and the
 bridge failure notice arrived about fifty-nine seconds after the command. The
 server lifetime field was not retained in this record, so these timings do not
