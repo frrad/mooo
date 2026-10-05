@@ -1,6 +1,7 @@
 # V2SL receive/decrypt boundary
 
-Status: reviewed static source contract; synthetic tests only. This slice
+Status: reviewed static source contract; synthetic tests only. Provenance is
+KakaoTalk 26.8.0 arm64 (2026-10-05). This slice
 extends the merged read-header/body routing contract with the secure body
 decrypt operation. It does not claim pending-map teardown or connection
 replacement behavior.
@@ -41,9 +42,10 @@ Private provenance (not part of the repository):
 
 ## Selected LocoNWAgent read callback
 
-The selected manager transport is `LocoNWAgent`, whose `readHeader` and
-`readBody:` methods call the receive helper at `0x100d48298`. The helper reads
-the current `connection` ivar at callback time. A missing owner or connection
+The selected manager transport is `LocoNWAgent`. Its `readHeader` path calls
+the header receive helper at `0x100d47e28`; its `readBody:` path calls the
+separate body receive helper at `0x100d48298`. The helper reads the current
+`connection` ivar at callback time. A missing owner or connection
 returns before scheduling a receive. With a connection it enables the outgoing
 segment timeout and calls `NWConnection.receive` with minimum length 1 and
 maximum length equal to the requested input length. The raw helper tests the signed high bit of that length after enabling the timeout; a set high bit traps before the receive call. There is no zero-length guard in this slice.
@@ -66,7 +68,7 @@ and `nw-readbody-closure-20261005.txt` in the external parity archive.
 
 ### Raw nil and short-input boundaries
 
-The raw `didReadV2slData:` body at `0x101773aa0` branches only on the
+The raw `didReadBody:` body at `0x101773aa0` branches only on the
 presence of `_v2slCrypto` at `+0x18`. In the crypto branch it calls
 `decrypt:` and then unconditionally calls `supplyRawData:` (`0x101933520`);
 the raw sequence at `0x101773ae0`–`0x101773af4` has no result-presence branch.
