@@ -41,6 +41,7 @@ const (
 	stateConnectFailed      status.BridgeStateErrorCode = "kakao-connect-failed"
 	stateDisconnected       status.BridgeStateErrorCode = "kakao-disconnected"
 	stateKickedOut          status.BridgeStateErrorCode = "kakao-kicked-out"
+	stateChangeServer       status.BridgeStateErrorCode = "kakao-change-server"
 )
 
 func init() {
@@ -49,6 +50,7 @@ func init() {
 		stateConnectFailed:      "Connecting to KakaoTalk failed.",
 		stateDisconnected:       "The KakaoTalk session ended. Restart the bridge to reconnect.",
 		stateKickedOut:          "KakaoTalk ended this device's session.",
+		stateChangeServer:       "KakaoTalk requested a server change. Restart the bridge to reconnect.",
 	})
 }
 
@@ -195,6 +197,7 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan struct{}) {
 	defer close(done)
 	kickedOut := false
+	changeServer := false
 	for result := range stream {
 		if result.Err != nil {
 			kc.log().Warn().Err(result.Err).Msg("Dropped undecodable Kakao event")
@@ -202,6 +205,9 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 		}
 		if _, ok := result.Event.(events.Kickout); ok {
 			kickedOut = true
+		}
+		if _, ok := result.Event.(events.ChangeServer); ok {
+			changeServer = true
 		}
 		kc.handleEvent(c, result.Event)
 	}
@@ -212,6 +218,8 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	case stopping:
 	case kickedOut:
 		kc.sendState(status.BridgeState{StateEvent: status.StateBadCredentials, Error: stateKickedOut})
+	case changeServer:
+		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateChangeServer})
 	default:
 		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDisconnected})
 	}
