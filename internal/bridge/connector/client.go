@@ -509,6 +509,9 @@ func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 	if name := chatName(data); name != "" {
 		info.Name = &name
 	}
+	if data.Meta != nil {
+		info.Avatar = avatarFromURL(data.Meta.ImageURL)
+	}
 	if data.Type == "DirectChat" && completeRoster {
 		otherUserID, count := networkid.UserID(""), 0
 		for userID := range members {
@@ -574,6 +577,9 @@ func userInfoForMember(profile chatmeta.Member) *bridgev2.UserInfo {
 	if profile.Nickname != "" {
 		name := profile.Nickname
 		info.Name = &name
+	}
+	if profile.ProfileImageURL != "" {
+		info.Avatar = avatarFromURL(profile.ProfileImageURL)
 	}
 	return info
 }

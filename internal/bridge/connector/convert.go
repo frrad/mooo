@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/bridgev2"
+	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/event"
@@ -53,9 +54,160 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, 0, 0), makeMessageID(evt.ChatID, evt.LogID), noticeData{
 			Body: notice, Metadata: newKakaoMessageMetadata(evt.ChatID, evt.LogID, 0, evt.Type, "", 0),
 		}, convertNoticeWithMetadata)
+	case events.MemberAdded:
+		return kc.memberChange(evt.ChatID, evt.LogID, 0, evt.Members, true)
+	case events.MemberRemoved:
+		return kc.memberChange(evt.ChatID, evt.LogID, 0, []events.MemberIdentity{{UserID: evt.UserID, UserType: evt.UserType}}, false)
+	case events.ChatStatusChanged:
+		return kc.chatResync(evt.ChatID, 0, evt.PlusUserID)
+	case events.ChatMetaChanged:
+		return kc.chatResync(evt.ChatID, 0, evt.AuthorID)
+	case events.ChatLeft:
+		members := bridgev2.ChatMemberMap{}.Set(bridgev2.ChatMember{
+			EventSender: kc.selfSender(),
+			Membership:  event.MembershipLeave,
+		})
+		return &simplevent.ChatInfoChange{
+			EventMeta: simplevent.EventMeta{
+				Type:      bridgev2.RemoteEventChatInfoChange,
+				PortalKey: makePortalKey(evt.ChatID, kc.login.ID),
+				Sender:    kc.selfSender(),
+			},
+			ChatInfoChange: &bridgev2.ChatInfoChange{MemberChanges: &bridgev2.ChatMemberList{MemberMap: members}},
+		}
 	default:
 		return nil
 	}
+}
+
+// chatInfoChange asks the bridge to refresh source-backed room metadata. The
+// Kakao event decoders intentionally leave status/meta payloads opaque, so
+// these events only trigger the bounded CHATINFO/MEMLIST/MEMBER read.
+func (kc *KakaoClient) chatResync(chatID, logID, authorID int64) bridgev2.RemoteEvent {
+	return &simplevent.ChatResync{
+		EventMeta: simplevent.EventMeta{
+			Type:      bridgev2.RemoteEventChatResync,
+			PortalKey: makePortalKey(chatID, kc.login.ID),
+			Sender:    kc.senderFor(authorID),
+			LogContext: func(c zerolog.Context) zerolog.Context {
+				return c.Int64("kakao_chat_id", chatID).Int64("kakao_log_id", logID)
+			},
+		},
+		GetChatInfoFunc: func(ctx context.Context, portal *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
+			if ctx == nil {
+				return nil, bridgev2.ErrNotLoggedIn
+			}
+			if portal == nil {
+				return nil, errChatInfoMismatch
+			}
+			boundChatID, err := parseChatID(portal.ID)
+			if err != nil || boundChatID != chatID {
+				return nil, errChatInfoMismatch
+			}
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			return kc.GetChatInfo(ctx, portal)
+		},
+	}
+}
+
+func (kc *KakaoClient) memberChange(chatID, logID, authorID int64, identities []events.MemberIdentity, join bool) bridgev2.RemoteEvent {
+	portalKey := makePortalKey(chatID, kc.login.ID)
+	return &chatInfoChangeEvent{
+		EventMeta: simplevent.EventMeta{
+			Type:      bridgev2.RemoteEventChatInfoChange,
+			PortalKey: portalKey,
+			Sender:    kc.senderFor(authorID),
+			LogContext: func(c zerolog.Context) zerolog.Context {
+				return c.Int64("kakao_chat_id", chatID).Int64("kakao_log_id", logID)
+			},
+		},
+		getInfo: func(ctx context.Context) (*bridgev2.ChatInfo, error) {
+			portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: portalKey}}
+			return kc.GetChatInfo(ctx, portal)
+		},
+		getChanges: func(ctx context.Context) (*bridgev2.ChatMemberList, error) {
+			return kc.memberChanges(ctx, chatID, identities, join)
+		},
+	}
+}
+
+type chatInfoChangeEvent struct {
+	simplevent.EventMeta
+	getInfo    func(context.Context) (*bridgev2.ChatInfo, error)
+	getChanges func(context.Context) (*bridgev2.ChatMemberList, error)
+}
+
+var _ bridgev2.RemoteChatInfoChange = (*chatInfoChangeEvent)(nil)
+
+func (evt *chatInfoChangeEvent) GetChatInfoChange(ctx context.Context) (*bridgev2.ChatInfoChange, error) {
+	if ctx == nil {
+		return nil, bridgev2.ErrNotLoggedIn
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	info, err := evt.getInfo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	changes, err := evt.getChanges(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &bridgev2.ChatInfoChange{ChatInfo: info, MemberChanges: changes}, nil
+}
+
+func (kc *KakaoClient) memberChanges(ctx context.Context, chatID int64, identities []events.MemberIdentity, join bool) (*bridgev2.ChatMemberList, error) {
+	ids := make([]int64, 0, len(identities))
+	seen := make(map[int64]struct{}, len(identities))
+	for _, identity := range identities {
+		if identity.UserID <= 0 || identity.UserID == kc.userID {
+			continue
+		}
+		if _, ok := seen[identity.UserID]; ok {
+			continue
+		}
+		seen[identity.UserID] = struct{}{}
+		ids = append(ids, identity.UserID)
+	}
+	if !join {
+		members := bridgev2.ChatMemberMap{}
+		for _, userID := range ids {
+			members.Set(bridgev2.ChatMember{EventSender: bridgev2.EventSender{Sender: makeUserID(userID)}, Membership: event.MembershipLeave})
+		}
+		return &bridgev2.ChatMemberList{MemberMap: members}, nil
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	members := bridgev2.ChatMemberMap{}
+	for _, userID := range ids {
+		members.Set(bridgev2.ChatMember{EventSender: bridgev2.EventSender{Sender: makeUserID(userID)}, Membership: event.MembershipJoin})
+	}
+	c, err := kc.metadataClient()
+	if err != nil {
+		return &bridgev2.ChatMemberList{MemberMap: members}, nil
+	}
+	profiles, err := c.Members(ctx, chatID, ids)
+	if err != nil {
+		return &bridgev2.ChatMemberList{MemberMap: members}, nil
+	}
+	requested := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		requested[id] = struct{}{}
+	}
+	for _, profile := range profiles {
+		if _, ok := requested[profile.UserID]; !ok || profile.UserID <= 0 || profile.UserID == kc.userID {
+			continue
+		}
+		kc.mu.Lock()
+		kc.profiles[profile.UserID] = profile
+		kc.mu.Unlock()
+		member := members[makeUserID(profile.UserID)]
+		member.UserInfo = userInfoForMember(profile)
+		members[makeUserID(profile.UserID)] = member
+	}
+	return &bridgev2.ChatMemberList{MemberMap: members}, nil
 }
 
 // gapNotice tells the room that messages up to targetMax could not be

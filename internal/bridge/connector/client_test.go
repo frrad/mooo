@@ -288,11 +288,11 @@ func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
 			ChatID:           testChatID,
 			Type:             "DirectChat",
 			DisplayNicknames: []string{"Ignored fallback"},
-			Meta:             &chatmeta.RoomMeta{Name: "Source room"},
+			Meta:             &chatmeta.RoomMeta{Name: "Source room", ImageURL: "https://talk.kakaocdn.net/room-avatar"},
 		}},
 		memberList: chatmeta.MemberListResponse{Token: 9, MemberIDs: []int64{testSelfID, testOtherID}},
 		members: []chatmeta.Member{
-			{UserID: testOtherID, Nickname: "Source user"},
+			{UserID: testOtherID, Nickname: "Source user", ProfileImageURL: "https://talk.kakaocdn.net/user-avatar"},
 			{UserID: 9999, Nickname: "Unexpected"},
 		},
 	}
@@ -307,6 +307,9 @@ func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
 	if info.Name == nil || *info.Name != "Source room" {
 		t.Fatalf("room name = %v, want source metadata", info.Name)
 	}
+	if info.Avatar == nil || info.Avatar.ID == "" {
+		t.Fatal("room avatar = nil, want source room image URL")
+	}
 	if !info.Members.IsFull || info.Members.TotalMemberCount != 2 {
 		t.Fatalf("members = %+v, want complete initial roster", info.Members)
 	}
@@ -316,6 +319,9 @@ func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
 	other, ok := info.Members.MemberMap[makeUserID(testOtherID)]
 	if !ok || other.UserInfo == nil || other.UserInfo.Name == nil || *other.UserInfo.Name != "Source user" {
 		t.Fatalf("other member = %+v, want source profile", other)
+	}
+	if other.UserInfo.Avatar == nil || other.UserInfo.Avatar.ID == "" {
+		t.Fatal("member avatar = nil, want source profile image URL")
 	}
 	if _, ok := info.Members.MemberMap[makeUserID(9999)]; ok {
 		t.Fatal("metadata admitted a profile outside the requested roster")
@@ -328,6 +334,9 @@ func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
 	user, err := kc.GetUserInfo(context.Background(), ghost)
 	if err != nil || user.Name == nil || *user.Name != "Source user" {
 		t.Fatalf("cached user info = %+v, err = %v", user, err)
+	}
+	if user.Avatar == nil || user.Avatar.ID == "" {
+		t.Fatal("cached user avatar = nil, want source profile image URL")
 	}
 }
 
