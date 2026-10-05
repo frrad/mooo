@@ -115,8 +115,10 @@ type KakaoClient struct {
 	cleanupRetryCancel   context.CancelFunc
 	cleanupRetryID       uint64
 	cleanupRetryAttempts int
+	cleanupRetryDone     chan struct{}
 	connectCancel        context.CancelFunc
 	retryCancel          context.CancelFunc
+	retryDone            chan struct{}
 	retryID              uint64
 	generation           uint64
 	connectingGeneration uint64
@@ -275,14 +277,18 @@ func (kc *KakaoClient) retryAfter(err error, generation uint64) bool {
 	kc.retryID++
 	retryID := kc.retryID
 	kc.retryCancel = cancel
+	kc.retryDone = make(chan struct{})
+	retryDone := kc.retryDone
 	wait := kc.wait
 	delay := recoveryDelay(err, attempt)
 	kc.mu.Unlock()
 	go func() {
 		defer func() {
+			close(retryDone)
 			kc.mu.Lock()
 			if kc.retryID == retryID {
 				kc.retryCancel = nil
+				kc.retryDone = nil
 			}
 			kc.mu.Unlock()
 		}()
@@ -522,15 +528,19 @@ func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, ki
 	kc.cleanupRetryAttempts++
 	ctx, cancel := context.WithCancel(context.Background())
 	kc.cleanupRetryCancel = cancel
+	kc.cleanupRetryDone = make(chan struct{})
+	cleanupRetryDone := kc.cleanupRetryDone
 	kc.cleanupRetryID++
 	retryID := kc.cleanupRetryID
 	wait := kc.wait
 	kc.mu.Unlock()
 	go func() {
 		defer func() {
+			close(cleanupRetryDone)
 			kc.mu.Lock()
 			if kc.cleanupRetryID == retryID {
 				kc.cleanupRetryCancel = nil
+				kc.cleanupRetryDone = nil
 			}
 			kc.mu.Unlock()
 		}()
@@ -621,15 +631,20 @@ func (kc *KakaoClient) Disconnect() {
 		return
 	}
 	kc.mu.Lock()
+	var retryDone chan struct{}
 	if kc.retryCancel != nil {
 		kc.retryCancel()
 		kc.retryCancel = nil
+		retryDone = kc.retryDone
+		kc.retryDone = nil
 	}
 	kc.retryID++
 	if kc.cleanupRetryCancel != nil {
 		kc.cleanupRetryCancel()
 		kc.cleanupRetryCancel = nil
 	}
+	cleanupRetryDone := kc.cleanupRetryDone
+	kc.cleanupRetryDone = nil
 	kc.cleanupRetryID++
 	if kc.connectCancel != nil {
 		kc.connectCancel()
@@ -657,6 +672,20 @@ func (kc *KakaoClient) Disconnect() {
 		kc.cleanup = c
 	}
 	kc.mu.Unlock()
+	if retryDone != nil {
+		select {
+		case <-retryDone:
+		case <-ctx.Done():
+			return
+		}
+	}
+	if cleanupRetryDone != nil {
+		select {
+		case <-cleanupRetryDone:
+		case <-ctx.Done():
+			return
+		}
+	}
 	if c == nil {
 		return
 	}
