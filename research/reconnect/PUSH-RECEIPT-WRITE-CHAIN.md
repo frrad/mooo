@@ -51,3 +51,21 @@ It does not invent a receipt acknowledgement or correlation result.
 - private Ghidra reports: `~/Library/Application Support/mooo-lab/ghidra/parity/receipt-request-model/`, `socket-write/`, `write-binary-chain/`, and `socket-write-block/`.
 
 The separate Swift-facing wrapper at `0x100d48dfc` delegates through `0x100d49560`; its ownership and dispatch relationship to the LocoAgent implementation remain a separate trace gap.
+
+## Socket callback boundary
+
+The LocoAgent delegate implementations expose the callback boundary without a
+receipt-specific acknowledgement contract. `socket:didWriteDataWithTag:` at
+`0x101774cb8` forwards the tag to `didWrite:` after a state/timeout update.
+`socket:didReadData:withTag:` at `0x101774b3c` branches on zero versus nonzero
+tag, performs the corresponding state update, and invokes `readHeader` on the
+nonzero path. A separate implementation at `0x1015f99e8` synchronizes a
+pending structure and branches on callback state; its exact class ownership is
+not published here. The Swift wrapper `0x100d48dfc` delegates into
+`0x100d49560`, whose `NWConnection.SendCompletion` handling is a distinct
+implementation boundary.
+
+The sign helper at `0x101773664` returns `((uint64 tag >> 63) ^ 1)`; no direct
+branch reference to it was recovered in the inspected disassembly. The receipt
+block's negative-tag derivation is therefore kept separate from the lower
+LocoAgent write tag, and callback correlation remains unclaimed.
