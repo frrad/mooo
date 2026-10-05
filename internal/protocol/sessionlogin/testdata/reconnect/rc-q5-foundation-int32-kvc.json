@@ -1,0 +1,218 @@
+{
+  "status": "reviewed-platform-bounded-synthetic",
+  "platform": "macOS 26.6.2 (25G83 arm64)",
+  "property": {
+    "name": "revision",
+    "encoding": "Ti",
+    "width": 4
+  },
+  "cases": [
+    {
+      "name": "int32_min",
+      "input_kind": "NSNumber-int64",
+      "input": "-2147483648",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": -2147483648,
+      "input_class": "NSConstantIntegerNumber",
+      "input_objc_type": "q"
+    },
+    {
+      "name": "int32_max",
+      "input_kind": "NSNumber-int64",
+      "input": "2147483647",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": 2147483647,
+      "input_class": "NSConstantIntegerNumber",
+      "input_objc_type": "q"
+    },
+    {
+      "name": "int64_above_max_wraps",
+      "input_kind": "NSNumber-int64",
+      "input": "2147483648",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": -2147483648,
+      "input_class": "NSConstantIntegerNumber",
+      "input_objc_type": "q"
+    },
+    {
+      "name": "int64_below_min_wraps",
+      "input_kind": "NSNumber-int64",
+      "input": "-2147483649",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": 2147483647,
+      "input_class": "NSConstantIntegerNumber",
+      "input_objc_type": "q"
+    },
+    {
+      "name": "int64_two32_wraps",
+      "input_kind": "NSNumber-int64",
+      "input": "4294967296",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": 0,
+      "input_class": "NSConstantIntegerNumber",
+      "input_objc_type": "q"
+    },
+    {
+      "name": "int64_max_low_word",
+      "input_kind": "NSNumber-int64",
+      "input": "9223372036854775807",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": -1,
+      "input_class": "NSConstantIntegerNumber",
+      "input_objc_type": "q"
+    },
+    {
+      "name": "int64_min_low_word",
+      "input_kind": "NSNumber-int64",
+      "input": "-9223372036854775808",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": 0,
+      "input_class": "NSConstantIntegerNumber",
+      "input_objc_type": "q"
+    },
+    {
+      "name": "double_fraction_truncates",
+      "input_kind": "NSNumber-double",
+      "input": "3.75",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": 3,
+      "input_class": "NSConstantDoubleNumber",
+      "input_objc_type": "d"
+    },
+    {
+      "name": "bool_true",
+      "input_kind": "NSNumber-bool",
+      "input": "true",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": 1,
+      "input_class": "__NSCFBoolean",
+      "input_objc_type": "c"
+    },
+    {
+      "name": "numeric_string_clamps",
+      "input_kind": "NSString",
+      "input": "2147483648",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": 2147483647,
+      "input_class": "__NSCFConstantString",
+      "input_objc_type": "not_number"
+    },
+    {
+      "name": "nonnumeric_string_becomes_zero",
+      "input_kind": "NSString",
+      "input": "not-a-number",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": 0,
+      "input_class": "__NSCFConstantString",
+      "input_objc_type": "not_number"
+    },
+    {
+      "name": "nsnull_raises",
+      "input_kind": "NSNull",
+      "input": "NSNull",
+      "initial_value": 7,
+      "outcome": "exception",
+      "input_class": "NSNull",
+      "input_objc_type": "not_number"
+    },
+    {
+      "name": "array_raises",
+      "input_kind": "NSArray",
+      "input": "[1]",
+      "initial_value": 7,
+      "outcome": "exception",
+      "input_class": "NSConstantArray",
+      "input_objc_type": "not_number"
+    },
+    {
+      "name": "dictionary_raises",
+      "input_kind": "NSDictionary",
+      "input": "{\"x\":1}",
+      "initial_value": 7,
+      "outcome": "exception",
+      "input_class": "NSConstantDictionary",
+      "input_objc_type": "not_number"
+    },
+    {
+      "name": "int32_min_factory",
+      "input_kind": "NSNumber-int64",
+      "input": "-2147483648",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": -2147483648,
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "q"
+    },
+    {
+      "name": "int32_max_factory",
+      "input_kind": "NSNumber-int64",
+      "input": "2147483647",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": 2147483647,
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "q"
+    },
+    {
+      "name": "int64_above_max_wraps_factory",
+      "input_kind": "NSNumber-int64",
+      "input": "2147483648",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": -2147483648,
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "q"
+    },
+    {
+      "name": "int64_below_min_wraps_factory",
+      "input_kind": "NSNumber-int64",
+      "input": "-2147483649",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": 2147483647,
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "q"
+    },
+    {
+      "name": "int64_two32_wraps_factory",
+      "input_kind": "NSNumber-int64",
+      "input": "4294967296",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": 0,
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "q"
+    },
+    {
+      "name": "int64_max_low_word_factory",
+      "input_kind": "NSNumber-int64",
+      "input": "9223372036854775807",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": -1,
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "q"
+    },
+    {
+      "name": "int64_min_low_word_factory",
+      "input_kind": "NSNumber-int64",
+      "input": "-9223372036854775808",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": 0,
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "q"
+    }
+  ]
+}
