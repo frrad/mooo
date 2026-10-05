@@ -290,9 +290,15 @@ Execution follows [`research/bridge/PLAN.md`](research/bridge/PLAN.md).
 
 - [x] Reassess current mautrix-go and Beeper bridge conventions; adopt
       `bridgev2` ([ADR 0003](docs/adr/0003-bridge-on-mautrix-bridgev2.md)).
-- [ ] Define identifier mapping, portals, puppeting, backfill, and state recovery.
-- [ ] Implement standard Matrix application-service behavior while preserving
-      Beeper compatibility.
+- [x] Implement the bridgev2 skeleton, profile-import login, identifier mapping,
+      bidirectional text, inbound replies, and commit-after-Matrix handling.
+- [x] Live-validate the minimal bridge and restart catch-up against a disposable
+      Synapse with owned disposable accounts.
+- [ ] Complete the single-user alpha in bridge-plan execution order: lifecycle
+      reliability, room/member metadata, QR enrollment, replies/photos/reactions,
+      controlled reconnect, and deployment validation.
+- [ ] Add opt-in backfill and read receipts after settling read-state semantics.
+- [ ] Validate standard Matrix appservice deployment and Beeper compatibility.
 - [ ] Package for a single-user Linux homelab deployment without baking in any
       operator-specific values.
 

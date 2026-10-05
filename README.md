@@ -7,7 +7,10 @@ bridge.
 The project is still pre-alpha, but its clean-room Go client now performs
 client-owned QR enrollment, persistent secondary-device authentication, direct
 text/photo messaging, replies, reactions, and durable cursor-based message
-continuity. The Matrix/Beeper bridge is not implemented yet.
+continuity. A minimal Matrix bridge supports profile import, bidirectional text,
+inbound replies, and restart catch-up. Bridge-native QR login, media, real room/member
+metadata, automatic reconnect, and deployment validation remain in progress;
+see the [bridge plan](research/bridge/PLAN.md).
 
 ## Principles
 

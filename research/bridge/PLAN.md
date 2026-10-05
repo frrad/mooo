@@ -1,6 +1,6 @@
 # Matrix bridge plan
 
-Status: active work plan, 2026-09-30. Framework decision:
+Status: active work plan, updated 2026-10-04. Framework decision:
 [ADR 0003](../../docs/adr/0003-bridge-on-mautrix-bridgev2.md).
 
 ## Goals
@@ -27,6 +27,9 @@ Status: active work plan, 2026-09-30. Framework decision:
 
 ## Mapping
 
+This table describes the target design; the baseline and checklists below
+distinguish implemented behavior from planned integrations.
+
 | Concern | Design |
 |---|---|
 | Login | Each bridge login owns one `client.Client`, a private auth-state path, and its flock lease. |
@@ -38,7 +41,54 @@ Status: active work plan, 2026-09-30. Framework decision:
 | Own messages | Messages written by the logged-in account on another device are sent through double puppeting. |
 | Connection | The bridge decides when to reconnect. Kakao gives it no reconnect of its own. Retries use exponential backoff and then run a bounded `CatchUp`. A dropped connection is reported as a transient disconnect; `KICKOUT` is reported as logged out or bad credentials. |
 | Read state | Matrix read receipts go to `MarkRead`. `DECUNREAD` becomes ghost read receipts. Catch-up and backfill use `SYNCMSG`, which can mark messages read on the server, so both are bounded and backfill is opt-in. |
-| Chat metadata | No client API exists yet for chat list, names, avatars, members, or profiles. Until B2, portals use placeholder names derived from IDs. B2 uses `CHATINFO` for room metadata and `MEMBER` for profiles ([dossier](../chat-metadata.md)). |
+| Chat metadata | `Client.ChatInfo`, `Client.Members`, and `Client.MemberList` exist, but the connector still returns placeholder room and user names. Wire these APIs into portals and ghosts in B2, subject to the remaining encoding and parity gaps ([dossier](../chat-metadata.md)). Friend/contact sync remains separate. |
+
+## Current baseline and execution order
+
+B0 is a working minimal text bridge, with recorded live validation against a
+throwaway Synapse on 2026-09-30. Text works in both directions, replies work
+inbound, and restart catch-up recovers missed messages for previously committed
+chats. Photos and unsupported message kinds become notices. Rooms and ghosts
+still have placeholder metadata. The framework supplies appservice, encryption,
+and double-puppeting machinery; that does not establish deployment validation
+for every homeserver or Beeper configuration.
+
+The next milestone is a usable single-user alpha. Execute the work in this
+order; the B0–B4 sections below remain feature inventories rather than a strict
+phase sequence:
+
+1. **Reliability first (B0/B3):** finish bootstrap ownership and decoder
+   cancellation, then exercise the connector through the real scripted backend.
+   Cover disconnect during login/subscription, Matrix delivery failure, restart
+   replay, shutdown timeout, and exclusive profile ownership. A cleanup timeout
+   must retain the owner and block replacement until cleanup succeeds.
+2. **Recognizable conversations (B2):** wire the existing metadata APIs into
+   room names, avatars, ghost profiles, and initial membership; then implement
+   membership updates. Validate direct and group conversations separately.
+3. **Bridge-native enrollment (B1):** add QR login using the existing registration
+   service, including expiry, cancellation, approval states, and secure profile
+   persistence. Keep explicit profile import available.
+4. **Everyday messaging (B1):** add outbound replies, then photos both ways after
+   resolving inbound author/timestamp fields. Add reactions after defining
+   aggregate-to-per-sender reconciliation and lookup-failure behavior.
+5. **Controlled reconnect (B3):** add a single-owner state machine with bounded
+   backoff, catch-up before live delivery, and distinct server-change versus
+   revoked-session handling. Never retry an ambiguous outbound mutation.
+6. **Deployment (B4):** produce a Docker image, example configuration, persistent
+   volume and upgrade guidance, and validate a standard Matrix appservice
+   installation. Evaluate Beeper self-hosting separately before claiming support.
+
+Alpha acceptance requires QR enrollment, recognizable direct/group portals,
+text/replies/photos in both directions, tested reaction reconciliation, recovery
+across disconnect/restart, and a reproducible single-user deployment. Each feature
+needs a source-derived client contract and appropriate synthetic/live validation;
+complete official-client parity is not a prerequisite for all bridge work.
+
+Read receipts and opt-in historical backfill follow the alpha. Resolve the
+`SYNCMSG` read-side-effect and local watermark discrepancy before enabling either.
+Define persistent conversion-failure handling before release: a failed message
+currently blocks later commits in that chat, so any bounded skip must record an
+explicit gap rather than silently advance the cursor.
 
 ## Phases
 
@@ -99,7 +149,8 @@ Status: active work plan, 2026-09-30. Framework decision:
 - [ ] QR login inside the bridge.
 - [ ] Photos in both directions. Inbound photo events currently carry no
       author or timestamp; resolve that in the client first.
-- [ ] Replies in both directions.
+- [x] Inbound reply conversion with chat-scoped source message IDs.
+- [ ] Outbound replies, including missing-source behavior and single-attempt sends.
 - [ ] Reactions in both directions, with the aggregate-to-per-sender strategy.
 
 ### B2: chat metadata (protocol research first)
@@ -119,9 +170,19 @@ Status: active work plan, 2026-09-30. Framework decision:
 
 Reconnect is planned in detail in [`../reconnect.md`](../reconnect.md).
 
-- [ ] Reconnect state machine, `CHANGESVR`, `KICKOUT`, and bridge-state
-      reporting.
-- [ ] Live-validate the resume and catch-up boundary through the bridge.
+- [x] Report connection state and distinguish terminal `CHANGESVR` and `KICKOUT`;
+      stop accepting later events after either terminal notice.
+- [x] Bound active-session disconnect and retain cleanup ownership after a
+      shutdown timeout; concurrent disconnects share the admission/deadline gate.
+- [ ] Complete bootstrap ownership before subscription and on failed connect;
+      join/cancel the typed decoder on idle input and blocked output. These
+      lifecycle fixes remain separate from the merged active-session shutdown.
+- [ ] Reconnect state machine with bounded backoff, exclusive ownership, and
+      catch-up before live delivery. Current recovery requires a bridge restart.
+- [x] Recorded live restart resume/catch-up validation for previously committed
+      chats on 2026-09-30.
+- [ ] Extend resume/catch-up validation to automatic reconnect, terminal events,
+      delivery failures, and cleanup timeouts.
 - [ ] Opt-in, bounded backfill with an explicit read-side-effect policy.
 
 ### B4: polish and packaging
