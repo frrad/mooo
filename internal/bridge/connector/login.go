@@ -407,8 +407,12 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 	}()
 	for {
 		deadline := l.qrDeadline()
+		pollTimer := time.NewTimer(qrPollInterval)
+		deadlineTimer := time.NewTimer(time.Until(deadline))
 		select {
 		case <-runCtx.Done():
+			stopQRTimer(pollTimer)
+			stopQRTimer(deadlineTimer)
 			if errors.Is(context.Cause(ctx), bridgev2.ErrLoginStepCancelled) {
 				return nil, bridgev2.ErrLoginStepCancelled
 			}
@@ -416,7 +420,17 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 				return nil, err
 			}
 			return nil, context.Canceled
-		case <-time.After(qrPollInterval):
+		case <-deadlineTimer.C:
+			stopQRTimer(pollTimer)
+			l.mu.Lock()
+			l.finished = true
+			l.mu.Unlock()
+			if l.cancelRemote(ctx) {
+				l.cleanupUnenrolledProfile()
+			}
+			return nil, errors.New("connector: QR challenge expired")
+		case <-pollTimer.C:
+			stopQRTimer(deadlineTimer)
 		}
 		if time.Now().After(deadline) {
 			l.mu.Lock()
@@ -553,6 +567,15 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 			continue
 		default:
 			return nil, l.failQR(ctx, errors.New("connector: QR authorization failed"))
+		}
+	}
+}
+
+func stopQRTimer(timer *time.Timer) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
 		}
 	}
 }
