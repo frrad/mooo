@@ -21,9 +21,11 @@ type nwStateCase struct {
 	CurrentConnectionPresent     bool     `json:"current_connection_present"`
 	CurrentConnectionID          string   `json:"current_connection_id"`
 	ReplacementConnectionPresent bool     `json:"replacement_connection_present"`
-	AllowFallback                bool     `json:"allow_fallback"`
+	ReceiveWorkItemPresent       bool     `json:"receive_work_item_present"`
+	PathPresent                  bool     `json:"path_present"`
+	PathStatus                   string   `json:"path_status"`
 	ImmediateFailure             bool     `json:"immediate_failure"`
-	OwnerFailurePredicate        bool     `json:"owner_failure_predicate"`
+	HelperFallbackPredicate      bool     `json:"helper_fallback_predicate"`
 	OwnerFlagA                   bool     `json:"owner_flag_a"`
 	OwnerFlagB                   bool     `json:"owner_flag_b"`
 	ExpectedCancelID             string   `json:"expected_cancel_id"`
@@ -45,16 +47,35 @@ func projectNWState(c nwStateCase) nwStateResult {
 		if c.ReplacementConnectionPresent {
 			effects = append(effects, "store_replacement", "start_on_queue")
 		}
-		return nwStateResult{Effects: effects, CancelID: c.CurrentConnectionID}
+		return nwStateResult{Effects: effects}
 	}
 	if !c.OwnerPresent {
 		return nwStateResult{Effects: effects}
 	}
 	switch c.State {
-	case "waiting", "failed":
-		effects = append(effects, "extract_state_error", "cancel_receive_work_item", "clear_state_handler", "cancel_current_connection")
-		failure := !c.AllowFallback || c.ImmediateFailure || c.OwnerFailurePredicate || c.OwnerFlagA || c.OwnerFlagB
-		if failure {
+	case "waiting":
+		// The dispatcher does not call handleConnectFailure for every waiting
+		// callback. It first requires clear owner flags, a path, and one of the
+		// two observed path statuses, then evaluates the fallback/immediate
+		// predicates.
+		if !c.OwnerFlagA && !c.OwnerFlagB && c.PathPresent &&
+			(c.PathStatus == "satisfied" || c.PathStatus == "requires_connection") &&
+			(c.HelperFallbackPredicate || c.ImmediateFailure) {
+			effects = append(effects, "invoke_failure_helper")
+		} else {
+			effects = append(effects, "log_state")
+		}
+	case "failed":
+		// failed always invokes the helper with allowFallback=true; the helper
+		// owns cleanup and the fallback/error split.
+		effects = append(effects, "invoke_failure_helper")
+		if c.ReceiveWorkItemPresent {
+			effects = append(effects, "cancel_receive_work_item")
+		}
+		if c.CurrentConnectionPresent {
+			effects = append(effects, "clear_state_handler", "cancel_current_connection")
+		}
+		if c.ImmediateFailure || !c.HelperFallbackPredicate || c.OwnerFlagA || c.OwnerFlagB {
 			effects = append(effects, "convert_nw_error", "construct_locoagent_error", "dispatch_main_queue")
 		} else {
 			effects = append(effects, "fallback_to_v2sl")
@@ -64,11 +85,14 @@ func projectNWState(c nwStateCase) nwStateResult {
 	case "ready":
 		effects = append(effects, "log_tls_version", "ready_followup")
 	case "cancelled":
-		effects = append(effects, "cancel_work_item", "construct_locoagent_error", "dispatch_main_queue")
+		if c.ReceiveWorkItemPresent {
+			effects = append(effects, "cancel_receive_work_item")
+		}
+		effects = append(effects, "construct_locoagent_error", "dispatch_main_queue")
 	default:
 		effects = append(effects, "log_unknown_state")
 	}
-	return nwStateResult{Effects: effects, CancelID: c.CurrentConnectionID}
+	return nwStateResult{Effects: effects}
 }
 
 func TestNWStateHandlerFixture(t *testing.T) {
@@ -82,7 +106,7 @@ func TestNWStateHandlerFixture(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 12 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 17 {
 		t.Fatalf("header %#v", f)
 	}
 	seen := map[string]bool{}

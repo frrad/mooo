@@ -9,7 +9,6 @@
       "current_connection_present": false,
       "current_connection_id": "",
       "replacement_connection_present": true,
-      "allow_fallback": false,
       "expected_cancel_id": "",
       "expected_effects": [
         "store_replacement",
@@ -17,9 +16,12 @@
       ],
       "pending_map_gap": true,
       "immediate_failure": false,
-      "owner_failure_predicate": false,
       "owner_flag_a": false,
-      "owner_flag_b": false
+      "owner_flag_b": false,
+      "receive_work_item_present": false,
+      "path_present": false,
+      "path_status": "",
+      "helper_fallback_predicate": false
     },
     {
       "name": "setup_replaces_previous_connection",
@@ -29,8 +31,7 @@
       "current_connection_present": true,
       "current_connection_id": "old",
       "replacement_connection_present": true,
-      "allow_fallback": false,
-      "expected_cancel_id": "old",
+      "expected_cancel_id": "",
       "expected_effects": [
         "cancel_previous_current",
         "release_previous_current",
@@ -39,9 +40,12 @@
       ],
       "pending_map_gap": true,
       "immediate_failure": false,
-      "owner_failure_predicate": false,
       "owner_flag_a": false,
-      "owner_flag_b": false
+      "owner_flag_b": false,
+      "receive_work_item_present": false,
+      "path_present": false,
+      "path_status": "",
+      "helper_fallback_predicate": false
     },
     {
       "name": "owner_lifetime_guard",
@@ -51,14 +55,16 @@
       "current_connection_present": true,
       "current_connection_id": "current",
       "replacement_connection_present": false,
-      "allow_fallback": true,
       "expected_cancel_id": "",
       "expected_effects": [],
       "pending_map_gap": true,
       "immediate_failure": false,
-      "owner_failure_predicate": false,
       "owner_flag_a": false,
-      "owner_flag_b": false
+      "owner_flag_b": false,
+      "receive_work_item_present": false,
+      "path_present": false,
+      "path_status": "",
+      "helper_fallback_predicate": false
     },
     {
       "name": "waiting_extracts_error_without_fallback",
@@ -68,22 +74,18 @@
       "current_connection_present": true,
       "current_connection_id": "current",
       "replacement_connection_present": false,
-      "allow_fallback": false,
-      "expected_cancel_id": "current",
+      "expected_cancel_id": "",
       "expected_effects": [
-        "extract_state_error",
-        "cancel_receive_work_item",
-        "clear_state_handler",
-        "cancel_current_connection",
-        "convert_nw_error",
-        "construct_locoagent_error",
-        "dispatch_main_queue"
+        "invoke_failure_helper"
       ],
       "pending_map_gap": true,
-      "immediate_failure": false,
-      "owner_failure_predicate": false,
+      "immediate_failure": true,
       "owner_flag_a": false,
-      "owner_flag_b": false
+      "owner_flag_b": false,
+      "receive_work_item_present": false,
+      "path_present": true,
+      "path_status": "satisfied",
+      "helper_fallback_predicate": false
     },
     {
       "name": "failed_allows_fallback_input",
@@ -93,10 +95,9 @@
       "current_connection_present": true,
       "current_connection_id": "current",
       "replacement_connection_present": false,
-      "allow_fallback": true,
-      "expected_cancel_id": "current",
+      "expected_cancel_id": "",
       "expected_effects": [
-        "extract_state_error",
+        "invoke_failure_helper",
         "cancel_receive_work_item",
         "clear_state_handler",
         "cancel_current_connection",
@@ -104,9 +105,12 @@
       ],
       "pending_map_gap": true,
       "immediate_failure": false,
-      "owner_failure_predicate": false,
       "owner_flag_a": false,
-      "owner_flag_b": false
+      "owner_flag_b": false,
+      "receive_work_item_present": true,
+      "path_present": false,
+      "path_status": "",
+      "helper_fallback_predicate": true
     },
     {
       "name": "setup_state_logs_only",
@@ -116,16 +120,18 @@
       "current_connection_present": false,
       "current_connection_id": "",
       "replacement_connection_present": false,
-      "allow_fallback": false,
       "expected_cancel_id": "",
       "expected_effects": [
         "log_state"
       ],
       "pending_map_gap": true,
       "immediate_failure": false,
-      "owner_failure_predicate": false,
       "owner_flag_a": false,
-      "owner_flag_b": false
+      "owner_flag_b": false,
+      "receive_work_item_present": false,
+      "path_present": false,
+      "path_status": "",
+      "helper_fallback_predicate": false
     },
     {
       "name": "preparing_state_logs_only",
@@ -135,16 +141,18 @@
       "current_connection_present": false,
       "current_connection_id": "",
       "replacement_connection_present": false,
-      "allow_fallback": false,
       "expected_cancel_id": "",
       "expected_effects": [
         "log_state"
       ],
       "pending_map_gap": true,
       "immediate_failure": false,
-      "owner_failure_predicate": false,
       "owner_flag_a": false,
-      "owner_flag_b": false
+      "owner_flag_b": false,
+      "receive_work_item_present": false,
+      "path_present": false,
+      "path_status": "",
+      "helper_fallback_predicate": false
     },
     {
       "name": "ready_logs_tls_and_followup",
@@ -154,17 +162,19 @@
       "current_connection_present": true,
       "current_connection_id": "current",
       "replacement_connection_present": false,
-      "allow_fallback": false,
-      "expected_cancel_id": "current",
+      "expected_cancel_id": "",
       "expected_effects": [
         "log_tls_version",
         "ready_followup"
       ],
       "pending_map_gap": true,
       "immediate_failure": false,
-      "owner_failure_predicate": false,
       "owner_flag_a": false,
-      "owner_flag_b": false
+      "owner_flag_b": false,
+      "receive_work_item_present": false,
+      "path_present": false,
+      "path_status": "",
+      "helper_fallback_predicate": false
     },
     {
       "name": "cancelled_cancels_work_and_dispatches_error",
@@ -174,18 +184,20 @@
       "current_connection_present": false,
       "current_connection_id": "",
       "replacement_connection_present": false,
-      "allow_fallback": false,
       "expected_cancel_id": "",
       "expected_effects": [
-        "cancel_work_item",
+        "cancel_receive_work_item",
         "construct_locoagent_error",
         "dispatch_main_queue"
       ],
       "pending_map_gap": true,
       "immediate_failure": false,
-      "owner_failure_predicate": false,
       "owner_flag_a": false,
-      "owner_flag_b": false
+      "owner_flag_b": false,
+      "receive_work_item_present": true,
+      "path_present": false,
+      "path_status": "",
+      "helper_fallback_predicate": false
     },
     {
       "name": "unknown_state_logs",
@@ -195,16 +207,18 @@
       "current_connection_present": false,
       "current_connection_id": "",
       "replacement_connection_present": false,
-      "allow_fallback": false,
       "expected_cancel_id": "",
       "expected_effects": [
         "log_unknown_state"
       ],
       "pending_map_gap": true,
       "immediate_failure": false,
-      "owner_failure_predicate": false,
       "owner_flag_a": false,
-      "owner_flag_b": false
+      "owner_flag_b": false,
+      "receive_work_item_present": false,
+      "path_present": false,
+      "path_status": "",
+      "helper_fallback_predicate": false
     },
     {
       "name": "failed_owner_virtual_predicate_forces_error",
@@ -214,10 +228,9 @@
       "current_connection_present": true,
       "current_connection_id": "current",
       "replacement_connection_present": false,
-      "allow_fallback": true,
-      "expected_cancel_id": "current",
+      "expected_cancel_id": "",
       "expected_effects": [
-        "extract_state_error",
+        "invoke_failure_helper",
         "cancel_receive_work_item",
         "clear_state_handler",
         "cancel_current_connection",
@@ -227,9 +240,12 @@
       ],
       "pending_map_gap": true,
       "immediate_failure": false,
-      "owner_failure_predicate": true,
       "owner_flag_a": false,
-      "owner_flag_b": false
+      "owner_flag_b": false,
+      "receive_work_item_present": true,
+      "path_present": false,
+      "path_status": "",
+      "helper_fallback_predicate": false
     },
     {
       "name": "failed_owner_flags_force_error",
@@ -239,10 +255,9 @@
       "current_connection_present": true,
       "current_connection_id": "current",
       "replacement_connection_present": false,
-      "allow_fallback": true,
-      "expected_cancel_id": "current",
+      "expected_cancel_id": "",
       "expected_effects": [
-        "extract_state_error",
+        "invoke_failure_helper",
         "cancel_receive_work_item",
         "clear_state_handler",
         "cancel_current_connection",
@@ -252,9 +267,120 @@
       ],
       "pending_map_gap": true,
       "immediate_failure": false,
-      "owner_failure_predicate": false,
       "owner_flag_a": true,
-      "owner_flag_b": false
+      "owner_flag_b": false,
+      "receive_work_item_present": true,
+      "path_present": false,
+      "path_status": "",
+      "helper_fallback_predicate": true
+    },
+    {
+      "name": "waiting_path_absent_logs_only",
+      "operation": "callback",
+      "state": "waiting",
+      "owner_present": true,
+      "current_connection_present": true,
+      "current_connection_id": "current",
+      "replacement_connection_present": false,
+      "receive_work_item_present": true,
+      "path_present": false,
+      "path_status": "",
+      "immediate_failure": true,
+      "helper_fallback_predicate": true,
+      "owner_flag_a": false,
+      "owner_flag_b": false,
+      "expected_cancel_id": "",
+      "expected_effects": [
+        "log_state"
+      ],
+      "pending_map_gap": true
+    },
+    {
+      "name": "waiting_unsatisfied_path_logs_only",
+      "operation": "callback",
+      "state": "waiting",
+      "owner_present": true,
+      "current_connection_present": true,
+      "current_connection_id": "current",
+      "replacement_connection_present": false,
+      "receive_work_item_present": true,
+      "path_present": true,
+      "path_status": "unsatisfied",
+      "immediate_failure": true,
+      "helper_fallback_predicate": true,
+      "owner_flag_a": false,
+      "owner_flag_b": false,
+      "expected_cancel_id": "",
+      "expected_effects": [
+        "log_state"
+      ],
+      "pending_map_gap": true
+    },
+    {
+      "name": "waiting_flags_block_helper",
+      "operation": "callback",
+      "state": "waiting",
+      "owner_present": true,
+      "current_connection_present": true,
+      "current_connection_id": "current",
+      "replacement_connection_present": false,
+      "receive_work_item_present": true,
+      "path_present": true,
+      "path_status": "satisfied",
+      "immediate_failure": true,
+      "helper_fallback_predicate": true,
+      "owner_flag_a": true,
+      "owner_flag_b": false,
+      "expected_cancel_id": "",
+      "expected_effects": [
+        "log_state"
+      ],
+      "pending_map_gap": true
+    },
+    {
+      "name": "waiting_predicates_false_logs_only",
+      "operation": "callback",
+      "state": "waiting",
+      "owner_present": true,
+      "current_connection_present": true,
+      "current_connection_id": "current",
+      "replacement_connection_present": false,
+      "receive_work_item_present": true,
+      "path_present": true,
+      "path_status": "requires_connection",
+      "immediate_failure": false,
+      "helper_fallback_predicate": false,
+      "owner_flag_a": false,
+      "owner_flag_b": false,
+      "expected_cancel_id": "",
+      "expected_effects": [
+        "log_state"
+      ],
+      "pending_map_gap": true
+    },
+    {
+      "name": "failed_without_work_or_connection",
+      "operation": "callback",
+      "state": "failed",
+      "owner_present": true,
+      "current_connection_present": false,
+      "current_connection_id": "",
+      "replacement_connection_present": false,
+      "receive_work_item_present": false,
+      "path_present": false,
+      "path_status": "",
+      "immediate_failure": true,
+      "helper_fallback_predicate": false,
+      "owner_flag_a": false,
+      "owner_flag_b": false,
+      "expected_cancel_id": "",
+      "expected_effects": [
+        "invoke_failure_helper",
+        "convert_nw_error",
+        "construct_locoagent_error",
+        "dispatch_main_queue"
+      ],
+      "pending_map_gap": true
     }
   ]
 }
