@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -11,14 +12,17 @@ import (
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
+	bridgematrix "maunium.net/go/mautrix/bridgev2/matrix"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
+	"github.com/frrad/mooo/internal/protocol/media"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 )
 
@@ -35,6 +39,7 @@ type kakaoClient interface {
 	MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error)
 	SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error)
 	SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error)
+	SendImage(ctx context.Context, chatID int64, data []byte) (media.SendResult, error)
 	Close() error
 	Shutdown(ctx context.Context) error
 }
@@ -57,6 +62,7 @@ var terminalDisconnectTimeout = 5 * time.Second
 var errUnsupportedOpenChatMetadata = errors.New("connector: OpenChat metadata is not supported")
 var errChatInfoMismatch = errors.New("connector: CHATINFO returned a different chat ID")
 var errInvalidMemberRoster = errors.New("connector: MEMLIST returned an invalid member ID")
+var errUnsupportedImageReply = errors.New("connector: image replies are not supported")
 
 func init() {
 	status.BridgeStateHumanErrors.Update(status.BridgeStateErrorMap{
@@ -239,9 +245,7 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 			return fmt.Errorf("catch up chat: %w", err)
 		}
 		for _, evt := range missed {
-			if !kc.handleEvent(c, evt) {
-				return errors.New("catch-up event was not committed")
-			}
+			kc.handleEvent(c, evt)
 		}
 	}
 	return nil
@@ -287,11 +291,11 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	}
 }
 
-func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
+func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) {
 	remote := kc.remoteEventFor(evt)
 	if remote == nil {
 		kc.log().Debug().Str("kind", string(evt.Kind())).Msg("Ignoring Kakao event not bridged yet")
-		return true
+		return
 	}
 	result := kc.queue(remote)
 	if !committable(result) {
@@ -299,13 +303,11 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 			Bool("success", result.Success).
 			Bool("queued", result.Queued).
 			Msg("Kakao message was not confirmed as bridged; leaving it uncommitted for replay")
-		return false
+		return
 	}
 	if err := c.CommitEvent(evt); err != nil {
 		kc.log().Err(err).Msg("Failed to commit bridged Kakao message")
-		return false
 	}
-	return true
 }
 
 // committable reports whether the bridge finished handling an event. Ignored
@@ -577,6 +579,10 @@ func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 		ID:            "com.github.frrad.mooo.capabilities.2026_10_04",
 		MaxTextLength: maxTextLength,
 		Reply:         event.CapLevelPartialSupport,
+		File: event.FileFeatureMap{event.MsgImage: &event.FileFeatures{
+			MimeTypes: map[string]event.CapabilitySupportLevel{"image/jpeg": event.CapLevelPartialSupport, "image/png": event.CapLevelPartialSupport},
+			MaxSize:   media.MaxImageBytes,
+		}},
 	}
 }
 
@@ -584,11 +590,15 @@ func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 // established.
 const maxTextLength = 10000
 
+const matrixImageTransferTimeout = 30 * time.Second
+
+var matrixImageDownloader = downloadMatrixImageBounded
+
 // HandleMatrixMessage sends one plain text message. A failed or ambiguous
 // send is reported to Matrix and never retried.
 func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.MatrixMessage) (*bridgev2.MatrixMessageResponse, error) {
 	switch msg.Content.MsgType {
-	case event.MsgText, event.MsgNotice, event.MsgEmote:
+	case event.MsgText, event.MsgNotice, event.MsgEmote, event.MsgImage:
 	default:
 		return nil, bridgev2.ErrUnsupportedMessageType
 	}
@@ -604,6 +614,22 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	kc.mu.Unlock()
 	if c == nil {
 		return nil, bridgev2.ErrNotLoggedIn
+	}
+	if msg.Content.MsgType == event.MsgImage {
+		if msg.ReplyTo != nil || msg.Content.RelatesTo != nil && msg.Content.RelatesTo.GetReplyTo() != "" {
+			return nil, errUnsupportedImageReply
+		}
+		if msg.Portal == nil || msg.Portal.Bridge == nil {
+			return nil, bridgev2.ErrFailedToGetIntent
+		}
+		if msg.Content.Info != nil && msg.Content.Info.Size > media.MaxImageBytes {
+			return nil, media.ErrInvalidImage
+		}
+		intent, ok := msg.Portal.GetIntentFor(ctx, kc.selfSender(), kc.login, bridgev2.RemoteEventMessage)
+		if !ok {
+			return nil, bridgev2.ErrFailedToGetIntent
+		}
+		return kc.sendMatrixImage(ctx, c, intent, chatID, msg.Content.URL, msg.Content.File)
 	}
 	body := msg.Content.Body
 	if msg.Content.MsgType == event.MsgEmote {
@@ -640,6 +666,66 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 			Metadata:  newKakaoMessageMetadata(chatID, response.LogID, kc.userID, sentType, body, 0),
 		},
 	}, nil
+}
+
+func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c kakaoClient, intent bridgev2.MatrixAPI, chatID int64, uri id.ContentURIString, fileInfo *event.EncryptedFileInfo) (*bridgev2.MatrixMessageResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)
+	defer cancel()
+	data, err := matrixImageDownloader(ctx, intent, uri, fileInfo)
+	if err != nil {
+		return nil, errors.New("download Matrix image failed")
+	}
+	response, err := c.SendImage(ctx, chatID, data)
+	if err != nil {
+		return nil, err
+	}
+	logID, sendAt, err := media.SendResultPosition(response)
+	if err != nil {
+		return nil, err
+	}
+	return &bridgev2.MatrixMessageResponse{DB: &database.Message{ID: makeMessageID(chatID, logID), SenderID: makeUserID(kc.userID), Timestamp: kakaoTime(sendAt), Metadata: newKakaoMessageMetadata(chatID, logID, kc.userID, media.PhotoType, "[image]", 0)}}, nil
+}
+
+func downloadMatrixImageBounded(ctx context.Context, intent bridgev2.MatrixAPI, uri id.ContentURIString, fileInfo *event.EncryptedFileInfo) ([]byte, error) {
+	asIntent, ok := intent.(*bridgematrix.ASIntent)
+	if !ok || asIntent == nil || asIntent.Matrix == nil {
+		return nil, bridgev2.ErrFailedToGetIntent
+	}
+	if fileInfo != nil {
+		uri = fileInfo.URL
+		if err := fileInfo.PrepareForDecryption(); err != nil {
+			return nil, media.ErrInvalidImage
+		}
+	}
+	parsed, err := uri.Parse()
+	if err != nil {
+		return nil, media.ErrInvalidImage
+	}
+	resp, err := asIntent.Matrix.Download(ctx, parsed)
+	if err != nil {
+		return nil, media.ErrInvalidImage
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.ContentLength > media.MaxImageBytes {
+		return nil, media.ErrInvalidImage
+	}
+	reader := io.Reader(resp.Body)
+	var closeReader io.Closer = resp.Body
+	if fileInfo != nil {
+		decryptReader := fileInfo.DecryptStream(resp.Body)
+		reader = decryptReader
+		closeReader = decryptReader
+	}
+	return readBoundedMatrixImage(reader, closeReader)
+}
+
+func readBoundedMatrixImage(reader io.Reader, closer io.Closer) ([]byte, error) {
+	data, readErr := io.ReadAll(io.LimitReader(reader, media.MaxImageBytes+1))
+	closeErr := closer.Close()
+	if readErr != nil || closeErr != nil || len(data) > media.MaxImageBytes {
+		return nil, media.ErrInvalidImage
+	}
+	return data, nil
 }
 
 func (kc *KakaoClient) selfSender() bridgev2.EventSender {

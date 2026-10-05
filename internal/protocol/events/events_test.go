@@ -52,10 +52,10 @@ func TestDecodePhotoAndUnsupportedMessage(t *testing.T) {
 	attachment := `{"k":"opaque","w":3,"h":2,"s":12,"cs":"0123456789ABCDEF0123456789ABCDEF01234567","mt":"image/jpg","url":"https://talk.kakaocdn.net/file?sig=fixture","thumbnailUrl":"https://talk.kakaocdn.net/thumb?sig=fixture","expire":1}`
 	photoEvent, err := Decode(packet(t, "MSG", bson.D{
 		{Key: "chatId", Value: int64(42)},
-		{Key: "chatLog", Value: bson.D{{Key: "logId", Value: int64(99)}, {Key: "type", Value: int32(2)}, {Key: "attachment", Value: attachment}}},
+		{Key: "chatLog", Value: bson.D{{Key: "logId", Value: int64(99)}, {Key: "type", Value: int32(2)}, {Key: "authorId", Value: int64(8)}, {Key: "sendAt", Value: int64(1234)}, {Key: "attachment", Value: attachment}}},
 	}))
 	photo, ok := photoEvent.(PhotoMessage)
-	if err != nil || !ok || photo.Message.Attachment.Width != 3 {
+	if err != nil || !ok || photo.Message.AuthorID != 8 || photo.Message.SentAt != 1234 || photo.Message.Attachment.Width != 3 {
 		t.Fatalf("event=%T value=%#v err=%v", photoEvent, photoEvent, err)
 	}
 	if strings.Contains(fmt.Sprintf("%v %+v %#v", photo, photo, photo), "opaque") {

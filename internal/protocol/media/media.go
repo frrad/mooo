@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -62,6 +63,8 @@ type PhotoAttachment struct {
 type PhotoMessage struct {
 	ChatID     int64
 	LogID      int64
+	AuthorID   int64
+	SentAt     int64
 	Attachment PhotoAttachment
 }
 
@@ -103,14 +106,18 @@ func DecodePhotoMessage(body []byte) (PhotoMessage, error) {
 	if _, err := hex.DecodeString(attachment.Checksum); err != nil {
 		return PhotoMessage{}, ErrInvalidMessage
 	}
-	return PhotoMessage{ChatID: chatID, LogID: logID, Attachment: attachment}, nil
+	return PhotoMessage{
+		ChatID: chatID, LogID: logID,
+		AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt"),
+		Attachment: attachment,
+	}, nil
 }
 
 // DownloadPhoto fetches a decoded attachment with a strict size bound and
 // verifies both the advertised byte length and SHA-1 checksum. Redirect targets
 // are validated before the client follows them.
 func DownloadPhoto(ctx context.Context, client *http.Client, attachment PhotoAttachment) ([]byte, error) {
-	if ctx == nil || client == nil || attachment.Size <= 0 || attachment.Size > MaxImageBytes || validateDownloadURL(attachment.URL) != nil {
+	if ctx == nil || client == nil || attachment.Size <= 0 || attachment.Size > MaxImageBytes || attachment.ExpiresAt > 0 && time.Now().Unix() >= attachment.ExpiresAt || validateDownloadURL(attachment.URL) != nil {
 		return nil, ErrDownload
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, attachment.URL, nil)
@@ -270,6 +277,24 @@ type SendResult struct {
 	ChatLog bson.Raw
 }
 
+// SendResultPosition extracts the durable identity from a completed image
+// send. It deliberately requires both fields so callers cannot persist an
+// ambiguous response as a successful bridge message.
+func SendResultPosition(result SendResult) (logID, sendAt int64, err error) {
+	if result.ChatLog == nil {
+		return 0, 0, ErrInvalidResponse
+	}
+	logID, err = integerField(result.ChatLog, "logId")
+	if err != nil || logID <= 0 {
+		return 0, 0, ErrInvalidResponse
+	}
+	sendAt, err = integerField(result.ChatLog, "sendAt")
+	if err != nil || sendAt <= 0 {
+		return 0, 0, ErrInvalidResponse
+	}
+	return logID, sendAt, nil
+}
+
 func DecodeComplete(body []byte) (SendResult, error) {
 	raw := bson.Raw(body)
 	value, err := raw.LookupErr("chatLog")
@@ -297,6 +322,14 @@ func integerField(raw bson.Raw, key string) (int64, error) {
 		return 0, err
 	}
 	return integerValue(v)
+}
+
+func optionalInt64(raw bson.Raw, key string) int64 {
+	value, err := integerField(raw, key)
+	if err != nil {
+		return 0
+	}
+	return value
 }
 
 func integerValue(v bson.RawValue) (int64, error) {

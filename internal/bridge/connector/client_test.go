@@ -57,6 +57,10 @@ type fakeKakao struct {
 	replies           []sentReply
 	sendResp          chat.WriteResponse
 	sendErr           error
+	imageResp         media.SendResult
+	imageErr          error
+	imageData         []byte
+	imageCalls        int
 	closeCalls        int
 	shutdownCalls     int
 	shutdownFailures  int
@@ -79,6 +83,12 @@ type fakeKakao struct {
 }
 
 func (f *fakeKakao) Connect(ctx context.Context) error { return f.connectErr }
+
+func (f *fakeKakao) SendImage(ctx context.Context, chatID int64, data []byte) (media.SendResult, error) {
+	f.imageData = append([]byte(nil), data...)
+	f.imageCalls++
+	return f.imageResp, f.imageErr
+}
 
 func (f *fakeKakao) ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error) {
 	f.mu.Lock()
@@ -211,6 +221,12 @@ type testHarness struct {
 	states  []status.BridgeState
 }
 
+func (h *testHarness) queuedCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.queued)
+}
+
 func (h *testHarness) queue(evt bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -237,12 +253,6 @@ func (h *testHarness) stateEvents() []status.BridgeStateEvent {
 		out = append(out, state.StateEvent)
 	}
 	return out
-}
-
-func (h *testHarness) queuedCount() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return len(h.queued)
 }
 
 func (h *testHarness) lastState() status.BridgeState {
@@ -530,10 +540,9 @@ func TestInboundReplyTargetsChatScopedMessage(t *testing.T) {
 }
 
 func TestUnrenderedMessageKindsBecomeNoticesAndAreCommitted(t *testing.T) {
-	photo := events.PhotoMessage{Message: media.PhotoMessage{ChatID: testChatID, LogID: 14}}
 	unsupported := events.UnsupportedMessage{ChatID: testChatID, LogID: 15, Type: 99}
 
-	for _, evt := range []events.Event{photo, unsupported} {
+	for _, evt := range []events.Event{unsupported} {
 		kc, harness := newTestClient(t, nil)
 		fake := &fakeKakao{}
 
@@ -1149,7 +1158,7 @@ func TestOutboundSendFailureIsNotRetried(t *testing.T) {
 func TestOutboundRejectsWhatCannotBeSent(t *testing.T) {
 	fake := &fakeKakao{}
 	kc := connectedClient(t, fake)
-	if _, err := kc.HandleMatrixMessage(context.Background(), matrixMessage(event.MsgImage, "photo.jpg")); !errors.Is(err, bridgev2.ErrUnsupportedMessageType) {
+	if _, err := kc.HandleMatrixMessage(context.Background(), matrixMessage(event.MsgImage, "photo.jpg")); !errors.Is(err, bridgev2.ErrFailedToGetIntent) {
 		t.Fatalf("image error = %v", err)
 	}
 
