@@ -59,6 +59,17 @@ func (f *frameworkPersistenceNetworkConnector) GetCapabilities() *bridgev2.Netwo
 }
 
 func TestFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T) {
+	gap := events.PhotoMessage{Message: media.PhotoMessage{ChatID: testChatID, LogID: 100, AuthorID: testOtherID, SentAt: 1700000000, Attachment: media.PhotoAttachment{Size: 1, Checksum: "0000000000000000000000000000000000000000", MediaType: "image/jpeg", URL: "https://talk.kakaocdn.net/file", ExpiresAt: 1}}}
+	runFrameworkConversionGapFailureReplayAndRestartDedup(t, gap, makeMessageID(testChatID, gap.Message.LogID), "expired")
+}
+
+func TestFrameworkMessageGapFailureReplayAndRestartDedup(t *testing.T) {
+	gap := events.MessageGap{ChatID: testChatID, LogID: 101, AuthorID: testOtherID, SentAt: 1700000001, Type: 2}
+	runFrameworkConversionGapFailureReplayAndRestartDedup(t, gap, makeMessageID(testChatID, gap.LogID), "malformed_payload")
+}
+
+func runFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T, gap events.Event, gapID networkid.MessageID, wantGap string) {
+	t.Helper()
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
 	intent := &frameworkPersistenceIntent{err: errors.New("synthetic Matrix send failure")}
@@ -85,8 +96,6 @@ func TestFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T) {
 		return portal.Internal().HandleRemoteEvent(ctx, login, remote.GetType(), remote)
 	}
 	fake := &fakeKakao{}
-	gap := events.PhotoMessage{Message: media.PhotoMessage{ChatID: testChatID, LogID: 100, AuthorID: testOtherID, SentAt: 1700000000, Attachment: media.PhotoAttachment{Size: 1, Checksum: "0000000000000000000000000000000000000000", MediaType: "image/jpeg", URL: "https://talk.kakaocdn.net/file", ExpiresAt: 1}}}
-	gapID := makeMessageID(testChatID, gap.Message.LogID)
 
 	if kc.handleEvent(fake, gap) {
 		t.Fatal("failed Matrix notice was reported handled")
@@ -115,7 +124,7 @@ func TestFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T) {
 		t.Fatalf("database rows after successful replay = %d, want 1", len(rows))
 	}
 	metadata, ok := rows[0].Metadata.(*KakaoMessageMetadata)
-	if !ok || metadata.ConversionGap != "expired" {
+	if !ok || metadata.ConversionGap != wantGap {
 		t.Fatalf("persisted metadata = %#v, want conversion gap", rows[0].Metadata)
 	}
 
