@@ -1,13 +1,13 @@
 # V2 secure-layer AES-GCM contract
 
-Status: reviewed clean-room partial specification, 2026-10-05.
+Status: reviewed clean-room partial specification, 2026-10-04.
 
 This contract records a version-scoped, implementation-neutral observation of
 the V2 secure-layer crypto primitive. The evidence is static binary analysis of
 an authorized macOS 26.8.0 client, transferred through sanitized experiment
-`SL-BIN-V2SL-GCM-2026-10-05`. The private transfer record is the
-`v2sl-gcm-failure-contract` receipt. No account data, live key, packet capture,
-or proprietary source is part of this repository.
+`SL-BIN-V2SL-GCM-2026-10-04`. The private transfer record is the
+`v2sl-gcm-failure-contract-2026-10-04` receipt. No account data, live key,
+packet capture, or proprietary source is part of this repository.
 
 ## Primitive
 
