@@ -118,6 +118,7 @@ type Session struct {
 	loginCursor                loginCursor
 	bootstrapDone              bool
 	bootstrapPushes            []loco.Packet
+	readLoopStarted            bool
 }
 
 type receiveHeaderTimeoutToken struct {
@@ -197,6 +198,7 @@ type pingSessionOptions struct {
 	interval               time.Duration
 	timeout                time.Duration
 	beforeBootstrapRequest func()
+	inSegmentTimeoutOwner  InSegmentTimeoutController
 }
 
 type sessionDialers struct {
@@ -308,6 +310,11 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	session.userID = state.Credentials.UserID
 	session.appVersion = state.Identity.Metadata.AppVersion
 	session.mediaDial = dialers.secure
+	if pingOptions.inSegmentTimeoutOwner != nil {
+		if err := session.BindInSegmentTimeout(pingOptions.inSegmentTimeoutOwner); err != nil {
+			return nil, ErrBootstrap
+		}
+	}
 	cleanup := true
 	defer func() {
 		if cleanup {
@@ -325,7 +332,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	if err != nil {
 		return nil, ErrBootstrap
 	}
-	go session.readLoop()
+	session.startReadLoop()
 	loginReply, err := session.requestRaw(ctx, 2, "LOGINLIST", loginBody)
 	if err != nil {
 		return nil, ErrLogin
@@ -770,13 +777,20 @@ func (s *Session) closeReceiveHeaderTimeout() {
 // BindInSegmentTimeout installs the opt-in body-progress watchdog before the
 // session reader starts. A nil owner disables the seam. The owner is closed
 // with the Session and is never activated by an ordinary Session constructor.
-func (s *Session) BindInSegmentTimeout(owner InSegmentTimeoutController) {
+func (s *Session) BindInSegmentTimeout(owner InSegmentTimeoutController) error {
 	if s == nil {
-		return
+		return ErrClosed
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.closing || s.readLoopStarted {
+		return ErrClosed
+	}
+	if s.inSegmentTimeout != nil {
+		return fmt.Errorf("client: in-segment timeout owner already bound")
+	}
 	s.inSegmentTimeout = owner
-	s.mu.Unlock()
+	return nil
 }
 
 func (s *Session) closeInSegmentTimeout() {
@@ -803,6 +817,28 @@ func (s *Session) bodyProgressCallbacks() bodyProgressCallbacks {
 }
 
 func (s *Session) readLoop() {
+	s.mu.Lock()
+	if s.readLoopStarted {
+		s.mu.Unlock()
+		return
+	}
+	s.readLoopStarted = true
+	s.mu.Unlock()
+	s.readLoopBody()
+}
+
+func (s *Session) startReadLoop() {
+	s.mu.Lock()
+	if s.readLoopStarted {
+		s.mu.Unlock()
+		return
+	}
+	s.readLoopStarted = true
+	s.mu.Unlock()
+	go s.readLoopBody()
+}
+
+func (s *Session) readLoopBody() {
 	progress := s.bodyProgressCallbacks()
 	for {
 		packet, err := s.wire.readWithHeaderObserverAndProgress(s.observeHeader, progress)
@@ -1076,25 +1112,11 @@ func (w *wireConn) readWithHeaderObserverAndProgress(observe func(loco.Header), 
 	if w.producer == nil {
 		w.producer = loco.NewProducer(0, 0)
 	}
-	bodyActive := false
 	for {
 		if packet, ok, err := w.producer.Next(observe); err != nil {
 			return loco.Packet{}, err
 		} else if ok {
-			if bodyActive && progress.complete != nil {
-				progress.complete()
-			}
 			return packet, nil
-		}
-		if w.producer.HasPendingBody() {
-			if !bodyActive {
-				bodyActive = true
-				if progress.schedule != nil {
-					progress.schedule()
-				}
-			} else if progress.partial != nil {
-				progress.partial()
-			}
 		}
 
 		var plaintext []byte
@@ -1114,7 +1136,7 @@ func (w *wireConn) readWithHeaderObserverAndProgress(observe func(loco.Header), 
 		}
 		envelope := make([]byte, 4+int(n))
 		copy(envelope, prefix)
-		if _, err := io.ReadFull(w.c, envelope[4:]); err != nil {
+		if err := readBodyWithProgress(w.c, envelope[4:], progress); err != nil {
 			return loco.Packet{}, err
 		}
 		var err error

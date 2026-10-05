@@ -115,10 +115,3 @@ func (p *Producer) Buffered() int {
 	}
 	return len(p.buffer)
 }
-
-// HasPendingBody reports whether a validated header has entered body
-// accumulation. It is a read-only seam for transport integrations that model
-// body-progress callbacks; header accumulation remains false.
-func (p *Producer) HasPendingBody() bool {
-	return p != nil && p.header != nil
-}

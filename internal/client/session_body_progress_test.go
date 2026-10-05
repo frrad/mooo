@@ -10,13 +10,16 @@ import (
 	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
-type bodyProgressOwnerSpy struct{ toggles []byte }
+type bodyProgressOwnerSpy struct {
+	toggles []byte
+	closed  bool
+}
 
 func (s *bodyProgressOwnerSpy) Toggle(enable byte) (bool, error) {
 	s.toggles = append(s.toggles, enable)
 	return true, nil
 }
-func (*bodyProgressOwnerSpy) Close() {}
+func (s *bodyProgressOwnerSpy) Close() { s.closed = true }
 
 type chunkConn struct {
 	*bytes.Reader
@@ -50,7 +53,9 @@ func (a testAddr) String() string  { return string(a) }
 func TestSessionBodyProgressBindingExcludesHeaderAndResetsPartialBody(t *testing.T) {
 	owner := &bodyProgressOwnerSpy{}
 	session := newSession(nil)
-	session.BindInSegmentTimeout(owner)
+	if err := session.BindInSegmentTimeout(owner); err != nil {
+		t.Fatal(err)
+	}
 	header, err := (loco.Header{PacketID: 7, Method: "PUSH", BodyLen: 4}).MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +79,9 @@ func TestSessionBodyProgressBindingExcludesHeaderAndResetsPartialBody(t *testing
 func TestSessionBodyProgressBindingDoesNotArmOnBlockedHeader(t *testing.T) {
 	owner := &bodyProgressOwnerSpy{}
 	session := newSession(nil)
-	session.BindInSegmentTimeout(owner)
+	if err := session.BindInSegmentTimeout(owner); err != nil {
+		t.Fatal(err)
+	}
 	header, err := (loco.Header{PacketID: 7, Method: "PUSH", BodyLen: 4}).MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
