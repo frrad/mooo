@@ -239,6 +239,12 @@ func (h *testHarness) stateEvents() []status.BridgeStateEvent {
 	return out
 }
 
+func (h *testHarness) queuedCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.queued)
+}
+
 func (h *testHarness) lastState() status.BridgeState {
 	h.mu.Lock()
 	defer h.mu.Unlock()
