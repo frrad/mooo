@@ -45,7 +45,7 @@ func expectedDownstreamEffects(tc downstreamTerminalCase) []string {
 	} else {
 		effects = append(effects, "derive_reset_false")
 	}
-	effects = append(effects, "logout_with_reset_database", "dispatch_main_queue")
+	effects = append(effects, "logout_with_reset_database", "dispatch_consumer_projection", "dispatch_alert_projection")
 	if !tc.ErrorMessagePresent {
 		effects = append(effects, "localize_default_error_message")
 	}
@@ -88,5 +88,21 @@ func TestDownstreamTerminalLifecycleFixture(t *testing.T) {
 		if !reflect.DeepEqual(tc.ExpectedEffects, want) {
 			t.Errorf("%s effects = %v, want input-derived %v", tc.Name, tc.ExpectedEffects, want)
 		}
+		if tc.Kind == "kickout" && tc.LoggedIn && !tc.LoggingOut {
+			first := indexOfEffect(tc.ExpectedEffects, "dispatch_consumer_projection")
+			second := indexOfEffect(tc.ExpectedEffects, "dispatch_alert_projection")
+			if first < 0 || second != first+1 {
+				t.Errorf("%s collapsed or reordered the two main-queue hops: %v", tc.Name, tc.ExpectedEffects)
+			}
+		}
 	}
+}
+
+func indexOfEffect(effects []string, wanted string) int {
+	for i, effect := range effects {
+		if effect == wanted {
+			return i
+		}
+	}
+	return -1
 }
