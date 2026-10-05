@@ -34,6 +34,7 @@ type kakaoClient interface {
 	Members(ctx context.Context, chatID int64, userIDs []int64) ([]chatmeta.Member, error)
 	MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error)
 	SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error)
+	SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error)
 	Close() error
 	Shutdown(ctx context.Context) error
 }
@@ -600,18 +601,35 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	if msg.Content.MsgType == event.MsgEmote {
 		body = "* " + body
 	}
-	response, err := c.SendText(ctx, chatID, body)
-	if err != nil {
-		return nil, err
+	var response chat.WriteResponse
+	if msg.ReplyTo != nil {
+		target, err := replyTargetFor(msg.ReplyTo, msg.Portal.PortalKey)
+		if err != nil {
+			return nil, err
+		}
+		response, err = c.SendReply(ctx, chat.ReplyRequest{ChatID: chatID, Message: body, Target: target})
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		response, err = c.SendText(ctx, chatID, body)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if response.LogID <= 0 {
 		return nil, errors.New("KakaoTalk accepted the message without a log ID")
+	}
+	sentType := chat.TextType
+	if msg.ReplyTo != nil {
+		sentType = chat.ReplyType
 	}
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
 			ID:        makeMessageID(chatID, response.LogID),
 			SenderID:  makeUserID(kc.userID),
 			Timestamp: kakaoTime(response.SendAt),
+			Metadata:  newKakaoMessageMetadata(chatID, response.LogID, kc.userID, sentType, body, 0),
 		},
 	}, nil
 }
