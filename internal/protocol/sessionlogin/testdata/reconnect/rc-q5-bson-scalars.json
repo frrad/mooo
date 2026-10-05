@@ -1,0 +1,136 @@
+{
+  "status": "reviewed-static-synthetic",
+  "cases": [
+    {
+      "name": "bool_true_B",
+      "objc_type": "B",
+      "value": "true",
+      "bson_type": 8,
+      "payload_hex": "01",
+      "width": 1
+    },
+    {
+      "name": "bool_false_c",
+      "objc_type": "c",
+      "value": "false",
+      "bson_type": 8,
+      "payload_hex": "00",
+      "width": 1
+    },
+    {
+      "name": "double_1_5",
+      "objc_type": "d",
+      "value": "1.5",
+      "bson_type": 1,
+      "payload_hex": "000000000000f83f",
+      "width": 8
+    },
+    {
+      "name": "double_negative_zero",
+      "objc_type": "d",
+      "value": "-0",
+      "bson_type": 1,
+      "payload_hex": "0000000000000080",
+      "width": 8
+    },
+    {
+      "name": "double_negative_2_25",
+      "objc_type": "d",
+      "value": "-2.25",
+      "bson_type": 1,
+      "payload_hex": "00000000000002c0",
+      "width": 8
+    },
+    {
+      "name": "double_positive_2_5",
+      "objc_type": "d",
+      "value": "2.5",
+      "bson_type": 1,
+      "payload_hex": "0000000000000440",
+      "width": 8
+    },
+    {
+      "name": "int32_zero",
+      "objc_type": "i",
+      "value": "0",
+      "bson_type": 16,
+      "payload_hex": "00000000",
+      "width": 4
+    },
+    {
+      "name": "int32_min",
+      "objc_type": "i",
+      "value": "-2147483648",
+      "bson_type": 16,
+      "payload_hex": "00000080",
+      "width": 4
+    },
+    {
+      "name": "int32_max",
+      "objc_type": "i",
+      "value": "2147483647",
+      "bson_type": 16,
+      "payload_hex": "ffffff7f",
+      "width": 4
+    },
+    {
+      "name": "int64_negative_one",
+      "objc_type": "q",
+      "value": "-1",
+      "bson_type": 18,
+      "payload_hex": "ffffffffffffffff",
+      "width": 8
+    },
+    {
+      "name": "int64_max",
+      "objc_type": "q",
+      "value": "9223372036854775807",
+      "bson_type": 18,
+      "payload_hex": "ffffffffffffff7f",
+      "width": 8
+    },
+    {
+      "name": "int64_min",
+      "objc_type": "q",
+      "value": "-9223372036854775808",
+      "bson_type": 18,
+      "payload_hex": "0000000000000080",
+      "width": 8
+    },
+    {
+      "name": "nsnull",
+      "objc_type": "null",
+      "value": "",
+      "bson_type": 10,
+      "payload_hex": "",
+      "width": 0
+    },
+    {
+      "name": "reject_float32_objctype",
+      "objc_type": "f",
+      "value": "1.0",
+      "bson_type": 0,
+      "payload_hex": "",
+      "width": 0,
+      "expected_reject": true
+    },
+    {
+      "name": "reject_unsigned_int_objctype",
+      "objc_type": "I",
+      "value": "1",
+      "bson_type": 0,
+      "payload_hex": "",
+      "width": 0,
+      "expected_reject": true
+    },
+    {
+      "name": "reject_nonterminated_int_objctype",
+      "objc_type": "iX",
+      "value": "1",
+      "bson_type": 0,
+      "payload_hex": "",
+      "width": 0,
+      "expected_reject": true
+    }
+  ]
+}
