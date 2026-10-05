@@ -23,6 +23,14 @@ mutation and revision completion as distinct steps. The source trace does not es
 retry behavior, worker exception propagation, or completion-error handling;
 those remain explicit gaps.
 
+The plus-unblock arrays are consumed by a separate nested block in the same
+write closure. Its complete object lookup, zero/empty-array behavior, nil type
+handling, and state effects are not yet traced. Likewise, the reviewed
+completion call proves a direct revision setter invocation but does not yet
+establish whether an empty update still invokes it or how a setter failure is
+reported. These are intentionally separate follow-up gaps rather than inferred
+from the plus-block path.
+
 The recovered `MKNest performBlockAndWait:` implementation does establish the
 operation boundary. It obtains the database and operation queue, invokes the
 write block inline when the current queue matches, and otherwise wraps it with
