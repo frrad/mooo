@@ -48,8 +48,8 @@ The source contract has four distinct value cases that must remain separate
 before runtime binding:
 
 * An empty input dictionary in the HINT nested `ChatLog` path is a normal
-  successful value. It is not a nil-body error and must encode as the reviewed
-  empty BSON document.
+  successful value; the outgoing HINT receipt body is the reviewed canonical
+  empty BSON document. It is not a nil-body error.
 * An observed `NSNull` source key is removed without assigning its destination;
   the SGJson projection skips remaining `NSNull` values. It is not a Go zero
   value and does not, by itself, reject the notice.
@@ -65,10 +65,11 @@ before runtime binding:
   the resulting zero-valued receipt.
 
 Strict BSON rejection is an explicit clean-room implementation-policy choice,
-not an observed official-client rule. The approved source mapping permits the
-documented partial-dictionary behavior for unsupported or skipped fields; an
-adapter may choose strict typed decoding, but it must label that choice as a
-policy and preserve the original packet for the ordinary push path. The
+not an observed official-client rule. The source BSON decoder returns the
+documented partial dictionary on an unknown element type; this is separate from
+the SGJson mapping phase. An adapter may choose strict typed decoding, but it
+must label that choice as a policy and preserve the original packet for the
+ordinary push path. The
 current builders intentionally encode only their typed inputs; this plan does
 not broaden them into a generic JSON converter.
 
@@ -91,6 +92,9 @@ The adapter must remain opt-in. No default Session constructor path should
 call `BindPushReceipt`, create a new allocator, reuse the signed tag as a
 request ID, or treat an inbound receipt as an acknowledgement until the
 eligibility and completion contracts are independently approved.
+Once those eligibility and completion contracts are approved, a later client
+phase may enable the typed adapter as the normal receipt path; this document
+does not make that readiness gate permanent.
 
 Concrete source/code anchors are `internal/client/session.go`
 (`BindPushReceipt`, `dispatchPushReceipt`, and `readLoopBody`),
@@ -118,7 +122,7 @@ delegate; this paragraph does not identify it as the manager object itself.
 
 This is ordering evidence, not proof of the manager's downstream consumer.
 The callback's persistence, queue handoff, and failure handling after the
-manager receives the notice remain an explicit source gap. In particular, the
+captured delegate receives the notice remain an explicit source gap. In particular, the
 current Session hook's callback queue ordering cannot stand in for completion
 of either manager callback, and the two callbacks must not be treated as
 request constructors. The bounded synthetic contract should therefore assert
