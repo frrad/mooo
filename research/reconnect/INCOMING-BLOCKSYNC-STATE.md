@@ -11,10 +11,13 @@ plusIsFull:plusRevision:` (`0x10140a9ac`) through
 `0x101433b48`. In the full-sync branch, matching users receive `friendType =
 -4` and `purged = 0`. In the partial branch, resolved users receive
 `friendType = -3`, the captured block type, `favorite = 0`, and `purged = 0`;
-the corresponding chat-room favorite is also cleared. Resolved users are
+the corresponding chat-room, looked up through the user's `directChatId`, has
+its favorite cleared. Resolved users are
 updated in place; only an unresolved user is represented in the member list by
-a numeric fallback. The incoming block-ID/type vectors are indexed together;
-a short type vector is an exceptional path rather than a silent truncation.
+a numeric fallback. The incoming block-ID/type vectors are indexed together.
+The source `numberAtIndex:` behavior for an allocated short type array remains
+untraced; the synthetic model refuses to guess that case, while a nil array's
+modeled numeric conversion remains zero.
 
 The completion block (`0x101434018`) marks full synchronization only when the
 captured full-sync flag is set, and performs a separate revision update through
