@@ -374,11 +374,10 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 		l.mu.Unlock()
 		return nil, errors.New("connector: QR wait already active")
 	}
-	backend, identity, qrID, qrData, deadline := l.backend, l.identity, l.qrID, l.qrData, l.deadline
-	deviceAuth, deviceAuthCode := l.deviceAuth, l.deviceAuthCode
+	backend, identity, qrID, qrData := l.backend, l.identity, l.qrID, l.qrData
 	l.waiting = true
 	l.mu.Unlock()
-	if time.Now().After(deadline) {
+	if time.Now().After(l.qrDeadline()) {
 		l.mu.Lock()
 		l.finished = true
 		l.mu.Unlock()
@@ -406,34 +405,33 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 		}
 		l.mu.Unlock()
 	}()
-	select {
-	case <-runCtx.Done():
-		if errors.Is(context.Cause(ctx), bridgev2.ErrLoginStepCancelled) {
-			return nil, bridgev2.ErrLoginStepCancelled
+	for {
+		deadline := l.qrDeadline()
+		pollTimer := time.NewTimer(qrPollInterval)
+		deadlineTimer := time.NewTimer(time.Until(deadline))
+		select {
+		case <-runCtx.Done():
+			stopQRTimer(pollTimer)
+			stopQRTimer(deadlineTimer)
+			if errors.Is(context.Cause(ctx), bridgev2.ErrLoginStepCancelled) {
+				return nil, bridgev2.ErrLoginStepCancelled
+			}
+			if err := runCtx.Err(); err != nil {
+				return nil, err
+			}
+			return nil, context.Canceled
+		case <-deadlineTimer.C:
+			stopQRTimer(pollTimer)
+			l.mu.Lock()
+			l.finished = true
+			l.mu.Unlock()
+			if l.cancelRemote(ctx) {
+				l.cleanupUnenrolledProfile()
+			}
+			return nil, errors.New("connector: QR challenge expired")
+		case <-pollTimer.C:
+			stopQRTimer(deadlineTimer)
 		}
-		if err := runCtx.Err(); err != nil {
-			return nil, err
-		}
-		return nil, context.Canceled
-	case <-time.After(qrPollInterval):
-	}
-	if time.Now().After(deadline) {
-		l.mu.Lock()
-		l.finished = true
-		l.mu.Unlock()
-		if l.cancelRemote(ctx) {
-			l.cleanupUnenrolledProfile()
-		}
-		return nil, errors.New("connector: QR challenge expired")
-	}
-	wireUUID, err := identity.WireDeviceUUID()
-	if err != nil {
-		return nil, l.failQR(ctx, err)
-	}
-	pollCtx, cancelPoll := context.WithDeadline(runCtx, deadline)
-	polled, err := backend.Poll(pollCtx, registration.QRLoginRequest{ID: qrID, Device: registration.UUIDOnlyDevice{UUID: wireUUID}})
-	cancelPoll()
-	if err != nil {
 		if time.Now().After(deadline) {
 			l.mu.Lock()
 			l.finished = true
@@ -443,91 +441,153 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 			}
 			return nil, errors.New("connector: QR challenge expired")
 		}
-		return nil, err
-	}
-	l.mu.Lock()
-	deadline = l.deadline
-	stillActive := !l.finished
-	l.mu.Unlock()
-	if !stillActive {
-		return nil, context.Canceled
-	}
-	if time.Now().After(deadline) {
-		l.mu.Lock()
-		l.finished = true
-		l.mu.Unlock()
-		if l.cancelRemote(ctx) {
-			l.cleanupUnenrolledProfile()
-		}
-		return nil, errors.New("connector: QR challenge expired")
-	}
-	if polled.Result.Kind == registration.QRPollSuccess {
-		if polled.Result.Success == nil {
-			return nil, l.failQR(ctx, errors.New("connector: QR login returned no success payload"))
-		}
-		credentials, userID, err := credentialsFromQR(*polled.Result.Success)
+		wireUUID, err := identity.WireDeviceUUID()
 		if err != nil {
 			return nil, l.failQR(ctx, err)
 		}
+		pollCtx, cancelPoll := context.WithDeadline(runCtx, deadline)
+		polled, err := backend.Poll(pollCtx, registration.QRLoginRequest{ID: qrID, Device: registration.UUIDOnlyDevice{UUID: wireUUID}})
+		cancelPoll()
+		if err != nil {
+			if time.Now().After(l.qrDeadline()) {
+				l.mu.Lock()
+				l.finished = true
+				l.mu.Unlock()
+				if l.cancelRemote(ctx) {
+					l.cleanupUnenrolledProfile()
+				}
+				return nil, errors.New("connector: QR challenge expired")
+			}
+			return nil, err
+		}
 		l.mu.Lock()
-		if l.finished || l.handoffStarted {
-			l.mu.Unlock()
+		deadline = l.deadline
+		stillActive := !l.finished
+		deviceAuth, deviceAuthCode := l.deviceAuth, l.deviceAuthCode
+		l.mu.Unlock()
+		if !stillActive {
 			return nil, context.Canceled
 		}
-		l.handoffStarted = true
-		store := l.store
-		if err := store.InstallCredentials(credentials); err != nil {
+		if time.Now().After(deadline) {
+			l.mu.Lock()
+			l.finished = true
 			l.mu.Unlock()
-			return nil, err
-		}
-		l.mu.Unlock()
-		complete := l.completeLogin
-		if complete == nil {
-			complete = func(ctx context.Context, userID int64) (*bridgev2.LoginStep, error) {
-				// Enrollment is fail-closed: an existing login may own an active
-				// profile lease, so NewLogin must not silently replace its client.
-				login, err := l.user.NewLogin(ctx, &database.UserLogin{ID: makeUserLoginID(userID), RemoteName: placeholderUserName(userID), Metadata: &UserLoginMetadata{Profile: l.profile}}, &bridgev2.NewLoginParams{LoadUserLogin: l.connector.LoadUserLogin, DontReuseExisting: true})
-				if err != nil {
-					return nil, fmt.Errorf("connector: save QR login: %w", err)
-				}
-				go login.Client.Connect(login.Log.WithContext(context.Background()))
-				return &bridgev2.LoginStep{Type: bridgev2.LoginStepTypeComplete, StepID: "com.github.frrad.mooo.qr.complete", Instructions: "Authorized the Kakao profile.", CompleteParams: &bridgev2.LoginCompleteParams{UserLoginID: login.ID, UserLogin: login}}, nil
+			if l.cancelRemote(ctx) {
+				l.cleanupUnenrolledProfile()
 			}
+			return nil, errors.New("connector: QR challenge expired")
 		}
-		step, err := complete(ctx, userID)
-		if err != nil {
-			return nil, err
+		if polled.Result.Kind == registration.QRPollSuccess {
+			if polled.Result.Success == nil {
+				return nil, l.failQR(ctx, errors.New("connector: QR login returned no success payload"))
+			}
+			credentials, userID, err := credentialsFromQR(*polled.Result.Success)
+			if err != nil {
+				return nil, l.failQR(ctx, err)
+			}
+			l.mu.Lock()
+			if l.finished || l.handoffStarted {
+				l.mu.Unlock()
+				return nil, context.Canceled
+			}
+			l.handoffStarted = true
+			store := l.store
+			if err := store.InstallCredentials(credentials); err != nil {
+				l.mu.Unlock()
+				return nil, err
+			}
+			l.mu.Unlock()
+			complete := l.completeLogin
+			if complete == nil {
+				complete = func(ctx context.Context, userID int64) (*bridgev2.LoginStep, error) {
+					// Enrollment is fail-closed: an existing login may own an active
+					// profile lease, so NewLogin must not silently replace its client.
+					login, err := l.user.NewLogin(ctx, &database.UserLogin{ID: makeUserLoginID(userID), RemoteName: placeholderUserName(userID), Metadata: &UserLoginMetadata{Profile: l.profile}}, &bridgev2.NewLoginParams{LoadUserLogin: l.connector.LoadUserLogin, DontReuseExisting: true})
+					if err != nil {
+						return nil, fmt.Errorf("connector: save QR login: %w", err)
+					}
+					go login.Client.Connect(login.Log.WithContext(context.Background()))
+					return &bridgev2.LoginStep{Type: bridgev2.LoginStepTypeComplete, StepID: "com.github.frrad.mooo.qr.complete", Instructions: "Authorized the Kakao profile.", CompleteParams: &bridgev2.LoginCompleteParams{UserLoginID: login.ID, UserLogin: login}}, nil
+				}
+			}
+			step, err := complete(ctx, userID)
+			if err != nil {
+				return nil, err
+			}
+			l.mu.Lock()
+			l.finished = true
+			l.mu.Unlock()
+			return step, nil
 		}
-		l.mu.Lock()
-		l.finished = true
-		l.mu.Unlock()
-		return step, nil
+		if polled.Result.ServerError == nil {
+			return nil, l.failQR(ctx, errors.New("connector: QR login returned an invalid result"))
+		}
+		switch polled.Result.ServerError.QROutcome() {
+		case registration.OutcomePending:
+			if !deviceAuth {
+				return qrDisplayStep(qrData), nil
+			}
+			if polled.DeviceAuthCode != "" {
+				if !validDeviceAuthCode(polled.DeviceAuthCode) {
+					return nil, l.failQR(ctx, errors.New("connector: QR device authorization data unavailable"))
+				}
+				if polled.DeviceAuthCode != deviceAuthCode {
+					l.mu.Lock()
+					l.deviceAuthCode = polled.DeviceAuthCode
+					l.mu.Unlock()
+					return qrDeviceAuthStep(polled.DeviceAuthCode), nil
+				}
+			}
+			// The framework calls Wait again after displaying a device-auth
+			// code. Keep polling within this invocation while the server reports
+			// the same pending code, rather than emitting duplicate UI steps.
+			continue
+		case registration.OutcomeUnregisteredDevice:
+			if !validDeviceAuthCode(polled.DeviceAuthCode) {
+				return nil, l.failQR(ctx, errors.New("connector: QR device authorization data unavailable"))
+			}
+			newDeadline, err := qrDeadline(polled.DeviceAuthRemainingSeconds)
+			if err != nil {
+				return nil, l.failQR(ctx, err)
+			}
+			l.mu.Lock()
+			wasDeviceAuth, previousCode, previousDeadline := l.deviceAuth, l.deviceAuthCode, l.deadline
+			if !wasDeviceAuth {
+				l.deadline = newDeadline
+			} else if newDeadline.Before(previousDeadline) {
+				// A later poll may shorten the server expiration, but must
+				// never extend a deadline already exposed to the user.
+				l.deadline = newDeadline
+			}
+			l.deviceAuth, l.deviceAuthCode = true, polled.DeviceAuthCode
+			l.mu.Unlock()
+			if !wasDeviceAuth || previousCode != polled.DeviceAuthCode {
+				return qrDeviceAuthStep(polled.DeviceAuthCode), nil
+			}
+			continue
+		default:
+			return nil, l.failQR(ctx, errors.New("connector: QR authorization failed"))
+		}
 	}
-	if polled.Result.ServerError == nil {
-		return nil, l.failQR(ctx, errors.New("connector: QR login returned an invalid result"))
+}
+
+func stopQRTimer(timer *time.Timer) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
 	}
-	switch polled.Result.ServerError.QROutcome() {
-	case registration.OutcomePending:
-		if deviceAuth {
-			return &bridgev2.LoginStep{Type: bridgev2.LoginStepTypeDisplayAndWait, StepID: "com.github.frrad.mooo.qr.device-auth", Instructions: "Confirm the displayed code on the primary Kakao device.", DisplayAndWaitParams: &bridgev2.LoginDisplayAndWaitParams{Type: bridgev2.LoginDisplayTypeCode, Data: deviceAuthCode, CanCancel: true}}, nil
-		}
-		return qrDisplayStep(qrData), nil
-	case registration.OutcomeUnregisteredDevice:
-		if !validDeviceAuthCode(polled.DeviceAuthCode) {
-			return nil, l.failQR(ctx, errors.New("connector: QR device authorization data unavailable"))
-		}
-		deadline, err := qrDeadline(polled.DeviceAuthRemainingSeconds)
-		if err != nil {
-			return nil, l.failQR(ctx, err)
-		}
-		l.mu.Lock()
-		l.deadline = deadline
-		l.deviceAuth, l.deviceAuthCode = true, polled.DeviceAuthCode
-		l.mu.Unlock()
-		return &bridgev2.LoginStep{Type: bridgev2.LoginStepTypeDisplayAndWait, StepID: "com.github.frrad.mooo.qr.device-auth", Instructions: "Confirm the displayed code on the primary Kakao device.", DisplayAndWaitParams: &bridgev2.LoginDisplayAndWaitParams{Type: bridgev2.LoginDisplayTypeCode, Data: polled.DeviceAuthCode, CanCancel: true}}, nil
-	default:
-		return nil, l.failQR(ctx, errors.New("connector: QR authorization failed"))
-	}
+}
+
+func (l *qrLogin) qrDeadline() time.Time {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.deadline
+}
+
+func qrDeviceAuthStep(code string) *bridgev2.LoginStep {
+	return &bridgev2.LoginStep{Type: bridgev2.LoginStepTypeDisplayAndWait, StepID: "com.github.frrad.mooo.qr.device-auth", Instructions: "Confirm the displayed code on the primary Kakao device.", DisplayAndWaitParams: &bridgev2.LoginDisplayAndWaitParams{Type: bridgev2.LoginDisplayTypeCode, Data: code, CanCancel: true}}
 }
 
 func validDeviceAuthCode(code string) bool {
