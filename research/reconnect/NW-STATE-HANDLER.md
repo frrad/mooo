@@ -39,10 +39,13 @@ predicates and the helper's own guard are separate source stages.
 
 The ready follow-up at `0x100d47508` logs TLS state, cancels and clears the
 stored receive work item when present, sets the observed owner flag, and calls
-`readHeader` after its guarded initial-send section. When the second owner flag is set, it initializes the V2SL crypto context,
-calls `setV2slCrypto:`, reads the current connection's `handshakeData`, and
-when that data and connection are present sends it with the Network
-`contentProcessed` completion, default-message context, and `isComplete=true`.
+`readHeader` after its guarded initial-send section. When the ready flag is enabled, it initializes a new V2SL crypto object and
+calls `setV2slCrypto:` before checking the current connection. If a connection
+exists, the crypto object (not the connection) supplies `handshakeData`; a nil
+handshake becomes Optional.none, but the Network send still occurs with that
+connection. Non-nil data is bridged as send content. The send uses
+`contentProcessed`, default-message context, and `isComplete=true`. The
+reviewed ready vector uses status value 3.
 Its completion callback enters at `0x100d4998c` and forwards its captured
 context to `0x100d47784`; this path does not perform a weak-owner load. It
 filters POSIX error 0x59 before the remaining error/logging path. The exact

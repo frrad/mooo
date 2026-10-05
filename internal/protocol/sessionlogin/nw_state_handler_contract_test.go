@@ -31,6 +31,7 @@ type nwStateCase struct {
 	OwnerFlagB                   bool     `json:"owner_flag_b"`
 	ReadyHandshakeEnabled        bool     `json:"ready_handshake_enabled"`
 	HandshakeDataPresent         bool     `json:"handshake_data_present"`
+	ReadyStatus                  uint8    `json:"ready_status"`
 	ExpectedCancelID             string   `json:"expected_cancel_id"`
 	Expected                     []string `json:"expected_effects"`
 	PendingGap                   bool     `json:"pending_map_gap"`
@@ -86,8 +87,17 @@ func projectNWState(c nwStateCase) nwStateResult {
 			effects = append(effects, "cancel_receive_work_item")
 		}
 		effects = append(effects, "set_ready_owner_flag")
-		if c.ReadyHandshakeEnabled && c.CurrentConnectionPresent && c.HandshakeDataPresent {
-			effects = append(effects, "init_v2sl_crypto", "set_v2sl_crypto", "read_handshake_data", "send_v2sl_handshake")
+		if c.ReadyHandshakeEnabled {
+			effects = append(effects, "init_v2sl_crypto", "set_v2sl_crypto")
+			if c.CurrentConnectionPresent {
+				effects = append(effects, "read_handshake_data")
+				if c.HandshakeDataPresent {
+					effects = append(effects, "bridge_handshake_data_some")
+				} else {
+					effects = append(effects, "bridge_handshake_data_none")
+				}
+				effects = append(effects, "send_v2sl_handshake")
+			}
 		}
 		effects = append(effects, "read_header")
 	case "cancelled":
@@ -133,7 +143,7 @@ func TestNWStateHandlerFixture(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 19 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 21 {
 		t.Fatalf("header %#v", f)
 	}
 	seen := map[string]bool{}
@@ -144,6 +154,9 @@ func TestNWStateHandlerFixture(t *testing.T) {
 		seen[c.Name] = true
 		if !c.PendingGap {
 			t.Errorf("%s must preserve pending map gap", c.Name)
+		}
+		if c.State == "ready" && c.ReadyStatus != 3 {
+			t.Errorf("%s ready status=%d want 3", c.Name, c.ReadyStatus)
 		}
 		got := projectNWState(c)
 		if !reflect.DeepEqual(got.Effects, c.Expected) || got.CancelID != c.ExpectedCancelID {
