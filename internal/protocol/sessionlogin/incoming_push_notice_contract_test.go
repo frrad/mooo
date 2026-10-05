@@ -222,13 +222,14 @@ func TestIncomingNoticeModelStopsAndPreservesOrdering(t *testing.T) {
 		t.Fatalf("nil body calls=%v err=%v", nilCalls, nilResult)
 	}
 	body := &struct{ fields map[string]any }{fields: map[string]any{}}
+	noticeValue := &struct{ fields map[string]any }{fields: map[string]any{"decoded": true}}
 	var calls []string
 	var nestedBody any
 	notice, err := constructIncomingNotice(emptyCase.Model, body, incomingNoticeHooks{
-		super:  func(got any) (any, error) { calls = append(calls, "super"); return got, nil },
+		super:  func(got any) (any, error) { calls = append(calls, "super"); return noticeValue, nil },
 		nested: func(got any) error { calls = append(calls, "nested"); nestedBody = got; return nil },
 	})
-	if err != nil || notice == nil || nestedBody != body || !reflect.DeepEqual(calls, []string{"super", "nested"}) {
+	if err != nil || notice != noticeValue || nestedBody != body || !reflect.DeepEqual(calls, []string{"super", "nested"}) {
 		t.Fatalf("HINT body identity/order calls=%v nested=%p body=%p err=%v", calls, nestedBody, body, err)
 	}
 	header := &incomingNoticeHeader{Method: "HINT", PacketID: 17}
