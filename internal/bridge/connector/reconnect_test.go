@@ -11,6 +11,8 @@ import (
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/events"
+	"github.com/frrad/mooo/internal/protocol/syncmsg"
+	"maunium.net/go/mautrix/bridgev2/status"
 )
 
 func TestRecoveryCleansOldLeaseBeforeOpeningReplacement(t *testing.T) {
@@ -205,6 +207,37 @@ func TestRecoveryAttemptBudgetIsBounded(t *testing.T) {
 	kc.recoveryTry = maxRecoveryAttempts
 	if kc.retryAfter(client.ErrClosed, kc.generation) {
 		t.Fatal("recovery scheduled past the bounded attempt budget")
+	}
+}
+
+func TestStaleBootstrapCannotPublishConnectedState(t *testing.T) {
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	fake := &fakeKakao{
+		stream:         make(chan events.Result),
+		resumeTargets:  []syncmsg.Target{{ChatID: testChatID, MaxLogID: 1}},
+		catchupEntered: entered,
+		catchupRelease: release,
+	}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	done := make(chan struct{})
+	go func() { kc.Connect(context.Background()); close(done) }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("bootstrap did not reach catch-up")
+	}
+	kc.Disconnect()
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stale bootstrap did not unwind")
+	}
+	for _, state := range harness.stateEvents() {
+		if state == status.StateConnected {
+			t.Fatal("stale bootstrap published connected state")
+		}
 	}
 }
 
