@@ -1,0 +1,11 @@
+services:
+  mooo-bridge:
+    build:
+      context: ..
+    image: mooo-bridge:local
+    user: "${MOOO_UID:-10001}:${MOOO_GID:-10001}"
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:29340:29340"
+    stop_grace_period: 30s
