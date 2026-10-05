@@ -29,6 +29,10 @@ type KakaoMessageMetadata struct {
 	Preview       string `json:"preview"`
 	LinkID        int64  `json:"link_id,omitempty"`
 	ConversionGap string `json:"conversion_gap,omitempty"`
+	// ReactionRevision is the latest positive members revision successfully
+	// applied to this message. It is persisted to prevent stale replay after a
+	// restart from destructively replacing newer reaction state.
+	ReactionRevision int64 `json:"reaction_revision,omitempty"`
 }
 
 func (m KakaoMessageMetadata) String() string {
