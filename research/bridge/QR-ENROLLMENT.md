@@ -21,18 +21,15 @@ enrollment (approval, device authorization, credential persistence, and
 restart resume) still requires live validation. The probe used an authorized
 owned lab environment and did not import official-client credentials.
 
-On 2026-10-04 America/Los_Angeles, one controlled fresh observation used the
+The second controlled observation (2026-10-04 America/Los_Angeles) used the
 owned B Android AVD, a fresh bridge profile directory, and the disposable
 Matrix homeserver. The QR image was created about 0.7 seconds after the
 `login qr` command; its authenticated Matrix media replay decoded successfully
 with ZXing and matched the Matrix event body exactly. Importing that image
-through KakaoTalk's Album scanner again showed the generic “You cannot use
-this QR code” message. The bridge received no approval, device-authorization
-code, or successful poll transition and eventually expired the challenge.
-The observation therefore rules out media transport and payload mutation for
-this attempt, but does not identify whether Android rejected it during route
-classification, the info request, or account-side response handling. The
-fresh profile, temporary image, and Android copy were removed afterward; no
+through KakaoTalk's Album scanner produced the generic “You cannot use this
+QR code” modal. The bridge received no approval, device-authorization code, or
+successful poll transition and eventually expired the challenge. The fresh
+profile, temporary image, and Android copy were removed afterward; no
 credentials were installed.
 
 The bridge treats QR cancellation as fail closed: an HTTP 200 with an empty
@@ -52,6 +49,13 @@ not add a check-key field, override, or imported official credential. The QR
 image was produced by the private CoreImage renderer with its own correction
 and scaling settings, then the complete server payload was passed unchanged.
 
+Presence-only inspection of the referenced private state shows the normal
+authstate shape with identity metadata and a credential section; the runner
+reads only `Snapshot().Identity` before generation and does not pass recovered
+credential material into the request. This establishes an existing authstate
+snapshot as the identity source without claiming that it was an imported
+official-client profile.
+
 Bridgev2 uses a newly created client-owned identity, the same request builder
 and header construction, a 30-second HTTP client timeout, challenge-derived
 deadline handling, and the same three-second poll cadence. Its display step
@@ -63,6 +67,15 @@ also writes credentials through `authstate` before subsequent session use;
 bridgev2 performs its equivalent persistence only after the typed success
 handoff. No check-key getter invocation or field override appears in the
 successful runner source.
+
+The bridgev2 command lifecycle was checked against the pinned mautrix
+`doLoginDisplayAndWait` implementation. It renders the supplied payload with
+`go-qrcode` at Low correction and 512px, uploads it, then calls `Wait` with a
+child context. A media-send failure calls `login.Cancel`; normal command
+cancellation cancels that child context. On a successful step change, the
+command redacts the prior QR event before advancing. This ordering differs
+from the private runner's local PNG write, but no lifecycle defect or extra
+request/credential input was found in the framework path.
 
 ### Mac check-key boundary (static correction)
 
@@ -102,18 +115,16 @@ host. The shared bridgev2 command currently owns PNG generation (including its
 error-correction and raster settings); the connector has no image-rendering
 hook and must not prepend an unproven host or rewrite the challenge.
 
-The first fresh bridge presentation was rejected by the owned Android client
-(`You cannot use this QR code.`). No scan or authorization was retried. The
-failure's stage is unresolved: it may be image decoding, scanner route
-classification, QR-info lookup, or a later account-side policy response. The
-offline APK audit now traces the scanner-to-info request and its broad result
-routing. A private replay of the actual rejected Matrix image (retrieved from
-the disposable homeserver and deleted after analysis) decoded successfully
-with ZXing and matched the original Matrix event body byte-for-byte. This
-rules out media corruption, PNG transport, and raw-payload mutation as the
-cause of that attempt; the remaining stage is scanner route classification,
-QR-info lookup, or a later account-side response. The bridgev2 renderer is
-supplied by the framework rather than the connector.
+The controlled presentation observation was rejected by the owned Android
+client with the modal above. A private replay of the actual rejected Matrix
+image (retrieved from the disposable homeserver and deleted after analysis)
+decoded successfully with ZXing and matched the original Matrix event body
+byte-for-byte. This rules out media corruption, PNG transport, and raw-payload
+mutation for that attempt. The modal/source trace assigns the failure to the
+scanner's QR-info `GENERAL_NOT_FOUND` branch; the remaining cause is the
+server-side reason for that response, which is not exposed by the sanitized
+observation. The bridgev2 renderer is supplied by the framework rather than
+the connector.
 
 The observed modal can now be assigned to a concrete Android branch from the
 offline source audit. The scanner's QR item posts the invalid-message event
