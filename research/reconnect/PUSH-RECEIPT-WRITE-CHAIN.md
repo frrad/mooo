@@ -5,11 +5,13 @@ Status: reviewed static source chain, runtime unexecuted. Observation date:
 
 `sendPacket:tag:` uses the same lower write path for receipt tags and ordinary
 request tags. It obtains packet data, encrypts it, obtains the socket and packet
-header/ID, then calls `writeData:withTimeout:tag:` with timeout `-1.0` and the
-caller-supplied tag unchanged. It then calls `toggleOutSegmentTimeout:YES`.
-There is no sign test or negative-tag branch in this method: a receipt tag such
-as `-17` reaches the write call as `-17`, while an ordinary positive tag reaches
-it unchanged.
+header/ID, then calls `writeData:withTimeout:tag:` with timeout `-1.0`. The
+raw ABI loads the packet ID into the write-call tag register immediately before
+the call (`0x101773854` → `0x101773858` → `0x101773868`); the caller-supplied
+`tag` argument is not forwarded. The write tag is therefore the signed
+negation of the unsigned 32-bit packet ID for both receipt and ordinary sends.
+It then calls `toggleOutSegmentTimeout:YES`. There is no sign test or
+negative-tag branch in this method.
 
 The observed `writeBinaryData` implementation synchronizes access to its
 pending-request bookkeeping, computes the pending count, performs a branch for
@@ -27,9 +29,10 @@ or pending-map operations.
 
 ## Synthetic contract
 
-The fixture compares negative receipt tags with positive ordinary tags through
-the same ordered effects. It also records the owner-status suppression before
-packet access and the explicit `-1.0` write timeout / outbound timeout toggle.
+The fixture compares receipt and ordinary calls with different caller tag
+inputs but the same packet-ID-derived write tag. It also records the owner-status
+suppression before packet access and the explicit `-1.0` write timeout / outbound
+timeout toggle.
 It does not invent a receipt acknowledgement or correlation result.
 
 ## Provenance
