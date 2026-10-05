@@ -22,12 +22,12 @@ The `locoDidKickout:` consumer is a separate downstream chain. Its raw guards
 suppress all later work when `isLoggedIn` is false or `isLoggingOut` is true. For
 an admitted event it reads the reason and three optional user-info fields,
 unconditionally prepares the outer localized message, takes an additional
-reason-zero fallback path, and retains the URL/label pair only when both are
-present. It then passes `reason == 1 || reason == 10` as the exact reset
+reason-zero fallback path, and retains the URL independently, while including the optional label only
+when both raw guard values are present. It then passes `reason == 1 || reason == 10` as the exact reset
 boolean to `logoutWithResetDatabase:`, and queues a consumer wrapper on the
 main queue. That wrapper queues a second main-queue block for the final alert projection.
 That queue block (`0x1013ad254`) invokes a distinct projection body
-(`0x1013ad34c`): it unconditionally localizes the final alert message,
+(`0x1013ad34c`): it unconditionally localizes the final alert string,
 creates an alert, and uses `beginSheetOnWindow:completionHandler:` when the core
 window exists, otherwise `setHandler:` followed by `runModal`. The raw outer dispatch is at `0x1013ac920`; the wrapper dispatch is at
 `0x1013ad2e0`. It is not the
@@ -37,8 +37,8 @@ fixture records each optional and window branch explicitly.
 
 The final-alert raw receipts are `0x1013ad37c`/`0x1013ad3a0` for the bundle
 lookup and localized fallback message, `0x1013ad3f8`/`0x1013ad408`/`0x1013ad418`
-for core, main-window-controller, and window lookup, `0x1013ad440` for the
-optional label guard, `0x1013ad48c` for the sheet path, and
+for core, main-window-controller, and window lookup, `0x1013ad448` for the
+window-result guard after `0x1013ad418`, `0x1013ad48c` for the sheet path, and
 `0x1013ad4d4`/`0x1013ad4dc` for the handler/modal path.
 
 No reviewed downstream caller proves an automatic booking or re-login after

@@ -57,12 +57,13 @@
         "extract_error_url",
         "extract_error_url_label",
         "localize_outer_default_message",
+        "retain_error_url",
         "include_error_url_label",
         "derive_reset_true",
         "logout_with_reset_database",
         "dispatch_consumer_projection",
         "dispatch_alert_projection",
-        "localize_alert_message",
+        "localize_alert_string",
         "create_alert",
         "begin_alert_sheet"
       ]
@@ -82,12 +83,13 @@
         "extract_error_url",
         "extract_error_url_label",
         "localize_outer_default_message",
+        "retain_error_url",
         "include_error_url_label",
         "derive_reset_true",
         "logout_with_reset_database",
         "dispatch_consumer_projection",
         "dispatch_alert_projection",
-        "localize_alert_message",
+        "localize_alert_string",
         "create_alert",
         "run_alert_modal"
       ]
@@ -110,7 +112,7 @@
         "logout_with_reset_database",
         "dispatch_consumer_projection",
         "dispatch_alert_projection",
-        "localize_alert_message",
+        "localize_alert_string",
         "create_alert",
         "run_alert_modal"
       ]
@@ -132,7 +134,7 @@
         "logout_with_reset_database",
         "dispatch_consumer_projection",
         "dispatch_alert_projection",
-        "localize_alert_message",
+        "localize_alert_string",
         "create_alert",
         "begin_alert_sheet"
       ]
@@ -154,7 +156,7 @@
         "logout_with_reset_database",
         "dispatch_consumer_projection",
         "dispatch_alert_projection",
-        "localize_alert_message",
+        "localize_alert_string",
         "create_alert",
         "run_alert_modal"
       ]
@@ -174,12 +176,13 @@
         "extract_error_url_label",
         "localize_outer_default_message",
         "localize_outer_message_fallback",
+        "retain_error_url",
         "include_error_url_label",
         "derive_reset_false",
         "logout_with_reset_database",
         "dispatch_consumer_projection",
         "dispatch_alert_projection",
-        "localize_alert_message",
+        "localize_alert_string",
         "create_alert",
         "begin_alert_sheet"
       ]
@@ -198,11 +201,12 @@
         "extract_error_url_label",
         "localize_outer_default_message",
         "localize_outer_message_fallback",
+        "retain_error_url",
         "derive_reset_false",
         "logout_with_reset_database",
         "dispatch_consumer_projection",
         "dispatch_alert_projection",
-        "localize_alert_message",
+        "localize_alert_string",
         "create_alert",
         "run_alert_modal"
       ]

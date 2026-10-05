@@ -46,6 +46,9 @@ func expectedDownstreamEffects(tc downstreamTerminalCase) []string {
 	if tc.ReasonCode == 0 {
 		effects = append(effects, "localize_reason_zero_fallback")
 	}
+	if tc.ErrorURLPresent {
+		effects = append(effects, "retain_error_url")
+	}
 	if tc.ErrorURLPresent && tc.ErrorURLLabelPresent {
 		effects = append(effects, "include_error_url_label")
 	}
@@ -55,7 +58,7 @@ func expectedDownstreamEffects(tc downstreamTerminalCase) []string {
 		effects = append(effects, "derive_reset_false")
 	}
 	effects = append(effects, "logout_with_reset_database", "dispatch_consumer_projection", "dispatch_alert_projection")
-	effects = append(effects, "localize_alert_message", "create_alert")
+	effects = append(effects, "localize_alert_string", "create_alert")
 	if tc.MainWindowPresent {
 		effects = append(effects, "begin_alert_sheet")
 	} else {
