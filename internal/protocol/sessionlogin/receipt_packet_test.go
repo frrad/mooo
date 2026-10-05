@@ -2,11 +2,13 @@ package sessionlogin
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"math"
 	"testing"
 
 	"github.com/frrad/mooo/internal/protocol/loco"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 func TestBuildReceiptPacketCopiesExplicitHeaderAndBody(t *testing.T) {
@@ -34,14 +36,38 @@ func TestBuildReceiptPacketCopiesExplicitHeaderAndBody(t *testing.T) {
 			if header.PacketID != tc.packetID || header.Method != tc.method || header.Status != 0 || header.BodyType != loco.BodyTypeBSON || header.BodyLen != tc.bodyLen {
 				t.Fatalf("header=%+v", header)
 			}
-			body, err := BuildReceiptBody(ReceiptBody{Kind: tc.body.Kind, PacketID: tc.packetID, Revision: tc.body.Revision, PlusRevision: tc.body.PlusRevision})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(wire[loco.HeaderSize:], body) {
-				t.Fatalf("framed body=%x want %x", wire[loco.HeaderSize:], body)
-			}
+			assertFramedReceiptBody(t, wire[loco.HeaderSize:], tc.body)
 		})
+	}
+}
+
+func assertFramedReceiptBody(t *testing.T, encoded []byte, input ReceiptBody) {
+	t.Helper()
+	raw := bson.Raw(encoded)
+	elements, err := raw.Elements()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string]int32{}
+	if input.Kind == ReceiptBodyBlockSync {
+		expected = map[string]int32{"r": input.Revision, "pr": input.PlusRevision}
+	}
+	if len(elements) != len(expected) {
+		t.Fatalf("body keys=%d want %d", len(elements), len(expected))
+	}
+	for _, element := range elements {
+		want, ok := expected[element.Key()]
+		if !ok {
+			t.Fatalf("unexpected body key %q", element.Key())
+		}
+		value := element.Value()
+		if value.Type != bson.TypeInt32 || len(value.Value) != 4 {
+			t.Fatalf("%s type=%v width=%d want BSON int32 width 4", element.Key(), value.Type, len(value.Value))
+		}
+		got := int32(binary.LittleEndian.Uint32(value.Value))
+		if got != want {
+			t.Fatalf("%s=%d want %d", element.Key(), got, want)
+		}
 	}
 }
 
