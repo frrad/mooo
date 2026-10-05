@@ -138,6 +138,116 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	}
 }
 
+func TestScriptedBackendAutomaticRecoveryReleasesLeaseBeforeReopen(t *testing.T) {
+	statePath := newIntegrationProfile(t)
+	checkpoint, err := continuity.Open(statePath + ".continuity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkpoint.CommitMessage(testChatID, 1); err != nil {
+		t.Fatal(err)
+	}
+	firstDialers, firstBackends, _ := scriptedScenario(t, 2, nil, false)
+	firstRaw, err := client.OpenWithTestDialers(statePath, nil, firstDialers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondDialers, secondBackends := scriptedLiveScenario(t, 2)
+	var openMu sync.Mutex
+	var opened int
+	var clients []*observedClient
+	kc, harness := newTestClient(t, func() (kakaoClient, error) {
+		openMu.Lock()
+		defer openMu.Unlock()
+		opened++
+		var raw *client.Client
+		var openErr error
+		switch opened {
+		case 1:
+			raw = firstRaw
+		case 2:
+			raw, openErr = client.OpenWithTestDialers(statePath, nil, secondDialers)
+		default:
+			return nil, fmt.Errorf("unexpected automatic recovery open %d", opened)
+		}
+		if openErr != nil {
+			return nil, openErr
+		}
+		observed := &observedClient{kakaoClient: raw}
+		clients = append(clients, observed)
+		return observed, nil
+	})
+	kc.wait = func(context.Context, time.Duration) error { return nil }
+	kc.Connect(context.Background())
+	waitFor(t, func() bool {
+		openMu.Lock()
+		defer openMu.Unlock()
+		return len(clients) == 1 && clients[0].subscriptions() == 1
+	})
+	// Closing the scripted carriage ends the live session. Recovery must shut
+	// down this owner before the second OpenWithTestDialers acquires the lease.
+	if err := firstBackends[2].Endpoint.Client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		openMu.Lock()
+		defer openMu.Unlock()
+		return opened == 2 && len(clients) == 2 && clients[1].subscriptions() == 1
+	})
+	if got := harness.queuedCount(); got < 1 {
+		t.Fatalf("automatic recovery queued %d events, want catch-up delivery", got)
+	}
+	kc.Disconnect()
+	waitBackends(t, firstBackends)
+	for i, backend := range secondBackends {
+		if backendErr := backend.Wait(2 * time.Second); backendErr != nil {
+			t.Fatalf("second backend %d: %v", i, backendErr)
+		}
+	}
+}
+
+func scriptedLiveScenario(t *testing.T, maxLogID int64) (client.TestDialers, []*testloco.Backend) {
+	t.Helper()
+	booking, err := testloco.NewBackend(false, requestStep("GETCONF", bson.D{{Key: "status", Value: int32(0)}, {Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}}, {Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkin, err := testloco.NewBackend(false, requestStep("CHECKIN", bson.D{{Key: "status", Value: int32(0)}, {Key: "host", Value: "carriage.invalid"}, {Key: "port", Value: int32(995)}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loginReply := bson.D{{Key: "status", Value: int32(0)}, {Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: testChatID}, {Key: "l", Value: bson.D{{Key: "chatId", Value: testChatID}, {Key: "logId", Value: maxLogID}}}}}}, {Key: "eof", Value: true}, {Key: "lastTokenId", Value: int64(10)}, {Key: "lbk", Value: int32(1)}}
+	carriage, err := testloco.NewBackend(true, requestStep("LOGINLIST", loginReply), holdStep())
+	if err != nil {
+		t.Fatal(err)
+	}
+	backends := []*testloco.Backend{booking, checkin, carriage}
+	t.Cleanup(func() {
+		for _, backend := range backends {
+			_ = backend.Endpoint.Client.Close()
+		}
+	})
+	dialers := client.TestDialers{
+		TLS: func(_ context.Context, host string, _ int) (client.TestConnection, error) {
+			switch host {
+			case "booking-loco.kakao.com":
+				return client.TestConnection{Conn: booking.Endpoint.Client}, nil
+			case "checkin.invalid":
+				return client.TestConnection{Conn: checkin.Endpoint.Client}, nil
+			default:
+				return client.TestConnection{}, fmt.Errorf("unexpected TLS host %q", host)
+			}
+		},
+		Secure: func(_ context.Context, host string, _ int) (client.TestConnection, error) {
+			if host != "carriage.invalid" {
+				return client.TestConnection{}, fmt.Errorf("unexpected secure host %q", host)
+			}
+			return client.TestConnection{Conn: carriage.Endpoint.Client, Secure: carriage.Endpoint.ClientSecure}, nil
+		},
+	}
+	return dialers, backends
+}
+
 func newIntegrationProfile(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
