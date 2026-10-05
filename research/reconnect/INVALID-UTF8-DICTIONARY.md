@@ -5,13 +5,13 @@ The account-free Foundation probe ran on macOS 26.6.2 (25G83), arm64.
 
 The traced type-2 string path constructs a string from a NUL-terminated C
 pointer. Malformed or truncated UTF-8 makes the Foundation string factory return
-nil. The source helper's nil check (`eb7c4`/`eb930`) skips assignment and
+nil. The source helper's nil check (`0x1017eb7c4`/`0x1017eb930`) skips assignment and
 continues to later fields. A later nonnil value for the same key replaces an
 earlier value; an invalid value therefore preserves any earlier value.
 
 Dictionary insertion is a separate boundary. A nonnil value with an invalid
-(nil) key reaches the source insertion path (`eb4bc`/`eb4cc`) and is an explicit
-failure; the nil-key factory is at `eb53c`. A nil value is skipped before that
+(nil) key reaches the source insertion path (`0x1018eb4bc`/`0x1018eb4cc`) and is an explicit
+failure; the nil-key factory is at `0x1018eb53c`. A nil value is skipped before that
 insertion call, so an invalid key paired with an invalid value does not fail.
 The fixture uses malformed UTF-8 bytes in canonical, bounded BSON string
 vectors and preserves decoded strings. It does not claim a general BSON

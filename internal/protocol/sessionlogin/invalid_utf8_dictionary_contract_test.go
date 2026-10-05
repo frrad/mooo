@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"unicode/utf8"
 )
@@ -99,7 +100,7 @@ func TestInvalidUTF8DictionaryFixture(t *testing.T) {
 	if err := json.Unmarshal(body, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.Status != "reviewed-platform-bounded-synthetic" || len(fixture.Cases) != 9 {
+	if fixture.Status != "reviewed-platform-bounded-synthetic" || len(fixture.Cases) != 10 {
 		t.Fatalf("fixture header=%#v", fixture)
 	}
 	for _, tc := range fixture.Cases {
@@ -118,13 +119,8 @@ func TestInvalidUTF8DictionaryFixture(t *testing.T) {
 			if modelErr != nil {
 				t.Fatalf("model error=%v", modelErr)
 			}
-			if len(got) != len(tc.Expected) {
+			if !reflect.DeepEqual(got, tc.Expected) {
 				t.Fatalf("got=%#v want=%#v", got, tc.Expected)
-			}
-			for key, want := range tc.Expected {
-				if got[key] != want {
-					t.Errorf("%q=%q want %q", key, got[key], want)
-				}
 			}
 		})
 	}

@@ -26,6 +26,14 @@
       "outcome": "ok"
     },
     {
+      "name": "duplicate_valid_then_valid",
+      "bson_hex": "20000000026669656c6400020000003700026669656c64000300000034320000",
+      "expected": {
+        "field": "42"
+      },
+      "outcome": "ok"
+    },
+    {
       "name": "invalid_key_invalid_value",
       "bson_hex": "1000000002c3280003000000e2280000",
       "expected": {},
