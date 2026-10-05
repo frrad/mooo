@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,69 +109,108 @@ func TestSGIntArrayElementCoercionFixture(t *testing.T) {
 	}
 	var fixture struct {
 		ElementCases []struct {
-			Name         string `json:"name"`
-			Class        string `json:"class"`
-			Width        int    `json:"width"`
-			Kind         string `json:"kind"`
-			ExpectedData string `json:"expected_data_hex"`
-			FailureIndex int    `json:"failure_index"`
+			Name          string `json:"name"`
+			Factory       string `json:"factory"`
+			Class         string `json:"class"`
+			ObjCType      string `json:"objc_type"`
+			Int64Value    int64  `json:"int64_value"`
+			DoubleBits    string `json:"double_bits"`
+			BoolValue     bool   `json:"bool_value"`
+			StringValue   string `json:"string_value"`
+			ExpectedInt   *int64 `json:"expected_int"`
+			ExpectedLong  *int64 `json:"expected_long"`
+			ExpectedError string `json:"expected_error"`
 		} `json:"element_cases"`
 	}
 	if err := json.Unmarshal(body, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixture.ElementCases) != 12 {
-		t.Fatalf("element cases=%d, want 12", len(fixture.ElementCases))
+	if len(fixture.ElementCases) != 19 {
+		t.Fatalf("element cases=%d, want 19", len(fixture.ElementCases))
 	}
 	for _, tc := range fixture.ElementCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			got, failureIndex, ok := modelSGArrayElement(tc.Kind, tc.Width)
-			want, err := hexDecode(tc.ExpectedData)
-			if err != nil {
-				t.Fatal(err)
+			if tc.Class == "" || tc.ObjCType == "" || tc.Factory == "" {
+				t.Fatalf("missing factory provenance: %#v", tc)
 			}
-			if !ok {
-				if failureIndex != tc.FailureIndex {
-					t.Fatalf("failure index=%d want %d", failureIndex, tc.FailureIndex)
-				}
-				if !bytes.Equal(got, want) {
-					t.Fatalf("prefix=%x want %x", got, want)
+			gotInt, gotLong, gotErr := modelSGArrayFactoryInput(tc.Factory, tc.Int64Value, tc.DoubleBits, tc.BoolValue, tc.StringValue)
+			if tc.ExpectedError != "" {
+				if gotErr == nil || gotErr.Error() != tc.ExpectedError {
+					t.Fatalf("error=%v want %s", gotErr, tc.ExpectedError)
 				}
 				return
 			}
-			if tc.FailureIndex != 0 || !bytes.Equal(got, want) {
-				t.Fatalf("data=%x/failure=%d want data=%x/no failure", got, tc.FailureIndex, want)
+			if gotErr != nil || tc.ExpectedInt == nil || tc.ExpectedLong == nil {
+				t.Fatalf("conversion int=%d long=%d err=%v", gotInt, gotLong, gotErr)
+			}
+			if gotInt != int32(*tc.ExpectedInt) || gotLong != *tc.ExpectedLong {
+				t.Fatalf("int=%d/long=%d want int=%d/long=%d", gotInt, gotLong, *tc.ExpectedInt, *tc.ExpectedLong)
 			}
 		})
 	}
 }
 
-// modelSGArrayElement contains only the captured Foundation values. The
-// strings are probe inputs, not a general numeric-string parser.
-func modelSGArrayElement(kind string, width int) ([]byte, int, bool) {
-	var value int64
-	switch kind {
-	case "bool_true":
-		value = 1
-	case "bool_false", "string_invalid":
-		value = 0
-	case "int64_above_int32":
-		value = 4294967297
-	case "double_fraction":
-		value = 3
-	case "double_negative_fraction", "string_fraction":
-		value = -3
-	case "positive_infinity":
-		value = 2147483647
-	case "negative_infinity":
-		value = -9223372036854775808
-	case "string_decimal":
-		value = 42
-	case "nsnull_after_prefix", "array_after_prefix":
-		prefix := modelSGIntArray([]int64{1}, width)
-		return prefix, 1, false
+var errFoundationInvalidArgument = errors.New("NSInvalidArgumentException")
+
+// modelSGArrayFactoryInput models only the captured Foundation factory inputs.
+// It does not infer a general string grammar or use the fixture name as input.
+func modelSGArrayFactoryInput(factory string, int64Value int64, doubleBits string, boolValue bool, stringValue string) (int32, int64, error) {
+	switch factory {
+	case "numberWithLongLong":
+		return int32(uint32(int64Value)), int64Value, nil
+	case "numberWithBool":
+		if boolValue {
+			return 1, 1, nil
+		}
+		return 0, 0, nil
+	case "numberWithDouble":
+		bits, err := hexDecode(doubleBits)
+		if err != nil || len(bits) != 8 {
+			return 0, 0, errFoundationInvalidArgument
+		}
+		value := math.Float64frombits(binary.LittleEndian.Uint64(bits))
+		longValue := foundationDoubleLong(value)
+		return int32(uint32(longValue)), longValue, nil
+	case "initWithUTF8String":
+		longValue := foundationCapturedStringLong(stringValue)
+		return int32(uint32(longValue)), longValue, nil
+	case "NSNull", "NSArray", "NSDictionary":
+		return 0, 0, errFoundationInvalidArgument
 	default:
-		return nil, 0, false
+		return 0, 0, errFoundationInvalidArgument
 	}
-	return modelSGIntArray([]int64{value}, width), 0, true
+}
+
+func foundationDoubleLong(value float64) int64 {
+	if math.IsNaN(value) {
+		return 0
+	}
+	const maxInt64AsFloat = 9223372036854775808.0
+	if math.IsInf(value, 1) || value >= maxInt64AsFloat {
+		return math.MaxInt64
+	}
+	if math.IsInf(value, -1) || value <= -maxInt64AsFloat {
+		return math.MinInt64
+	}
+	return int64(value)
+}
+
+func foundationCapturedStringLong(value string) int64 {
+	pos, sign := 0, int64(1)
+	if len(value) > 0 && (value[0] == '+' || value[0] == '-') {
+		if value[0] == '-' {
+			sign = -1
+		}
+		pos++
+	}
+	start := pos
+	var integer int64
+	for pos < len(value) && value[pos] >= '0' && value[pos] <= '9' {
+		integer = integer*10 + int64(value[pos]-'0')
+		pos++
+	}
+	if pos == start {
+		return 0
+	}
+	return sign * integer
 }
