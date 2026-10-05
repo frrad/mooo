@@ -149,11 +149,28 @@ partial write failure; it has no receipt-specific packet identity or callback
 tag contract. Reusing it prematurely would conflate reviewed receipt admission
 with unresolved packet construction and write completion behavior.
 
+The current implementation confirms this boundary concretely: `OutSegmentSubmitter`
+accepts only `[]byte`, arms its timeout owner after worker admission, and forwards
+`OutSegmentWriteResult` without any signed tag or packet identity. A blocked write
+is interrupted by `Close`; a partial write or zero-byte-after-progress failure
+terminates the submitter/carriage and is not retryable. These behaviors pass the
+existing race-enabled synthetic worker tests, but they cannot report whether a
+receipt was accepted, written, or acknowledged.
+
 Pending-request correlation is likewise separate. `dispatchPacket` keys waiters
 by method plus packet ID and routes misses as pushes; a negative receipt tag is
 an agent send argument and must never become a Session request ID or pending-map
 key. Any future receipt completion path must define whether it is fire-and-forget
 or correlated before adding entries to the pending maps.
+
+The request path inserts a positive uint32 ID into all three pending maps before
+serialization and submission. A receipt adapter that casts the signed tag back
+to uint32 could produce values outside the bounded request range or accidentally
+reuse a packet ID under a future wider allocator; the adapter must carry the
+signed tag as a separate field and must not call `Request`, `requestRaw`, or
+`dispatchPacket` for receipt sends. Existing wrong-method/same-ID tests show the
+ordinary correlation boundary is method-sensitive, but they do not establish a
+receipt acknowledgement method or wire identity.
 
 Required synthetic integration coverage after request approval:
 
