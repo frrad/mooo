@@ -722,7 +722,12 @@ func (s *Session) writeRawPayloadProgress(ctx context.Context, wire *wireConn, r
 			s.closing = true
 		}
 		s.mu.Unlock()
-		_ = wire.close()
+		// Asynchronous completion can be buffered until timeout admission.
+		// Its submitter must deliver the write error before closing the wire,
+		// or reader teardown can replace that error in the pending request.
+		if progress == nil {
+			_ = wire.close()
+		}
 		s.stopLifecycle()
 	}
 	if ctxErr != nil {

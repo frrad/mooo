@@ -84,7 +84,7 @@ func (w *sessionOutSegmentWorker) dispatch(done chan struct{}) {
 			reported += n
 			if writeErr != nil {
 				terminalSent = true
-				work.done(sessionlogin.OutSegmentWriteResult{Written: reported, Complete: reported == len(work.payload), Ambiguous: reported > 0 && reported < len(work.payload), Err: writeErr})
+				work.done(sessionlogin.OutSegmentWriteResult{Written: reported, Complete: reported == len(work.payload), Ambiguous: reported > 0, Err: writeErr})
 				return
 			}
 			work.done(sessionlogin.OutSegmentWriteResult{Written: n, Progress: true})

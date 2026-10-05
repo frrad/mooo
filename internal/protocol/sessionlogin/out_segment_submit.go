@@ -11,8 +11,9 @@ var (
 )
 
 // OutSegmentWriteResult is the one worker result delivered to the submitter.
-// Ambiguous marks a partial transport write whose framing cannot be safely
-// reused. Context cancellation before any bytes, and cancellation after a
+// Ambiguous marks a transport error after bytes were written, whose delivery
+// remains uncertain even if Complete reports all bytes. Such a carriage cannot
+// be safely reused. Context cancellation before any bytes, and cancellation after a
 // complete frame, remain non-terminal per the Session write policy. Complete
 // identifies the source callback shape but does not alter timeout disarming
 // order.
