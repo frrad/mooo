@@ -45,10 +45,13 @@ The app's `BSONData` helper has a bounded scalar encoding branch. For
 boolean (type `0x08`, one byte), `d` as BSON double (type `0x01`, eight
 bytes), `i` as BSON int32 (type `0x10`, four bytes), and `q` as BSON int64
 (type `0x12`, eight bytes). `NSNull` is BSON null (type `0x0a`). The
-BLOCKSYNC `revision` and `plusRevision` ivars are signed `int32`, so their
-mapped `r` and `pr` values enter the int32 branch; the base `method` and
-`packetId` properties are removed before mapping. This is an observed value
-encoding boundary, not a claim that HINT or BLOCKSYNC is automatically sent.
+BLOCKSYNC `revision` and `plusRevision` ivars are declared signed `int32`,
+and a separate local Foundation KVC probe for the current platform boxed
+zero, positive, negative, and int32-boundary values as NSNumber `objCType`
+`i`. Thus this supports the int32 branch for this implementation environment;
+it is not an Apple-wide boxing guarantee. The base `method` and `packetId`
+properties are removed before mapping. This is an observed value-encoding
+boundary, not a claim that HINT or BLOCKSYNC is automatically sent.
 
 The inherited `JSONObject` implementation at `0x101355b04` begins from the
 superclass JSON object and makes a mutable dictionary only when that object is
@@ -150,6 +153,9 @@ projection as synthetic values; they do not claim app wire encoding.
   `0x10175a1c0` and parity trace for `packetData`.
 - BSON scalar encoder: private exact-address decompile of `0x1017eab74`
   in `nw-receipt-wire-chain-2026-10-05/bson-decomp.txt`.
+- Current-platform KVC boxing probe: private
+  `parent-nsnumber-kvc/probe.m` and its binary receipt, covering zero,
+  positive, negative, and signed-int32 boundary values.
 - Swift guard/timeout branch: private `nw-disasm.txt` receipt for
   `0x100d49560` through `0x100d498dc`.
 - Base comparison path: private `rc-q5-sendpacket-method/report.txt` and
