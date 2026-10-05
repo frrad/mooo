@@ -14,10 +14,6 @@ import (
 	"github.com/frrad/mooo/internal/protocol/events"
 )
 
-func placeholderChatName(chatID int64) string {
-	return fmt.Sprintf("KakaoTalk chat %d", chatID)
-}
-
 func placeholderUserName(userID int64) string {
 	return fmt.Sprintf("KakaoTalk user %d", userID)
 }

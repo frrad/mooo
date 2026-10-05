@@ -18,6 +18,7 @@ import (
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
@@ -63,9 +64,37 @@ type fakeKakao struct {
 	catchupEntered    chan struct{}
 	catchupRelease    <-chan struct{}
 	catchupEnterOnce  sync.Once
+	chatInfo          chatmeta.ChatInfoResponse
+	chatInfoErr       error
+	members           []chatmeta.Member
+	membersErr        error
+	memberList        chatmeta.MemberListResponse
+	memberListErr     error
+	metadataCalls     []string
 }
 
 func (f *fakeKakao) Connect(ctx context.Context) error { return f.connectErr }
+
+func (f *fakeKakao) ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.metadataCalls = append(f.metadataCalls, fmt.Sprintf("ChatInfo(%d)", chatID))
+	return f.chatInfo, f.chatInfoErr
+}
+
+func (f *fakeKakao) Members(ctx context.Context, chatID int64, userIDs []int64) ([]chatmeta.Member, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.metadataCalls = append(f.metadataCalls, fmt.Sprintf("Members(%d,%d)", chatID, len(userIDs)))
+	return f.members, f.membersErr
+}
+
+func (f *fakeKakao) MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.metadataCalls = append(f.metadataCalls, fmt.Sprintf("MemberList(%d,%d)", chatID, token))
+	return f.memberList, f.memberListErr
+}
 
 func (f *fakeKakao) Events(ctx context.Context) (<-chan events.Result, error) {
 	f.mu.Lock()
@@ -223,6 +252,138 @@ func convertedBody(t *testing.T, converted *bridgev2.ConvertedMessage) *event.Me
 		t.Fatalf("converted message has %d parts, want 1", len(converted.Parts))
 	}
 	return converted.Parts[0].Content
+}
+
+func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
+	fake := &fakeKakao{
+		chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{
+			ChatID:           testChatID,
+			Type:             "DirectChat",
+			DisplayNicknames: []string{"Ignored fallback"},
+			Meta:             &chatmeta.RoomMeta{Name: "Source room"},
+		}},
+		memberList: chatmeta.MemberListResponse{Token: 9, MemberIDs: []int64{testSelfID, testOtherID}},
+		members: []chatmeta.Member{
+			{UserID: testOtherID, Nickname: "Source user"},
+			{UserID: 9999, Nickname: "Unexpected"},
+		},
+	}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.client = fake
+	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, makeUserLoginID(testSelfID))}}
+
+	info, err := kc.GetChatInfo(context.Background(), portal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Name == nil || *info.Name != "Source room" {
+		t.Fatalf("room name = %v, want source metadata", info.Name)
+	}
+	if !info.Members.IsFull || info.Members.TotalMemberCount != 2 {
+		t.Fatalf("members = %+v, want complete initial roster", info.Members)
+	}
+	if info.Type == nil || *info.Type != database.RoomTypeDM || info.Members.OtherUserID != makeUserID(testOtherID) {
+		t.Fatalf("direct metadata = type %v, other user %q", info.Type, info.Members.OtherUserID)
+	}
+	other, ok := info.Members.MemberMap[makeUserID(testOtherID)]
+	if !ok || other.UserInfo == nil || other.UserInfo.Name == nil || *other.UserInfo.Name != "Source user" {
+		t.Fatalf("other member = %+v, want source profile", other)
+	}
+	if _, ok := info.Members.MemberMap[makeUserID(9999)]; ok {
+		t.Fatal("metadata admitted a profile outside the requested roster")
+	}
+	if got := fake.metadataCalls; fmt.Sprint(got) != "[ChatInfo(3000) MemberList(3000,0) Members(3000,2)]" {
+		t.Fatalf("metadata calls = %v", got)
+	}
+
+	ghost := &bridgev2.Ghost{Ghost: &database.Ghost{ID: makeUserID(testOtherID)}}
+	user, err := kc.GetUserInfo(context.Background(), ghost)
+	if err != nil || user.Name == nil || *user.Name != "Source user" {
+		t.Fatalf("cached user info = %+v, err = %v", user, err)
+	}
+}
+
+func TestCatchUpMetadataCallbackUsesBootstrapOwner(t *testing.T) {
+	stream := make(chan events.Result)
+	missed := events.TextMessage{ChatID: testChatID, LogID: 41, AuthorID: testOtherID, Message: "missed"}
+	fake := &fakeKakao{
+		stream:        stream,
+		resumeTargets: []syncmsg.Target{{ChatID: testChatID, MaxLogID: 41}},
+		catchUps:      map[int64]catchUpResult{testChatID: {events: []events.Event{missed}}},
+		chatInfo:      chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: testChatID, Meta: &chatmeta.RoomMeta{Name: "Room"}}},
+	}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.queue = func(evt bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		if _, err := kc.GetChatInfo(context.Background(), &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, makeUserLoginID(testSelfID))}}); err != nil {
+			t.Errorf("metadata callback during catch-up: %v", err)
+		}
+		return bridgev2.EventHandlingResultSuccess
+	}
+	kc.Connect(context.Background())
+	close(stream)
+	waitForState(t, harness, status.StateTransientDisconnect)
+}
+
+func TestGetChatInfoKeepsDisplayOnlyRosterPartial(t *testing.T) {
+	fake := &fakeKakao{
+		chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{
+			ChatID:            testChatID,
+			ActiveMemberCount: 3,
+			DisplayUserIDs:    []int64{testOtherID},
+			DisplayNicknames:  []string{"Display user"},
+		}},
+		members: []chatmeta.Member{{UserID: testOtherID, Nickname: "Display user"}},
+	}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.client = fake
+	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, makeUserLoginID(testSelfID))}}
+
+	info, err := kc.GetChatInfo(context.Background(), portal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Name == nil || *info.Name != "Display user" {
+		t.Fatalf("room name = %v, want display nickname fallback", info.Name)
+	}
+	if info.Members.IsFull {
+		t.Fatal("display-only IDs were marked as a complete roster")
+	}
+	if info.Members.TotalMemberCount != 3 {
+		t.Fatalf("partial roster total = %d, want source active-member count", info.Members.TotalMemberCount)
+	}
+}
+
+func TestGetChatInfoRejectsUnsupportedOrMismatchedRooms(t *testing.T) {
+	for name, data := range map[string]chatmeta.ChatData{
+		"mismatch":  {ChatID: testChatID + 1},
+		"open chat": {ChatID: testChatID, LinkID: 44},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := &fakeKakao{chatInfo: chatmeta.ChatInfoResponse{ChatData: data}}
+			kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+			kc.client = fake
+			portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, makeUserLoginID(testSelfID))}}
+			if _, err := kc.GetChatInfo(context.Background(), portal); err == nil {
+				t.Fatal("GetChatInfo unexpectedly accepted unsupported room metadata")
+			}
+			if len(fake.metadataCalls) != 1 {
+				t.Fatalf("metadata calls = %v, want CHATINFO only", fake.metadataCalls)
+			}
+		})
+	}
+}
+
+func TestGetChatInfoRejectsInvalidRosterIDs(t *testing.T) {
+	fake := &fakeKakao{
+		chatInfo:   chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: testChatID}},
+		memberList: chatmeta.MemberListResponse{MemberIDs: []int64{0, testOtherID}},
+	}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.client = fake
+	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, makeUserLoginID(testSelfID))}}
+	if _, err := kc.GetChatInfo(context.Background(), portal); !errors.Is(err, errInvalidMemberRoster) {
+		t.Fatalf("error = %v, want invalid roster error", err)
+	}
 }
 
 func TestCommittableOnlyWhenHandlingFinished(t *testing.T) {

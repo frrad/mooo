@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 )
@@ -28,6 +30,9 @@ type kakaoClient interface {
 	CommitEvent(event events.Event) error
 	ResumeTargets(ctx context.Context) ([]syncmsg.Target, error)
 	CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error)
+	ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error)
+	Members(ctx context.Context, chatID int64, userIDs []int64) ([]chatmeta.Member, error)
+	MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error)
 	SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error)
 	Close() error
 	Shutdown(ctx context.Context) error
@@ -47,6 +52,10 @@ const (
 )
 
 var terminalDisconnectTimeout = 5 * time.Second
+
+var errUnsupportedOpenChatMetadata = errors.New("connector: OpenChat metadata is not supported")
+var errChatInfoMismatch = errors.New("connector: CHATINFO returned a different chat ID")
+var errInvalidMemberRoster = errors.New("connector: MEMLIST returned an invalid member ID")
 
 func init() {
 	status.BridgeStateHumanErrors.Update(status.BridgeStateErrorMap{
@@ -84,6 +93,7 @@ type KakaoClient struct {
 	stopping       bool
 	done           chan struct{}
 	cleanupDone    chan struct{}
+	profiles       map[int64]chatmeta.Member
 }
 
 var (
@@ -93,10 +103,11 @@ var (
 
 func newKakaoClient(login *bridgev2.UserLogin, userID int64, open func() (kakaoClient, error)) *KakaoClient {
 	kc := &KakaoClient{
-		login:  login,
-		userID: userID,
-		open:   open,
-		queue:  login.QueueRemoteEvent,
+		login:    login,
+		userID:   userID,
+		open:     open,
+		queue:    login.QueueRemoteEvent,
+		profiles: make(map[int64]chatmeta.Member),
 	}
 	kc.sendState = func(state status.BridgeState) { kc.stateQueue().Send(state) }
 	return kc
@@ -389,33 +400,171 @@ func (kc *KakaoClient) IsThisUser(ctx context.Context, userID networkid.UserID) 
 	return userID == makeUserID(kc.userID)
 }
 
-// GetChatInfo returns placeholder metadata. The client has no chat-info or
-// member-list API yet (bridge plan phase B2).
+// GetChatInfo resolves metadata from CHATINFO, MEMLIST, and MEMBER. The
+// profile APIs are deliberately called only once per request; the bridge does
+// not invent names or avatars when Kakao omits them.
 func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
 	chatID, err := parseChatID(portal.ID)
 	if err != nil {
 		return nil, err
 	}
-	name := placeholderChatName(chatID)
-	return &bridgev2.ChatInfo{
-		Name: &name,
-		Members: &bridgev2.ChatMemberList{
-			MemberMap: bridgev2.ChatMemberMap{}.Set(bridgev2.ChatMember{
-				EventSender: kc.selfSender(),
-				Membership:  event.MembershipJoin,
-			}),
-		},
-	}, nil
+	c, err := kc.metadataClient()
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.ChatInfo(ctx, chatID)
+	if err != nil {
+		return nil, err
+	}
+	data := response.ChatData
+	if data.ChatID != chatID {
+		return nil, fmt.Errorf("%w: requested %d, got %d", errChatInfoMismatch, chatID, data.ChatID)
+	}
+	if data.LinkID > 0 {
+		return nil, errUnsupportedOpenChatMetadata
+	}
+
+	// MEMLIST is a UI-originated API in the official client and its stored
+	// room token is not exposed by ChatData. An initial bridge sync therefore
+	// starts at token zero; later membership updates remain separate work.
+	roster, err := c.MemberList(ctx, chatID, 0)
+	if err != nil {
+		return nil, err
+	}
+	completeRoster := len(roster.MemberIDs) > 0
+	for _, userID := range roster.MemberIDs {
+		if userID <= 0 {
+			return nil, fmt.Errorf("%w: %d", errInvalidMemberRoster, userID)
+		}
+	}
+	userIDs := append([]int64(nil), roster.MemberIDs...)
+	if len(userIDs) == 0 {
+		userIDs = append(userIDs, data.DisplayUserIDs...)
+	}
+	profiles, err := c.Members(ctx, chatID, userIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	members := bridgev2.ChatMemberMap{}.Set(bridgev2.ChatMember{
+		EventSender: kc.selfSender(),
+		Membership:  event.MembershipJoin,
+	})
+	requested := make(map[int64]struct{}, len(userIDs))
+	for _, userID := range userIDs {
+		requested[userID] = struct{}{}
+	}
+	for _, profile := range profiles {
+		if profile.UserID <= 0 || profile.UserID == kc.userID {
+			continue
+		}
+		if _, ok := requested[profile.UserID]; !ok {
+			continue
+		}
+		kc.mu.Lock()
+		kc.profiles[profile.UserID] = profile
+		kc.mu.Unlock()
+		member := bridgev2.ChatMember{
+			EventSender: bridgev2.EventSender{Sender: makeUserID(profile.UserID)},
+			Membership:  event.MembershipJoin,
+			UserInfo:    userInfoForMember(profile),
+		}
+		members.Set(member)
+	}
+	// If MEMBER returned no profile for an ID, retain the source-supported
+	// membership identity without fabricating profile fields.
+	for _, userID := range userIDs {
+		if userID <= 0 || userID == kc.userID {
+			continue
+		}
+		if _, exists := members[makeUserID(userID)]; exists {
+			continue
+		}
+		members.Set(bridgev2.ChatMember{
+			EventSender: bridgev2.EventSender{Sender: makeUserID(userID)},
+			Membership:  event.MembershipJoin,
+		})
+	}
+
+	info := &bridgev2.ChatInfo{Members: &bridgev2.ChatMemberList{
+		IsFull:    completeRoster,
+		MemberMap: members,
+	}}
+	if completeRoster {
+		info.Members.TotalMemberCount = len(members)
+	} else if data.ActiveMemberCount > 0 {
+		info.Members.TotalMemberCount = int(data.ActiveMemberCount)
+	}
+	if name := chatName(data); name != "" {
+		info.Name = &name
+	}
+	if data.Type == "DirectChat" && completeRoster {
+		otherUserID, count := networkid.UserID(""), 0
+		for userID := range members {
+			if userID != makeUserID(kc.userID) {
+				otherUserID, count = userID, count+1
+			}
+		}
+		if count == 1 {
+			roomType := database.RoomTypeDM
+			info.Type = &roomType
+			info.Members.OtherUserID = otherUserID
+		}
+	}
+	return info, nil
 }
 
-// GetUserInfo returns a placeholder profile until profile sync exists.
+// GetUserInfo returns a profile previously resolved in a room. MEMBER is
+// chat-scoped, so an uncached ghost has no source-supported name to return.
 func (kc *KakaoClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (*bridgev2.UserInfo, error) {
 	userID, err := parseUserID(string(ghost.ID))
 	if err != nil {
 		return nil, err
 	}
-	name := placeholderUserName(userID)
-	return &bridgev2.UserInfo{Name: &name}, nil
+	kc.mu.Lock()
+	profile, ok := kc.profiles[userID]
+	kc.mu.Unlock()
+	if !ok {
+		return &bridgev2.UserInfo{}, nil
+	}
+	return userInfoForMember(profile), nil
+}
+
+func (kc *KakaoClient) metadataClient() (kakaoClient, error) {
+	kc.mu.Lock()
+	defer kc.mu.Unlock()
+	if kc.stopping {
+		return nil, bridgev2.ErrNotLoggedIn
+	}
+	if kc.client != nil {
+		return kc.client, nil
+	}
+	if kc.connecting && kc.cleanup != nil {
+		return kc.cleanup, nil
+	}
+	return nil, bridgev2.ErrNotLoggedIn
+}
+
+func chatName(data chatmeta.ChatData) string {
+	if data.Meta != nil && data.Meta.Name != "" {
+		return data.Meta.Name
+	}
+	names := make([]string, 0, len(data.DisplayNicknames))
+	for _, nickname := range data.DisplayNicknames {
+		if nickname != "" {
+			names = append(names, nickname)
+		}
+	}
+	return strings.Join(names, ", ")
+}
+
+func userInfoForMember(profile chatmeta.Member) *bridgev2.UserInfo {
+	info := &bridgev2.UserInfo{}
+	if profile.Nickname != "" {
+		name := profile.Nickname
+		info.Name = &name
+	}
+	return info
 }
 
 func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Portal) *event.RoomFeatures {
