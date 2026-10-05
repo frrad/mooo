@@ -672,21 +672,21 @@ func (kc *KakaoClient) Disconnect() {
 		kc.cleanup = c
 	}
 	kc.mu.Unlock()
-	if retryDone != nil {
-		select {
-		case <-retryDone:
-		case <-ctx.Done():
-			return
+	joinWorkers := func() bool {
+		for _, worker := range []chan struct{}{retryDone, cleanupRetryDone} {
+			if worker == nil {
+				continue
+			}
+			select {
+			case <-worker:
+			case <-ctx.Done():
+				return false
+			}
 		}
-	}
-	if cleanupRetryDone != nil {
-		select {
-		case <-cleanupRetryDone:
-		case <-ctx.Done():
-			return
-		}
+		return true
 	}
 	if c == nil {
+		joinWorkers()
 		return
 	}
 	// A recovery cleanup already owns Shutdown. Wait for it, then release the
@@ -701,6 +701,7 @@ func (kc *KakaoClient) Disconnect() {
 		case <-ctx.Done():
 			return
 		}
+		joinWorkers()
 		return
 	}
 	err := c.Shutdown(ctx)
@@ -735,6 +736,7 @@ func (kc *KakaoClient) Disconnect() {
 			}
 		}
 		kc.mu.Unlock()
+		joinWorkers()
 		return
 	}
 	kc.mu.Lock()
@@ -747,6 +749,7 @@ func (kc *KakaoClient) Disconnect() {
 		kc.cleanupDone = nil
 	}
 	kc.mu.Unlock()
+	joinWorkers()
 }
 
 func (kc *KakaoClient) IsLoggedIn() bool {

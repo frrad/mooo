@@ -213,6 +213,31 @@ func (f *fakeKakao) committed() []events.Event {
 	return append([]events.Event(nil), f.commits...)
 }
 
+// shutdownOnlyKakao models a client whose bootstrap call cannot observe its
+// context. Disconnect must interrupt it through Shutdown before joining the
+// bootstrap worker, otherwise cleanup waits until its deadline and strands the
+// profile owner.
+type shutdownOnlyKakao struct {
+	*fakeKakao
+	release     chan struct{}
+	releaseOnce sync.Once
+	entered     chan struct{}
+	enteredOnce sync.Once
+}
+
+func (f *shutdownOnlyKakao) Events(context.Context) (<-chan events.Result, error) {
+	if f.entered != nil {
+		f.enteredOnce.Do(func() { close(f.entered) })
+	}
+	<-f.release
+	return f.stream, nil
+}
+
+func (f *shutdownOnlyKakao) Shutdown(ctx context.Context) error {
+	f.releaseOnce.Do(func() { close(f.release) })
+	return f.fakeKakao.Shutdown(ctx)
+}
+
 // testHarness records everything the KakaoClient hands to the bridge.
 type testHarness struct {
 	mu      sync.Mutex
@@ -910,6 +935,7 @@ func TestDisconnectOwnsBootstrapSubscriptionBeforeEventsReturns(t *testing.T) {
 		shutdownWait:  nil,
 	}
 	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	t.Cleanup(kc.Disconnect)
 	connectDone := make(chan struct{})
 	go func() {
 		kc.Connect(context.Background())
@@ -932,6 +958,49 @@ func TestDisconnectOwnsBootstrapSubscriptionBeforeEventsReturns(t *testing.T) {
 	case <-connectDone:
 	case <-time.After(time.Second):
 		t.Fatal("Connect did not unwind after Events release")
+	}
+}
+
+func TestDisconnectShutsDownBeforeJoiningUncooperativeBootstrap(t *testing.T) {
+	fake := &shutdownOnlyKakao{
+		fakeKakao: &fakeKakao{stream: make(chan events.Result)},
+		release:   make(chan struct{}),
+		entered:   make(chan struct{}),
+	}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	t.Cleanup(kc.Disconnect)
+	connectDone := make(chan struct{})
+	go func() {
+		kc.Connect(context.Background())
+		close(connectDone)
+	}()
+
+	select {
+	case <-fake.entered:
+	case <-time.After(time.Second):
+		t.Fatal("bootstrap did not enter uncooperative Events")
+	}
+
+	disconnectDone := make(chan struct{})
+	go func() {
+		kc.Disconnect()
+		close(disconnectDone)
+	}()
+	select {
+	case <-disconnectDone:
+	case <-time.After(time.Second):
+		t.Fatal("Disconnect waited for bootstrap before calling Shutdown")
+	}
+	select {
+	case <-connectDone:
+	case <-time.After(time.Second):
+		t.Fatal("bootstrap did not unwind after Shutdown released it")
+	}
+	fake.mu.Lock()
+	shutdownCalls, closeCalls := fake.shutdownCalls, fake.closeCalls
+	fake.mu.Unlock()
+	if shutdownCalls != 1 || closeCalls != 1 {
+		t.Fatalf("shutdown/close calls = %d/%d, want 1/1", shutdownCalls, closeCalls)
 	}
 }
 
