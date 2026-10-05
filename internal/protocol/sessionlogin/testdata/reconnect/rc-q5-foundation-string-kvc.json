@@ -3,172 +3,516 @@
   "platform": "macOS 26.6.2 (25G83 arm64)",
   "cases": [
     {
-      "name": "plus_42",
+      "name": "initial_40_0",
+      "input": "",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFConstantString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_1",
+      "input": "0",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_2",
+      "input": "+0",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_3",
+      "input": "-0",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_4",
+      "input": "42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 42,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_5",
+      "input": " 42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 42,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_6",
+      "input": "\t-42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": -42,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_7",
+      "input": "\n+42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_8",
+      "input": "42 ",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 42,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_9",
+      "input": "42tail",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 42,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_10",
+      "input": "tail42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_11",
+      "input": "+",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_12",
+      "input": "-",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_13",
+      "input": "++42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_14",
+      "input": "--42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_15",
+      "input": "+-42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_16",
+      "input": "0x10",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_17",
+      "input": "010",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 10,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_18",
+      "input": "3.75",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 3,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_19",
+      "input": "-3.75",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": -3,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_20",
+      "input": "1e3",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 1,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_21",
+      "input": "2147483647",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 2147483647,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_22",
+      "input": "2147483648",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 2147483647,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_23",
+      "input": "-2147483648",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": -2147483648,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_24",
+      "input": "-2147483649",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": -2147483648,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_25",
+      "input": "4294967296",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 2147483647,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_26",
+      "input": "9223372036854775807",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 2147483647,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_27",
+      "input": "9223372036854775808",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 2147483647,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_28",
+      "input": "-9223372036854775809",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": -2147483648,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_29",
+      "input": "99999999999999999999999999999999999999",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 2147483647,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_30",
+      "input": "-99999999999999999999999999999999999999",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": -2147483648,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_31",
+      "input": "１２",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 12,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_32",
+      "input": "١٢",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 12,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_33",
+      "input": " 42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 42,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_34",
+      "input": " 42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 42,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_35",
+      "input": "−42",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "__NSCFString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_36",
+      "input": "true",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_37",
+      "input": "NaN",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_38",
+      "input": "Infinity",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "initial-40"
+    },
+    {
+      "name": "initial_40_39",
+      "input": "42\n17",
+      "literal_class": "__NSCFConstantString",
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 42,
+      "capture": "initial-40"
+    },
+    {
+      "name": "followup_24_0",
       "input": "+42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "NSTaggedPointerString",
-      "expected_value": 42
+      "expected_value": 42,
+      "capture": "followup-24"
     },
     {
-      "name": "minus_42",
+      "name": "followup_24_1",
       "input": "-42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "NSTaggedPointerString",
-      "expected_value": -42
+      "expected_value": -42,
+      "capture": "followup-24"
     },
     {
-      "name": "leading_newline",
+      "name": "followup_24_2",
       "input": "\n42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "NSTaggedPointerString",
-      "expected_value": 0
+      "expected_value": 0,
+      "capture": "followup-24"
     },
     {
-      "name": "leading_cr",
+      "name": "followup_24_3",
       "input": "\r42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "NSTaggedPointerString",
-      "expected_value": 0
+      "expected_value": 0,
+      "capture": "followup-24"
     },
     {
-      "name": "leading_formfeed",
+      "name": "followup_24_4",
       "input": "\f42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "NSTaggedPointerString",
-      "expected_value": 0
+      "expected_value": 0,
+      "capture": "followup-24"
     },
     {
-      "name": "leading_vertical_tab",
+      "name": "followup_24_5",
       "input": "\u000b42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "NSTaggedPointerString",
-      "expected_value": 0
+      "expected_value": 0,
+      "capture": "followup-24"
     },
     {
-      "name": "leading_tab",
+      "name": "followup_24_6",
       "input": "\t42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "NSTaggedPointerString",
-      "expected_value": 42
+      "expected_value": 42,
+      "capture": "followup-24"
     },
     {
-      "name": "leading_space_plus",
+      "name": "followup_24_7",
       "input": "  +42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "NSTaggedPointerString",
-      "expected_value": 42
+      "expected_value": 42,
+      "capture": "followup-24"
     },
     {
-      "name": "leading_space_minus",
+      "name": "followup_24_8",
       "input": "  -42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "NSTaggedPointerString",
-      "expected_value": -42
+      "expected_value": -42,
+      "capture": "followup-24"
     },
     {
-      "name": "line_separator",
+      "name": "followup_24_9",
       "input": " 42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "__NSCFString",
-      "expected_value": 0
+      "expected_value": 0,
+      "capture": "followup-24"
     },
     {
-      "name": "paragraph_separator",
+      "name": "followup_24_10",
       "input": " 42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "__NSCFString",
-      "expected_value": 0
+      "expected_value": 0,
+      "capture": "followup-24"
     },
     {
-      "name": "ideographic_space",
+      "name": "followup_24_11",
       "input": "　42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "__NSCFString",
-      "expected_value": 42
+      "expected_value": 42,
+      "capture": "followup-24"
     },
     {
-      "name": "fullwidth_prefix",
+      "name": "followup_24_12",
       "input": "１２tail",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "__NSCFString",
-      "expected_value": 12
+      "expected_value": 12,
+      "capture": "followup-24"
     },
     {
-      "name": "arabic_prefix",
+      "name": "followup_24_13",
       "input": "١٢tail",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "__NSCFString",
-      "expected_value": 12
+      "expected_value": 12,
+      "capture": "followup-24"
     },
     {
-      "name": "devanagari_digits",
-      "input": "१२",
+      "name": "followup_24_14",
+      "input": "१٢",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "__NSCFString",
-      "expected_value": 12
+      "expected_value": 12,
+      "capture": "followup-24"
     },
     {
-      "name": "fullwidth_signed",
+      "name": "followup_24_15",
       "input": "-１２",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "__NSCFString",
-      "expected_value": -12
+      "expected_value": -12,
+      "capture": "followup-24"
     },
     {
-      "name": "fullwidth_plus",
+      "name": "followup_24_16",
       "input": "+１２",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "__NSCFString",
-      "expected_value": 12
+      "expected_value": 12,
+      "capture": "followup-24"
     },
     {
-      "name": "arabic_digits",
+      "name": "followup_24_17",
       "input": "٤٢",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "__NSCFString",
-      "expected_value": 42
+      "expected_value": 42,
+      "capture": "followup-24"
     },
     {
-      "name": "zero_width_space",
+      "name": "followup_24_18",
       "input": "​42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "__NSCFString",
-      "expected_value": 42
+      "expected_value": 42,
+      "capture": "followup-24"
     },
     {
-      "name": "nul_prefix",
+      "name": "followup_24_19",
       "input": "42\u0000tail",
       "literal_class": "__NSCFConstantString",
-      "runtime_class": "__NSCFString",
-      "expected_value": 42
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 42,
+      "capture": "followup-24"
     },
     {
-      "name": "leading_zeros_signed",
+      "name": "followup_24_20",
       "input": "-00042",
       "literal_class": "__NSCFConstantString",
-      "runtime_class": "__NSCFString",
-      "expected_value": -42
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": -42,
+      "capture": "followup-24"
     },
     {
-      "name": "double_sign",
+      "name": "followup_24_21",
       "input": "--0",
       "literal_class": "__NSCFConstantString",
-      "runtime_class": "__NSCFString",
-      "expected_value": 0
+      "runtime_class": "NSTaggedPointerString",
+      "expected_value": 0,
+      "capture": "followup-24"
     },
     {
-      "name": "sign_space",
+      "name": "followup_24_22",
       "input": "- 42",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "NSTaggedPointerString",
-      "expected_value": -42
+      "expected_value": -42,
+      "capture": "followup-24"
     },
     {
-      "name": "internal_space",
+      "name": "followup_24_23",
       "input": " 4 2",
       "literal_class": "__NSCFConstantString",
       "runtime_class": "NSTaggedPointerString",
-      "expected_value": 4
+      "expected_value": 4,
+      "capture": "followup-24"
     }
   ]
 }

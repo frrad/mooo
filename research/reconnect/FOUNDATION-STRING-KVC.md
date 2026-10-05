@@ -14,18 +14,22 @@ at `0x1017eb7bc`. The exact constructor and NUL-terminated input shape are
 source-grounded; malformed pointer and outer exception behavior remain gaps.
 
 Private Foundation captures used both literal `__NSCFConstantString` and
-runtime `NSString` instances (which may materialize as `NSTaggedPointerString`
-or `__NSCFString`) and found the same values for the recorded domain. The
-vectors cover control-character prefixes, selected skipped whitespace, Arabic,
-Devanagari, and fullwidth decimal digits, signs, NUL termination, numeric
-prefixes, and signed overflow. These are captured examples rather than a
-grammar claim.
+runtime strings built by the probe's `[[NSString alloc]
+initWithUTF8String:]` path (which may materialize as
+`NSTaggedPointerString` or `__NSCFString`) and found the same values for the
+recorded domain. This runtime factory is probe provenance; it is not claimed to
+be the official decoder's `stringWithCString:encoding:` implementation. The
+fixture retains all 40 initial inputs and all 24 follow-up inputs, including
+overflow, prefix, NUL, sign, control-character, selected-whitespace, Arabic,
+Devanagari, and fullwidth-digit cases. These are captured examples rather than
+a grammar claim.
 
 The bounded vectors are in
 `internal/protocol/sessionlogin/testdata/reconnect/rc-q5-foundation-string-kvc.json`.
 The test guards the exact captured input domain, then independently parses the
 captured sign/whitespace/digit/prefix rules and saturates at the int32 bounds.
-It rejects unsupported inputs rather than presenting a universal parser. Private provenance is the authorized
+It rejects unsupported inputs rather than presenting a universal parser. Private
+provenance is the authorized
 Foundation probe receipt under `/var/folders/.../mooo-parent-string-kvc-*` and
 the official decoder disassembly under `.lab/credential-storage/raw/cs1/`; no
 account data or proprietary binary is tracked.

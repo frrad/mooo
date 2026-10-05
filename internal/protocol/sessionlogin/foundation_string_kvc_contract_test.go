@@ -20,6 +20,7 @@ type foundationStringKVCCase struct {
 	LiteralClass  string `json:"literal_class"`
 	RuntimeClass  string `json:"runtime_class"`
 	ExpectedValue int32  `json:"expected_value"`
+	Capture       string `json:"capture"`
 }
 
 // foundationStringKVC is an executable model for the explicitly captured
@@ -27,11 +28,70 @@ type foundationStringKVCCase struct {
 // or numeric-string grammar.
 func foundationStringKVC(input string) (int32, bool) {
 	allowed := map[string]bool{
-		"+42": true, "-42": true, "\n42": true, "\r42": true, "\f42": true, "\v42": true,
-		"\t42": true, "  +42": true, "  -42": true, "\u202842": true, "\u202942": true,
-		"\u300042": true, "１２tail": true, "١٢tail": true, "१२": true, "-１２": true,
-		"+１２": true, "٤٢": true, "\u200b42": true, "42\x00tail": true, "-00042": true,
-		"--0": true, "- 42": true, " 4 2": true,
+		"":                                       true,
+		"0":                                      true,
+		"+0":                                     true,
+		"-0":                                     true,
+		"42":                                     true,
+		" 42":                                    true,
+		"\t-42":                                  true,
+		"\n+42":                                  true,
+		"42 ":                                    true,
+		"42tail":                                 true,
+		"tail42":                                 true,
+		"+":                                      true,
+		"-":                                      true,
+		"++42":                                   true,
+		"--42":                                   true,
+		"+-42":                                   true,
+		"0x10":                                   true,
+		"010":                                    true,
+		"3.75":                                   true,
+		"-3.75":                                  true,
+		"1e3":                                    true,
+		"2147483647":                             true,
+		"2147483648":                             true,
+		"-2147483648":                            true,
+		"-2147483649":                            true,
+		"4294967296":                             true,
+		"9223372036854775807":                    true,
+		"9223372036854775808":                    true,
+		"-9223372036854775809":                   true,
+		"99999999999999999999999999999999999999": true,
+		"-99999999999999999999999999999999999999": true,
+		"\uff11\uff12":     true,
+		"\u0661\u0662":     true,
+		"\u00a042":         true,
+		"\u200342":         true,
+		"\u221242":         true,
+		"true":             true,
+		"NaN":              true,
+		"Infinity":         true,
+		"42\n17":           true,
+		"+42":              true,
+		"-42":              true,
+		"\n42":             true,
+		"\r42":             true,
+		"\f42":             true,
+		"\u000b42":         true,
+		"\t42":             true,
+		"  +42":            true,
+		"  -42":            true,
+		"\u202842":         true,
+		"\u202942":         true,
+		"\u300042":         true,
+		"\uff11\uff12tail": true,
+		"\u0661\u0662tail": true,
+		"\u0967\u0662":     true,
+		"-\uff11\uff12":    true,
+		"+\uff11\uff12":    true,
+		"\u0664\u0662":     true,
+		"\u200b42":         true,
+		"42\u0000tail":     true,
+		"-00042":           true,
+		"--0":              true,
+		"- 42":             true,
+		" 4 2":             true,
 	}
 	if !allowed[input] {
 		return 0, false
@@ -115,7 +175,7 @@ func TestFoundationStringKVCFixture(t *testing.T) {
 	if err := decoder.Decode(&fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.Status != "reviewed-platform-bounded-synthetic" || fixture.Platform == "" || len(fixture.Cases) != 24 {
+	if fixture.Status != "reviewed-platform-bounded-synthetic" || fixture.Platform == "" || len(fixture.Cases) != 64 {
 		t.Fatalf("fixture header=%#v", fixture)
 	}
 	seen := map[string]bool{}
@@ -124,12 +184,15 @@ func TestFoundationStringKVCFixture(t *testing.T) {
 			t.Fatalf("duplicate/empty case %q", c.Name)
 		}
 		seen[c.Name] = true
-		if c.LiteralClass == "" || c.RuntimeClass == "" {
+		if c.LiteralClass == "" || c.RuntimeClass == "" || c.Capture == "" {
 			t.Fatalf("%s missing NSString class provenance", c.Name)
 		}
 		got, ok := foundationStringKVC(c.Input)
 		if !ok || got != c.ExpectedValue {
 			t.Errorf("%s got=%d/%t want=%d", c.Name, got, ok, c.ExpectedValue)
 		}
+	}
+	if _, ok := foundationStringKVC("captured-but-not-supported"); ok {
+		t.Fatal("uncaptured input unexpectedly accepted")
 	}
 }
