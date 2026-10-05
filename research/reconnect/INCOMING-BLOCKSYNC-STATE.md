@@ -31,8 +31,13 @@ retry behavior, worker exception propagation, or completion-error handling;
 those remain explicit gaps.
 
 The plus-unblock arrays are consumed by a separate nested block in the same
-write closure. Its complete object lookup, zero/empty-array behavior, nil type
-handling, and state effects are not yet traced. Likewise, the reviewed
+write closure. The recovered block looks up users by ID and the captured link
+ID, assigns `userType = 1` when the current value is zero, clears `hidden`,
+and conditionally assigns `friendType = -4`; unresolved users contribute a
+numeric fallback. The final friend-type predicate selector is not yet named,
+so the synthetic model takes that predicate as an explicit input. Zero/empty
+array behavior, nil type handling, and the remaining unblock state effects are
+not yet traced. Likewise, the reviewed
 completion call proves a direct revision setter invocation but does not yet
 establish whether an empty update still invokes it or how a setter failure is
 reported. These are intentionally separate follow-up gaps rather than inferred

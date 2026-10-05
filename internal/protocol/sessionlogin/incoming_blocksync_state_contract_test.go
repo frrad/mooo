@@ -27,6 +27,7 @@ type incomingBlockSyncUser struct {
 	userType     int32
 	favorite     bool
 	purged       bool
+	hidden       bool
 	directChatID int64
 }
 
@@ -74,6 +75,27 @@ func (s *incomingBlockSyncStateContract) applyPartial(ids []int64, blockTypes []
 		// represented in the fallback member list.
 	}
 	return nil
+}
+
+// applyUnblock models the separately captured plus-unblock block. The final
+// friend-type guard is supplied by the caller because its source selector is
+// not yet identified; false means the observed -4 assignment is taken.
+func (s *incomingBlockSyncStateContract) applyUnblock(ids []int64, linkID int64, preserveFriendType bool) {
+	for _, id := range ids {
+		user, ok := s.users[id]
+		if !ok {
+			s.memberIDs = append(s.memberIDs, id)
+			continue
+		}
+		if user.userType == 0 {
+			user.userType = 1
+		}
+		user.hidden = false
+		if !preserveFriendType {
+			user.friendType = -4
+		}
+		s.users[id] = user
+	}
 }
 
 func (s *incomingBlockSyncStateContract) complete(isFull bool, revision int32) {
@@ -135,6 +157,20 @@ func TestIncomingBlockSyncStateContractSkipsMissingChatIdentity(t *testing.T) {
 	}
 	if s.chatFavorite[22] {
 		t.Fatalf("resolved chat favorite was not cleared: %v", s.chatFavorite)
+	}
+}
+
+func TestIncomingBlockSyncStateContractModelsUnblockGuards(t *testing.T) {
+	s := &incomingBlockSyncStateContract{
+		users:        map[int64]incomingBlockSyncUser{1: {friendType: -3, userType: 0, hidden: true}},
+		chatFavorite: map[int64]bool{},
+	}
+	s.applyUnblock([]int64{1, 99}, 0, false)
+	if got := s.users[1]; got.userType != 1 || got.hidden || got.friendType != -4 {
+		t.Fatalf("unblock effects=%+v", got)
+	}
+	if !reflect.DeepEqual(s.memberIDs, []int64{99}) {
+		t.Fatalf("missing unblock fallback=%v", s.memberIDs)
 	}
 }
 
