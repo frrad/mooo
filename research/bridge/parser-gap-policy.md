@@ -33,3 +33,10 @@ identity remain mandatory for a recoverable gap.
 This policy is source-independent implementation behavior. It does not claim
 official-client parity for malformed payload handling, arbitrary message
 subtypes, or server-side recovery semantics.
+
+For an unrecoverable catch-up interval, the existing recorded gap remains in the
+protocol continuity store. Before subscribing to live events, the connector
+requires Matrix to confirm the interval notice. Failed or merely queued notices
+abort bootstrap; an explicit subsequent connection retries the notice with the
+same gap-derived Matrix message ID. A confirmed duplicate is also accepted.
+The notice never invents a Kakao message position or commits a source event.
