@@ -35,6 +35,10 @@ type sentText struct {
 	message string
 }
 
+type sentReply struct {
+	request chat.ReplyRequest
+}
+
 type catchUpResult struct {
 	events []events.Event
 	err    error
@@ -50,6 +54,7 @@ type fakeKakao struct {
 	stream            chan events.Result
 	commits           []events.Event
 	sends             []sentText
+	replies           []sentReply
 	sendResp          chat.WriteResponse
 	sendErr           error
 	closeCalls        int
@@ -151,6 +156,13 @@ func (f *fakeKakao) SendText(ctx context.Context, chatID int64, message string) 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.sends = append(f.sends, sentText{chatID: chatID, message: message})
+	return f.sendResp, f.sendErr
+}
+
+func (f *fakeKakao) SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.replies = append(f.replies, sentReply{request: request})
 	return f.sendResp, f.sendErr
 }
 
@@ -524,7 +536,7 @@ func TestUnrenderedMessageKindsBecomeNoticesAndAreCommitted(t *testing.T) {
 		if len(harness.queued) != 1 {
 			t.Fatalf("%T queued %d events", evt, len(harness.queued))
 		}
-		msg := harness.queued[0].(*simplevent.Message[string])
+		msg := harness.queued[0].(*simplevent.Message[noticeData])
 		if msg.GetSender() != (bridgev2.EventSender{}) {
 			t.Errorf("%T sender = %+v, want the bridge bot", evt, msg.GetSender())
 		}
@@ -983,6 +995,134 @@ func TestOutboundEmoteIsPrefixed(t *testing.T) {
 	}
 	if fake.sends[0].message != "* waves" {
 		t.Fatalf("sent %q", fake.sends[0].message)
+	}
+}
+
+func TestCapabilitiesAdvertisePartialReplies(t *testing.T) {
+	kc := connectedClient(t, &fakeKakao{})
+	features := kc.GetCapabilities(context.Background(), nil)
+	if features.Reply != event.CapLevelPartialSupport || features.ID != "com.github.frrad.mooo.capabilities.2026_10_04" {
+		t.Fatalf("capabilities = %+v", features)
+	}
+}
+
+func TestInboundMessagePersistsReplyMetadata(t *testing.T) {
+	kc, harness := newTestClient(t, nil)
+	kc.handleEvent(&fakeKakao{}, events.TextMessage{ChatID: testChatID, LogID: 12, AuthorID: testOtherID, Message: "source"})
+	msg := harness.queued[0].(*simplevent.Message[events.TextMessage])
+	converted, err := msg.ConvertMessage(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, ok := converted.Parts[0].DBMetadata.(*KakaoMessageMetadata)
+	if !ok || metadata.ChatID != testChatID || metadata.LogID != 12 || metadata.AuthorID != testOtherID || metadata.Type != chat.TextType || metadata.Preview != "source" {
+		t.Fatalf("metadata = %+v", converted.Parts[0].DBMetadata)
+	}
+}
+
+func TestOutboundReplyUsesStoredSourceMetadata(t *testing.T) {
+	fake := &fakeKakao{sendResp: chat.WriteResponse{ChatID: testChatID, LogID: 33, SendAt: 1700000003}}
+	kc := connectedClient(t, fake)
+	msg := matrixMessage(event.MsgText, "answer")
+	msg.ReplyTo = &database.Message{
+		ID:       makeMessageID(testChatID, 11),
+		Room:     makePortalKey(testChatID, makeUserLoginID(testSelfID)),
+		SenderID: makeUserID(testOtherID),
+		Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0),
+	}
+	resp, err := kc.HandleMatrixMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.sends) != 0 || len(fake.replies) != 1 {
+		t.Fatalf("text sends = %v, replies = %v", fake.sends, fake.replies)
+	}
+	target := fake.replies[0].request.Target
+	if target != (chat.ReplyTarget{LogID: 11, UserID: testOtherID, Type: chat.TextType, Message: "source"}) {
+		t.Fatalf("reply target = %+v", target)
+	}
+	if resp.DB.Metadata.(*KakaoMessageMetadata).Type != chat.ReplyType {
+		t.Fatalf("outbound metadata = %+v", resp.DB.Metadata)
+	}
+}
+
+func TestOutboundEmoteReplyPreservesBodyAndUsesReplyOnce(t *testing.T) {
+	fake := &fakeKakao{sendResp: chat.WriteResponse{LogID: 34}}
+	kc := connectedClient(t, fake)
+	msg := matrixMessage(event.MsgEmote, "waves")
+	msg.ReplyTo = &database.Message{
+		ID:       makeMessageID(testChatID, 11),
+		Room:     makePortalKey(testChatID, makeUserLoginID(testSelfID)),
+		SenderID: makeUserID(testOtherID),
+		Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.ReplyType, "reply source", 0),
+	}
+	if _, err := kc.HandleMatrixMessage(context.Background(), msg); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.replies) != 1 || fake.replies[0].request.Message != "* waves" {
+		t.Fatalf("replies = %+v", fake.replies)
+	}
+}
+
+func TestOutboundReplyRejectsOldCrossChatAndUnresolvedTargets(t *testing.T) {
+	cases := []struct {
+		name  string
+		reply *database.Message
+		want  error
+	}{
+		{name: "old row", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID)}, want: errMissingReplyMetadata},
+		{name: "cross chat", reply: &database.Message{ID: makeMessageID(4000, 11), Room: makePortalKey(4000, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(4000, 11, testOtherID, chat.TextType, "source", 0)}, want: errCrossChatReply},
+		{name: "sender mismatch", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(9999), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0)}, want: errReplySenderMismatch},
+		{name: "receiver mismatch", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, makeUserLoginID(9999)), SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0)}, want: errCrossChatReply},
+		{name: "empty room id wrong receiver", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: networkid.PortalKey{Receiver: makeUserLoginID(9999)}, SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0)}, want: errCrossChatReply},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeKakao{sendResp: chat.WriteResponse{LogID: 35}}
+			kc := connectedClient(t, fake)
+			msg := matrixMessage(event.MsgText, "answer")
+			msg.ReplyTo = tc.reply
+			_, err := kc.HandleMatrixMessage(context.Background(), msg)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("error = %v, want %v", err, tc.want)
+			}
+			if len(fake.sends) != 0 || len(fake.replies) != 0 {
+				t.Fatalf("sent unresolved reply: sends=%v replies=%v", fake.sends, fake.replies)
+			}
+		})
+	}
+}
+
+func TestOutboundReplyRejectsUnresolvedMatrixRelation(t *testing.T) {
+	fake := &fakeKakao{sendResp: chat.WriteResponse{LogID: 36}}
+	kc := connectedClient(t, fake)
+	msg := matrixMessage(event.MsgText, "answer")
+	msg.Content.RelatesTo = &event.RelatesTo{}
+	msg.Content.RelatesTo.SetReplyTo("$missing")
+	if _, err := kc.HandleMatrixMessage(context.Background(), msg); !errors.Is(err, errMissingReplyMetadata) {
+		t.Fatalf("error = %v, want unresolved reply error", err)
+	}
+	if len(fake.sends) != 0 || len(fake.replies) != 0 {
+		t.Fatal("unresolved relation was sent")
+	}
+}
+
+func TestOutboundReplyFailureIsAmbiguousAndNotRetried(t *testing.T) {
+	sendErr := errors.New("connection reset during reply")
+	fake := &fakeKakao{sendErr: sendErr}
+	kc := connectedClient(t, fake)
+	msg := matrixMessage(event.MsgText, "answer")
+	msg.ReplyTo = &database.Message{
+		ID:       makeMessageID(testChatID, 11),
+		Room:     makePortalKey(testChatID, makeUserLoginID(testSelfID)),
+		SenderID: makeUserID(testOtherID),
+		Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0),
+	}
+	if _, err := kc.HandleMatrixMessage(context.Background(), msg); !errors.Is(err, sendErr) {
+		t.Fatalf("error = %v", err)
+	}
+	if len(fake.replies) != 1 {
+		t.Fatalf("reply attempts = %d, want one", len(fake.replies))
 	}
 }
 

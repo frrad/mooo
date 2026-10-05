@@ -11,7 +11,9 @@ import (
 	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/event"
 
+	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
+	"github.com/frrad/mooo/internal/protocol/media"
 )
 
 func placeholderUserName(userID int64) string {
@@ -38,13 +40,15 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 	case events.ReplyMessage:
 		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, convertReply)
 	case events.PhotoMessage:
-		// Photo events carry no author or timestamp yet, so the notice comes
-		// from the bridge bot (bridge plan B1).
 		chatID, logID := evt.Message.ChatID, evt.Message.LogID
-		return newMessage(kc.messageMeta(chatID, logID, 0, 0), makeMessageID(chatID, logID), "A photo was sent that this bridge cannot show yet.", convertNotice)
+		return newMessage(kc.messageMeta(chatID, logID, 0, 0), makeMessageID(chatID, logID), noticeData{
+			Body: "A photo was sent that this bridge cannot show yet.", Metadata: newKakaoMessageMetadata(chatID, logID, 0, media.PhotoType, "", 0),
+		}, convertNoticeWithMetadata)
 	case events.UnsupportedMessage:
 		notice := fmt.Sprintf("A KakaoTalk message of unsupported type %d was sent.", evt.Type)
-		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, 0, 0), makeMessageID(evt.ChatID, evt.LogID), notice, convertNotice)
+		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, 0, 0), makeMessageID(evt.ChatID, evt.LogID), noticeData{
+			Body: notice, Metadata: newKakaoMessageMetadata(evt.ChatID, evt.LogID, 0, evt.Type, "", 0),
+		}, convertNoticeWithMetadata)
 	default:
 		return nil
 	}
@@ -102,11 +106,11 @@ func (kc *KakaoClient) senderFor(authorID int64) bridgev2.EventSender {
 }
 
 func convertText(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.TextMessage) (*bridgev2.ConvertedMessage, error) {
-	return textMessage(event.MsgText, msg.Message), nil
+	return messageWithMetadata(event.MsgText, msg.Message, newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, chat.TextType, msg.Message, 0)), nil
 }
 
 func convertReply(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.ReplyMessage) (*bridgev2.ConvertedMessage, error) {
-	converted := textMessage(event.MsgText, msg.Message)
+	converted := messageWithMetadata(event.MsgText, msg.Message, newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, chat.ReplyType, msg.Message, 0))
 	if msg.Source.LogID > 0 {
 		converted.ReplyTo = &networkid.MessageOptionalPartID{MessageID: makeMessageID(msg.ChatID, msg.Source.LogID)}
 	}
@@ -115,6 +119,15 @@ func convertReply(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 
 func convertNotice(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, notice string) (*bridgev2.ConvertedMessage, error) {
 	return textMessage(event.MsgNotice, notice), nil
+}
+
+type noticeData struct {
+	Body     string
+	Metadata *KakaoMessageMetadata
+}
+
+func convertNoticeWithMetadata(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, notice noticeData) (*bridgev2.ConvertedMessage, error) {
+	return messageWithMetadata(event.MsgNotice, notice.Body, notice.Metadata), nil
 }
 
 func textMessage(msgType event.MessageType, body string) *bridgev2.ConvertedMessage {
@@ -127,4 +140,10 @@ func textMessage(msgType event.MessageType, body string) *bridgev2.ConvertedMess
 			},
 		}},
 	}
+}
+
+func messageWithMetadata(msgType event.MessageType, body string, metadata *KakaoMessageMetadata) *bridgev2.ConvertedMessage {
+	converted := textMessage(msgType, body)
+	converted.Parts[0].DBMetadata = metadata
+	return converted
 }

@@ -87,6 +87,7 @@ func (kc *KakaoConnector) GetName() bridgev2.BridgeName {
 
 func (kc *KakaoConnector) GetDBMetaTypes() database.MetaTypes {
 	return database.MetaTypes{
+		Message:   func() any { return &KakaoMessageMetadata{} },
 		UserLogin: func() any { return &UserLoginMetadata{} },
 	}
 }
