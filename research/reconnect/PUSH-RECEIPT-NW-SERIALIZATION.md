@@ -96,6 +96,11 @@ other-error connection-cancel branch in
 `rc-q5-push-receipt-nw-completion.json`; they do not invent ACK or retry
 behavior.
 
+The mapping cases are in
+`rc-q5-push-receipt-json-mapping.json`. They derive the non-dictionary return,
+absent-source no-op, `NSNull` removal, ordinary rename, and identity
+assign-then-remove behavior from the observed guard order.
+
 ## Provenance
 
 - Manager class reference: private
