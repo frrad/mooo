@@ -153,7 +153,9 @@ func messageWithMetadata(msgType event.MessageType, body string, metadata *Kakao
 }
 
 func convertPhoto(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.PhotoMessage) (*bridgev2.ConvertedMessage, error) {
-	data, err := media.DownloadPhoto(ctx, photoHTTPClient, msg.Message.Attachment)
+	transferCtx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)
+	defer cancel()
+	data, err := media.DownloadPhoto(transferCtx, photoHTTPClient, msg.Message.Attachment)
 	if err != nil {
 		return nil, errPhotoTransfer
 	}
@@ -162,7 +164,7 @@ func convertPhoto(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 	if attachment.MediaType == "image/png" {
 		filename = "photo.png"
 	}
-	uri, file, err := intent.UploadMedia(ctx, portal.MXID, data, filename, attachment.MediaType)
+	uri, file, err := intent.UploadMedia(transferCtx, portal.MXID, data, filename, attachment.MediaType)
 	if err != nil {
 		return nil, errPhotoTransfer
 	}

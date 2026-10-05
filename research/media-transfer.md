@@ -31,6 +31,12 @@ dimensions, download/thumbnail URLs, and expiry. Live testing between two owned
 disposable accounts confirmed this shape with a synthetic image. Download URLs
 and keys must be treated as secrets and must never be logged.
 
+The common `chatLog` envelope may also carry optional integer `authorId` and
+`sendAt` fields. The clean-room decoder propagates them to the typed photo
+event when present; absent fields remain zero, and an unknown or missing author
+is left to bridge sender fallback behavior. These fields are separate from the
+attachment and are not required to validate or download the photo.
+
 The production session has one background reader that dispatches correlated
 responses by packet ID and delivers unsolicited packets through a bounded push
 channel even while no request is active. The photo decoder accepts type `2`, and
@@ -51,3 +57,5 @@ and verifies the advertised size and SHA-1 checksum before releasing bytes.
   and back, 2026-09-29: production send completed and rendered without failure;
   production idle receive downloaded an exact byte-for-byte match with verified
   size/checksum; high confidence.
+- Common-envelope `authorId`/`sendAt` propagation is parser-fixture evidence,
+  not a claim that every server response supplies either optional field.
