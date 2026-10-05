@@ -36,12 +36,20 @@ fields. `LocoBlockSyncPushReceipt` adds signed `int32 revision` and
 `packetData`; the serialized key order and field-presence/default policy remain
 unresolved even though the framing implementation is now localized.
 
-The NW send completion is a Swift `NWConnection.SendCompletion` closure. The
-reviewed body constructs a weak-owner capture and passes it to the send call;
-error delivery is represented by the `NWError` completion input. The available
-receipt does not establish that this completion updates the LocoAgent pending
-map or correlates a packet tag. The pending-map and socket-disconnect consumers
-belong to the base Objective-C path and are kept as a separate explicit gap.
+The NW send completion is a Swift `NWConnection.SendCompletion` closure at
+`0x100d4a840`. Its body weak-loads the owner and returns when that owner has
+gone away. With an owner, it invokes `toggleOutSegmentTimeout:false` and then
+branches on the `NWError` completion value. The success branch performs
+cleanup only. Error branches inspect the POSIX error representation; only the
+POSIX code `0x59` (decimal 89) takes the cleanup path, while other POSIX
+codes and non-POSIX errors log and cancel the `NWConnection` read from the
+retained weak-loaded owner at completion time when present. This is a
+completion-time current-connection lookup, not a guarantee that the object is
+the same connection instance used when the send was scheduled.
+The reviewed closure body contains no pending-map lookup, request-tag
+correlation, status write, or completion callback invocation. Pending-map and
+socket-disconnect consumers from the base Objective-C path remain separate
+and are not attributed to this NW closure.
 
 ## Synthetic contract
 
@@ -51,16 +59,22 @@ Framing cases derive the header body length, mutable-data capacity
 results; they cover zero-length omission and a deliberately different second
 conversion. NW cases then model only the wrapper's packet-data result guard,
 encryption nil path, connection gate, send scheduling, and timeout argument.
-It records BSON key order/defaults, completion closure behavior, and pending
-correlation as explicit gaps rather than inventing wire fields, ACK behavior,
-or retry behavior.
+It records BSON key order/default policy, encryption output, and any server
+response as explicit gaps. Completion vectors cover owner lifetime, success,
+the observed POSIX `0x59`/89 cleanup predicate, neighboring POSIX and
+non-POSIX values, replacement-connection cancellation identity, and the
+other-error connection-cancel branch in
+`rc-q5-push-receipt-nw-completion.json`; they do not invent ACK or retry
+behavior.
 
 ## Provenance
 
 - Manager class reference: private
   `reconnect-start-lifecycle/parent-constructor-target.txt`.
 - NW send wrapper and completion: private
-  `socket-callbacks/report.txt` and `socket-callbacks/decompile.txt`.
+  `socket-callbacks/report.txt`, `socket-callbacks/decompile.txt`, and the
+  exact-address `nw-send-completion/report.txt` plus `decompile.txt` receipt
+  for `0x100d4a840`.
 - `packetData` framing implementation: private Ghidra decompile of
   `0x10175a1c0` and parity trace for `packetData`.
 - Swift guard/timeout branch: private `nw-disasm.txt` receipt for
