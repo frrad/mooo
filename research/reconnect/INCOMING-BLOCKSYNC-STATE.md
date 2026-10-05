@@ -38,6 +38,14 @@ establish whether an empty update still invokes it or how a setter failure is
 reported. These are intentionally separate follow-up gaps rather than inferred
 from the plus-block path.
 
+For the traced plus-member path, the synthetic model distinguishes an empty
+fallback list, which can take the direct revision-completion path, from a
+nonempty fallback list, which first crosses the
+`doPlusBlockMemberWithUserIds:completion:` callback boundary. The callback and
+revision ordering is represented as a source-effect fixture; it does not claim
+that the callback persists data or that worker failures propagate to the
+caller.
+
 The recovered `MKNest performBlockAndWait:` implementation does establish the
 operation boundary. It obtains the database and operation queue, invokes the
 write block inline when the current queue matches, and otherwise wraps it with

@@ -11,11 +11,14 @@ import (
 // datastore or a transport implementation: commit, rollback, retry, and
 // worker-error behavior remain untraced source gaps.
 type incomingBlockSyncStateContract struct {
-	users        map[int64]incomingBlockSyncUser
-	chatFavorite map[int64]bool
-	memberIDs    []int64
-	fullSynced   bool
-	revision     int32
+	users                 map[int64]incomingBlockSyncUser
+	chatFavorite          map[int64]bool
+	memberIDs             []int64
+	fullSynced            bool
+	revision              int32
+	revisionUpdates       int
+	memberCallbackPending bool
+	memberCallbackCount   int
 }
 
 type incomingBlockSyncUser struct {
@@ -77,7 +80,22 @@ func (s *incomingBlockSyncStateContract) complete(isFull bool, revision int32) {
 	if isFull {
 		s.fullSynced = true
 	}
+	if len(s.memberIDs) == 0 {
+		s.revision = revision
+		s.revisionUpdates++
+		return
+	}
+	s.memberCallbackPending = true
+}
+
+func (s *incomingBlockSyncStateContract) finishMemberCallback(revision int32) {
+	if !s.memberCallbackPending {
+		return
+	}
+	s.memberCallbackPending = false
+	s.memberCallbackCount++
 	s.revision = revision
+	s.revisionUpdates++
 }
 
 // The source's numberAtIndex: behavior for an allocated short array is not
@@ -121,7 +139,7 @@ func TestIncomingBlockSyncStateContractSkipsMissingChatIdentity(t *testing.T) {
 }
 
 func TestIncomingBlockSyncStateContractRevisionCompletionIsSeparate(t *testing.T) {
-	s := &incomingBlockSyncStateContract{users: map[int64]incomingBlockSyncUser{}, fullSynced: true}
+	s := &incomingBlockSyncStateContract{users: map[int64]incomingBlockSyncUser{7: {directChatID: 70}}, chatFavorite: map[int64]bool{}, fullSynced: true}
 	if err := s.applyPartial([]int64{7}, []int32{3}); err != nil {
 		t.Fatal(err)
 	}
@@ -129,12 +147,27 @@ func TestIncomingBlockSyncStateContractRevisionCompletionIsSeparate(t *testing.T
 		t.Fatalf("state completed before completion callback: %+v", s)
 	}
 	s.complete(false, -2147483648)
-	if !s.fullSynced || s.revision != -2147483648 {
+	if !s.fullSynced || s.revision != -2147483648 || s.revisionUpdates != 1 {
 		t.Fatalf("partial completion state=%+v", s)
 	}
 	s.complete(true, 7)
 	if !s.fullSynced || s.revision != 7 {
 		t.Fatalf("full completion state=%+v", s)
+	}
+}
+
+func TestIncomingBlockSyncStateContractUsesMemberCallbackBeforeRevision(t *testing.T) {
+	s := &incomingBlockSyncStateContract{users: map[int64]incomingBlockSyncUser{}, chatFavorite: map[int64]bool{}}
+	if err := s.applyPartial([]int64{99}, []int32{3}); err != nil {
+		t.Fatal(err)
+	}
+	s.complete(false, 12)
+	if !s.memberCallbackPending || s.memberCallbackCount != 0 || s.revisionUpdates != 0 {
+		t.Fatalf("nonempty fallback completed too early: %+v", s)
+	}
+	s.finishMemberCallback(12)
+	if s.memberCallbackPending || s.memberCallbackCount != 1 || s.revision != 12 || s.revisionUpdates != 1 {
+		t.Fatalf("member callback completion=%+v", s)
 	}
 }
 
