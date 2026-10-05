@@ -31,7 +31,7 @@ func TestProjectSGJSONObjectSourceFixtureCases(t *testing.T) {
 		{name: "nil becomes explicit null", input: nil, want: SGJSONNull{}},
 		{name: "explicit null remains explicit null", input: SGJSONNull{}, want: SGJSONNull{}},
 		{name: "scalar zero is retained", input: map[string]any{"zero": 0}, want: map[string]any{"zero": 0}},
-		{name: "nested SGJSON recurses", input: map[string]any{"body": syntheticSGJSON{value: map[string]any{"revision": 0}}}, want: map[string]any{"body": map[string]any{"revision": 0}}},
+		{name: "nested SGJSON is assigned directly", input: syntheticSGJSON{value: map[string]any{"revision": 0}}, want: map[string]any{"revision": 0}},
 		{name: "number array keeps order", input: syntheticSGNumberArray{value: []any{0, -1, uint64(4294967295)}}, want: []any{0, -1, uint64(4294967295)}},
 		{name: "SGJSON wins protocol precedence", input: syntheticBothSGProtocols{}, want: map[string]any{"winner": "json"}},
 	}
@@ -49,18 +49,18 @@ func TestProjectSGJSONObjectSourceFixtureCases(t *testing.T) {
 }
 
 func TestProjectSGJSONPropertiesPreservesDynamicAndInheritedCollisionRules(t *testing.T) {
-	inherited := []SGJSONProperty{{Name: "method", Value: "BASE"}, {Name: "packetId", Value: uint32(0)}}
 	dynamic := syntheticProperties{properties: []SGJSONProperty{
 		{Name: "method", Value: "HINT"},
 		{Name: "revision", Value: int32(0)},
 		{Name: "missingValue", Value: nil},
 	}}
-	got, err := ProjectSGJSONProperties(inherited, dynamic.JSONProperties())
+	inherited := []SGJSONProperty{{Name: "method", Value: "BASE"}, {Name: "packetId", Value: uint32(0)}}
+	got, err := ProjectSGJSONProperties(dynamic.JSONProperties(), inherited)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]any{
-		"method":       "HINT",
+		"method":       "BASE",
 		"packetId":     uint32(0),
 		"revision":     int32(0),
 		"missingValue": SGJSONNull{},
@@ -72,7 +72,7 @@ func TestProjectSGJSONPropertiesPreservesDynamicAndInheritedCollisionRules(t *te
 
 func TestProjectSGJSONObjectPropertySource(t *testing.T) {
 	input := syntheticProperties{properties: []SGJSONProperty{{Name: "zero", Value: 0}, {Name: "null", Value: nil}}}
-	got, err := ProjectSGJSONObject(input)
+	got, err := ProjectSGJSONProperties(input.JSONProperties())
 	if err != nil {
 		t.Fatal(err)
 	}

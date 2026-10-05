@@ -1,9 +1,6 @@
 package sessionlogin
 
-import (
-	"encoding/json"
-	"fmt"
-)
+import "fmt"
 
 // SGJSON is the narrow clean-room projection hook observed in SGJsonKit.
 // Values implementing both SGJSON and SGNumberArray use SGJSON first.
@@ -16,15 +13,16 @@ type SGNumberArray interface {
 	NumberArray() any
 }
 
-// SGJSONProperty is one dynamic-class property contribution. A caller may
-// provide inherited properties first and dynamic-class properties afterward;
-// later values replace an inherited key, matching KVC's final assignment.
+// SGJSONProperty is one class-property contribution. The source enumerator
+// walks the dynamic class first, then each superclass until SGJsonObject; the
+// caller must provide groups in that observed order. Property-list order
+// within one class remains runtime-defined.
 type SGJSONProperty struct {
 	Name  string
 	Value any
 }
 
-// SGJSONPropertySource supplies the properties enumerated for a model class.
+// SGJSONPropertySource supplies properties read from the receiver by KVC.
 type SGJSONPropertySource interface {
 	JSONProperties() []SGJSONProperty
 }
@@ -35,15 +33,25 @@ type SGJSONNull struct{}
 
 func (SGJSONNull) MarshalJSON() ([]byte, error) { return []byte("null"), nil }
 
-// ProjectSGJSONObject applies the observed SGJsonObject.JSONObject value
-// conversion recursively. It intentionally leaves ordinary scalar values
-// unchanged and makes no claims about app-specific key mapping or wire order.
+// ProjectSGJSONObject applies the observed SGJsonObject conversion to one
+// value. Protocol results are assigned directly; ordinary maps and slices are
+// not recursively traversed because SGJsonKit only recurses through protocol
+// implementations.
 func ProjectSGJSONObject(input any) (any, error) {
-	return projectSGJSONValue(input)
+	if input == nil {
+		return SGJSONNull{}, nil
+	}
+	if object, ok := input.(SGJSON); ok {
+		return object.JSONObject(), nil
+	}
+	if numbers, ok := input.(SGNumberArray); ok {
+		return numbers.NumberArray(), nil
+	}
+	return input, nil
 }
 
-// ProjectSGJSONProperties projects inherited properties followed by dynamic
-// properties. A nil property is retained as SGJSONNull rather than omitted.
+// ProjectSGJSONProperties projects property groups in source enumeration
+// order. A nil property is retained as SGJSONNull rather than omitted.
 func ProjectSGJSONProperties(properties ...[]SGJSONProperty) (map[string]any, error) {
 	out := make(map[string]any)
 	for _, group := range properties {
@@ -51,7 +59,7 @@ func ProjectSGJSONProperties(properties ...[]SGJSONProperty) (map[string]any, er
 			if property.Name == "" {
 				return nil, fmt.Errorf("sessionlogin: empty SGJSON property name")
 			}
-			value, err := projectSGJSONValue(property.Value)
+			value, err := ProjectSGJSONObject(property.Value)
 			if err != nil {
 				return nil, err
 			}
@@ -59,51 +67,4 @@ func ProjectSGJSONProperties(properties ...[]SGJSONProperty) (map[string]any, er
 		}
 	}
 	return out, nil
-}
-
-func projectSGJSONValue(input any) (any, error) {
-	if input == nil {
-		return SGJSONNull{}, nil
-	}
-	if source, ok := input.(SGJSONPropertySource); ok {
-		properties := source.JSONProperties()
-		return ProjectSGJSONProperties(properties)
-	}
-	if object, ok := input.(SGJSON); ok {
-		return projectSGJSONValue(object.JSONObject())
-	}
-	if numbers, ok := input.(SGNumberArray); ok {
-		return projectSGJSONValue(numbers.NumberArray())
-	}
-	switch value := input.(type) {
-	case SGJSONNull:
-		return value, nil
-	case map[string]any:
-		out := make(map[string]any, len(value))
-		for key, item := range value {
-			projected, err := projectSGJSONValue(item)
-			if err != nil {
-				return nil, err
-			}
-			out[key] = projected
-		}
-		return out, nil
-	case []any:
-		out := make([]any, len(value))
-		for i, item := range value {
-			projected, err := projectSGJSONValue(item)
-			if err != nil {
-				return nil, err
-			}
-			out[i] = projected
-		}
-		return out, nil
-	case json.Number, string, bool,
-		int, int8, int16, int32, int64,
-		uint, uint8, uint16, uint32, uint64,
-		float32, float64:
-		return value, nil
-	default:
-		return value, nil
-	}
 }
