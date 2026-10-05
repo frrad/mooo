@@ -55,6 +55,7 @@ var terminalDisconnectTimeout = 5 * time.Second
 
 var errUnsupportedOpenChatMetadata = errors.New("connector: OpenChat metadata is not supported")
 var errChatInfoMismatch = errors.New("connector: CHATINFO returned a different chat ID")
+var errInvalidMemberRoster = errors.New("connector: MEMLIST returned an invalid member ID")
 
 func init() {
 	status.BridgeStateHumanErrors.Update(status.BridgeStateErrorMap{
@@ -431,6 +432,11 @@ func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 		return nil, err
 	}
 	completeRoster := len(roster.MemberIDs) > 0
+	for _, userID := range roster.MemberIDs {
+		if userID <= 0 {
+			return nil, fmt.Errorf("%w: %d", errInvalidMemberRoster, userID)
+		}
+	}
 	userIDs := append([]int64(nil), roster.MemberIDs...)
 	if len(userIDs) == 0 {
 		userIDs = append(userIDs, data.DisplayUserIDs...)
@@ -491,6 +497,19 @@ func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 	}
 	if name := chatName(data); name != "" {
 		info.Name = &name
+	}
+	if data.Type == "DirectChat" && completeRoster {
+		otherUserID, count := networkid.UserID(""), 0
+		for userID := range members {
+			if userID != makeUserID(kc.userID) {
+				otherUserID, count = userID, count+1
+			}
+		}
+		if count == 1 {
+			roomType := database.RoomTypeDM
+			info.Type = &roomType
+			info.Members.OtherUserID = otherUserID
+		}
 	}
 	return info, nil
 }

@@ -258,6 +258,7 @@ func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
 	fake := &fakeKakao{
 		chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{
 			ChatID:           testChatID,
+			Type:             "DirectChat",
 			DisplayNicknames: []string{"Ignored fallback"},
 			Meta:             &chatmeta.RoomMeta{Name: "Source room"},
 		}},
@@ -280,6 +281,9 @@ func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
 	}
 	if !info.Members.IsFull || info.Members.TotalMemberCount != 2 {
 		t.Fatalf("members = %+v, want complete initial roster", info.Members)
+	}
+	if info.Type == nil || *info.Type != database.RoomTypeDM || info.Members.OtherUserID != makeUserID(testOtherID) {
+		t.Fatalf("direct metadata = type %v, other user %q", info.Type, info.Members.OtherUserID)
 	}
 	other, ok := info.Members.MemberMap[makeUserID(testOtherID)]
 	if !ok || other.UserInfo == nil || other.UserInfo.Name == nil || *other.UserInfo.Name != "Source user" {
@@ -366,6 +370,19 @@ func TestGetChatInfoRejectsUnsupportedOrMismatchedRooms(t *testing.T) {
 				t.Fatalf("metadata calls = %v, want CHATINFO only", fake.metadataCalls)
 			}
 		})
+	}
+}
+
+func TestGetChatInfoRejectsInvalidRosterIDs(t *testing.T) {
+	fake := &fakeKakao{
+		chatInfo:   chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: testChatID}},
+		memberList: chatmeta.MemberListResponse{MemberIDs: []int64{0, testOtherID}},
+	}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.client = fake
+	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, makeUserLoginID(testSelfID))}}
+	if _, err := kc.GetChatInfo(context.Background(), portal); !errors.Is(err, errInvalidMemberRoster) {
+		t.Fatalf("error = %v, want invalid roster error", err)
 	}
 }
 
