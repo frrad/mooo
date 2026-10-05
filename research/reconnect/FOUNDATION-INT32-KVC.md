@@ -20,23 +20,36 @@ signed interpretation: `2147483648` becomes
 Assigning `NSNull`, an array, or a dictionary raised
 `NSInvalidArgumentException` and left the property at its prior value (`7`).
 This exception behavior is a direct KVC result. SGJson projection separately
-filters `NSNull` before KVC for declared properties, so these object inputs do
-not imply a whole-chain failure when they arrive through that projection path.
+filters `NSNull` before KVC for declared properties, so the `NSNull` probe
+does not imply a whole-chain failure when it arrives through that projection
+path. Array and dictionary handling in the outer incoming chain remains
+untraced.
 
 The official incoming model metadata identifies
 `LocoBlockSyncPushNotice.revision` and `plusRevision` as signed 32-bit
-properties (`Ti`, width 4), with ivars of the same type. Its `initJSONObject:`
+properties (`Ti`, width 4), with ivars of the same type. Its
+`initWithJSONObject:`
 path reads dictionary values and routes the typed values through
 `setValue:forKey:`. The SGJsonObject null guard skips `NSNull` before that KVC
 write; the outer behavior for array or dictionary inputs remains untraced.
 This note records the conversion boundary only; it does not claim a default
 notice activation policy or a server-side acceptance rule.
 
-The reviewed incoming source receipts cover the `SGJsonObject` initializer
-and the `LocoBlockSyncPushNotice` typed-property path. Neither the notice nor
-the app-level `LocoModel` metadata shows an app override of
-`setValue:forKey:` or `setValue:forUndefinedKey:`; framework fallback and
-outer exception handling remain separate boundaries.
+The reviewed incoming source receipts cover the `SGJsonObject`
+`initWithJSONObject:` initializer (SGJsonKit offsets `0x350c` and `0x3648`),
+the `LocoBlockSyncPushNotice` mapping implementation at `0x101350748`, and
+the `LocoModel` implementation at `0x10167beb0`. Neither the notice nor the app-level
+`LocoModel` metadata shows an app override of `setValue:forKey:` or
+`setValue:forUndefinedKey:`; framework fallback and outer exception handling
+remain separate boundaries. The related incoming notice contract is recorded
+in [`INCOMING-PUSH-NOTICES.md`](INCOMING-PUSH-NOTICES.md).
+
+The decoder-to-KVC input classes are also source-grounded. Decoder IMP
+`0x1017eb434` calls helper `0x1017eb504`; its BSON `0x10` branch invokes
+`NSNumber numberWithInt32:` through stub `0x1018f4420`, while BSON `0x12`
+invokes `NSNumber numberWithInt64:` through stub `0x1018f4440`. The app
+metadata contains no notice or `LocoModel` override for the KVC setter; the
+framework `SGJsonObject` implementation remains the untraced fallback.
 
 The synthetic vector test records the input class and Objective-C type for all
 21 cases, including the seven factory-created signed-64-bit inputs. It is
@@ -46,6 +59,9 @@ inputs in
 The vector test is an implementation-neutral replay of the captured outcomes,
 not a replacement for Foundation. The private source provenance is the local
 `foundation-int32-kvc/probe.m` and `result.txt` receipt, including the
-`NSConstantIntegerNumber`/`__NSCFNumber` and `q`/`d`/`c` input labels, the Objective-C
-metadata receipt for `LocoBlockSyncPushReceipt`, and the SGJson/BSON static
-receipts already listed in `PUSH-RECEIPT-NW-SERIALIZATION.md`.
+`NSConstantIntegerNumber`/`__NSCFNumber` and `q`/`d`/`c` input labels, the
+Objective-C metadata receipt for `LocoBlockSyncPushNotice`, and the
+SGJson/BSON decoder receipts for the incoming notice chain. The incoming
+notice source and synthetic mapping vectors are in
+[`INCOMING-PUSH-NOTICES.md`](INCOMING-PUSH-NOTICES.md), supplied by the
+separate source-contract change.
