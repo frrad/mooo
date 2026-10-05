@@ -479,7 +479,7 @@ func TestSessionComposesManagerAndAgentReceiptOwners(t *testing.T) {
 	scheduler := &receiptPingScheduler{}
 	manager, err := sessionlogin.NewPushReceiptOwner("manager-instance", func() string { return "agent-instance" }, queue, scheduler, receiptPingConfig{}, func(_ string, packet any) {
 		_ = agent.Send(packet)
-	})
+	}, agent.Close)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,5 +502,44 @@ func TestSessionComposesManagerAndAgentReceiptOwners(t *testing.T) {
 	}
 	if len(transport.tags) != 1 || transport.tags[0] != -17 || scheduler.cancels != 1 || scheduler.schedules != 1 {
 		t.Fatalf("composed owner effects tags=%v cancels=%d schedules=%d", transport.tags, scheduler.cancels, scheduler.schedules)
+	}
+}
+
+func TestSessionShutdownInvalidatesQueuedComposedReceiptOwnerWork(t *testing.T) {
+	queue := &receiptOwnerQueue{}
+	status := &receiptOwnerStatus{value: 3}
+	transport := &receiptOwnerSender{}
+	agent, err := sessionlogin.NewPushReceiptAgentOwner(queue, status, receiptOwnerAccessor{id: 17}, transport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduler := &receiptPingScheduler{}
+	manager, err := sessionlogin.NewPushReceiptOwner("manager-instance", func() string { return "agent-instance" }, queue, scheduler, receiptPingConfig{}, func(_ string, packet any) {
+		_ = agent.Send(packet)
+	}, agent.Close)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := newSession(nil)
+	if err := session.BindPushReceipt(manager, func(packet loco.Packet) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	session.dispatchPushReceipt(loco.Packet{})
+	deadline := time.After(time.Second)
+	for queue.count() < 3 {
+		select {
+		case <-deadline:
+			t.Fatalf("composed owner queued %d work, want manager cancel, agent send, manager schedule", queue.count())
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if err := session.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for queue.runOne() {
+	}
+	if len(transport.tags) != 0 || scheduler.cancels != 0 || scheduler.schedules != 0 {
+		t.Fatalf("shutdown admitted obsolete composed work: tags=%v cancels=%d schedules=%d", transport.tags, scheduler.cancels, scheduler.schedules)
 	}
 }

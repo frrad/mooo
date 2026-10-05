@@ -34,15 +34,20 @@ type PushReceiptOwner struct {
 	scheduler  PushReceiptPingScheduler
 	config     PushReceiptPingConfig
 	send       func(target string, packet any)
+	closeChild func()
 	closed     bool
 	generation uint64
 }
 
-func NewPushReceiptOwner(managerTarget string, agentResolver func() string, queue PushReceiptQueue, scheduler PushReceiptPingScheduler, config PushReceiptPingConfig, send func(target string, packet any)) (*PushReceiptOwner, error) {
+func NewPushReceiptOwner(managerTarget string, agentResolver func() string, queue PushReceiptQueue, scheduler PushReceiptPingScheduler, config PushReceiptPingConfig, send func(target string, packet any), childCloser ...func()) (*PushReceiptOwner, error) {
 	if managerTarget == "" || agentResolver == nil || queue == nil || scheduler == nil || config == nil || send == nil {
 		return nil, fmt.Errorf("sessionlogin: incomplete push-receipt owner")
 	}
-	return &PushReceiptOwner{manager: managerTarget, agent: agentResolver, queue: queue, scheduler: scheduler, config: config, send: send}, nil
+	var closeChild func()
+	if len(childCloser) > 0 {
+		closeChild = childCloser[0]
+	}
+	return &PushReceiptOwner{manager: managerTarget, agent: agentResolver, queue: queue, scheduler: scheduler, config: config, send: send, closeChild: closeChild}, nil
 }
 
 // Send enqueues manager PING cancellation, invokes the carriage-agent send
@@ -103,7 +108,16 @@ func (o *PushReceiptOwner) Close() {
 		return
 	}
 	o.mu.Lock()
+	if o.closed {
+		o.mu.Unlock()
+		return
+	}
 	o.closed = true
 	o.generation++
+	closeChild := o.closeChild
+	o.closeChild = nil
 	o.mu.Unlock()
+	if closeChild != nil {
+		closeChild()
+	}
 }
