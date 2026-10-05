@@ -40,18 +40,23 @@ type catchUpResult struct {
 }
 
 type fakeKakao struct {
-	mu            sync.Mutex
-	connectErr    error
-	resumeTargets []syncmsg.Target
-	resumeErr     error
-	catchUps      map[int64]catchUpResult
-	calls         []string
-	stream        chan events.Result
-	commits       []events.Event
-	sends         []sentText
-	sendResp      chat.WriteResponse
-	sendErr       error
-	closeCalls    int
+	mu                sync.Mutex
+	connectErr        error
+	resumeTargets     []syncmsg.Target
+	resumeErr         error
+	catchUps          map[int64]catchUpResult
+	calls             []string
+	stream            chan events.Result
+	commits           []events.Event
+	sends             []sentText
+	sendResp          chat.WriteResponse
+	sendErr           error
+	closeCalls        int
+	shutdownCalls     int
+	shutdownFailures  int
+	shutdownWait      <-chan struct{}
+	shutdownEntered   chan struct{}
+	shutdownEnterOnce sync.Once
 }
 
 func (f *fakeKakao) Connect(ctx context.Context) error { return f.connectErr }
@@ -97,6 +102,30 @@ func (f *fakeKakao) Close() error {
 	defer f.mu.Unlock()
 	f.closeCalls++
 	return nil
+}
+
+func (f *fakeKakao) Shutdown(ctx context.Context) error {
+	f.mu.Lock()
+	f.shutdownCalls++
+	entered := f.shutdownEntered
+	if f.shutdownFailures > 0 {
+		f.shutdownFailures--
+		f.mu.Unlock()
+		return context.DeadlineExceeded
+	}
+	wait := f.shutdownWait
+	f.mu.Unlock()
+	if entered != nil {
+		f.shutdownEnterOnce.Do(func() { close(entered) })
+	}
+	if wait != nil {
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return f.Close()
 }
 
 func (f *fakeKakao) committed() []events.Event {
@@ -386,6 +415,51 @@ func TestKickoutReportsBadCredentials(t *testing.T) {
 	}
 }
 
+func TestChangeServerReportsDistinctTerminalDisconnect(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result, 2)}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+
+	kc.Connect(context.Background())
+	fake.stream <- events.Result{Event: events.ChangeServer{}}
+	close(fake.stream)
+
+	waitForState(t, harness, status.StateTransientDisconnect)
+	if got := harness.lastState().Error; got != stateChangeServer {
+		t.Fatalf("error = %q, want %q", got, stateChangeServer)
+	}
+}
+
+func TestTerminalNoticeStopsLaterEvents(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		event events.Event
+		state status.BridgeStateEvent
+		want  status.BridgeStateErrorCode
+	}{
+		{name: "change-server", event: events.ChangeServer{}, state: status.StateTransientDisconnect, want: stateChangeServer},
+		{name: "kickout", event: events.Kickout{Reason: 7}, state: status.StateBadCredentials, want: stateKickedOut},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeKakao{stream: make(chan events.Result, 3)}
+			kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+
+			kc.Connect(context.Background())
+			fake.stream <- events.Result{Event: tc.event}
+			fake.stream <- events.Result{Event: events.TextMessage{ChatID: testChatID, LogID: 22, AuthorID: testOtherID, Message: "after-terminal"}}
+			fake.stream <- events.Result{Event: tc.event}
+			close(fake.stream)
+
+			waitForState(t, harness, tc.state)
+			if got := harness.lastState().Error; got != tc.want {
+				t.Fatalf("error = %q, want %q", got, tc.want)
+			}
+			if got := fake.committed(); len(got) != 0 {
+				t.Fatalf("commits after terminal notice = %v, want none", got)
+			}
+		})
+	}
+}
+
 func TestDisconnectClosesClientWithoutReportingFailure(t *testing.T) {
 	fake := &fakeKakao{stream: make(chan events.Result)}
 	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
@@ -409,12 +483,125 @@ func TestDisconnectClosesClientWithoutReportingFailure(t *testing.T) {
 	if fake.closeCalls != 1 {
 		t.Fatalf("close calls = %d", fake.closeCalls)
 	}
+	if fake.shutdownCalls != 1 {
+		t.Fatalf("shutdown calls = %d", fake.shutdownCalls)
+	}
 	if kc.IsLoggedIn() {
 		t.Fatal("still logged in after disconnect")
 	}
 	if last := harness.lastState().StateEvent; last != status.StateConnected {
 		t.Fatalf("last state = %s; a requested disconnect is not a failure", last)
 	}
+}
+
+func TestDisconnectRetainsCleanupOwnerAfterShutdownTimeout(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result), shutdownFailures: 1}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.Connect(context.Background())
+	go func() {
+		for {
+			fake.mu.Lock()
+			closed := fake.closeCalls > 0
+			fake.mu.Unlock()
+			if closed {
+				close(fake.stream)
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	kc.Disconnect()
+	kc.mu.Lock()
+	retained := kc.cleanup != nil && kc.client == nil
+	kc.mu.Unlock()
+	if !retained {
+		t.Fatal("timed-out shutdown did not retain cleanup owner")
+	}
+	if kc.IsLoggedIn() {
+		t.Fatal("timed-out cleanup owner remained logged in")
+	}
+	kc.Connect(context.Background())
+	kc.mu.Lock()
+	if kc.client != nil {
+		kc.mu.Unlock()
+		t.Fatal("Connect admitted while cleanup owner was retained")
+	}
+	kc.mu.Unlock()
+
+	kc.Disconnect()
+	kc.mu.Lock()
+	retained = kc.cleanup != nil
+	kc.mu.Unlock()
+	if retained {
+		t.Fatal("successful retry retained cleanup owner")
+	}
+}
+
+func TestConcurrentDisconnectRetriesRetainedOwner(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result), shutdownFailures: 1}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.Connect(context.Background())
+	go func() {
+		for {
+			fake.mu.Lock()
+			closed := fake.closeCalls > 0
+			fake.mu.Unlock()
+			if closed {
+				close(fake.stream)
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() { defer wg.Done(); kc.Disconnect() }()
+	}
+	wg.Wait()
+	fake.mu.Lock()
+	shutdownCalls := fake.shutdownCalls
+	fake.mu.Unlock()
+	if shutdownCalls != 2 {
+		t.Fatalf("shutdown calls = %d, want serialized retry", shutdownCalls)
+	}
+	kc.mu.Lock()
+	retained := kc.cleanup != nil
+	kc.mu.Unlock()
+	if retained {
+		t.Fatal("concurrent disconnect left cleanup owner retained after success")
+	}
+}
+
+func TestConcurrentDisconnectSharesOverallTimeoutBudget(t *testing.T) {
+	previous := terminalDisconnectTimeout
+	terminalDisconnectTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { terminalDisconnectTimeout = previous })
+	block := make(chan struct{})
+	shutdownEntered := make(chan struct{})
+	fake := &fakeKakao{stream: make(chan events.Result), shutdownWait: block, shutdownEntered: shutdownEntered}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.Connect(context.Background())
+	go kc.Disconnect()
+	select {
+	case <-shutdownEntered:
+	case <-time.After(time.Second):
+		t.Fatal("first shutdown did not start")
+	}
+	startedAt := time.Now()
+	kc.Disconnect()
+	if elapsed := time.Since(startedAt); elapsed > 80*time.Millisecond {
+		t.Fatalf("second Disconnect exceeded shared timeout budget: %v", elapsed)
+	}
+	fake.mu.Lock()
+	shutdownCalls := fake.shutdownCalls
+	fake.mu.Unlock()
+	if shutdownCalls > 2 {
+		t.Fatalf("shutdown calls = %d, want at most one call per concurrent caller", shutdownCalls)
+	}
+	close(block)
+	kc.Disconnect()
 }
 
 func TestConnectFailuresAreReportedWithoutRetry(t *testing.T) {

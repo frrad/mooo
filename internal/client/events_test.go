@@ -3,9 +3,11 @@ package client
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/continuity"
@@ -35,6 +37,109 @@ func TestDecodeEventStreamContinuesAfterMalformedPacket(t *testing.T) {
 	}
 	if _, ok := <-output; ok {
 		t.Fatal("event output did not close")
+	}
+}
+
+func TestMalformedTerminalNoticeDoesNotTriggerShutdown(t *testing.T) {
+	raw := make(chan loco.Packet, 1)
+	output := make(chan events.Result, 1)
+	called := false
+	raw <- loco.Packet{Header: loco.Header{Method: "CHANGESVR"}, Body: []byte{1, 2, 3}}
+	close(raw)
+	decodeEventStreamWithTerminal(raw, output, nil, nil, func() { called = true })
+	result := <-output
+	if !errors.Is(result.Err, events.ErrMalformedEvent) {
+		t.Fatalf("malformed terminal error = %v", result.Err)
+	}
+	if called {
+		t.Fatal("malformed terminal notice triggered shutdown")
+	}
+}
+
+func TestTerminalNoticeClosesSessionEventStream(t *testing.T) {
+	raw := make(chan loco.Packet, 2)
+	session := &Session{pushes: raw}
+	api := &Client{session: session}
+	stream, err := api.Events(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty, err := bson.Marshal(bson.D{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw <- loco.Packet{Header: loco.Header{Method: "CHANGESVR"}, Body: empty}
+	select {
+	case result := <-stream:
+		if result.Err != nil {
+			t.Fatalf("CHANGESVR result error = %v", result.Err)
+		}
+		if _, ok := result.Event.(events.ChangeServer); !ok {
+			t.Fatalf("CHANGESVR event = %T, want events.ChangeServer", result.Event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("CHANGESVR was not delivered")
+	}
+	select {
+	case _, ok := <-stream:
+		if ok {
+			t.Fatal("event stream remained open after terminal notice")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("event stream did not close after terminal notice")
+	}
+	if !session.closed {
+		t.Fatal("terminal notice did not close the Session")
+	}
+	if _, err := api.SendText(context.Background(), 7, "after-terminal"); !errors.Is(err, ErrClientClosed) {
+		t.Fatalf("SendText after terminal error = %v, want %v", err, ErrClientClosed)
+	}
+}
+
+func TestTerminalNoticeClosesOwnedCarriageAndRejectsSend(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+	session := &Session{
+		wire:    &wireConn{c: clientConn},
+		pushes:  make(chan loco.Packet, 4),
+		pending: make(map[uint32]chan requestResult),
+	}
+	api := &Client{session: session}
+	stream, err := api.Events(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.startReadLoop()
+	empty, err := bson.Marshal(bson.D{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame, err := (loco.Packet{Header: loco.Header{Method: "KICKOUT"}, Body: empty}).MarshalBinary(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = serverConn.Write(frame) }()
+	select {
+	case result := <-stream:
+		if result.Err != nil {
+			t.Fatalf("KICKOUT result error = %v", result.Err)
+		}
+		if _, ok := result.Event.(events.Kickout); !ok {
+			t.Fatalf("KICKOUT event = %T, want events.Kickout", result.Event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("KICKOUT was not delivered from carriage")
+	}
+	select {
+	case _, ok := <-stream:
+		if ok {
+			t.Fatal("event stream yielded after terminal carriage close")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("event stream did not close after terminal carriage close")
+	}
+	if _, err := api.SendText(context.Background(), 7, "after-terminal"); !errors.Is(err, ErrClientClosed) {
+		t.Fatalf("SendText after terminal carriage close = %v, want %v", err, ErrClientClosed)
 	}
 }
 
@@ -96,5 +201,34 @@ func TestRawPushConsumerPreventsTypedConsumer(t *testing.T) {
 	}
 	if _, err := api.Events(t.Context()); !errors.Is(err, ErrPushConsumerSelected) {
 		t.Fatalf("Events after Pushes error = %v", err)
+	}
+}
+
+func TestRawPushConsumerLeavesTerminalShutdownToCaller(t *testing.T) {
+	raw := make(chan loco.Packet, 1)
+	session := &Session{pushes: raw}
+	api := &Client{session: session}
+	stream, err := api.Pushes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty, err := bson.Marshal(bson.D{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw <- loco.Packet{Header: loco.Header{Method: "CHANGESVR"}, Body: empty}
+	select {
+	case packet := <-stream:
+		if packet.Header.Method != "CHANGESVR" {
+			t.Fatalf("raw terminal method = %q", packet.Header.Method)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("raw terminal packet was not delivered")
+	}
+	if session.closed {
+		t.Fatal("raw Pushes unexpectedly closed Session on terminal packet")
+	}
+	if err := api.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/bridgev2"
@@ -29,6 +30,7 @@ type kakaoClient interface {
 	CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error)
 	SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error)
 	Close() error
+	Shutdown(ctx context.Context) error
 }
 
 func openProfileClient(statePath string) (kakaoClient, error) {
@@ -41,7 +43,10 @@ const (
 	stateConnectFailed      status.BridgeStateErrorCode = "kakao-connect-failed"
 	stateDisconnected       status.BridgeStateErrorCode = "kakao-disconnected"
 	stateKickedOut          status.BridgeStateErrorCode = "kakao-kicked-out"
+	stateChangeServer       status.BridgeStateErrorCode = "kakao-change-server"
 )
+
+var terminalDisconnectTimeout = 5 * time.Second
 
 func init() {
 	status.BridgeStateHumanErrors.Update(status.BridgeStateErrorMap{
@@ -49,6 +54,7 @@ func init() {
 		stateConnectFailed:      "Connecting to KakaoTalk failed.",
 		stateDisconnected:       "The KakaoTalk session ended. Restart the bridge to reconnect.",
 		stateKickedOut:          "KakaoTalk ended this device's session.",
+		stateChangeServer:       "KakaoTalk requested a server change. Restart the bridge to reconnect.",
 	})
 }
 
@@ -70,11 +76,14 @@ type KakaoClient struct {
 	queue     func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult
 	sendState func(status.BridgeState)
 
-	mu         sync.Mutex
-	client     kakaoClient
-	connecting bool
-	stopping   bool
-	done       chan struct{}
+	mu             sync.Mutex
+	disconnectGate chan struct{}
+	client         kakaoClient
+	cleanup        kakaoClient
+	connecting     bool
+	stopping       bool
+	done           chan struct{}
+	cleanupDone    chan struct{}
 }
 
 var (
@@ -107,7 +116,7 @@ func (kc *KakaoClient) log() *zerolog.Logger {
 
 func (kc *KakaoClient) Connect(ctx context.Context) {
 	kc.mu.Lock()
-	if kc.client != nil || kc.connecting {
+	if kc.client != nil || kc.cleanup != nil || kc.connecting {
 		kc.mu.Unlock()
 		return
 	}
@@ -195,13 +204,23 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan struct{}) {
 	defer close(done)
 	kickedOut := false
+	changeServer := false
 	for result := range stream {
+		if kickedOut || changeServer {
+			// A terminal notice ends the session's event acceptance window. The
+			// stream still has to close so the owner can publish its terminal
+			// bridge state, but later packets must not be committed.
+			continue
+		}
 		if result.Err != nil {
 			kc.log().Warn().Err(result.Err).Msg("Dropped undecodable Kakao event")
 			continue
 		}
 		if _, ok := result.Event.(events.Kickout); ok {
 			kickedOut = true
+		}
+		if _, ok := result.Event.(events.ChangeServer); ok {
+			changeServer = true
 		}
 		kc.handleEvent(c, result.Event)
 	}
@@ -212,6 +231,8 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	case stopping:
 	case kickedOut:
 		kc.sendState(status.BridgeState{StateEvent: status.StateBadCredentials, Error: stateKickedOut})
+	case changeServer:
+		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateChangeServer})
 	default:
 		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDisconnected})
 	}
@@ -245,22 +266,72 @@ func committable(result bridgev2.EventHandlingResult) bool {
 }
 
 func (kc *KakaoClient) Disconnect() {
+	ctx, cancel := context.WithTimeout(context.Background(), terminalDisconnectTimeout)
+	defer cancel()
+	kc.mu.Lock()
+	if kc.disconnectGate == nil {
+		kc.disconnectGate = make(chan struct{}, 1)
+	}
+	gate := kc.disconnectGate
+	kc.mu.Unlock()
+	select {
+	case gate <- struct{}{}:
+		defer func() { <-gate }()
+		if err := ctx.Err(); err != nil {
+			return
+		}
+	case <-ctx.Done():
+		return
+	}
 	kc.mu.Lock()
 	c := kc.client
 	done := kc.done
+	if c == nil {
+		c = kc.cleanup
+		done = kc.cleanupDone
+	}
 	kc.stopping = true
 	kc.client = nil
 	kc.done = nil
+	if c != nil {
+		kc.cleanup = c
+		kc.cleanupDone = done
+	}
 	kc.mu.Unlock()
 	if c == nil {
 		return
 	}
-	if err := c.Close(); err != nil {
+	err := c.Shutdown(ctx)
+	deadline, hasDeadline := ctx.Deadline()
+	if err == nil && done != nil {
+		wait := time.Until(deadline)
+		if !hasDeadline || wait <= 0 {
+			err = context.DeadlineExceeded
+		} else {
+			timer := time.NewTimer(wait)
+			select {
+			case <-done:
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+			case <-timer.C:
+				err = context.DeadlineExceeded
+			}
+		}
+	}
+	if err != nil {
 		kc.log().Err(err).Msg("Failed to close Kakao client")
+		return
 	}
-	if done != nil {
-		<-done
+	kc.mu.Lock()
+	if kc.cleanup == c {
+		kc.cleanup = nil
+		kc.cleanupDone = nil
 	}
+	kc.mu.Unlock()
 }
 
 func (kc *KakaoClient) IsLoggedIn() bool {
