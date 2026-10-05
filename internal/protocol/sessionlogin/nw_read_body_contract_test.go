@@ -17,6 +17,7 @@ type nwReadBodyFixture struct {
 type nwReadBodyCase struct {
 	Name                        string   `json:"name"`
 	OwnerPresent                bool     `json:"owner_present"`
+	CompletionOwnerPresent      bool     `json:"completion_owner_present"`
 	Connection                  bool     `json:"connection_present"`
 	CurrentConnectionPresent    bool     `json:"current_connection_present"`
 	Length                      uint64   `json:"length"`
@@ -49,6 +50,19 @@ func projectNWReadBody(c nwReadBodyCase) nwReadBodyProjection {
 			return nwReadBodyProjection{Effects: effects}
 		}
 		effects = append(effects, "receive_minimum_length_1", "receive_maximum_length_input")
+	}
+	if !c.CompletionOwnerPresent {
+		return nwReadBodyProjection{ReceiveMinimum: func() *uint64 {
+			if c.Connection {
+				return &minimum
+			}
+			return nil
+		}(), ReceiveMaximum: func() *uint64 {
+			if c.Connection {
+				return &c.Length
+			}
+			return nil
+		}(), Effects: effects}
 	}
 	switch c.Completion {
 	case "data":
@@ -112,7 +126,7 @@ func TestNWReadBodyContract(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 8 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 9 {
 		t.Fatalf("fixture header=%#v", f)
 	}
 	seen := map[string]bool{}
