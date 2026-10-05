@@ -21,6 +21,8 @@ type incomingBlockSyncStateContract struct {
 	memberCallbackCount    int
 	memberCallbackFull     bool
 	memberCallbackRevision int32
+	database               bool
+	operationQueue         bool
 }
 
 type incomingBlockSyncUser struct {
@@ -104,6 +106,9 @@ func (s *incomingBlockSyncStateContract) complete(isFull bool, revision int32) {
 		if isFull {
 			s.fullSynced = true
 		}
+		if !s.database || !s.operationQueue {
+			return
+		}
 		s.revision = revision
 		s.revisionUpdates++
 		return
@@ -121,6 +126,9 @@ func (s *incomingBlockSyncStateContract) finishMemberCallback() {
 	s.memberCallbackCount++
 	if s.memberCallbackFull {
 		s.fullSynced = true
+	}
+	if !s.database || !s.operationQueue {
+		return
 	}
 	s.revision = s.memberCallbackRevision
 	s.revisionUpdates++
@@ -184,7 +192,7 @@ func TestIncomingBlockSyncStateContractModelsUnblockGuards(t *testing.T) {
 }
 
 func TestIncomingBlockSyncStateContractRevisionCompletionIsSeparate(t *testing.T) {
-	s := &incomingBlockSyncStateContract{users: map[int64]incomingBlockSyncUser{7: {directChatID: 70}}, chatFavorite: map[int64]bool{}, fullSynced: true}
+	s := &incomingBlockSyncStateContract{users: map[int64]incomingBlockSyncUser{7: {directChatID: 70}}, chatFavorite: map[int64]bool{}, fullSynced: true, database: true, operationQueue: true}
 	if err := s.applyPartial([]int64{7}, []int32{3}); err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +210,7 @@ func TestIncomingBlockSyncStateContractRevisionCompletionIsSeparate(t *testing.T
 }
 
 func TestIncomingBlockSyncStateContractUsesMemberCallbackBeforeRevision(t *testing.T) {
-	s := &incomingBlockSyncStateContract{users: map[int64]incomingBlockSyncUser{}, chatFavorite: map[int64]bool{}}
+	s := &incomingBlockSyncStateContract{users: map[int64]incomingBlockSyncUser{}, chatFavorite: map[int64]bool{}, database: true, operationQueue: true}
 	if err := s.applyPartial([]int64{99}, []int32{3}); err != nil {
 		t.Fatal(err)
 	}
@@ -213,6 +221,26 @@ func TestIncomingBlockSyncStateContractUsesMemberCallbackBeforeRevision(t *testi
 	s.finishMemberCallback()
 	if s.memberCallbackPending || s.memberCallbackCount != 1 || s.revision != 12 || s.revisionUpdates != 1 {
 		t.Fatalf("member callback completion=%+v", s)
+	}
+}
+
+func TestIncomingBlockSyncStateContractMissingContextSkipsRevisionOnly(t *testing.T) {
+	s := &incomingBlockSyncStateContract{
+		users:        map[int64]incomingBlockSyncUser{},
+		chatFavorite: map[int64]bool{},
+	}
+	s.complete(true, 9)
+	if !s.fullSynced || s.revision != 0 || s.revisionUpdates != 0 {
+		t.Fatalf("empty missing-context completion=%+v", s)
+	}
+	s.memberIDs = []int64{99}
+	s.complete(true, 10)
+	if !s.fullSynced || s.revision != 0 || s.revisionUpdates != 0 || !s.memberCallbackPending {
+		t.Fatalf("deferred missing-context completion=%+v", s)
+	}
+	s.finishMemberCallback()
+	if !s.fullSynced || s.revision != 0 || s.revisionUpdates != 0 {
+		t.Fatalf("missing-context callback completion=%+v", s)
 	}
 }
 
