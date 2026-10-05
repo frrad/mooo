@@ -145,6 +145,26 @@
       "input_objc_type": "not_number"
     },
     {
+      "name": "int32_min_decoder_factory",
+      "input_kind": "NSNumber-int32",
+      "input": "-2147483648",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": -2147483648,
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "i"
+    },
+    {
+      "name": "int32_max_decoder_factory",
+      "input_kind": "NSNumber-int32",
+      "input": "2147483647",
+      "initial_value": 7,
+      "outcome": "value",
+      "expected_value": 2147483647,
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "i"
+    },
+    {
       "name": "int32_min_factory",
       "input_kind": "NSNumber-int64",
       "input": "-2147483648",

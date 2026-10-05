@@ -43,6 +43,12 @@ func foundationInt32KVC(c foundationInt32KVCCase) (int32, string, error) {
 		return c.InitialValue, "exception", nil
 	}
 	switch c.InputKind {
+	case "NSNumber-int32":
+		value, err := strconv.ParseInt(c.Input, 10, 32)
+		if err != nil {
+			return 0, "error", err
+		}
+		return int32(value), "value", nil
 	case "NSNumber-int64":
 		value, err := strconv.ParseInt(c.Input, 10, 64)
 		if err != nil {
@@ -88,7 +94,7 @@ func TestFoundationInt32KVCFixture(t *testing.T) {
 	if err := decoder.Decode(&fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.Status != "reviewed-platform-bounded-synthetic" || fixture.Platform == "" || fixture.Property != (foundationInt32KVCProperty{Name: "revision", Encoding: "Ti", Width: 4}) || len(fixture.Cases) != 21 {
+	if fixture.Status != "reviewed-platform-bounded-synthetic" || fixture.Platform == "" || fixture.Property != (foundationInt32KVCProperty{Name: "revision", Encoding: "Ti", Width: 4}) || len(fixture.Cases) != 23 {
 		t.Fatalf("fixture header=%#v", fixture)
 	}
 	seen := map[string]bool{}

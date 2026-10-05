@@ -44,6 +44,21 @@ the `LocoModel` implementation at `0x10167beb0`. Neither the notice nor the app-
 remain separate boundaries. The related incoming notice contract is recorded
 in [`INCOMING-PUSH-NOTICES.md`](INCOMING-PUSH-NOTICES.md).
 
+The official binary also supplies the nonstandard NSNumber factories used by
+that decoder in the `NSNumber(FIRCLSWrappedReportAction)` category. The class
+method at `0x101512340` (`+[NSNumber numberWithInt32:]`) allocates `NSNumber`
+and sends `initWithInt:` through stub `0x1018db7e0`; the class method at
+`0x101512368` (`+[NSNumber numberWithInt64:]`) allocates `NSNumber` and sends
+`initWithLong:` through stub `0x1018dbda0`. The category's
+`-[NSNumber int32Value]` (`0x101512338`) forwards to `intValue`, and
+`-[NSNumber int64Value]` (`0x10151233c`) forwards to `longValue`. The category
+contains no `objCType` override. A private macOS 26.6.2 probe exercising the
+same explicit `alloc/initWithInt:` and `alloc/initWithLong:` paths produced
+`__NSCFNumber` with Objective-C type `i` for the int32 path and `q` for the
+int64 path, with the same 32-bit KVC outcomes as the factory vectors. This connects the decoder's nonstandard selectors to the
+platform probe without claiming a proprietary runtime class beyond that
+platform observation.
+
 The decoder-to-KVC input classes are also source-grounded. Decoder IMP
 `0x1017eb434` calls helper `0x1017eb504`; its BSON `0x10` branch invokes
 `NSNumber numberWithInt32:` through stub `0x1018f4420`, while BSON `0x12`
@@ -52,7 +67,8 @@ metadata contains no notice or `LocoModel` override for the KVC setter; the
 framework `SGJsonObject` implementation remains the untraced fallback.
 
 The synthetic vector test records the input class and Objective-C type for all
-21 cases, including the seven factory-created signed-64-bit inputs. It is
+23 cases, including explicit `alloc/initWithInt:` int32 decoder-factory cases
+and the seven `alloc/initWithLong:` signed-64-bit cases. It is
 `internal/protocol/sessionlogin/foundation_int32_kvc_contract_test.go`, with
 inputs in
 `internal/protocol/sessionlogin/testdata/reconnect/rc-q5-foundation-int32-kvc.json`.
