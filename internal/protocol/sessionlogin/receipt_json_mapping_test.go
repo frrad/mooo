@@ -2,7 +2,9 @@ package sessionlogin
 
 import (
 	"bytes"
+
 	"encoding/json"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -157,5 +159,38 @@ func TestMapReceiptJSONObjectComposesWithSGJSONNilProjection(t *testing.T) {
 	want := map[string]any{"dst": "retained"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("projected null mapping=%#v want %#v", got, want)
+	}
+}
+
+func TestReceiptJSONMappingCompositionUsesTypedBlockSyncValues(t *testing.T) {
+	projected, err := ProjectSGJSONNamedProperties(
+		[]string{"method", "packetId", "revision", "plusRevision"},
+		map[string]any{
+			"method":       "BLOCKSYNC",
+			"packetId":     uint32(7),
+			"revision":     int32(0),
+			"plusRevision": int32(42),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapped := MapReceiptJSONObject(projected, []string{"method", "packetId"}, []ReceiptJSONMapping{
+		{Destination: "pr", Source: "plusRevision"},
+		{Destination: "r", Source: "revision"},
+	})
+	body, err := bson.Marshal(mapped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := bson.Raw(body)
+	for key, want := range map[string]int32{"pr": 42, "r": 0} {
+		value := raw.Lookup(key)
+		if value.Type != bson.TypeInt32 || value.Int32() != want {
+			t.Fatalf("%s=%v/%d want BSON int32(%d)", key, value.Type, value.Int32(), want)
+		}
+	}
+	if raw.Lookup("method").Type != 0 || raw.Lookup("packetId").Type != 0 {
+		t.Fatal("static base fields survived mapping")
 	}
 }
