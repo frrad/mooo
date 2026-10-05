@@ -82,6 +82,146 @@ type InSegmentTimeoutController interface {
 	Close()
 }
 
+// PushReceiptSender is the injected transport-independent receipt owner. A
+// Session never constructs a receipt packet or chooses a wire tag.
+type PushReceiptSender interface{ Send(packet any) error }
+
+// EligiblePushReceiptPacket scopes the reviewed upstream notice methods. The
+// body/header consistency check keeps header-only and truncated synthetic
+// packets out of the adapter; serialization and receipt payload construction
+// remain injected responsibilities.
+func EligiblePushReceiptPacket(packet loco.Packet) bool {
+	if packet.Header.Method != "HINT" && packet.Header.Method != "BLOCKSYNC" {
+		return false
+	}
+	return packet.Header.BodyLen != 0 && packet.Header.BodyLen == uint32(len(packet.Body))
+}
+
+type pushReceiptCloser interface{ Close() }
+type pushReceiptWaiter interface{ Wait(context.Context) error }
+
+type pushReceiptBinding struct {
+	mu         sync.Mutex
+	sender     PushReceiptSender
+	eligible   func(loco.Packet) bool
+	closed     bool
+	jobs       chan loco.Packet
+	stop       chan struct{}
+	stopOnce   sync.Once
+	done       chan struct{}
+	closerDone chan struct{}
+	closerOnce sync.Once
+}
+
+func newPushReceiptBinding(sender PushReceiptSender, eligible func(loco.Packet) bool) *pushReceiptBinding {
+	b := &pushReceiptBinding{
+		sender:     sender,
+		eligible:   eligible,
+		jobs:       make(chan loco.Packet, requestLimit),
+		stop:       make(chan struct{}),
+		done:       make(chan struct{}),
+		closerDone: make(chan struct{}),
+	}
+	go b.run()
+	return b
+}
+
+func (b *pushReceiptBinding) run() {
+	defer close(b.done)
+	for {
+		select {
+		case packet := <-b.jobs:
+			b.send(packet)
+		case <-b.stop:
+			return
+		}
+	}
+}
+
+func (b *pushReceiptBinding) enqueue(packet loco.Packet) {
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return
+	}
+	jobs, stop := b.jobs, b.stop
+	b.mu.Unlock()
+	select {
+	case jobs <- packet:
+	case <-stop:
+	}
+}
+
+func (b *pushReceiptBinding) send(packet loco.Packet) {
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return
+	}
+	eligible := b.eligible
+	sender := b.sender
+	b.mu.Unlock()
+	// Eligibility and sender execution are both outside the binding lock so
+	// injected callbacks may synchronously reenter Session or block on I/O.
+	if !eligible(packet) {
+		return
+	}
+	b.mu.Lock()
+	closed := b.closed
+	b.mu.Unlock()
+	if !closed {
+		_ = sender.Send(packet)
+	}
+}
+
+func (b *pushReceiptBinding) close() {
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return
+	}
+	b.closed = true
+	sender := b.sender
+	b.mu.Unlock()
+	b.stopOnce.Do(func() { close(b.stop) })
+	b.closerOnce.Do(func() {
+		closer, ok := sender.(pushReceiptCloser)
+		if !ok {
+			close(b.closerDone)
+			return
+		}
+		go func() {
+			closer.Close()
+			close(b.closerDone)
+		}()
+	})
+}
+
+func (b *pushReceiptBinding) wait(ctx context.Context) error {
+	if err := waitFor(ctx, b.done); err != nil {
+		return err
+	}
+	if err := waitFor(ctx, b.closerDone); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	sender := b.sender
+	b.mu.Unlock()
+	if waiter, ok := sender.(pushReceiptWaiter); ok {
+		return waiter.Wait(ctx)
+	}
+	return nil
+}
+
+func waitFor(ctx context.Context, done <-chan struct{}) error {
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // Session owns one authenticated carriage. A background reader dispatches
 // correlated responses and preserves unsolicited packets for the caller.
 type Session struct {
@@ -109,6 +249,8 @@ type Session struct {
 	headerObserver             func(loco.Header)
 	receiveHeaderTimeout       receiveHeaderTimeoutController
 	inSegmentTimeout           InSegmentTimeoutController
+	pushReceipt                *pushReceiptBinding
+	receiptDone                chan struct{}
 	receiveHeaderTimeoutEnable func(command string, packetID uint32) (byte, bool)
 	receiveHeaderTimeoutState  map[uint32]*receiveHeaderTimeoutToken
 	initialChatData            []bson.Raw
@@ -802,6 +944,47 @@ func (s *Session) closeInSegmentTimeout() {
 	}
 }
 
+// BindPushReceipt installs the opt-in unmatched-push receipt adapter before
+// the reader starts. Eligibility is injected because source-level upstream
+// notice selection is distinct from packet construction and wire encoding.
+func (s *Session) BindPushReceipt(sender PushReceiptSender, eligible func(loco.Packet) bool) error {
+	if s == nil {
+		return ErrClosed
+	}
+	if sender == nil || eligible == nil {
+		return fmt.Errorf("client: incomplete push-receipt binding")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.closing || s.readLoopStarted {
+		return ErrClosed
+	}
+	if s.pushReceipt != nil {
+		return fmt.Errorf("client: push-receipt owner already bound")
+	}
+	s.pushReceipt = newPushReceiptBinding(sender, eligible)
+	s.receiptDone = s.pushReceipt.done
+	return nil
+}
+
+func (s *Session) dispatchPushReceipt(packet loco.Packet) {
+	s.mu.Lock()
+	binding := s.pushReceipt
+	s.mu.Unlock()
+	if binding != nil {
+		binding.enqueue(packet)
+	}
+}
+
+func (s *Session) closePushReceipt() {
+	s.mu.Lock()
+	binding := s.pushReceipt
+	s.mu.Unlock()
+	if binding != nil {
+		binding.close()
+	}
+}
+
 func (s *Session) bodyProgressCallbacks() bodyProgressCallbacks {
 	s.mu.Lock()
 	owner := s.inSegmentTimeout
@@ -849,6 +1032,7 @@ func (s *Session) readLoopBody() {
 		if s.dispatchPacket(packet) {
 			continue
 		}
+		s.dispatchPushReceipt(packet)
 		// dispatchPacket reports unsolicited packets through the normal push path.
 		s.mu.Lock()
 		if !s.bootstrapDone && s.bootstrapPushes != nil {
@@ -932,6 +1116,7 @@ func (s *Session) finishRead(err error) {
 	s.stopLifecycle()
 	s.closeReceiveHeaderTimeout()
 	s.closeInSegmentTimeout()
+	s.closePushReceipt()
 	s.resetReceiveHeaderTimeout()
 	if submitter != nil {
 		submitter.Close()
@@ -962,6 +1147,7 @@ func (s *Session) Close() error {
 		s.stopLifecycle()
 		s.closeReceiveHeaderTimeout()
 		s.closeInSegmentTimeout()
+		s.closePushReceipt()
 		if submitter != nil {
 			submitter.Close()
 		}
@@ -971,6 +1157,7 @@ func (s *Session) Close() error {
 	s.stopLifecycle()
 	s.closeReceiveHeaderTimeout()
 	s.closeInSegmentTimeout()
+	s.closePushReceipt()
 	s.resetReceiveHeaderTimeout()
 	if submitter != nil {
 		submitter.Close()
@@ -978,9 +1165,10 @@ func (s *Session) Close() error {
 	return wire.close()
 }
 
-// Shutdown interrupts the Session and then joins the opt-in asynchronous
-// submission worker. Callers must not invoke Shutdown from a submission
-// callback; callback-side Close remains interrupt-only to avoid self-join.
+// Shutdown interrupts the Session and then joins opt-in asynchronous
+// submission and receipt workers. Callers must not invoke Shutdown from an
+// injected callback; callback-side Close remains interrupt-only to avoid
+// self-join.
 func (s *Session) Shutdown(ctx context.Context) error {
 	if s == nil {
 		return nil
@@ -996,7 +1184,14 @@ func (s *Session) Shutdown(ctx context.Context) error {
 	if submitter != nil {
 		waitErr = submitter.Wait(ctx)
 	}
-	return errors.Join(closeErr, waitErr)
+	var receiptErr error
+	s.mu.Lock()
+	binding := s.pushReceipt
+	s.mu.Unlock()
+	if binding != nil {
+		receiptErr = binding.wait(ctx)
+	}
+	return errors.Join(closeErr, waitErr, receiptErr)
 }
 
 type wireConn struct {

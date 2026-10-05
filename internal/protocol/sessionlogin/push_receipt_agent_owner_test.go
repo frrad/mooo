@@ -164,3 +164,28 @@ func TestPushReceiptAgentOwnerSuppressesAccessorFailure(t *testing.T) {
 		t.Fatalf("accessor failure sent receipt: %v", sender.tags)
 	}
 }
+
+func TestPushReceiptAgentOwnerCloseInvalidatesQueuedWorkAndFutureSends(t *testing.T) {
+	q := &agentReceiptQueue{}
+	status := &agentReceiptStatus{value: 3}
+	accessor := &agentReceiptAccessor{}
+	sender := &agentReceiptSender{}
+	owner, err := NewPushReceiptAgentOwner(q, status, accessor, sender)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Send(agentReceiptPacket{ID: 17}); err != nil {
+		t.Fatal(err)
+	}
+	owner.Close()
+	q.work[0]()
+	if status.reads != 0 || accessor.calls != 0 || len(sender.tags) != 0 {
+		t.Fatalf("closed owner applied queued work: reads=%d accessor=%d tags=%v", status.reads, accessor.calls, sender.tags)
+	}
+	if err := owner.Send(agentReceiptPacket{ID: 18}); err != nil {
+		t.Fatal(err)
+	}
+	if len(q.work) != 1 {
+		t.Fatalf("closed owner accepted future work: queued=%d", len(q.work))
+	}
+}

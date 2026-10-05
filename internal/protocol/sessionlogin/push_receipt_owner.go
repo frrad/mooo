@@ -1,10 +1,19 @@
 package sessionlogin
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 )
+
+// PushReceiptChild is the optional downstream owner in the manager/agent
+// composition. Close invalidates queued work; Wait joins callbacks already
+// admitted before that invalidation.
+type PushReceiptChild interface {
+	Close()
+	Wait(context.Context) error
+}
 
 const (
 	PushReceiptPingSelector = "sendPingRequest:"
@@ -27,20 +36,43 @@ type PushReceiptPingConfig interface{ PingInterval() time.Duration }
 // The carriage-agent send remains an injected inline callback; the separate
 // agent status gate and packet-tag derivation are outside this owner.
 type PushReceiptOwner struct {
-	mu        sync.Mutex
-	manager   string
-	agent     func() string
-	queue     PushReceiptQueue
-	scheduler PushReceiptPingScheduler
-	config    PushReceiptPingConfig
-	send      func(target string, packet any)
+	mu          sync.Mutex
+	manager     string
+	agent       func() string
+	queue       PushReceiptQueue
+	scheduler   PushReceiptPingScheduler
+	config      PushReceiptPingConfig
+	send        func(target string, packet any)
+	closeChild  func()
+	child       PushReceiptChild
+	closed      bool
+	generation  uint64
+	activeCount int
+	activeDone  chan struct{}
 }
 
-func NewPushReceiptOwner(managerTarget string, agentResolver func() string, queue PushReceiptQueue, scheduler PushReceiptPingScheduler, config PushReceiptPingConfig, send func(target string, packet any)) (*PushReceiptOwner, error) {
+func NewPushReceiptOwner(managerTarget string, agentResolver func() string, queue PushReceiptQueue, scheduler PushReceiptPingScheduler, config PushReceiptPingConfig, send func(target string, packet any), childCloser ...func()) (*PushReceiptOwner, error) {
 	if managerTarget == "" || agentResolver == nil || queue == nil || scheduler == nil || config == nil || send == nil {
 		return nil, fmt.Errorf("sessionlogin: incomplete push-receipt owner")
 	}
-	return &PushReceiptOwner{manager: managerTarget, agent: agentResolver, queue: queue, scheduler: scheduler, config: config, send: send}, nil
+	var closeChild func()
+	if len(childCloser) > 0 {
+		closeChild = childCloser[0]
+	}
+	done := make(chan struct{})
+	close(done)
+	return &PushReceiptOwner{manager: managerTarget, agent: agentResolver, queue: queue, scheduler: scheduler, config: config, send: send, closeChild: closeChild, activeDone: done}, nil
+}
+
+// NewPushReceiptOwnerWithChild composes manager shutdown with the downstream
+// agent owner while preserving the legacy constructor for uncomposed callers.
+func NewPushReceiptOwnerWithChild(managerTarget string, agentResolver func() string, queue PushReceiptQueue, scheduler PushReceiptPingScheduler, config PushReceiptPingConfig, send func(target string, packet any), child PushReceiptChild) (*PushReceiptOwner, error) {
+	owner, err := NewPushReceiptOwner(managerTarget, agentResolver, queue, scheduler, config, send)
+	if err != nil {
+		return nil, err
+	}
+	owner.child = child
+	return owner, nil
 }
 
 // Send enqueues manager PING cancellation, invokes the carriage-agent send
@@ -53,16 +85,112 @@ func (o *PushReceiptOwner) Send(packet any) error {
 	}
 	o.mu.Lock()
 	queue, scheduler, config, agentResolver, send := o.queue, o.scheduler, o.config, o.agent, o.send
+	generation, closed := o.generation, o.closed
 	o.mu.Unlock()
 	if queue == nil || scheduler == nil || config == nil || agentResolver == nil || send == nil {
 		return fmt.Errorf("sessionlogin: incomplete push-receipt owner")
 	}
+	if closed {
+		return nil
+	}
 	queue.Enqueue(func() {
+		if !o.begin(generation) {
+			return
+		}
+		defer o.end()
 		scheduler.Cancel(o.manager, PushReceiptPingSelector, nil)
 	})
+	if !o.active(generation) {
+		return nil
+	}
 	send(agentResolver(), packet)
+	if !o.active(generation) {
+		return nil
+	}
 	queue.Enqueue(func() {
-		scheduler.Schedule(o.manager, PushReceiptPingSelector, nil, config.PingInterval())
+		if !o.begin(generation) {
+			return
+		}
+		defer o.end()
+		delay := config.PingInterval()
+		if !o.active(generation) {
+			return
+		}
+		scheduler.Schedule(o.manager, PushReceiptPingSelector, nil, delay)
 	})
+	return nil
+}
+
+func (o *PushReceiptOwner) active(generation uint64) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return !o.closed && o.generation == generation
+}
+
+func (o *PushReceiptOwner) begin(generation uint64) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed || o.generation != generation {
+		return false
+	}
+	if o.activeCount == 0 {
+		o.activeDone = make(chan struct{})
+	}
+	o.activeCount++
+	return true
+}
+
+func (o *PushReceiptOwner) end() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.activeCount--
+	if o.activeCount == 0 {
+		close(o.activeDone)
+	}
+}
+
+// Close invalidates queued manager cancellation/scheduling and future sends.
+// Work already admitted to an injected callback may finish, but no queued
+// owner operation remains effective after the generation changes.
+func (o *PushReceiptOwner) Close() {
+	if o == nil {
+		return
+	}
+	o.mu.Lock()
+	if o.closed {
+		o.mu.Unlock()
+		return
+	}
+	o.closed = true
+	o.generation++
+	closeChild := o.closeChild
+	o.closeChild = nil
+	child := o.child
+	o.mu.Unlock()
+	if child != nil {
+		child.Close()
+	}
+	if closeChild != nil {
+		closeChild()
+	}
+}
+
+// Wait joins callbacks admitted by the optional downstream owner.
+func (o *PushReceiptOwner) Wait(ctx context.Context) error {
+	if o == nil || ctx == nil {
+		return context.Canceled
+	}
+	o.mu.Lock()
+	child := o.child
+	done := o.activeDone
+	o.mu.Unlock()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if child != nil {
+		return child.Wait(ctx)
+	}
 	return nil
 }

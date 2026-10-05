@@ -169,3 +169,28 @@ func TestPushReceiptOwnerResolvesAgentAtEachSend(t *testing.T) {
 		t.Fatalf("manager target changed: cancel=%q schedule=%q", scheduler.cancel.target, scheduler.schedule.target)
 	}
 }
+
+func TestPushReceiptOwnerCloseInvalidatesQueuedWorkAndFutureSends(t *testing.T) {
+	q, scheduler, config := &pushReceiptOwnerQueue{}, &pushReceiptOwnerScheduler{}, &pushReceiptOwnerConfig{interval: time.Second}
+	var sends int
+	owner, err := NewPushReceiptOwner("manager", func() string { return "agent" }, q, scheduler, config, func(string, any) { sends++ })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Send(nil); err != nil {
+		t.Fatal(err)
+	}
+	owner.Close()
+	for len(q.work) > 0 {
+		q.runOne()
+	}
+	if len(scheduler.events) != 0 || config.reads != 0 {
+		t.Fatalf("closed owner applied queued work: events=%v reads=%d", scheduler.events, config.reads)
+	}
+	if err := owner.Send(nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(q.work) != 0 || sends != 1 {
+		t.Fatalf("closed owner accepted new work: queued=%d sends=%d", len(q.work), sends)
+	}
+}
