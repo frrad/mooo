@@ -4,14 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/rs/zerolog"
 	"go.mau.fi/util/dbutil"
+	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
+	"maunium.net/go/mautrix/bridgev2/networkid"
+	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
@@ -25,6 +30,64 @@ type reactionTestBackend struct {
 	err         error
 	requests    []reactions.Request
 	mutationErr error
+}
+
+type frameworkReactionIntent struct {
+	bridgev2.MatrixAPI
+	err      error
+	calls    int
+	types    []event.Type
+	failType event.Type
+}
+
+type frameworkMatrixConnector struct {
+	bridgev2.MatrixConnector
+	intent bridgev2.MatrixAPI
+}
+
+func (f *frameworkMatrixConnector) Init(*bridgev2.Bridge)                           {}
+func (f *frameworkMatrixConnector) BotIntent() bridgev2.MatrixAPI                   { return f.intent }
+func (f *frameworkMatrixConnector) GhostIntent(networkid.UserID) bridgev2.MatrixAPI { return f.intent }
+func (f *frameworkMatrixConnector) SendMessageStatus(context.Context, *bridgev2.MessageStatus, *bridgev2.MessageStatusEventInfo) {
+}
+
+type frameworkNetworkConnector struct {
+	bridgev2.NetworkConnector
+}
+
+func (f *frameworkNetworkConnector) Init(*bridgev2.Bridge) {}
+func (f *frameworkNetworkConnector) GetDBMetaTypes() database.MetaTypes {
+	return (&KakaoConnector{}).GetDBMetaTypes()
+}
+func (f *frameworkNetworkConnector) GetCapabilities() *bridgev2.NetworkGeneralCapabilities {
+	return &bridgev2.NetworkGeneralCapabilities{}
+}
+
+func (f *frameworkReactionIntent) GetMXID() id.UserID { return "@bot:test" }
+func (f *frameworkReactionIntent) SendMessage(_ context.Context, _ id.RoomID, kind event.Type, _ *event.Content, _ *bridgev2.MatrixSendExtra) (*mautrix.RespSendEvent, error) {
+	return f.sendMessage(kind, nil)
+}
+
+func (f *frameworkReactionIntent) sendMessage(kind event.Type, err error) (*mautrix.RespSendEvent, error) {
+	f.calls++
+	f.types = append(f.types, kind)
+	if err != nil || (f.err != nil && (f.failType == (event.Type{}) || f.failType == kind)) {
+		if f.err != nil {
+			return nil, f.err
+		}
+		return nil, err
+	}
+	return &mautrix.RespSendEvent{EventID: id.EventID(fmt.Sprintf("$reaction-%d", f.calls))}, nil
+}
+
+func countFrameworkEvents(types []event.Type, want event.Type) int {
+	count := 0
+	for _, typ := range types {
+		if typ == want {
+			count++
+		}
+	}
+	return count
 }
 
 func (b *reactionTestBackend) React(_ context.Context, request reactions.Request) (reactions.Response, error) {
@@ -73,6 +136,286 @@ func TestReactionSyncUsersRejectsConflictingAndUnknownBuckets(t *testing.T) {
 	base.Fields = map[string]json.RawMessage{"7": []byte(`[42]`)}
 	if _, err := reactionSyncUsers(base, 1000, "1000"); err == nil {
 		t.Fatal("unknown numeric bucket accepted")
+	}
+}
+
+func TestReactionDeliveryEventsUsesIndividualOperationsAndPreservesUnknownRows(t *testing.T) {
+	ctx := context.Background()
+	raw, err := dbutil.NewWithDialect(":memory:", "sqlite3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = raw.RawDB.Close() }()
+	db := database.New("test", (&KakaoConnector{}).GetDBMetaTypes(), raw)
+	if err := db.Upgrade(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO ghost (bridge_id,id,name,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,contact_info_set,is_bot,identifiers,extra_profile,metadata) VALUES ('test','2000','sender','','','',1,1,0,0,'[]',NULL,'{}')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO portal (bridge_id,id,receiver,mxid,parent_id,parent_receiver,relay_bridge_id,relay_login_id,other_user_id,name,topic,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,topic_set,name_is_custom,in_space,message_request,room_type,disappear_type,disappear_timer,cap_state,metadata) VALUES ('test','3000','1000',NULL,NULL,'','','','', '', '', '', '', '',0,0,0,0,0,0,'',NULL,NULL,NULL,'{}')`); err != nil {
+		t.Fatal(err)
+	}
+	message := &database.Message{BridgeID: "test", ID: makeMessageID(testChatID, 99), PartID: "0", MXID: "$event", Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID), Timestamp: time.Now(), Metadata: newKakaoMessageMetadata(testChatID, 99, testOtherID, 1, "", 0)}
+	if err := db.Message.Insert(ctx, message); err != nil {
+		t.Fatal(err)
+	}
+	known := &database.Reaction{Room: message.Room, MessageID: message.ID, MessagePartID: message.PartID, SenderID: makeUserID(testOtherID), EmojiID: "kakao:legacy:1", MXID: "$known", Timestamp: time.Now()}
+	unknown := &database.Reaction{Room: message.Room, MessageID: message.ID, MessagePartID: message.PartID, SenderID: makeUserID(2001), EmojiID: "unknown", MXID: "$unknown", Timestamp: time.Now()}
+	if err := db.Reaction.Upsert(ctx, known); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Reaction.Upsert(ctx, unknown); err != nil {
+		t.Fatal(err)
+	}
+	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: db}}
+	kc := newKakaoClient(login, testSelfID, nil)
+	sync := &kakaoReactionSync{ReactionSync: simplevent.ReactionSync{EventMeta: simplevent.EventMeta{PortalKey: message.Room}, TargetMessage: message.ID, Reactions: &bridgev2.ReactionSyncData{Users: map[networkid.UserID]*bridgev2.ReactionSyncUser{}, HasAllUsers: true}}}
+	events, err := kc.reactionDeliveryEvents(ctx, sync)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("planned events = %#v, err=%v", events, err)
+	}
+	remove, ok := events[0].(*simplevent.Reaction)
+	if !ok || remove.Type != bridgev2.RemoteEventReactionRemove || remove.EmojiID != known.EmojiID {
+		t.Fatalf("planned removal = %#v", events[0])
+	}
+}
+
+func newFrameworkReactionFixture(t *testing.T, intent *frameworkReactionIntent) (*KakaoClient, *bridgev2.Portal, *bridgev2.UserLogin, *database.Reaction, *dbutil.Database) {
+	t.Helper()
+	ctx := context.Background()
+	raw, err := dbutil.NewWithDialect(":memory:", "sqlite3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	matrix := &frameworkMatrixConnector{intent: intent}
+	bridge := bridgev2.NewBridge("test", raw, zerolog.Nop(), nil, matrix, &frameworkNetworkConnector{}, func(*bridgev2.Bridge) bridgev2.CommandProcessor { return nil })
+	db := bridge.DB
+	if err := db.Upgrade(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO ghost (bridge_id,id,name,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,contact_info_set,is_bot,identifiers,extra_profile,metadata) VALUES ('test','2000','sender','','','',1,1,0,0,'[]',NULL,'{}')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO portal (bridge_id,id,receiver,mxid,parent_id,parent_receiver,relay_bridge_id,relay_login_id,other_user_id,name,topic,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,topic_set,name_is_custom,in_space,message_request,room_type,disappear_type,disappear_timer,cap_state,metadata) VALUES ('test','3000','1000',NULL,NULL,'','','','', '', '', '', '', '',0,0,0,0,0,0,'',NULL,NULL,NULL,'{}')`); err != nil {
+		t.Fatal(err)
+	}
+	key := makePortalKey(testChatID, makeUserLoginID(testSelfID))
+	message := &database.Message{BridgeID: "test", ID: makeMessageID(testChatID, 99), PartID: "0", MXID: "$event", Room: key, SenderID: makeUserID(testOtherID), SenderMXID: "@sender:test", Timestamp: time.Now(), Metadata: newKakaoMessageMetadata(testChatID, 99, testOtherID, 1, "", 0)}
+	if err := db.Message.Insert(ctx, message); err != nil {
+		t.Fatal(err)
+	}
+	old := &database.Reaction{Room: key, MessageID: message.ID, MessagePartID: message.PartID, SenderID: makeUserID(testOtherID), SenderMXID: intent.GetMXID(), EmojiID: "kakao:legacy:1", MXID: "$old", Timestamp: time.Now()}
+	if err := db.Reaction.Upsert(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: key, MXID: "!room:test"}, Bridge: bridge}
+	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: key.Receiver}, Bridge: bridge}
+	kc := newKakaoClient(login, testSelfID, nil)
+	return kc, portal, login, old, raw
+}
+
+func TestReactionHandleUsesFrameworkOperationsAndPersistsOnlyAfterAllACK(t *testing.T) {
+	ctx := context.Background()
+	intent := &frameworkReactionIntent{err: errors.New("synthetic redaction failure"), failType: event.EventRedaction}
+	kc, portal, login, old, raw := newFrameworkReactionFixture(t, intent)
+	defer func() { _ = raw.RawDB.Close() }()
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{Revision: 2, Members: map[reactions.Type][]int64{reactions.Like: {testOtherID}}, Fields: map[string]json.RawMessage{"2": []byte(`[2000]`)}}}
+	kc.client = backend
+	login.Client = kc
+	ghost, ghostErr := portal.Bridge.GetGhostByID(ctx, makeUserID(testOtherID))
+	if ghostErr != nil || ghost == nil {
+		t.Fatalf("ghost lookup failed: ghost=%#v err=%v", ghost, ghostErr)
+	}
+	kc.queue = func(evt bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		return (*bridgev2.PortalInternals)(portal).HandleRemoteEvent(ctx, login, evt.GetType(), evt)
+	}
+	change := events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 1}
+	if kc.handleEvent(backend, change) {
+		t.Fatal("redaction failure reported success")
+	}
+	if got := countFrameworkEvents(intent.types, event.EventReaction); got != 1 {
+		t.Fatalf("initial addition attempts = %d, want 1", got)
+	}
+	if got := countFrameworkEvents(intent.types, event.EventRedaction); got != 1 {
+		t.Fatalf("initial removal attempts = %d, want 1", got)
+	}
+	row, err := kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(ctx, kc.login.ID, old.MessageID, old.SenderID, old.EmojiID)
+	if err != nil || row == nil {
+		t.Fatalf("failed removal changed database row: row=%#v err=%v", row, err)
+	}
+	msg, err := kc.login.Bridge.DB.Message.GetFirstPartByID(ctx, kc.login.ID, old.MessageID)
+	if err != nil || msg.Metadata.(*KakaoMessageMetadata).ReactionRevision != 0 {
+		t.Fatalf("failed removal advanced revision: msg=%#v err=%v", msg, err)
+	}
+	intent.err = nil
+	if !kc.handleEvent(backend, change) {
+		t.Fatal("successful replay was rejected")
+	}
+	if got := countFrameworkEvents(intent.types, event.EventReaction); got != 1 {
+		t.Fatalf("replay resent successful addition %d times", got)
+	}
+	if got := countFrameworkEvents(intent.types, event.EventRedaction); got != 2 {
+		t.Fatalf("replay removal attempts = %d, want 2", got)
+	}
+	row, err = kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(ctx, kc.login.ID, old.MessageID, old.SenderID, old.EmojiID)
+	if err != nil || row != nil {
+		t.Fatalf("successful removal retained row: row=%#v err=%v", row, err)
+	}
+	msg, err = kc.login.Bridge.DB.Message.GetFirstPartByID(ctx, kc.login.ID, old.MessageID)
+	revision := int64(-1)
+	switch metadata := msg.Metadata.(type) {
+	case *KakaoMessageMetadata:
+		revision = metadata.ReactionRevision
+	case KakaoMessageMetadata:
+		revision = metadata.ReactionRevision
+	}
+	if err != nil || revision != 2 {
+		t.Fatalf("successful removal did not persist revision: msg=%#v err=%v", msg, err)
+	}
+}
+
+func TestReactionNoOpReconciliationPersistsRevision(t *testing.T) {
+	ctx := context.Background()
+	intent := &frameworkReactionIntent{}
+	kc, portal, login, old, raw := newFrameworkReactionFixture(t, intent)
+	defer func() { _ = raw.RawDB.Close() }()
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
+		Revision: 2,
+		Members:  map[reactions.Type][]int64{reactions.Heart: {testOtherID}},
+		Fields:   map[string]json.RawMessage{"1": []byte(`[2000]`)},
+	}}
+	kc.client = backend
+	kc.queue = func(evt bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		return (*bridgev2.PortalInternals)(portal).HandleRemoteEvent(ctx, login, evt.GetType(), evt)
+	}
+	if !kc.handleEvent(backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 1}) {
+		t.Fatal("authoritative no-op was not acknowledged")
+	}
+	msg, err := kc.login.Bridge.DB.Message.GetFirstPartByID(ctx, kc.login.ID, old.MessageID)
+	revision := int64(-1)
+	switch metadata := msg.Metadata.(type) {
+	case *KakaoMessageMetadata:
+		revision = metadata.ReactionRevision
+	case KakaoMessageMetadata:
+		revision = metadata.ReactionRevision
+	}
+	if err != nil || revision != 2 {
+		t.Fatalf("no-op did not persist revision: msg=%#v err=%v", msg, err)
+	}
+}
+
+func TestReactionRemovalRequiresDatabaseDeletionPostcondition(t *testing.T) {
+	ctx := context.Background()
+	intent := &frameworkReactionIntent{}
+	kc, portal, login, old, raw := newFrameworkReactionFixture(t, intent)
+	defer func() { _ = raw.RawDB.Close() }()
+	if _, err := raw.RawDB.ExecContext(ctx, `CREATE TRIGGER reaction_delete_fail BEFORE DELETE ON reaction BEGIN SELECT RAISE(FAIL, 'synthetic delete failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{Revision: 2, Fields: map[string]json.RawMessage{}}}
+	kc.client = backend
+	kc.queue = func(evt bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		return (*bridgev2.PortalInternals)(portal).HandleRemoteEvent(ctx, login, evt.GetType(), evt)
+	}
+	if kc.handleEvent(backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 1}) {
+		t.Fatal("stale database row was reported as successfully removed")
+	}
+	msg, err := kc.login.Bridge.DB.Message.GetFirstPartByID(ctx, kc.login.ID, old.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := int64(-1)
+	switch metadata := msg.Metadata.(type) {
+	case *KakaoMessageMetadata:
+		revision = metadata.ReactionRevision
+	case KakaoMessageMetadata:
+		revision = metadata.ReactionRevision
+	}
+	if revision != 0 {
+		t.Fatalf("failed database deletion advanced revision to %d", revision)
+	}
+	if _, err := raw.RawDB.ExecContext(ctx, `DROP TRIGGER reaction_delete_fail`); err != nil {
+		t.Fatal(err)
+	}
+	if !kc.handleEvent(backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 1}) {
+		t.Fatal("replay after database recovery failed")
+	}
+	row, err := kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(ctx, kc.login.ID, old.MessageID, old.SenderID, old.EmojiID)
+	if err != nil || row != nil {
+		t.Fatalf("recovered removal retained row: row=%#v err=%v", row, err)
+	}
+	msg, err = kc.login.Bridge.DB.Message.GetFirstPartByID(ctx, kc.login.ID, old.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision = -1
+	switch metadata := msg.Metadata.(type) {
+	case *KakaoMessageMetadata:
+		revision = metadata.ReactionRevision
+	case KakaoMessageMetadata:
+		revision = metadata.ReactionRevision
+	}
+	if revision != 2 {
+		t.Fatalf("recovered removal did not persist revision: %d", revision)
+	}
+}
+
+func TestFrameworkOutboundReactionMaxOneReplacesAndStaleRemovalDoesNotCancel(t *testing.T) {
+	ctx := context.Background()
+	intent := &frameworkReactionIntent{}
+	kc, portal, login, old, raw := newFrameworkReactionFixture(t, intent)
+	defer func() { _ = raw.RawDB.Close() }()
+	// The existing reaction belongs to the logged-in Kakao user and is the
+	// reaction that MaxReactions=1 must replace.
+	if err := kc.login.Bridge.DB.Reaction.Delete(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	old.SenderID = makeUserID(testSelfID)
+	old.SenderMXID = intent.GetMXID()
+	if err := kc.login.Bridge.DB.Reaction.Upsert(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
+		Revision: 2,
+		Members:  map[reactions.Type][]int64{reactions.Heart: {testSelfID}},
+		Fields:   map[string]json.RawMessage{"1": []byte(`[1000]`)},
+	}}
+	kc.client = backend
+	login.Client = kc
+	login.UserMXID = intent.GetMXID()
+	portal.MXID = "!room:test"
+	evt := &event.Event{Sender: login.UserMXID, Content: event.Content{Parsed: &event.ReactionEventContent{RelatesTo: event.RelatesTo{Type: event.RelAnnotation, EventID: "$event", Key: "👍"}}}}
+	result := (*bridgev2.PortalInternals)(portal).HandleMatrixReaction(ctx, login, evt)
+	if !result.Success {
+		t.Fatalf("framework outbound reaction failed: %+v", result)
+	}
+	if len(backend.requests) != 1 || backend.requests[0].Type != reactions.Like {
+		t.Fatalf("Kakao mutations = %#v, want one Like", backend.requests)
+	}
+	if got := countFrameworkEvents(intent.types, event.EventRedaction); got != 1 {
+		t.Fatalf("Matrix old-reaction redactions = %d, want 1", got)
+	}
+	oldRow, err := kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(ctx, kc.login.ID, old.MessageID, old.SenderID, old.EmojiID)
+	if err != nil || oldRow != nil {
+		t.Fatalf("old reaction row was not removed: row=%#v err=%v", oldRow, err)
+	}
+	newRow, err := kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(ctx, kc.login.ID, old.MessageID, makeUserID(testSelfID), "kakao:legacy:2")
+	if err != nil || newRow == nil {
+		t.Fatalf("replacement reaction missing: row=%#v err=%v", newRow, err)
+	}
+	// A delayed redaction for the old Matrix reaction must not cancel the new
+	// Kakao reaction after the remote membership lookup has changed.
+	backend.members.Members = map[reactions.Type][]int64{reactions.Like: {testSelfID}}
+	remove := &bridgev2.MatrixReactionRemove{
+		MatrixEventBase: bridgev2.MatrixEventBase[*event.RedactionEventContent]{Event: &event.Event{Sender: login.UserMXID}, Portal: portal},
+		TargetReaction:  old,
+	}
+	if err := kc.HandleMatrixReactionRemove(ctx, remove); err != nil {
+		t.Fatal(err)
+	}
+	if len(backend.requests) != 1 {
+		t.Fatalf("stale old reaction caused remote cancel: %#v", backend.requests)
 	}
 }
 
