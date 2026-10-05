@@ -75,7 +75,9 @@ func TestSecureV3RejectsReviewedV2GCMAuthenticationMutations(t *testing.T) {
 	}
 }
 
-func TestSecureV3RejectsInvalidReviewedEnvelopeBounds(t *testing.T) {
+// The 49/50 limits exercise the implementation's configured envelope bound;
+// they are not a claim about an independently traced official size limit.
+func TestSecureV3EnforcesConfiguredEnvelopeBounds(t *testing.T) {
 	key := []byte("0123456789abcdef")
 	nonce := []byte("123456789012")
 	plaintext := []byte("synthetic V2SL payload")
