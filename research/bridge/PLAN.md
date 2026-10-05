@@ -49,7 +49,8 @@ B0 is a working minimal text bridge, with recorded live validation against a
 throwaway Synapse on 2026-09-30. Text works in both directions, replies work
 inbound, and restart catch-up recovers missed messages for previously committed
 chats. The 2026-10-04 native run additionally exercised direct own-device text,
-replies, and photos in both directions. A 2026-10-05 Docker resume exercised
+replies, and Matrix-to-Kakao photos; a 2026-10-05 (UTC) follow-up exercised
+Kakao-to-Matrix photos. A 2026-10-05 Docker resume exercised
 the existing profile, one text, one encrypted-media attachment in an
 unencrypted portal, and one persistent restart; the reply and reaction probes
 were rejected/failed and were not retried. Group/other-participant delivery,

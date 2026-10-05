@@ -46,9 +46,10 @@ not established.
 Separately, image source revision `af1a0d9` built as a Linux arm64 Docker image
 with Go 1.27.1, cgo SQLite, and `goolm`. Container help, version JSON, example
 configuration, registration generation, compose configuration, and persistent
-path/UID checks passed with external temporary data. No Kakao session was
-started from that image. These checks establish packaging and static
-configuration only, not live bridge messaging or recovery.
+path/UID checks passed with external temporary data. During those initial
+static checks, no Kakao session was started from that image. These checks
+establish packaging and static configuration only, not live bridge messaging
+or recovery.
 
 On 2026-10-05 (UTC), image digest
 `sha256:2a1a64393d77d216e65a586b76a188a3cb5755c7ded6ff632a84b860a180e203`
@@ -58,9 +59,11 @@ and the homeserver/appservice ping returned HTTP 200. One Matrix text was
 accepted and persisted. One prepared encrypted Matrix attachment in the
 unencrypted portal was downloaded, decrypted, and delivered as a Kakao photo;
 the resulting source event had a positive log ID and persisted photo metadata.
-The one reply attempt used an incorrectly resolved synthetic target and was
-rejected before Kakao mutation. The one heart reaction attempt reached Kakao
-but returned a mutation error; neither operation was retried.
+The one reply attempt used a synthetic target whose Matrix event ID was
+newline-contaminated by the test harness, so it was rejected before Kakao
+mutation; this does not establish a product missing-target failure. The one
+heart reaction attempt reached Kakao but returned a mutation error; neither
+operation was retried.
 
 After a clean stop, the same profile and database were restarted once. The
 bridge reached `CONNECTED` again with no duplicate backfill; the database had
