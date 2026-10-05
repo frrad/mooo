@@ -305,6 +305,14 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 		return nil, ErrProtocol
 	}
 	c.mu.Lock()
+	// ensureSession may have returned immediately before Shutdown marked the
+	// client closed. Recheck admission under the same lock before creating a
+	// decoder worker, otherwise shutdown can release ownership while this late
+	// Events call installs an unjoined goroutine.
+	if c.closed {
+		c.mu.Unlock()
+		return nil, ErrClientClosed
+	}
 	if c.pushConsumer == pushConsumerRaw {
 		c.mu.Unlock()
 		return nil, ErrPushConsumerSelected
