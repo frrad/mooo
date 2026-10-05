@@ -59,19 +59,63 @@ func TestProjectSGJSONObjectRejectsNilProtocolResults(t *testing.T) {
 	}
 }
 
-func TestProjectSGJSONPropertiesPreservesDynamicAndInheritedCollisionRules(t *testing.T) {
+func TestProjectSGJSONObjectTypedNilAndOpaqueContainers(t *testing.T) {
+	var nilJSON *syntheticSGJSON
+	if got, err := ProjectSGJSONObject(nilJSON); err != nil || !reflect.DeepEqual(got, SGJSONNull{}) {
+		t.Fatalf("typed nil SGJSON projection=%#v err=%v, want explicit null", got, err)
+	}
+	var nilArray *syntheticSGNumberArray
+	if got, err := ProjectSGJSONObject(nilArray); err != nil || !reflect.DeepEqual(got, SGJSONNull{}) {
+		t.Fatalf("typed nil SGNumberArray projection=%#v err=%v, want explicit null", got, err)
+	}
+	mapInput := map[string]any{"nested": syntheticSGJSON{value: "opaque"}}
+	if got, err := ProjectSGJSONObject(mapInput); err != nil || !reflect.DeepEqual(got, mapInput) {
+		t.Fatalf("ordinary map was recursively projected: %#v err=%v", got, err)
+	}
+	sliceInput := []any{syntheticSGJSON{value: "opaque"}, int32(0)}
+	if got, err := ProjectSGJSONObject(sliceInput); err != nil || !reflect.DeepEqual(got, sliceInput) {
+		t.Fatalf("ordinary slice was recursively projected: %#v err=%v", got, err)
+	}
+	var nilMap map[string]any
+	if got, err := ProjectSGJSONObject(nilMap); err != nil || got != nil {
+		t.Fatalf("ordinary nil map changed: %#v err=%v", got, err)
+	}
+	var nilSlice []any
+	if got, err := ProjectSGJSONObject(nilSlice); err != nil || got != nil {
+		t.Fatalf("ordinary nil slice changed: %#v err=%v", got, err)
+	}
+}
+
+func TestProjectSGJSONObjectRejectsTypedNilProtocolResults(t *testing.T) {
+	var nilSlice []any
+	value := syntheticSGJSON{value: nilSlice}
+	if _, err := ProjectSGJSONObject(value); !errors.Is(err, ErrSGJSONNilProtocolResult) {
+		t.Fatalf("typed nil SGJSON result error=%v, want %v", err, ErrSGJSONNilProtocolResult)
+	}
+	array := syntheticSGNumberArray{value: nil}
+	if _, err := ProjectSGJSONObject(array); !errors.Is(err, ErrSGJSONNilProtocolResult) {
+		t.Fatalf("typed nil SGNumberArray result error=%v, want %v", err, ErrSGJSONNilProtocolResult)
+	}
+	empty := syntheticSGNumberArray{value: []any{}}
+	got, err := ProjectSGJSONObject(empty)
+	if err != nil || !reflect.DeepEqual(got, []any{}) {
+		t.Fatalf("empty SGNumberArray result=%#v err=%v, want empty array", got, err)
+	}
+}
+
+func TestProjectSGJSONPropertiesUsesExplicitEnumerationSequence(t *testing.T) {
 	dynamic := syntheticProperties{properties: []SGJSONProperty{
 		{Name: "method", Value: "HINT"},
 		{Name: "revision", Value: int32(0)},
 		{Name: "missingValue", Value: nil},
 	}}
-	inherited := []SGJSONProperty{{Name: "method", Value: "BASE"}, {Name: "packetId", Value: uint32(0)}}
+	inherited := []SGJSONProperty{{Name: "method", Value: "HINT"}, {Name: "packetId", Value: uint32(0)}}
 	got, err := ProjectSGJSONProperties(dynamic.JSONProperties(), inherited)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]any{
-		"method":       "BASE",
+		"method":       "HINT",
 		"packetId":     uint32(0),
 		"revision":     int32(0),
 		"missingValue": SGJSONNull{},

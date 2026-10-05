@@ -3,6 +3,7 @@ package sessionlogin
 import (
 	"errors"
 	"fmt"
+	"reflect"
 )
 
 var ErrSGJSONNilProtocolResult = errors.New("sessionlogin: SGJson protocol returned nil")
@@ -27,11 +28,6 @@ type SGJSONProperty struct {
 	Value any
 }
 
-// SGJSONPropertySource supplies properties read from the receiver by KVC.
-type SGJSONPropertySource interface {
-	JSONProperties() []SGJSONProperty
-}
-
 // SGJSONNull represents Objective-C nil/NSNull in a projected dictionary.
 // It marshals as JSON null while remaining distinguishable from a missing key.
 type SGJSONNull struct{}
@@ -47,20 +43,39 @@ func ProjectSGJSONObject(input any) (any, error) {
 		return SGJSONNull{}, nil
 	}
 	if object, ok := input.(SGJSON); ok {
+		if isNilReference(input) {
+			return SGJSONNull{}, nil
+		}
 		value := object.JSONObject()
-		if value == nil {
+		if isNilReference(value) {
 			return nil, ErrSGJSONNilProtocolResult
 		}
 		return value, nil
 	}
 	if numbers, ok := input.(SGNumberArray); ok {
+		if isNilReference(input) {
+			return SGJSONNull{}, nil
+		}
 		value := numbers.NumberArray()
-		if value == nil {
+		if isNilReference(value) {
 			return nil, ErrSGJSONNilProtocolResult
 		}
 		return value, nil
 	}
 	return input, nil
+}
+
+func isNilReference(value any) bool {
+	if value == nil {
+		return true
+	}
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return rv.IsNil()
+	default:
+		return false
+	}
 }
 
 // ProjectSGJSONProperties projects property groups in source enumeration
