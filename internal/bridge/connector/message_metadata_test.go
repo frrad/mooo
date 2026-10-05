@@ -13,6 +13,8 @@ import (
 	"maunium.net/go/mautrix/bridgev2/networkid"
 
 	"github.com/frrad/mooo/internal/protocol/chat"
+	"github.com/frrad/mooo/internal/protocol/events"
+	"github.com/frrad/mooo/internal/protocol/media"
 )
 
 func TestKakaoMessageMetadataRoundTripsThroughJSON(t *testing.T) {
@@ -59,21 +61,42 @@ func TestKakaoMessageMetadataPersistsThroughBridgeDatabase(t *testing.T) {
 	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO portal (bridge_id,id,receiver,mxid,parent_id,parent_receiver,relay_bridge_id,relay_login_id,other_user_id,name,topic,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,topic_set,name_is_custom,in_space,message_request,room_type,disappear_type,disappear_timer,cap_state,metadata) VALUES ('test','3000','1000',NULL,NULL,'','','','', '', '', '', '', '',0,0,0,0,0,0,'',NULL,NULL,NULL,'{}')`); err != nil {
 		t.Fatal(err)
 	}
-	want := newKakaoMessageMetadata(3000, 11, 2000, chat.TextType, "persisted", 0)
-	message := &database.Message{
-		BridgeID: "test", ID: makeMessageID(3000, 11), PartID: "0", MXID: "$event",
-		Room: makePortalKey(3000, "1000"), SenderID: makeUserID(2000), SenderMXID: "@sender:test",
-		Timestamp: time.Unix(1700000000, 0), Metadata: want,
-	}
-	if err := db.Message.Insert(ctx, message); err != nil {
-		t.Fatal(err)
-	}
-	got, err := db.Message.GetPartByID(ctx, networkid.UserLoginID("1000"), message.ID, message.PartID)
+	converted, err := convertPhoto(ctx, nil, nil, events.PhotoMessage{Message: media.PhotoMessage{
+		ChatID: 3000, LogID: 11, AuthorID: 2000,
+		Attachment: media.PhotoAttachment{Size: 1, Checksum: strings.Repeat("0", 40), MediaType: "image/jpeg", URL: "https://talk.kakaocdn.net/file", ExpiresAt: 1},
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata, ok := got.Metadata.(*KakaoMessageMetadata)
-	if !ok || *metadata != *want {
-		t.Fatalf("round-tripped metadata = %#v, want %#v", got.Metadata, want)
+	want, ok := converted.Parts[0].DBMetadata.(*KakaoMessageMetadata)
+	if !ok || want.ConversionGap != "expired" {
+		t.Fatalf("converted metadata = %#v", converted.Parts[0].DBMetadata)
 	}
+	insertAndCheck := func(message *database.Message, expected *KakaoMessageMetadata) {
+		t.Helper()
+		if err := db.Message.Insert(ctx, message); err != nil {
+			t.Fatal(err)
+		}
+		got, err := db.Message.GetPartByID(ctx, networkid.UserLoginID("1000"), message.ID, message.PartID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		metadata, ok := got.Metadata.(*KakaoMessageMetadata)
+		if !ok || *metadata != *expected {
+			t.Fatalf("round-tripped metadata = %#v, want %#v", got.Metadata, expected)
+		}
+	}
+	// Ordinary source metadata must survive the same database path as gap metadata.
+	sourceMetadata := newKakaoMessageMetadata(3000, 10, 2000, chat.TextType, "persisted", 0)
+	insertAndCheck(&database.Message{
+		BridgeID: "test", ID: makeMessageID(3000, 10), PartID: "0", MXID: "$source-event",
+		Room: makePortalKey(3000, "1000"), SenderID: makeUserID(2000), SenderMXID: "@sender:test",
+		Timestamp: time.Unix(1700000000, 0), Metadata: sourceMetadata,
+	}, sourceMetadata)
+	// Deterministic conversion notices retain the original source identity and gap category.
+	insertAndCheck(&database.Message{
+		BridgeID: "test", ID: makeMessageID(3000, 11), PartID: "0", MXID: "$gap-event",
+		Room: makePortalKey(3000, "1000"), SenderID: makeUserID(2000), SenderMXID: "@sender:test",
+		Timestamp: time.Unix(1700000000, 0), Metadata: want,
+	}, want)
 }

@@ -2,6 +2,7 @@ package media
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
@@ -123,28 +124,51 @@ func TestDecodeAndDownloadPhotoMessage(t *testing.T) {
 func TestPhotoDownloadRejectsExpiredAttachment(t *testing.T) {
 	data := syntheticJPEG(t)
 	sum := sha1.Sum(data)
-	attachment := PhotoAttachment{Size: int64(len(data)), Checksum: hex.EncodeToString(sum[:]), URL: "https://talk.kakaocdn.net/file", ExpiresAt: 1}
+	attachment := PhotoAttachment{Size: int64(len(data)), Checksum: hex.EncodeToString(sum[:]), MediaType: "image/jpeg", URL: "https://talk.kakaocdn.net/file", ExpiresAt: 1}
 	client := &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
 		t.Fatal("expired photo must not be requested")
 		return nil, nil
 	})}
-	if _, err := DownloadPhoto(t.Context(), client, attachment); !errors.Is(err, ErrDownload) {
+	if _, err := DownloadPhoto(t.Context(), client, attachment); !errors.Is(err, ErrExpired) || !errors.Is(err, ErrDownload) {
 		t.Fatalf("expired error = %v", err)
+	}
+}
+
+func TestPhotoDownloadCancellationRemainsTransientBeforeExpiryClassification(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	attachment := PhotoAttachment{Size: 1, Checksum: strings.Repeat("0", 40), URL: "https://talk.kakaocdn.net/file", ExpiresAt: 1}
+	if _, err := DownloadPhoto(ctx, &http.Client{}, attachment); !errors.Is(err, ErrDownload) || errors.Is(err, ErrExpired) {
+		t.Fatalf("canceled expired download error = %v", err)
+	}
+}
+
+func TestPhotoDownloadClassifiesInvalidMediaMetadataAndBytes(t *testing.T) {
+	client := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("not-an-image")), Request: req}, nil
+	})}
+	base := PhotoAttachment{Size: int64(len("not-an-image")), Checksum: strings.Repeat("0", 40), URL: "https://talk.kakaocdn.net/file"}
+	if _, err := DownloadPhoto(t.Context(), client, base); !errors.Is(err, ErrInvalidAttachment) {
+		t.Fatalf("missing media type error = %v", err)
+	}
+	base.MediaType = "image/png"
+	if _, err := DownloadPhoto(t.Context(), client, base); !errors.Is(err, ErrUnsupportedImage) {
+		t.Fatalf("unsupported bytes error = %v", err)
 	}
 }
 
 func TestPhotoDownloadRejectsUnsafeURLAndBadChecksum(t *testing.T) {
 	data := syntheticJPEG(t)
-	attachment := PhotoAttachment{Size: int64(len(data)), Checksum: strings.Repeat("0", 40), URL: "https://example.com/file?token=x"}
+	attachment := PhotoAttachment{Size: int64(len(data)), Checksum: strings.Repeat("0", 40), MediaType: "image/jpeg", URL: "https://example.com/file?token=x"}
 	client := &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) { return nil, nil })}
-	if _, err := DownloadPhoto(t.Context(), client, attachment); !errors.Is(err, ErrDownload) {
+	if _, err := DownloadPhoto(t.Context(), client, attachment); !errors.Is(err, ErrUnsafeURL) || !errors.Is(err, ErrDownload) {
 		t.Fatalf("unsafe URL error = %v", err)
 	}
 	attachment.URL = "https://talk.kakaocdn.net/file?token=x"
 	client = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(data)), Request: req}, nil
 	})}
-	if _, err := DownloadPhoto(t.Context(), client, attachment); !errors.Is(err, ErrDownload) {
+	if _, err := DownloadPhoto(t.Context(), client, attachment); !errors.Is(err, ErrChecksumMismatch) || !errors.Is(err, ErrDownload) {
 		t.Fatalf("checksum error = %v", err)
 	}
 }
@@ -163,7 +187,7 @@ func TestPhotoDownloadRejectsUnsafeRedirectBeforeFollowing(t *testing.T) {
 		}, nil
 	})}
 	attachment := PhotoAttachment{
-		Size: int64(len(data)), Checksum: hex.EncodeToString(sum[:]),
+		Size: int64(len(data)), Checksum: hex.EncodeToString(sum[:]), MediaType: "image/jpeg",
 		URL: "https://talk.kakaocdn.net/file?sig=fixture",
 	}
 	if _, err := DownloadPhoto(t.Context(), client, attachment); !errors.Is(err, ErrDownload) {

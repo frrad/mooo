@@ -30,13 +30,16 @@ const (
 )
 
 var (
-	ErrInvalidImage     = errors.New("media: invalid image")
-	ErrUnsupportedImage = errors.New("media: unsupported image format")
-	ErrInvalidResponse  = errors.New("media: invalid response")
-	ErrInvalidOffset    = errors.New("media: invalid upload offset")
-	ErrInvalidMessage   = errors.New("media: invalid photo message")
-	ErrUnsafeURL        = errors.New("media: unsafe download URL")
-	ErrDownload         = errors.New("media: download failed")
+	ErrInvalidImage      = errors.New("media: invalid image")
+	ErrUnsupportedImage  = errors.New("media: unsupported image format")
+	ErrInvalidResponse   = errors.New("media: invalid response")
+	ErrInvalidOffset     = errors.New("media: invalid upload offset")
+	ErrInvalidMessage    = errors.New("media: invalid photo message")
+	ErrUnsafeURL         = errors.New("media: unsafe download URL")
+	ErrDownload          = errors.New("media: download failed")
+	ErrExpired           = errors.New("media: attachment expired")
+	ErrInvalidAttachment = errors.New("media: invalid attachment")
+	ErrChecksumMismatch  = errors.New("media: attachment checksum mismatch")
 )
 
 // Image is a validated, bounded upload prepared from caller-owned bytes.
@@ -117,8 +120,20 @@ func DecodePhotoMessage(body []byte) (PhotoMessage, error) {
 // verifies both the advertised byte length and SHA-1 checksum. Redirect targets
 // are validated before the client follows them.
 func DownloadPhoto(ctx context.Context, client *http.Client, attachment PhotoAttachment) ([]byte, error) {
-	if ctx == nil || client == nil || attachment.Size <= 0 || attachment.Size > MaxImageBytes || attachment.ExpiresAt > 0 && time.Now().Unix() >= attachment.ExpiresAt || validateDownloadURL(attachment.URL) != nil {
+	if ctx == nil || client == nil || ctx.Err() != nil {
 		return nil, ErrDownload
+	}
+	if attachment.Size <= 0 || attachment.Size > MaxImageBytes {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidAttachment, ErrDownload)
+	}
+	if attachment.MediaType != "image/jpg" && attachment.MediaType != "image/jpeg" && attachment.MediaType != "image/png" {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidAttachment, ErrDownload)
+	}
+	if attachment.ExpiresAt > 0 && time.Now().Unix() >= attachment.ExpiresAt {
+		return nil, fmt.Errorf("%w: %w", ErrExpired, ErrDownload)
+	}
+	if validateDownloadURL(attachment.URL) != nil {
+		return nil, fmt.Errorf("%w: %w", ErrUnsafeURL, ErrDownload)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, attachment.URL, nil)
 	if err != nil {
@@ -128,7 +143,7 @@ func DownloadPhoto(ctx context.Context, client *http.Client, attachment PhotoAtt
 	previousRedirectPolicy := client.CheckRedirect
 	redirectClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if validateDownloadURL(req.URL.String()) != nil {
-			return ErrUnsafeURL
+			return fmt.Errorf("%w: %w", ErrUnsafeURL, ErrDownload)
 		}
 		if previousRedirectPolicy != nil {
 			return previousRedirectPolicy(req, via)
@@ -147,12 +162,22 @@ func DownloadPhoto(ctx context.Context, client *http.Client, attachment PhotoAtt
 		return nil, ErrDownload
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, attachment.Size+1))
-	if err != nil || int64(len(data)) != attachment.Size {
+	if err != nil {
 		return nil, ErrDownload
+	}
+	if int64(len(data)) < attachment.Size {
+		return nil, ErrDownload
+	}
+	if int64(len(data)) > attachment.Size {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidAttachment, ErrDownload)
+	}
+	_, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || (attachment.MediaType == "image/png" && format != "png") || attachment.MediaType != "image/png" && format != "jpeg" {
+		return nil, fmt.Errorf("%w: %w", ErrUnsupportedImage, ErrDownload)
 	}
 	sum := sha1.Sum(data)
 	if !strings.EqualFold(hex.EncodeToString(sum[:]), attachment.Checksum) {
-		return nil, ErrDownload
+		return nil, fmt.Errorf("%w: %w", ErrChecksumMismatch, ErrDownload)
 	}
 	return data, nil
 }
