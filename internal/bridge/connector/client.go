@@ -186,6 +186,12 @@ func (kc *KakaoClient) shutdownBootstrap(c kakaoClient, phase string, force bool
 	kc.mu.Unlock()
 }
 
+func shutdownKakaoClient(c kakaoClient) error {
+	ctx, cancel := context.WithTimeout(context.Background(), terminalDisconnectTimeout)
+	defer cancel()
+	return c.Shutdown(ctx)
+}
+
 // connectAndSubscribe logs in, recovers what was missed while disconnected,
 // and only then subscribes to live events. The order matters: the client
 // commits strictly in delivery order per chat, and a live message committed
