@@ -33,11 +33,21 @@ key provisioning, handshake acceptance, and transport response handling are
 separate contracts and are intentionally not inferred here.
 
 Decryption authenticates before exposing plaintext. A wrong key, nonce,
-ciphertext, tag, or associated-data value must fail authentication and return
-no plaintext. Inputs with unsupported key, nonce, or tag sizes are invalid.
-Failure to create the cipher context or to complete an encryption/decryption
-operation is an error; callers must not treat a failed operation as
-authenticated data.
+ciphertext, tag, or associated-data value fails authentication and returns no
+plaintext; cleanup still runs before the primitive returns. Inputs with
+unsupported key, nonce, or tag sizes are invalid.
+
+The failure boundary is asymmetric. If the primitive cannot create its cipher
+context, it returns no ciphertext. The observed outer V2 assembly has already
+created its nonce and tag destination at that point, so it can still assemble
+the nonce plus the unchanged tag destination around the absent ciphertext.
+This is a framed failure result, not authenticated application data, and a
+caller must reject it before interpreting plaintext. After a context exists,
+the reviewed encryption path does not branch on every low-level operation
+status before collecting the tag; implementations should therefore preserve
+the documented authenticated-output checks rather than silently accepting a
+partially initialized result. Decryption returns no plaintext on context or
+authentication failure.
 
 This is a primitive contract, not a claim that all surrounding client paths
 have been traced. In particular, the public evidence does not establish the
