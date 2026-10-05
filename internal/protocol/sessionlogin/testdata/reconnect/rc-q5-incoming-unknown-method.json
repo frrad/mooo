@@ -16,7 +16,7 @@
         "lookup_class_absent",
         "alloc_nil_class_is_nil_safe",
         "init_with_packet_on_nil_is_nil_safe",
-        "derive_selector_from_nil_class_name",
+        "derive_selector_handle(null):packetHeader:",
         "owner_gate_evaluated",
         "owner_gate_false_no_perform_selector"
       ]

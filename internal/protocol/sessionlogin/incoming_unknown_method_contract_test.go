@@ -2,7 +2,6 @@ package sessionlogin
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,30 +22,62 @@ type incomingUnknownMethodCase struct {
 	ExpectedEffects []string `json:"expected_effects"`
 }
 
-func modelUnknownIncomingMethod(method string, classes map[string]string, derivedSelector string, ownerResponds bool) []string {
+type incomingUnknownHeader struct {
+	Method   string
+	PacketID uint32
+}
+
+func deriveIncomingOwnerSelector(className string) string {
+	suffix := "(null)"
+	if className != "" {
+		if len(className) < 4 {
+			return ""
+		}
+		suffix = className[4:]
+	}
+	return "handle" + suffix + ":packetHeader:"
+}
+
+type incomingUnknownMethodHooks struct {
+	responds func(string) bool
+	perform  func(string, any, any)
+}
+
+func dispatchUnknownIncomingMethod(method string, classes map[string]string, header any, hooks incomingUnknownMethodHooks) []string {
 	effects := []string{"read_header_method"}
-	className, ok := classes[method]
-	if !ok {
-		className = ""
+	className := classes[method]
+	if className == "" {
 		effects = append(effects, "lookup_class_absent")
 	}
-	if className == "" {
-		effects = append(effects, "alloc_nil_class_is_nil_safe", "init_with_packet_on_nil_is_nil_safe", "derive_selector_from_nil_class_name", "owner_gate_evaluated")
-		if ownerResponds {
-			effects = append(effects, "owner_gate_true_perform_selector_with_nil_notice")
-		} else {
-			effects = append(effects, "owner_gate_false_no_perform_selector")
-		}
-		return effects
+	notice := any(nil)
+	selector := deriveIncomingOwnerSelector(className)
+	if className != "" {
+		effects = append(effects, "lookup_class_present", "construct_notice")
+	} else {
+		effects = append(effects, "alloc_nil_class_is_nil_safe", "init_with_packet_on_nil_is_nil_safe")
 	}
-	return append(effects, "lookup_class_present", "construct_notice", fmt.Sprintf("derive_selector_%s", derivedSelector), "owner_gate_evaluated")
+	effects = append(effects, "derive_selector_"+selector, "owner_gate_evaluated")
+	if hooks.responds != nil && hooks.responds(selector) {
+		effects = append(effects, "owner_gate_true_perform_selector_with_nil_notice")
+		if hooks.perform != nil {
+			hooks.perform(selector, notice, header)
+		}
+	} else {
+		effects = append(effects, "owner_gate_false_no_perform_selector")
+	}
+	return effects
+}
+
+func modelUnknownIncomingMethod(method string, classes map[string]string, ownerResponds bool) []string {
+	return dispatchUnknownIncomingMethod(method, classes, nil, incomingUnknownMethodHooks{
+		responds: func(string) bool { return ownerResponds },
+	})
 }
 
 func TestUnknownIncomingMethodSelectorGateIsConditional(t *testing.T) {
 	classes := map[string]string{"HINT": "LocoHintPushNotice"}
-	selector := "handle%@:packetHeader:"
-	withoutOwner := modelUnknownIncomingMethod("UNRECOGNIZED", classes, selector, false)
-	withOwner := modelUnknownIncomingMethod("UNRECOGNIZED", classes, selector, true)
+	withoutOwner := modelUnknownIncomingMethod("UNRECOGNIZED", classes, false)
+	withOwner := modelUnknownIncomingMethod("UNRECOGNIZED", classes, true)
 	if reflect.DeepEqual(withoutOwner, withOwner) {
 		t.Fatalf("owner gate did not affect unknown-method model: %#v", withoutOwner)
 	}
@@ -55,6 +86,34 @@ func TestUnknownIncomingMethodSelectorGateIsConditional(t *testing.T) {
 	}
 	if got := withOwner[len(withOwner)-1]; got != "owner_gate_true_perform_selector_with_nil_notice" {
 		t.Fatalf("owner=true tail=%q", got)
+	}
+}
+
+func TestUnknownIncomingMethodSelectorArguments(t *testing.T) {
+	if got := deriveIncomingOwnerSelector(""); got != "handle(null):packetHeader:" {
+		t.Fatalf("nil class selector=%q", got)
+	}
+	if got := deriveIncomingOwnerSelector("LocoHintPushNotice"); got != "handleHintPushNotice:packetHeader:" {
+		t.Fatalf("known class selector=%q", got)
+	}
+	header := &incomingUnknownHeader{Method: "UNRECOGNIZED", PacketID: 23}
+	var selector string
+	var notice, gotHeader any
+	effects := dispatchUnknownIncomingMethod("UNRECOGNIZED", map[string]string{}, header, incomingUnknownMethodHooks{
+		responds: func(got string) bool {
+			selector = got
+			return true
+		},
+		perform: func(got string, gotNotice any, gotOriginalHeader any) {
+			selector = got
+			notice, gotHeader = gotNotice, gotOriginalHeader
+		},
+	})
+	if selector != "handle(null):packetHeader:" || notice != nil || gotHeader != header {
+		t.Fatalf("selector callback selector=%q notice=%#v header=%p want=%p", selector, notice, gotHeader, header)
+	}
+	if got := effects[len(effects)-2:]; !reflect.DeepEqual(got, []string{"owner_gate_evaluated", "owner_gate_true_perform_selector_with_nil_notice"}) {
+		t.Fatalf("selector callback effects tail=%v", got)
 	}
 }
 
@@ -74,7 +133,7 @@ func TestIncomingUnknownMethodSourceContractFixture(t *testing.T) {
 		if c.ClassLookup != "absent" || c.Method == "" {
 			t.Fatalf("invalid unknown case=%#v", c)
 		}
-		got := modelUnknownIncomingMethod(c.Method, map[string]string{"HINT": "LocoHintPushNotice", "BLOCKSYNC": "LocoBlockSyncPushNotice"}, "handle%@:packetHeader:", false)
+		got := modelUnknownIncomingMethod(c.Method, map[string]string{"HINT": "LocoHintPushNotice", "BLOCKSYNC": "LocoBlockSyncPushNotice"}, false)
 		if !reflect.DeepEqual(got, c.ExpectedEffects) {
 			t.Fatalf("%s effects=%v want %v", c.Name, got, c.ExpectedEffects)
 		}
