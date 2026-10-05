@@ -10,7 +10,10 @@ does not invent a cursor, skip the packet, or replay an outbound mutation.
 
 The same classification applies while recovering missed events before live
 subscription. Catch-up therefore cannot move on to live delivery after an
-unidentifiable message. A message whose identity is validated but whose
+unidentifiable message. The operator should preserve the profile and
+checkpoint, inspect client compatibility and logs for the source of the
+identity break, then explicitly reconnect only after deciding how to recover;
+the bridge currently provides no automatic repair or recovery UI. A message whose identity is validated but whose
 content is deterministically unsupported follows the separate message-gap or
 conversion-notice policy and can be committed through the normal framework
 path. Malformed non-`MSG` packets remain diagnostics and do not interrupt

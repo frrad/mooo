@@ -25,7 +25,7 @@ func DecodeForDelivery(packet loco.Packet) (Event, error) {
 	}
 	raw := bson.Raw(packet.Body)
 	chatID, logID, typ, log, envelopeErr := messageEnvelope(raw)
-	if envelopeErr != nil || !uniqueKeys(raw) || !uniqueKeys(log) {
+	if envelopeErr != nil || duplicateKey(raw, "chatId") || duplicateKey(raw, "chatLog") || duplicateKey(raw, "logId") || duplicateKey(log, "logId") {
 		return nil, ErrUnidentifiableMessage
 	}
 	// A malformed inner ID must not be replaced by an outer fallback.
@@ -42,26 +42,61 @@ func DecodeForDelivery(packet loco.Packet) (Event, error) {
 			return nil, ErrUnidentifiableMessage
 		}
 	}
+	// Duplicate non-identity fields make strict decoding ambiguous, but the
+	// validated chat/log identity still permits an explicit, committable gap.
+	// Do not retain optional attribution when its wire value is duplicated.
+	if hasAnyDuplicateExcept(raw, "chatId", "chatLog") || hasAnyDuplicateExcept(log, "logId") {
+		return MessageGap{ChatID: chatID, LogID: logID, Type: typ,
+			AuthorID: uniqueOptionalInt64(log, "authorId"), SentAt: uniqueOptionalInt64(log, "sendAt")}, nil
+	}
 	result, err := Decode(packet)
 	if err == nil {
 		return result, nil
 	}
 	return MessageGap{ChatID: chatID, LogID: logID, Type: typ,
-		AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt")}, nil
+		AuthorID: uniqueOptionalInt64(log, "authorId"), SentAt: uniqueOptionalInt64(log, "sendAt")}, nil
 }
 
-func uniqueKeys(raw bson.Raw) bool {
+func duplicateKey(raw bson.Raw, key string) bool {
 	elements, err := raw.Elements()
 	if err != nil {
-		return false
+		return true
+	}
+	count := 0
+	for _, el := range elements {
+		if el.Key() == key {
+			count++
+		}
+	}
+	return count > 1
+}
+
+func hasAnyDuplicateExcept(raw bson.Raw, exempt ...string) bool {
+	elements, err := raw.Elements()
+	if err != nil {
+		return true
+	}
+	exemptSet := make(map[string]struct{}, len(exempt))
+	for _, key := range exempt {
+		exemptSet[key] = struct{}{}
 	}
 	seen := make(map[string]bool, len(elements))
 	for _, el := range elements {
 		key := el.Key()
+		if _, ok := exemptSet[key]; ok {
+			continue
+		}
 		if seen[key] {
-			return false
+			return true
 		}
 		seen[key] = true
 	}
-	return true
+	return false
+}
+
+func uniqueOptionalInt64(raw bson.Raw, key string) int64 {
+	if duplicateKey(raw, key) {
+		return 0
+	}
+	return optionalInt64(raw, key)
 }

@@ -507,6 +507,7 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	switch {
 	case stopping:
 	case terminalErr != nil:
+		kc.log().Error().Str("classification", string(stateUnidentifiableMsg)).Msg("Kakao message admission stopped; operator recovery is required")
 		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateUnidentifiableMsg})
 	case kickedOut:
 		kc.sendState(status.BridgeState{StateEvent: status.StateBadCredentials, Error: stateKickedOut})
