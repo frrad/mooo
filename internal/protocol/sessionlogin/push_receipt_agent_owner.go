@@ -8,7 +8,9 @@ import (
 // PushReceiptAgentQueue is the injected carriage-agent owner queue.
 type PushReceiptAgentQueue interface{ Enqueue(func()) }
 
-type PushReceiptAgentStatus interface{ Status() int8 }
+// PushReceiptAgentStatus uses a wide signed value so the owner does not narrow
+// the source status field before applying the exact status-3 gate.
+type PushReceiptAgentStatus interface{ Status() int64 }
 
 // PushReceiptPacketAccessor exposes only the packet-ID identity needed after
 // the execution-time status gate. Implementations may inspect packet headers;
@@ -23,7 +25,9 @@ type PushReceiptSender interface {
 
 // PushReceiptAgentOwner models sendPushReceipt:. It queues one block, rereads
 // the carriage-agent status when that block executes, and only status 3 may
-// inspect the packet ID or invoke the sender.
+// inspect the packet ID or invoke the sender. Accessor failures are suppressed
+// by this clean-room owner because the reviewed source chain does not specify
+// downstream error propagation.
 type PushReceiptAgentOwner struct {
 	mu       sync.Mutex
 	queue    PushReceiptAgentQueue
