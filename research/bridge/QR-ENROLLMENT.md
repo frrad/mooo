@@ -42,10 +42,9 @@ full official cancellation response contract has been recovered.
 
 ### Successful clean-room runner comparison
 
-The private clean-room runner used for the 2026-09-28 successful Mac QR flow
-is `/Users/frederick/Projects/mooo/.lab/qr_login_probe.go`; its source and
-invocation records remain outside the repository. Static comparison shows it
-loads an existing snapshot identity, derives the wire UUID from that identity,
+The private one-shot runner used in the 2026-09-28 successful owned Mac QR
+experiment loads an existing snapshot identity and derives the wire UUID from
+that identity,
 uses `BuildQRGenerateRequest`, the same Mac header profile, a 15-second HTTP
 client timeout, a 90-second outer context, and three-second polling. It does
 not add a check-key field, override, or imported official credential. The QR
@@ -85,11 +84,9 @@ request/credential input was found in the framework path.
 A fresh Mach-O metadata pass on the owned macOS 26.8.0 binary resolves the
 `qrLoginCheckKey` selector to the `FCAuthController` instance method with
 Objective-C type `@16@0:8`. Its method body conditionally bridges Swift
-`Foundation.Data` to `NSData` and returns an autoreleased object. The earlier
-description of this as a mistaken selector-to-IMP mapping was incorrect: the
-Swift data helper is the method body boundary itself. Static references do not
-show a direct caller, so Swift direct dispatch or runtime selector dispatch
-remains possible.
+`Foundation.Data` to `NSData` and returns an autoreleased object. Static
+references do not show a direct caller, so Swift direct dispatch or runtime
+selector dispatch remains possible.
 
 The static trace still does not establish what bytes populate the returned
 `Data`, whether they derive from the device/challenge state, or where the
