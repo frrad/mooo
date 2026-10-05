@@ -241,6 +241,46 @@ func TestStaleBootstrapCannotPublishConnectedState(t *testing.T) {
 	}
 }
 
+func TestKickoutIsTerminalAndDoesNotReopen(t *testing.T) {
+	first := &fakeKakao{stream: make(chan events.Result, 1)}
+	var opens atomic.Int32
+	kc, harness := newTestClient(t, func() (kakaoClient, error) {
+		opens.Add(1)
+		return first, nil
+	})
+	kc.wait = func(context.Context, time.Duration) error { return nil }
+	kc.Connect(context.Background())
+	first.stream <- events.Result{Event: events.Kickout{}}
+	close(first.stream)
+	waitFor(t, func() bool { return opens.Load() == 1 && harness.lastState().StateEvent == status.StateBadCredentials })
+	kc.Disconnect()
+}
+
+func TestChangeServerCleansUpAndReopens(t *testing.T) {
+	first := &fakeKakao{stream: make(chan events.Result, 1)}
+	second := &fakeKakao{stream: make(chan events.Result)}
+	var opens atomic.Int32
+	kc, _ := newTestClient(t, func() (kakaoClient, error) {
+		if opens.Add(1) == 1 {
+			return first, nil
+		}
+		first.mu.Lock()
+		closed := first.closeCalls > 0
+		first.mu.Unlock()
+		if !closed {
+			return nil, errors.New("change-server replacement opened before cleanup")
+		}
+		return second, nil
+	})
+	kc.wait = func(context.Context, time.Duration) error { return nil }
+	kc.Connect(context.Background())
+	first.stream <- events.Result{Event: events.ChangeServer{}}
+	close(first.stream)
+	waitFor(t, func() bool { return opens.Load() == 2 && kc.IsLoggedIn() })
+	close(second.stream)
+	kc.Disconnect()
+}
+
 func TestRecoveryPolicyRejectsTerminalAndUnknownFailures(t *testing.T) {
 	for i, want := range ordinaryRecoveryDelays {
 		if got := recoveryDelay(errors.New("transport closed"), i); got != want {

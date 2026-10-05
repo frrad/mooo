@@ -243,48 +243,6 @@ func TestScriptedBackendAutomaticRecoveryReleasesLeaseBeforeReopen(t *testing.T)
 	}
 }
 
-func scriptedLiveScenario(t *testing.T, maxLogID int64) (client.TestDialers, []*testloco.Backend) {
-	t.Helper()
-	booking, err := testloco.NewBackend(false, requestStep("GETCONF", bson.D{{Key: "status", Value: int32(0)}, {Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}}, {Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}}}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	checkin, err := testloco.NewBackend(false, requestStep("CHECKIN", bson.D{{Key: "status", Value: int32(0)}, {Key: "host", Value: "carriage.invalid"}, {Key: "port", Value: int32(995)}}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	loginReply := bson.D{{Key: "status", Value: int32(0)}, {Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: testChatID}, {Key: "l", Value: bson.D{{Key: "chatId", Value: testChatID}, {Key: "logId", Value: maxLogID}}}}}}, {Key: "eof", Value: true}, {Key: "lastTokenId", Value: int64(10)}, {Key: "lbk", Value: int32(1)}}
-	carriage, err := testloco.NewBackend(true, requestStep("LOGINLIST", loginReply), holdStep())
-	if err != nil {
-		t.Fatal(err)
-	}
-	backends := []*testloco.Backend{booking, checkin, carriage}
-	t.Cleanup(func() {
-		for _, backend := range backends {
-			_ = backend.Endpoint.Client.Close()
-		}
-	})
-	dialers := client.TestDialers{
-		TLS: func(_ context.Context, host string, _ int) (client.TestConnection, error) {
-			switch host {
-			case "booking-loco.kakao.com":
-				return client.TestConnection{Conn: booking.Endpoint.Client}, nil
-			case "checkin.invalid":
-				return client.TestConnection{Conn: checkin.Endpoint.Client}, nil
-			default:
-				return client.TestConnection{}, fmt.Errorf("unexpected TLS host %q", host)
-			}
-		},
-		Secure: func(_ context.Context, host string, _ int) (client.TestConnection, error) {
-			if host != "carriage.invalid" {
-				return client.TestConnection{}, fmt.Errorf("unexpected secure host %q", host)
-			}
-			return client.TestConnection{Conn: carriage.Endpoint.Client, Secure: carriage.Endpoint.ClientSecure}, nil
-		},
-	}
-	return dialers, backends
-}
-
 func newIntegrationProfile(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
