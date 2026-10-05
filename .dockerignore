@@ -1,0 +1,9 @@
+# Allow only build inputs; private labs and operator configuration stay out.
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!Dockerfile

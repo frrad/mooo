@@ -30,3 +30,6 @@ secrets/
 .env
 .env.*
 !.env.example
+
+# Container operator state
+/deploy/data/
