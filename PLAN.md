@@ -188,6 +188,7 @@ Required synthetic integration coverage after request approval:
    sending, and status 3 preserves the uint32 packet identity and signed
    admission argument at the owner boundary. A separate test must prove the
    eventual lower socket-tag mapping once its source trace is corrected.
+
 4. The receipt path never inserts the signed send argument into request
    correlation. Any unsolicited receipt acknowledgement remains an inbound
    dispatch concern until an approved method/ID model defines whether it can
@@ -195,6 +196,56 @@ Required synthetic integration coverage after request approval:
 5. Out-segment partial progress, zero-byte errors, ambiguous failures, close,
    and bounded shutdown are exercised only after the receipt serialization and
    completion contract specifies how they map to receipt outcomes.
+
+### Next bounded Session slice
+
+The next implementation slice is a constructor-level, opt-in adapter rather
+than another standalone owner model. It is gated on two source decisions that
+are still open: the selected NW request serialization recipe and the mapping
+from the signed `sendPacket:tag:` admission argument to the lower socket write.
+The current lower-path evidence reads the unsigned packet-header ID at the
+write boundary, so the adapter must not serialize the signed value or claim a
+wire field until that trace is settled. The signed value remains an
+owner-boundary test value only.
+
+Once those inputs are approved, add a Session option that injects the receipt
+adapter before the reader starts. The option supplies the queue/scheduler,
+execution-time status reader, current-agent resolver, packet accessor or
+serializer, and sender. It is nil by default and must not alter ordinary
+Session construction. The manager owner retains its own target identity and
+resolves the carriage agent at inline-send time; the agent owner reads status
+when its queued block executes. A non-3 status must return before packet/header
+access or send. A status-3 execution may access the packet ID and pass the
+signed admission argument to the injected sender.
+
+The first runtime proof should use an actual Session with a synthetic unmatched
+push and injected owners. It must demonstrate ordinary push delivery remains
+ordered, cancellation is enqueued before inline send, scheduling is enqueued
+after it, manager and agent identities stay distinct, and status changes made
+between enqueue and execution suppress or admit the send. The harness must
+also cover a blocked body/header exclusion, a missing accessor, a close before
+queued execution, and replacement of the current carriage agent. Receipt work
+must not enter Session pending-request maps or reuse a request ID. Do not add
+packet construction, default activation, or transport completion behavior to
+this slice.
+
+Session.Close and Shutdown must close/invalidate the injected owner before
+terminal event publication and retain the owner until its worker joins. A
+future typed terminal bridge path therefore needs a generation guard so stale
+queued receipt work cannot send after KICKOUT/CHANGESVR or a replacement
+session. Bridge integration follows only after this Session proof; it must
+reuse the existing retained cleanup owner and bounded retry semantics rather
+than introducing a second lifecycle owner.
+
+The retained bootstrap-cleanup audit found no separate ownership loss in the
+stopped-connect path: Connect records the opened client before bounded
+Shutdown, and Disconnect serializes against that cleanup owner. In that path
+the event loop has not been launched, so there is no `done` channel to join;
+Session.Shutdown remains the worker-join boundary. A regression should still
+exercise a pending Events subscription plus concurrent Disconnect when the
+bootstrap fake exposes that seam, proving the client handle remains retained
+through a timeout and Connect cannot reopen it. This is a lifecycle proof,
+not a reason to add a new bridge-side close or reset effect.
 
 The manager/agent composition harness is tracked separately in PR138; this plan
 does not authorize Session binding, packet construction, or default activation.
