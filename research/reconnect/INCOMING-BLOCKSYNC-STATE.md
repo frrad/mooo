@@ -32,3 +32,15 @@ queue skips the write block without an exposed error. This proves synchronous
 completion of the operation wrapper when the context exists, but it does not
 prove that the underlying store has committed, nor does it reveal rollback or
 retry behavior.
+
+The wrapper's post-block `processChangedObjects` selector resolves to
+`0x10146cf78`. That implementation locks the changed-object collection,
+begins a database transaction, classifies deleted and dirty objects, calls
+`deleteObject:` or `_save`, and then calls `commit`. It subsequently updates
+the in-database flags, clears the changed collection, and dispatches a main
+queue notification. Its exception path calls `revert:` for changed objects,
+calls `rollback`, clears the collection, unlocks, and rethrows. This is direct
+evidence for the generic store pipeline, but it does not prove that every
+BLOCKSYNC field mutation is registered in the changed-object collection or
+that the completion callback observes a durable commit; those linkage and
+error-routing questions remain open.
