@@ -1,0 +1,233 @@
+package sessionlogin
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+)
+
+type nwStateFixture struct {
+	Status string        `json:"status"`
+	Cases  []nwStateCase `json:"cases"`
+}
+type nwStateCase struct {
+	Name                         string   `json:"name"`
+	Operation                    string   `json:"operation"`
+	State                        string   `json:"state"`
+	OwnerPresent                 bool     `json:"owner_present"`
+	CurrentConnectionPresent     bool     `json:"current_connection_present"`
+	CurrentConnectionID          string   `json:"current_connection_id"`
+	ReplacementConnectionPresent bool     `json:"replacement_connection_present"`
+	ReceiveWorkItemPresent       bool     `json:"receive_work_item_present"`
+	PathPresent                  bool     `json:"path_present"`
+	PathStatus                   string   `json:"path_status"`
+	ErrorKind                    string   `json:"error_kind"`
+	ErrorCode                    int      `json:"error_code"`
+	OwnerFallbackPredicate       bool     `json:"owner_fallback_predicate"`
+	OwnerFlagA                   bool     `json:"owner_flag_a"`
+	OwnerFlagB                   bool     `json:"owner_flag_b"`
+	ReadyHandshakeEnabled        bool     `json:"ready_handshake_enabled"`
+	HandshakeDataPresent         bool     `json:"handshake_data_present"`
+	ReadyStatus                  uint8    `json:"ready_status"`
+	ExpectedCancelID             string   `json:"expected_cancel_id"`
+	ExpectedStatusUpdates        []uint8  `json:"expected_status_updates"`
+	ExpectedLocalErrorCode       *int     `json:"expected_local_error_code"`
+	ExpectedLocalErrorDomain     string   `json:"expected_local_error_domain"`
+	Expected                     []string `json:"expected_effects"`
+	PendingGap                   bool     `json:"pending_map_gap"`
+}
+
+type nwStateResult struct {
+	Effects          []string
+	CancelID         string
+	StatusUpdates    []uint8
+	LocalErrorCode   *int
+	LocalErrorDomain string
+}
+
+func projectNWState(c nwStateCase) nwStateResult {
+	effects := make([]string, 0)
+	cancelID := ""
+	if c.Operation == "setup" {
+		if c.CurrentConnectionPresent {
+			effects = append(effects, "cancel_previous_current", "release_previous_current")
+			cancelID = c.CurrentConnectionID
+		}
+		if c.ReplacementConnectionPresent {
+			effects = append(effects, "store_replacement", "start_on_queue")
+		}
+		return nwStateResult{Effects: effects, CancelID: cancelID, StatusUpdates: []uint8{}}
+	}
+	if !c.OwnerPresent {
+		return nwStateResult{Effects: effects, StatusUpdates: []uint8{}}
+	}
+	switch c.State {
+	case "waiting":
+		// The dispatcher does not call handleConnectFailure for every waiting
+		// callback. It first requires clear owner flags, a path, and one of the
+		// two observed path statuses, then evaluates the fallback/immediate
+		// predicates.
+		if !c.OwnerFlagA && !c.OwnerFlagB && c.PathPresent &&
+			(c.PathStatus == "satisfied" || c.PathStatus == "requires_connection") &&
+			(dispatcherErrorPredicate(c) || immediateFailurePredicate(c)) {
+			effects = append(effects, "extract_state_error", "invoke_failure_helper")
+			appendFailureHelperEffects(&effects, c)
+			cancelID = helperCancelID(c)
+		} else {
+			effects = append(effects, "log_state")
+		}
+	case "failed":
+		// failed always invokes the helper with allowFallback=true; the helper
+		// owns cleanup and the fallback/error split.
+		effects = append(effects, "extract_state_error", "invoke_failure_helper")
+		appendFailureHelperEffects(&effects, c)
+		cancelID = helperCancelID(c)
+	case "setup", "preparing":
+		effects = append(effects, "log_state")
+	case "ready":
+		effects = append(effects, "log_tls_version", "ready_followup")
+		if c.ReceiveWorkItemPresent {
+			effects = append(effects, "cancel_receive_work_item")
+		}
+		effects = append(effects, "set_ready_owner_flag")
+		if c.ReadyHandshakeEnabled {
+			effects = append(effects, "init_v2sl_crypto", "set_v2sl_crypto")
+			if c.CurrentConnectionPresent {
+				effects = append(effects, "read_handshake_data")
+				if c.HandshakeDataPresent {
+					effects = append(effects, "bridge_handshake_data_some")
+				} else {
+					effects = append(effects, "bridge_handshake_data_none")
+				}
+				effects = append(effects, "send_v2sl_handshake")
+			}
+		}
+		effects = append(effects, "read_header")
+	case "cancelled":
+		if c.ReceiveWorkItemPresent {
+			effects = append(effects, "cancel_receive_work_item")
+		}
+		effects = append(effects, "set_status_error", "dispatch_main_queue", "construct_locoagent_error", "fail_pending_requests_with_error")
+	default:
+		effects = append(effects, "log_unknown_state")
+	}
+	result := nwStateResult{Effects: effects, CancelID: cancelID, StatusUpdates: []uint8{}}
+	if nwContainsEffect(effects, "set_status_error") {
+		status := uint8(0)
+		result.StatusUpdates = []uint8{status}
+	}
+	if nwContainsEffect(effects, "construct_locoagent_error") {
+		code := -1
+		result.LocalErrorCode = &code
+		result.LocalErrorDomain = "LocoAgent"
+	}
+	if c.State == "ready" {
+		result.StatusUpdates = []uint8{3}
+	}
+	return result
+}
+
+func nwContainsEffect(effects []string, want string) bool {
+	for _, effect := range effects {
+		if effect == want {
+			return true
+		}
+	}
+	return false
+}
+
+func helperCancelID(c nwStateCase) string {
+	if c.CurrentConnectionPresent {
+		return c.CurrentConnectionID
+	}
+	return ""
+}
+
+func appendFailureHelperEffects(effects *[]string, c nwStateCase) {
+	if c.ReceiveWorkItemPresent {
+		*effects = append(*effects, "cancel_receive_work_item")
+	}
+	if c.CurrentConnectionPresent {
+		*effects = append(*effects, "clear_state_handler", "cancel_current_connection")
+	}
+	if immediateFailurePredicate(c) || !c.OwnerFallbackPredicate || c.OwnerFlagA || c.OwnerFlagB {
+		*effects = append(*effects, "convert_nw_error", "set_status_error", "dispatch_main_queue", "construct_locoagent_error", "fail_pending_requests_with_error")
+	} else {
+		*effects = append(*effects, "fallback_to_v2sl")
+	}
+}
+
+// These predicates are sourced from one actual NWError payload. The dispatcher
+// compares POSIX code 0x36 (54) or the TLS error case; the helper's immediate
+// failure check compares POSIX code 0x3d (61). Adjacent codes and non-POSIX
+// errors do not satisfy either numeric comparison.
+func dispatcherErrorPredicate(c nwStateCase) bool {
+	return (c.ErrorKind == "posix" && c.ErrorCode == 54) || c.ErrorKind == "tls"
+}
+
+func immediateFailurePredicate(c nwStateCase) bool {
+	return c.ErrorKind == "posix" && c.ErrorCode == 61
+}
+
+func TestNWStateHandlerFixture(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-nw-state-handler.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f nwStateFixture
+	d := json.NewDecoder(bytes.NewReader(body))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&f); err != nil {
+		t.Fatal(err)
+	}
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 21 {
+		t.Fatalf("header %#v", f)
+	}
+	seen := map[string]bool{}
+	for _, c := range f.Cases {
+		if c.Name == "" || seen[c.Name] {
+			t.Fatalf("duplicate/empty case %q", c.Name)
+		}
+		seen[c.Name] = true
+		if !c.PendingGap {
+			t.Errorf("%s must preserve pending map gap", c.Name)
+		}
+		if c.State == "ready" && c.ReadyStatus != 3 {
+			t.Errorf("%s ready status=%d want 3", c.Name, c.ReadyStatus)
+		}
+		got := projectNWState(c)
+		if !reflect.DeepEqual(got.Effects, c.Expected) || got.CancelID != c.ExpectedCancelID ||
+			!reflect.DeepEqual(got.StatusUpdates, c.ExpectedStatusUpdates) ||
+			!reflect.DeepEqual(got.LocalErrorCode, c.ExpectedLocalErrorCode) ||
+			got.LocalErrorDomain != c.ExpectedLocalErrorDomain {
+			t.Errorf("%s result=%+v want effects=%v cancel=%q", c.Name, got, c.Expected, c.ExpectedCancelID)
+		}
+	}
+}
+
+func TestNWStateErrorPredicatesUseObservedCodeBoundaries(t *testing.T) {
+	for _, code := range []int{53, 55, 60, 62} {
+		c := nwStateCase{ErrorKind: "posix", ErrorCode: code}
+		if dispatcherErrorPredicate(c) || immediateFailurePredicate(c) {
+			t.Fatalf("adjacent code %d unexpectedly matched", code)
+		}
+	}
+	if !dispatcherErrorPredicate(nwStateCase{ErrorKind: "posix", ErrorCode: 54}) {
+		t.Fatal("POSIX 54 dispatcher error did not match")
+	}
+	if !dispatcherErrorPredicate(nwStateCase{ErrorKind: "tls", ErrorCode: 54}) {
+		t.Fatal("TLS dispatcher error did not match")
+	}
+	if !immediateFailurePredicate(nwStateCase{ErrorKind: "posix", ErrorCode: 61}) {
+		t.Fatal("POSIX 61 immediate failure did not match")
+	}
+	if immediateFailurePredicate(nwStateCase{ErrorKind: "dns", ErrorCode: 61}) {
+		t.Fatal("DNS 61 incorrectly matched POSIX immediate failure")
+	}
+	if dispatcherErrorPredicate(nwStateCase{ErrorKind: "other", ErrorCode: 54}) {
+		t.Fatal("non-POSIX 54 incorrectly matched dispatcher predicate")
+	}
+}
