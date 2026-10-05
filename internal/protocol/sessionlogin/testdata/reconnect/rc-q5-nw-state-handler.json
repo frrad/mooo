@@ -23,7 +23,8 @@
       "path_status": "",
       "owner_fallback_predicate": false,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "setup_replaces_previous_connection",
@@ -49,7 +50,8 @@
       "path_status": "",
       "owner_fallback_predicate": false,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "owner_lifetime_guard",
@@ -70,7 +72,8 @@
       "path_status": "",
       "owner_fallback_predicate": false,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "waiting_extracts_error_without_fallback",
@@ -102,7 +105,8 @@
       "path_status": "satisfied",
       "owner_fallback_predicate": false,
       "dispatcher_error_predicate": true,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "failed_allows_fallback_input",
@@ -130,7 +134,8 @@
       "path_status": "",
       "owner_fallback_predicate": true,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "setup_state_logs_only",
@@ -153,7 +158,8 @@
       "path_status": "",
       "owner_fallback_predicate": false,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "preparing_state_logs_only",
@@ -176,7 +182,8 @@
       "path_status": "",
       "owner_fallback_predicate": false,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "ready_logs_tls_and_followup",
@@ -191,6 +198,10 @@
         "log_tls_version",
         "ready_followup",
         "set_ready_owner_flag",
+        "init_v2sl_crypto",
+        "set_v2sl_crypto",
+        "read_handshake_data",
+        "send_v2sl_handshake",
         "read_header"
       ],
       "pending_map_gap": true,
@@ -202,7 +213,8 @@
       "path_status": "",
       "owner_fallback_predicate": false,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": true,
+      "handshake_data_present": true
     },
     {
       "name": "cancelled_cancels_work_and_dispatches_error",
@@ -229,7 +241,8 @@
       "path_status": "",
       "owner_fallback_predicate": false,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "unknown_state_logs",
@@ -252,7 +265,8 @@
       "path_status": "",
       "owner_fallback_predicate": false,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "failed_owner_virtual_predicate_forces_error",
@@ -284,7 +298,8 @@
       "path_status": "",
       "owner_fallback_predicate": false,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "failed_owner_flags_force_error",
@@ -316,7 +331,8 @@
       "path_status": "",
       "owner_fallback_predicate": true,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "waiting_path_absent_logs_only",
@@ -339,7 +355,8 @@
       "pending_map_gap": true,
       "owner_fallback_predicate": true,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "waiting_unsatisfied_path_logs_only",
@@ -362,7 +379,8 @@
       "pending_map_gap": true,
       "owner_fallback_predicate": true,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "waiting_flags_block_helper",
@@ -385,7 +403,8 @@
       "pending_map_gap": true,
       "owner_fallback_predicate": true,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "waiting_predicates_false_logs_only",
@@ -408,7 +427,8 @@
       "pending_map_gap": true,
       "owner_fallback_predicate": false,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "failed_without_work_or_connection",
@@ -437,7 +457,8 @@
       "pending_map_gap": true,
       "owner_fallback_predicate": false,
       "dispatcher_error_predicate": false,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "waiting_path_predicate_invokes_fallback_helper",
@@ -465,7 +486,8 @@
         "fallback_to_v2sl"
       ],
       "pending_map_gap": true,
-      "ready_initial_send_enabled": false
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     },
     {
       "name": "waiting_immediate_predicate_invokes_helper",
@@ -483,7 +505,6 @@
       "owner_fallback_predicate": true,
       "owner_flag_a": false,
       "owner_flag_b": false,
-      "ready_initial_send_enabled": false,
       "expected_cancel_id": "current",
       "expected_effects": [
         "extract_state_error",
@@ -497,7 +518,9 @@
         "construct_locoagent_error",
         "fail_pending_requests_with_error"
       ],
-      "pending_map_gap": true
+      "pending_map_gap": true,
+      "ready_handshake_enabled": false,
+      "handshake_data_present": false
     }
   ]
 }

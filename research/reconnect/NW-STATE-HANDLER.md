@@ -39,8 +39,9 @@ predicates and the helper's own guard are separate source stages.
 
 The ready follow-up at `0x100d47508` logs TLS state, cancels and clears the
 stored receive work item when present, sets the observed owner flag, and calls
-`readHeader` after its guarded initial-send section. When the second owner flag
-is set and a current connection is available, it sends data with the Network
+`readHeader` after its guarded initial-send section. When the second owner flag is set, it initializes the V2SL crypto context,
+calls `setV2slCrypto:`, reads the current connection's `handshakeData`, and
+when that data and connection are present sends it with the Network
 `contentProcessed` completion, default-message context, and `isComplete=true`.
 Its completion callback enters at `0x100d4998c` and forwards its captured
 context to `0x100d47784`; this path does not perform a weak-owner load. It
@@ -53,9 +54,9 @@ derive and validate an endpoint port, and calls the replacement setup path
 when both are available. Missing or invalid endpoint data constructs an
 NWError and routes through `0x100d47a3c`.
 
-The main-queue thunk at `0x100d49960` captures the owner context and performs
-an Objective-C message send through an NSObject receiver; the selector is not
-resolved by the available stub metadata.
+The main-queue thunk at `0x100d49960` captures the owner context and sends
+`cancelPreviousPerformRequestsWithTarget:` through the NSObject receiver. This
+is delayed-work cancellation for that owner, not a pending-request-map lookup.
 
 The raw state path now proves an owner `setStatus:error:` call and a
 `failPendingRequestsWithError:` fanout on the error path. It does not expose a

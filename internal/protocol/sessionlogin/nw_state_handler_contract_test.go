@@ -29,7 +29,8 @@ type nwStateCase struct {
 	OwnerFallbackPredicate       bool     `json:"owner_fallback_predicate"`
 	OwnerFlagA                   bool     `json:"owner_flag_a"`
 	OwnerFlagB                   bool     `json:"owner_flag_b"`
-	ReadyInitialSendEnabled      bool     `json:"ready_initial_send_enabled"`
+	ReadyHandshakeEnabled        bool     `json:"ready_handshake_enabled"`
+	HandshakeDataPresent         bool     `json:"handshake_data_present"`
 	ExpectedCancelID             string   `json:"expected_cancel_id"`
 	Expected                     []string `json:"expected_effects"`
 	PendingGap                   bool     `json:"pending_map_gap"`
@@ -85,8 +86,8 @@ func projectNWState(c nwStateCase) nwStateResult {
 			effects = append(effects, "cancel_receive_work_item")
 		}
 		effects = append(effects, "set_ready_owner_flag")
-		if c.ReadyInitialSendEnabled && c.CurrentConnectionPresent {
-			effects = append(effects, "send_initial_ping")
+		if c.ReadyHandshakeEnabled && c.CurrentConnectionPresent && c.HandshakeDataPresent {
+			effects = append(effects, "init_v2sl_crypto", "set_v2sl_crypto", "read_handshake_data", "send_v2sl_handshake")
 		}
 		effects = append(effects, "read_header")
 	case "cancelled":
