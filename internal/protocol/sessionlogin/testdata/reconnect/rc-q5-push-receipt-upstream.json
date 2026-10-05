@@ -63,5 +63,6 @@
         "send_carriage_push_receipt"
       ]
     }
-  ]
+  ],
+  "status_domain": "signed_byte_getter_unsigned_byte_gate"
 }

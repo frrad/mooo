@@ -3,7 +3,7 @@
 Status: reviewed static source chain, runtime unexecuted. Observation date:
 2026-10-04. Client build: macOS KakaoTalk 26.8.0.
 
-The only Objective-C call sites found for `sendCarriagePushReceipt:` are the
+The bounded Ghidra selector inventory found for `sendCarriagePushReceipt:` are the
 push notice handlers `handleHintPushNotice:packetHeader:` and
 `handleBlockSyncPushNotice:packetHeader:`. Both retain the notice and packet
 header, optionally notify a delegate when it responds to the corresponding
@@ -26,15 +26,16 @@ these two upstream consumers. It does not activate a runtime receipt default.
 
 The receipt gate's status width is also observed: the LocoAgent `status` getter
 has Objective-C type `c16@0:8` at IMP `0x10151c384` and returns a byte loaded
-from receiver offset `+8`. The queued receipt block independently performs
+from receiver offset `+8` with `ldrsb w0, [x0, #8]`. The queued receipt block independently performs
 `ldrb w8, [owner, #8]` at `0x101775204` and compares that byte with `3` at
-`0x101775208`. The public contract therefore models an unsigned storage byte,
-with no narrowing from a wider status enum.
+`0x101775208`. The getter exposes a signed-byte result, while the queued gate reads the same
+storage byte as unsigned; the synthetic status domain records both operations
+without narrowing it to a Go `int8`.
 
 ## Synthetic contract
 
 The fixture records the two discovered handlers, delegate-present and
--delegate-present paths, and the required packet-header/packet-construction
+delegate-absent paths, and the required packet-header/packet-construction
 ordering. It keeps the delegate callback and receipt submission as separate
 effects so a future implementation cannot accidentally suppress the receipt
 when the optional delegate is absent.
@@ -46,14 +47,15 @@ when the optional delegate is absent.
 - `handleBlockSyncPushNotice:packetHeader:` IMP `0x101517988`; receipt callsite
   `0x101517a98`.
 - selector inventory query: private Ghidra `MoooQuery objc-calls
-  sendCarriagePushReceipt:`; exactly two callers.
+  sendCarriagePushReceipt:`; exactly two static callers in this inventory; this does not establish exhaustive
+runtime eligibility through every dispatch or registration path.
 - delegate selectors: `locoManager:didReceiveHintPushNotice:` at callsite
-  `0x101515128`, and `locoManager:didReceiveBlockSyncPushNotice:` at
+  `0x10151532c`, and `locoManager:didReceiveBlockSyncPushNotice:` at
   `0x101517a50`.
 - packet initializers: `initWithPacketHeader:` at `0x101515338`, and
   `initWithPacketHeader:revision:plusRevision:` at `0x101517a88`.
 - LocoAgent `status` metadata/body: type `c16@0:8`, IMP `0x10151c384`,
-  `return (char *)(self + 8)`; receipt gate raw load/compare:
+  raw getter `ldrsb w0, [x0, #8]`; receipt gate raw load/compare:
   `0x101775204`/`0x101775208`.
 - private receipts are retained outside the repository under
   `~/Library/Application Support/mooo-lab/ghidra/parity/carriage-push-upstream/`.

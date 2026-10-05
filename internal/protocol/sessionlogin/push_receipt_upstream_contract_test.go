@@ -10,8 +10,9 @@ import (
 )
 
 type pushReceiptUpstreamFixture struct {
-	Status string                    `json:"status"`
-	Cases  []pushReceiptUpstreamCase `json:"cases"`
+	Status       string                    `json:"status"`
+	StatusDomain string                    `json:"status_domain"`
+	Cases        []pushReceiptUpstreamCase `json:"cases"`
 }
 
 type pushReceiptUpstreamCase struct {
@@ -50,7 +51,7 @@ func TestPushReceiptUpstreamFixture(t *testing.T) {
 	if err := decoder.Decode(&fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.Status != "reviewed-static-unexecuted-runtime" || len(fixture.Cases) != 5 {
+	if fixture.Status != "reviewed-static-unexecuted-runtime" || fixture.StatusDomain != "signed_byte_getter_unsigned_byte_gate" || len(fixture.Cases) != 5 {
 		t.Fatalf("fixture header = %#v", fixture)
 	}
 	seen := map[string]bool{}
