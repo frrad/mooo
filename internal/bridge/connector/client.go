@@ -15,6 +15,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/database"
 	bridgematrix "maunium.net/go/mautrix/bridgev2/matrix"
 	"maunium.net/go/mautrix/bridgev2/networkid"
+	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -130,6 +131,10 @@ type KakaoClient struct {
 	recoveryTry          int
 	wait                 func(context.Context, time.Duration) error
 	profiles             map[int64]chatmeta.Member
+	reactionMu           sync.Mutex
+	reactionRevisions    map[string]int64
+	reactionNoticeMu     sync.Mutex
+	reactionNotices      map[string]time.Time
 }
 
 var (
@@ -139,11 +144,13 @@ var (
 
 func newKakaoClient(login *bridgev2.UserLogin, userID int64, open func() (kakaoClient, error)) *KakaoClient {
 	kc := &KakaoClient{
-		login:    login,
-		userID:   userID,
-		open:     open,
-		queue:    login.QueueRemoteEvent,
-		profiles: make(map[int64]chatmeta.Member),
+		login:             login,
+		userID:            userID,
+		open:              open,
+		queue:             login.QueueRemoteEvent,
+		profiles:          make(map[int64]chatmeta.Member),
+		reactionRevisions: make(map[string]int64),
+		reactionNotices:   make(map[string]time.Time),
 	}
 	kc.wait = waitForRecovery
 	kc.sendState = func(state status.BridgeState) { kc.stateQueue().Send(state) }
@@ -589,6 +596,56 @@ func shutdownWithRecoveryTimeout(c kakaoClient) error {
 }
 
 func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
+	if reaction, ok := evt.(events.ReactionChanged); ok {
+		remote, err := kc.reactionRemote(context.Background(), c, reaction)
+		if err != nil {
+			return kc.reportReactionFailure(reaction, err)
+		}
+		if remote == nil {
+			return true
+		}
+		remotes := []bridgev2.RemoteEvent{remote}
+		if syncEvent, ok := remote.(*kakaoReactionSync); ok && kc.login != nil && kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
+			remotes, err = kc.reactionDeliveryEvents(context.Background(), syncEvent)
+			if err != nil {
+				if errors.Is(err, errReactionTargetMissing) {
+					kc.log().Debug().Msg("Kakao reaction target is not bridged; leaving revision for replay")
+					return false
+				}
+				kc.log().Warn().Err(err).Msg("Kakao reaction delivery plan could not be built")
+				return false
+			}
+		}
+		allIgnored := true
+		for _, delivery := range remotes {
+			result := kc.queue(delivery)
+			if !committable(result) {
+				kc.log().Warn().Err(result.Error).Msg("Kakao reaction update was not confirmed as bridged")
+				return false
+			}
+			if !result.Ignored {
+				allIgnored = false
+			}
+			if syncEvent, ok := delivery.(*simplevent.Reaction); ok && syncEvent.Type == bridgev2.RemoteEventReactionRemove && kc.login != nil && kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
+				row, queryErr := kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(context.Background(), kc.login.ID, syncEvent.TargetMessage, syncEvent.Sender.Sender, syncEvent.EmojiID)
+				if queryErr != nil || row != nil {
+					kc.log().Warn().Err(queryErr).Msg("Kakao reaction removal was not confirmed in the database")
+					return false
+				}
+			}
+		}
+		if len(remotes) == 0 || !allIgnored {
+			appliedRevision := reaction.Revision
+			if syncEvent, ok := remote.(*kakaoReactionSync); ok {
+				appliedRevision = syncEvent.AppliedRevision
+			}
+			if err := kc.persistReactionRevision(context.Background(), reaction, appliedRevision); err != nil {
+				kc.log().Warn().Msg("Kakao reaction revision could not be persisted")
+				return false
+			}
+		}
+		return true
+	}
 	remote := kc.remoteEventFor(evt)
 	if remote == nil {
 		kc.log().Debug().Str("kind", string(evt.Kind())).Msg("Ignoring Kakao event not bridged yet")
@@ -959,9 +1016,12 @@ func userInfoForMember(profile chatmeta.Member) *bridgev2.UserInfo {
 
 func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Portal) *event.RoomFeatures {
 	return &event.RoomFeatures{
-		ID:            "com.github.frrad.mooo.capabilities.2026_10_04.photos1",
-		MaxTextLength: maxTextLength,
-		Reply:         event.CapLevelPartialSupport,
+		ID:               "com.github.frrad.mooo.capabilities.2026_10_04.photos1.reactions1",
+		MaxTextLength:    maxTextLength,
+		Reply:            event.CapLevelPartialSupport,
+		Reaction:         event.CapLevelPartialSupport,
+		ReactionCount:    1,
+		AllowedReactions: []string{"❤️", "👍", "✅", "😆", "😮", "😢"},
 		File: event.FileFeatureMap{event.MsgImage: &event.FileFeatures{
 			MimeTypes: map[string]event.CapabilitySupportLevel{"image/jpeg": event.CapLevelPartialSupport, "image/png": event.CapLevelPartialSupport},
 			MaxSize:   media.MaxImageBytes,
