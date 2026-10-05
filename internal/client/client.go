@@ -270,7 +270,9 @@ func (c *Client) InitialChatData(ctx context.Context) ([]bson.Raw, error) {
 
 // Pushes returns the live unsolicited-packet stream, including MSG events,
 // after lazily establishing the one reusable session. The stream closes if the
-// session disconnects; Client never reconnects it implicitly.
+// session disconnects; Client never reconnects it implicitly. Raw consumers
+// receive terminal packets without typed terminal shutdown and must close the
+// client explicitly after applying their own terminal policy.
 func (c *Client) Pushes(ctx context.Context) (<-chan loco.Packet, error) {
 	session, err := c.ensureSession(ctx)
 	if err != nil {
@@ -317,12 +319,24 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 	c.eventStream = stream
 	checkpoint := c.checkpoint
 	c.mu.Unlock()
-	go decodeEventStreamWithTerminal(raw, stream, checkpoint, c.queueCommit, func() {
-		// Terminal notices end the authenticated session. Close is interrupt-only
-		// and does not wait on the reader that delivered the notice.
-		_ = c.Close()
-	})
+	go decodeEventStreamWithTerminal(raw, stream, checkpoint, c.queueCommit, c.interruptTerminal)
 	return stream, nil
+}
+
+// interruptTerminal closes admission and interrupts the owned Session after a
+// typed terminal notice. It deliberately retains the checkpoint and profile
+// lease; Shutdown must join any workers before releasing either resource.
+func (c *Client) interruptTerminal() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.closed = true
+	session := c.session
+	c.mu.Unlock()
+	if session != nil {
+		_ = session.Close()
+	}
 }
 
 func decodeEventStream(raw <-chan loco.Packet, output chan<- events.Result) {
@@ -366,16 +380,17 @@ func decodeEventStreamWithTerminal(raw <-chan loco.Packet, output chan<- events.
 				}
 			}
 		}
-		output <- events.Result{Event: event, Err: err}
 		if err == nil {
 			switch event.(type) {
 			case events.ChangeServer, events.Kickout:
 				if terminal != nil {
 					terminal()
 				}
+				output <- events.Result{Event: event, Err: err}
 				return
 			}
 		}
+		output <- events.Result{Event: event, Err: err}
 	}
 }
 

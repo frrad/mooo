@@ -40,6 +40,22 @@ func TestDecodeEventStreamContinuesAfterMalformedPacket(t *testing.T) {
 	}
 }
 
+func TestMalformedTerminalNoticeDoesNotTriggerShutdown(t *testing.T) {
+	raw := make(chan loco.Packet, 1)
+	output := make(chan events.Result, 1)
+	called := false
+	raw <- loco.Packet{Header: loco.Header{Method: "CHANGESVR"}, Body: []byte{1, 2, 3}}
+	close(raw)
+	decodeEventStreamWithTerminal(raw, output, nil, nil, func() { called = true })
+	result := <-output
+	if !errors.Is(result.Err, events.ErrMalformedEvent) {
+		t.Fatalf("malformed terminal error = %v", result.Err)
+	}
+	if called {
+		t.Fatal("malformed terminal notice triggered shutdown")
+	}
+}
+
 func TestTerminalNoticeClosesSessionEventStream(t *testing.T) {
 	raw := make(chan loco.Packet, 2)
 	session := &Session{pushes: raw}
@@ -93,7 +109,7 @@ func TestTerminalNoticeClosesOwnedCarriageAndRejectsSend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go session.readLoop()
+	session.startReadLoop()
 	empty, err := bson.Marshal(bson.D{})
 	if err != nil {
 		t.Fatal(err)
@@ -185,5 +201,34 @@ func TestRawPushConsumerPreventsTypedConsumer(t *testing.T) {
 	}
 	if _, err := api.Events(t.Context()); !errors.Is(err, ErrPushConsumerSelected) {
 		t.Fatalf("Events after Pushes error = %v", err)
+	}
+}
+
+func TestRawPushConsumerLeavesTerminalShutdownToCaller(t *testing.T) {
+	raw := make(chan loco.Packet, 1)
+	session := &Session{pushes: raw}
+	api := &Client{session: session}
+	stream, err := api.Pushes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty, err := bson.Marshal(bson.D{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw <- loco.Packet{Header: loco.Header{Method: "CHANGESVR"}, Body: empty}
+	select {
+	case packet := <-stream:
+		if packet.Header.Method != "CHANGESVR" {
+			t.Fatalf("raw terminal method = %q", packet.Header.Method)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("raw terminal packet was not delivered")
+	}
+	if session.closed {
+		t.Fatal("raw Pushes unexpectedly closed Session on terminal packet")
+	}
+	if err := api.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

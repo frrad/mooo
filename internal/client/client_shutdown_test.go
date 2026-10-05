@@ -87,6 +87,10 @@ func TestClientShutdownRetainsOwnershipUntilSessionWorkerJoins(t *testing.T) {
 		t.Fatal(err)
 	}
 	client = &Client{session: session, checkpoint: checkpoint, lease: lease}
+	client.interruptTerminal()
+	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
+		t.Fatalf("lease after terminal interrupt = %v, want %v", err, ErrProfileInUse)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	err = client.Shutdown(ctx)

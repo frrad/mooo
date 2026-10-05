@@ -25,10 +25,14 @@ itself: the reader forwards the typed notice to `Client.Events`, and only a
 transport close closes the raw push channel. Without an owner action, the
 profile session remains usable for `SendText` and the profile lease remains
 held. A synthetic `net.Pipe` carriage reproduced this path. The client now
-closes its owned Session when the typed decoder emits CHANGESVR or KICKOUT;
-`SendText` then fails with `ErrClientClosed`, and the event stream closes after
-the owned carriage is interrupted. This is bounded transport/session shutdown
-only; it does not clear routes, reset storage, or reconnect.
+marks itself closed and interrupts its owned Session when the typed decoder
+recognizes CHANGESVR or KICKOUT. Admission closes before the terminal event is
+published, so `SendText` and `CommitEvent` fail immediately. The checkpoint and
+profile lease remain retained until the caller invokes `Shutdown`, which joins
+any session worker before releasing ownership. This is bounded
+transport/session shutdown only; it does not clear routes, reset storage, or
+reconnect. Raw `Pushes` remains caller-owned and does not apply this
+typed-decoder shutdown policy.
 
 This leaves two integration gaps:
 
