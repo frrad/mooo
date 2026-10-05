@@ -34,6 +34,13 @@ transport/session shutdown only; it does not clear routes, reset storage, or
 reconnect. Raw `Pushes` remains caller-owned and does not apply this
 typed-decoder shutdown policy.
 
+The bridge disconnect seam now calls the client's context-bounded `Shutdown`
+operation instead of `Close`. This matters after terminal admission: `Close`
+is intentionally idempotent once the client is marked closed, while
+`Shutdown` still joins the Session worker and then releases the profile lease.
+If the deadline expires, the bridge records the error and does not wait
+unboundedly; a later explicit shutdown can retry ownership release.
+
 This leaves two integration gaps:
 
 1. CHANGESVR needs an injected manager/recovery effect boundary that can clear

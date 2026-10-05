@@ -52,6 +52,7 @@ type fakeKakao struct {
 	sendResp      chat.WriteResponse
 	sendErr       error
 	closeCalls    int
+	shutdownCalls int
 }
 
 func (f *fakeKakao) Connect(ctx context.Context) error { return f.connectErr }
@@ -97,6 +98,13 @@ func (f *fakeKakao) Close() error {
 	defer f.mu.Unlock()
 	f.closeCalls++
 	return nil
+}
+
+func (f *fakeKakao) Shutdown(ctx context.Context) error {
+	f.mu.Lock()
+	f.shutdownCalls++
+	f.mu.Unlock()
+	return f.Close()
 }
 
 func (f *fakeKakao) committed() []events.Event {
@@ -453,6 +461,9 @@ func TestDisconnectClosesClientWithoutReportingFailure(t *testing.T) {
 
 	if fake.closeCalls != 1 {
 		t.Fatalf("close calls = %d", fake.closeCalls)
+	}
+	if fake.shutdownCalls != 1 {
+		t.Fatalf("shutdown calls = %d", fake.shutdownCalls)
 	}
 	if kc.IsLoggedIn() {
 		t.Fatal("still logged in after disconnect")
