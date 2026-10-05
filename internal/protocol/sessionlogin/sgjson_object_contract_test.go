@@ -42,8 +42,15 @@ type sgJSONResult struct {
 // slice as an SGJson implementation.
 func projectSGJSONObject(c sgJSONCase) (map[string]sgJSONResult, []string) {
 	properties := append(append([]string{}, c.SubclassProperties...), c.SuperclassProperties...)
+	allowed := make(map[string]bool, len(properties))
+	for _, property := range properties {
+		allowed[property] = true
+	}
 	out := make(map[string]sgJSONResult, len(c.Values))
 	for _, value := range c.Values {
+		if !allowed[value.Name] {
+			continue
+		}
 		switch {
 		case value.Kind == "nil" || value.Kind == "nsnull":
 			out[value.Name] = sgJSONResult{Kind: "nsnull", Value: "NSNull"}
@@ -67,7 +74,7 @@ func TestSGJSONObjectProjectionFixture(t *testing.T) {
 	if err := json.Unmarshal(body, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.Status != "reviewed-static-synthetic" || len(fixture.Cases) != 5 {
+	if fixture.Status != "reviewed-static-synthetic" || len(fixture.Cases) != 6 {
 		t.Fatalf("header %#v", fixture)
 	}
 	for _, c := range fixture.Cases {
