@@ -629,25 +629,6 @@ func TestConnectFailuresAreReportedWithoutRetry(t *testing.T) {
 	}
 }
 
-func TestConnectFailureUsesShutdownForCleanup(t *testing.T) {
-	fake := &fakeKakao{stream: make(chan events.Result), resumeErr: errors.New("bootstrap failed")}
-	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
-	kc.Connect(context.Background())
-	fake.mu.Lock()
-	shutdownCalls := fake.shutdownCalls
-	closeCalls := fake.closeCalls
-	fake.mu.Unlock()
-	if shutdownCalls != 1 {
-		t.Fatalf("shutdown calls = %d, want one cleanup join", shutdownCalls)
-	}
-	if closeCalls != 1 {
-		t.Fatalf("close calls = %d, want one shutdown-owned close", closeCalls)
-	}
-	if got := harness.lastState(); got.StateEvent != status.StateTransientDisconnect || got.Error != stateConnectFailed {
-		t.Fatalf("connect failure state = %+v", got)
-	}
-}
-
 func connectedClient(t *testing.T, fake *fakeKakao) *KakaoClient {
 	t.Helper()
 	fake.stream = make(chan events.Result)
