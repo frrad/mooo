@@ -1,0 +1,8 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {"name":"receipt_reads_current_carriage_agent","agent_property_present":true,"selection_proven":false,"expected_effects":["read_carriage_agent","dynamic_send_push_receipt"]},
+    {"name":"connect_stores_carriage_agent","agent_property_present":true,"selection_proven":false,"expected_effects":["set_carriage_agent"]},
+    {"name":"factory_selection_untraced","agent_property_present":false,"selection_proven":false,"expected_effects":["transport_factory_selection_gap"]}
+  ]
+}
