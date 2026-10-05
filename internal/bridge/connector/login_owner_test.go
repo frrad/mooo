@@ -28,7 +28,7 @@ func TestNewLoginRejectsReuseWithoutReplacingActiveOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer raw.RawDB.Close()
+	defer func() { _ = raw.RawDB.Close() }()
 	network := &KakaoConnector{}
 	br := bridgev2.NewBridge(networkid.BridgeID("test"), raw, zerolog.Nop(), &bridgeconfig.BridgeConfig{}, &embeddedMatrix{}, network, func(*bridgev2.Bridge) bridgev2.CommandProcessor { return nil })
 	br.BackgroundCtx = context.Background()
