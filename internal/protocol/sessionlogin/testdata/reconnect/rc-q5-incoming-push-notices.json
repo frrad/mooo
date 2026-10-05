@@ -43,6 +43,8 @@
       "name": "block_sync_nsnull_fields_keep_defaults",
       "model": "block_sync",
       "body": "dictionary_with_nsnull_fields",
+      "mapping_input": {"r": null, "revision": 7},
+      "mapping_expected": {"revision": 7},
       "expected_effects": [
         "method_lookup",
         "construct_notice",

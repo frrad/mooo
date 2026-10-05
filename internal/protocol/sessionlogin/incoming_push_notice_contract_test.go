@@ -2,6 +2,7 @@ package sessionlogin
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -22,11 +23,13 @@ type incomingPushNoticeCase struct {
 	Body            string           `json:"body"`
 	InputFields     map[string]int32 `json:"input_fields"`
 	ExpectedFields  map[string]int32 `json:"expected_fields"`
+	MappingInput    map[string]any   `json:"mapping_input"`
+	MappingExpected map[string]any   `json:"mapping_expected"`
 	ExpectedEffects []string         `json:"expected_effects"`
 }
 
-func applyIncomingBlockSyncMapping(input map[string]int32, mappings [][2]string) (map[string]int32, []string) {
-	out := make(map[string]int32, len(input))
+func applyIncomingBlockSyncMapping(input map[string]any, mappings [][2]string) map[string]any {
+	out := make(map[string]any, len(input))
 	for key, value := range input {
 		out[key] = value
 	}
@@ -36,10 +39,54 @@ func applyIncomingBlockSyncMapping(input map[string]int32, mappings [][2]string)
 		if !present {
 			continue
 		}
+		if value == nil {
+			delete(out, source)
+			continue
+		}
 		out[destination] = value
 		delete(out, source)
 	}
-	return out, nil
+	return out
+}
+
+type incomingNoticeHooks struct {
+	super    func(any) (any, error)
+	nested   func(any) error
+	delegate func()
+	receipt  func()
+}
+
+// constructIncomingNotice is the constructor half of the traced call chain.
+// The callbacks make object identity executable rather than encoding it in
+// effect labels. A nil result is kept separate from caller dispatch policy.
+func constructIncomingNotice(model string, body any, hooks incomingNoticeHooks) (any, error) {
+	if hooks.super == nil {
+		return nil, errors.New("incomplete source-chain hooks")
+	}
+	decoded, err := hooks.super(body)
+	if err != nil {
+		return nil, err
+	}
+	if decoded == nil {
+		return nil, nil
+	}
+	if model == "hint" && hooks.nested != nil {
+		if err := hooks.nested(body); err != nil {
+			return nil, err
+		}
+	}
+	return decoded, nil
+}
+
+func dispatchIncomingNotice(model string, notice any, hooks incomingNoticeHooks) error {
+	if hooks.receipt == nil {
+		return errors.New("missing receipt hook")
+	}
+	if hooks.delegate != nil {
+		hooks.delegate()
+	}
+	hooks.receipt()
+	return nil
 }
 
 func TestIncomingPushNoticeSourceContractFixture(t *testing.T) {
@@ -110,6 +157,78 @@ func TestIncomingPushNoticeSourceContractFixture(t *testing.T) {
 	}
 }
 
+func TestIncomingNoticeModelStopsAndPreservesOrdering(t *testing.T) {
+	fixtureBody, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-incoming-push-notices.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture incomingPushNoticeFixture
+	if err := json.Unmarshal(fixtureBody, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	byName := make(map[string]incomingPushNoticeCase, len(fixture.Cases))
+	for _, c := range fixture.Cases {
+		byName[c.Name] = c
+	}
+	nilCase, emptyCase, blockCase := byName["hint_nil_body_stops_before_delegate_or_receipt"], byName["hint_empty_dictionary_constructs_nested_chat_log_from_same_object"], byName["block_sync_nsnull_fields_keep_defaults"]
+	var nilCalls []string
+	_, nilResult := constructIncomingNotice(nilCase.Model, nil, incomingNoticeHooks{
+		super: func(body any) (any, error) {
+			nilCalls = append(nilCalls, "super")
+			return nil, errors.New("NSInternalInconsistencyException")
+		},
+		nested: func(any) error { nilCalls = append(nilCalls, "nested"); return nil },
+	})
+	if nilResult == nil || !reflect.DeepEqual(nilCalls, []string{"super"}) {
+		t.Fatalf("nil body calls=%v err=%v", nilCalls, nilResult)
+	}
+	body := &struct{ fields map[string]any }{fields: map[string]any{}}
+	var calls []string
+	var nestedBody any
+	notice, err := constructIncomingNotice(emptyCase.Model, body, incomingNoticeHooks{
+		super:  func(got any) (any, error) { calls = append(calls, "super"); return got, nil },
+		nested: func(got any) error { calls = append(calls, "nested"); nestedBody = got; return nil },
+	})
+	if err != nil || notice == nil || nestedBody != body || !reflect.DeepEqual(calls, []string{"super", "nested"}) {
+		t.Fatalf("HINT body identity/order calls=%v nested=%p body=%p err=%v", calls, nestedBody, body, err)
+	}
+	err = dispatchIncomingNotice("hint", notice, incomingNoticeHooks{
+		delegate: func() { calls = append(calls, "delegate") },
+		receipt:  func() { calls = append(calls, "receipt") },
+	})
+	if err != nil || !reflect.DeepEqual(calls, []string{"super", "nested", "delegate", "receipt"}) {
+		t.Fatalf("delegate/receipt order calls=%v err=%v", calls, err)
+	}
+	var noDelegateCalls []string
+	notice, err = constructIncomingNotice(blockCase.Model, body, incomingNoticeHooks{
+		super: func(got any) (any, error) { noDelegateCalls = append(noDelegateCalls, "super"); return got, nil },
+	})
+	if err != nil || notice == nil {
+		t.Fatalf("BLOCKSYNC construction err=%v", err)
+	}
+	err = dispatchIncomingNotice("block_sync", notice, incomingNoticeHooks{
+		receipt: func() { noDelegateCalls = append(noDelegateCalls, "receipt") },
+	})
+	if err != nil || !reflect.DeepEqual(noDelegateCalls, []string{"super", "receipt"}) {
+		t.Fatalf("missing delegate suppressed receipt calls=%v err=%v", noDelegateCalls, err)
+	}
+	var nilSuperCalls []string
+	nilSuper, err := constructIncomingNotice(emptyCase.Model, body, incomingNoticeHooks{
+		super:  func(any) (any, error) { nilSuperCalls = append(nilSuperCalls, "super"); return nil, nil },
+		nested: func(any) error { nilSuperCalls = append(nilSuperCalls, "nested"); return nil },
+	})
+	if err != nil || nilSuper != nil || !reflect.DeepEqual(nilSuperCalls, []string{"super"}) {
+		t.Fatalf("nil super result continued downstream calls=%v err=%v", nilSuperCalls, err)
+	}
+	var nilNoticeCalls []string
+	if err := dispatchIncomingNotice(emptyCase.Model, nil, incomingNoticeHooks{
+		delegate: func() { nilNoticeCalls = append(nilNoticeCalls, "delegate") },
+		receipt:  func() { nilNoticeCalls = append(nilNoticeCalls, "receipt") },
+	}); err != nil || !reflect.DeepEqual(nilNoticeCalls, []string{"delegate", "receipt"}) {
+		t.Fatalf("nil initializer result was incorrectly suppressed calls=%v err=%v", nilNoticeCalls, err)
+	}
+}
+
 func TestIncomingBlockSyncMappingRenamesAndRemovesSourceKeys(t *testing.T) {
 	fixtureBody, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-incoming-push-notices.json"))
 	if err != nil {
@@ -123,9 +242,17 @@ func TestIncomingBlockSyncMappingRenamesAndRemovesSourceKeys(t *testing.T) {
 		if c.Name != "block_sync_typed_signed_int32_mapping" {
 			continue
 		}
-		got, _ := applyIncomingBlockSyncMapping(c.InputFields, fixture.BlockSyncMapping)
-		if !reflect.DeepEqual(got, c.ExpectedFields) {
-			t.Fatalf("mapped fields=%v want %v", got, c.ExpectedFields)
+		input := make(map[string]any, len(c.InputFields))
+		for key, value := range c.InputFields {
+			input[key] = value
+		}
+		got := applyIncomingBlockSyncMapping(input, fixture.BlockSyncMapping)
+		expected := make(map[string]any, len(c.ExpectedFields))
+		for key, value := range c.ExpectedFields {
+			expected[key] = value
+		}
+		if !reflect.DeepEqual(got, expected) {
+			t.Fatalf("mapped fields=%v want %v", got, expected)
 		}
 		for _, source := range []string{"r", "pr"} {
 			if _, ok := got[source]; ok {
@@ -135,4 +262,33 @@ func TestIncomingBlockSyncMappingRenamesAndRemovesSourceKeys(t *testing.T) {
 		return
 	}
 	t.Fatal("typed mapping case missing")
+}
+
+func TestIncomingBlockSyncMappingHandlesNSNullAndExistingDestination(t *testing.T) {
+	fixtureBody, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-incoming-push-notices.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture incomingPushNoticeFixture
+	if err := json.Unmarshal(fixtureBody, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range fixture.Cases {
+		if c.Name != "block_sync_nsnull_fields_keep_defaults" {
+			continue
+		}
+		if got := applyIncomingBlockSyncMapping(c.MappingInput, fixture.BlockSyncMapping); !reflect.DeepEqual(got, c.MappingExpected) {
+			t.Fatalf("fixture NSNull mapping=%v want %v", got, c.MappingExpected)
+		}
+	}
+	input := map[string]any{"r": nil, "revision": int32(7), "pr": int32(9)}
+	got := applyIncomingBlockSyncMapping(input, [][2]string{{"r", "revision"}, {"pr", "plusRevision"}})
+	want := map[string]any{"revision": int32(7), "plusRevision": int32(9)}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("NSNull mapping=%v want %v", got, want)
+	}
+	ordinary := applyIncomingBlockSyncMapping(map[string]any{"r": int32(11), "revision": int32(7)}, [][2]string{{"r", "revision"}})
+	if got := ordinary["revision"]; got != int32(11) {
+		t.Fatalf("ordinary source did not override destination: %v", ordinary)
+	}
 }
