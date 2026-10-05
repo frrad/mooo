@@ -1445,13 +1445,14 @@ func TestUnrecoverableGapRequiresNoticeACKBeforeLiveSubscription(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		result bridgev2.EventHandlingResult
+		ack    bridgev2.EventHandlingResult
 	}{
-		{name: "failed", result: bridgev2.EventHandlingResultFailed.WithError(errors.New("synthetic notice send failure"))},
-		{name: "queued", result: bridgev2.EventHandlingResultQueued},
+		{name: "failed", result: bridgev2.EventHandlingResultFailed.WithError(errors.New("synthetic notice send failure")), ack: bridgev2.EventHandlingResultSuccess},
+		{name: "queued", result: bridgev2.EventHandlingResultQueued, ack: bridgev2.EventHandlingResult{Success: true, Ignored: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			kc, harness := newTestClient(t, nil)
-			harness.results = []bridgev2.EventHandlingResult{tc.result, bridgev2.EventHandlingResultSuccess}
+			harness.results = []bridgev2.EventHandlingResult{tc.result, tc.ack}
 			newSource := func() *fakeKakao {
 				return &fakeKakao{stream: make(chan events.Result), resumeTargets: []syncmsg.Target{{ChatID: testChatID, MaxLogID: 42}}, catchUps: map[int64]catchUpResult{testChatID: {err: client.ErrGapUnresolved}}}
 			}
