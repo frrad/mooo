@@ -40,6 +40,16 @@ as `NSNull`; non-null values are retained unless they conform to `SGJson` (then
 `JSONObject` is used) or `SGNumberArray` (then `numberArray` is used). Integer
 zero is therefore retained as a value rather than treated as absent.
 
+The app's `BSONData` helper has a bounded scalar encoding branch. For
+`NSNumber` values it recognizes Objective-C type encodings `B`/`c` as BSON
+boolean (type `0x08`, one byte), `d` as BSON double (type `0x01`, eight
+bytes), `i` as BSON int32 (type `0x10`, four bytes), and `q` as BSON int64
+(type `0x12`, eight bytes). `NSNull` is BSON null (type `0x0a`). The
+BLOCKSYNC `revision` and `plusRevision` ivars are signed `int32`, so their
+mapped `r` and `pr` values enter the int32 branch; the base `method` and
+`packetId` properties are removed before mapping. This is an observed value
+encoding boundary, not a claim that HINT or BLOCKSYNC is automatically sent.
+
 The inherited `JSONObject` implementation at `0x101355b04` begins from the
 superclass JSON object and makes a mutable dictionary only when that object is
 an `NSDictionary`; the non-dictionary branch returns the superclass result
@@ -138,6 +148,8 @@ projection as synthetic values; they do not claim app wire encoding.
   for `0x100d4a840`.
 - `packetData` framing implementation: private Ghidra decompile of
   `0x10175a1c0` and parity trace for `packetData`.
+- BSON scalar encoder: private exact-address decompile of `0x1017eab74`
+  in `nw-receipt-wire-chain-2026-10-05/bson-decomp.txt`.
 - Swift guard/timeout branch: private `nw-disasm.txt` receipt for
   `0x100d49560` through `0x100d498dc`.
 - Base comparison path: private `rc-q5-sendpacket-method/report.txt` and
