@@ -14,8 +14,8 @@ For the selected V2 secure-layer implementation, encryption uses AES-128-GCM:
 
 | Input | Contract |
 | --- | --- |
-| key | exactly 16 bytes |
-| nonce | exactly 12 fresh bytes per encryption |
+| key | 16 bytes on the reviewed V2 path |
+| nonce | 12 fresh bytes on the reviewed V2 path |
 | associated data | absent (`nil`) |
 | authentication tag | exactly 16 bytes |
 | result | ciphertext and tag, with the tag supplied separately to the caller |
@@ -39,15 +39,15 @@ unsupported key, nonce, or tag sizes are invalid.
 
 The failure boundary is asymmetric. If the primitive cannot create its cipher
 context, it returns no ciphertext. The observed outer V2 assembly has already
-created its nonce and tag destination at that point, so it can still assemble
-the nonce plus the unchanged tag destination around the absent ciphertext.
-This is a framed failure result, not authenticated application data, and a
-caller must reject it before interpreting plaintext. After a context exists,
-the reviewed encryption path does not branch on every low-level operation
-status before collecting the tag; implementations should therefore preserve
-the documented authenticated-output checks rather than silently accepting a
-partially initialized result. Decryption returns no plaintext on context or
-authentication failure.
+created its nonce and initialized a 16-byte tag destination at that point, so
+it still concatenates the nonce, the absent ciphertext, and the unchanged tag
+destination. This produces a nonce-plus-tag-sized framed value, not
+authenticated application data, and a caller must reject it before interpreting
+plaintext. On the reviewed path, the low-level operation statuses after context
+creation are not individually branched on before tag collection; this is an
+observed source behavior, not a recommendation to accept partially initialized
+results. Decryption returns no plaintext after context or authentication
+failure, including after its cleanup path.
 
 This is a primitive contract, not a claim that all surrounding client paths
 have been traced. In particular, the public evidence does not establish the
@@ -59,9 +59,13 @@ failure-path allocation detail.
 `internal/protocol/loco/v2sl_gcm_contract_test.go` uses only invented values
 and the Go standard library. It checks a pinned `nonce || ciphertext || tag`
 vector, successful round-trip, and rejection after changing the key, nonce,
-ciphertext, tag, or associated data. It also checks the parameter-size guards.
-The vector is an independent characterization of the published byte layout;
-it is not a live-client capture.
+ciphertext, tag, or associated data. A separate state fixture records the
+observed outer fall-through when primitive context creation returns no
+ciphertext. The strict key/nonce checks in the Go helper are synthetic
+implementation guards; the source evidence establishes the widths supplied by
+the reviewed path, not a complete invalid-size branch table. The vectors are
+independent characterizations of the published byte layout, not live-client
+captures.
 
 ## Confidence and scope
 

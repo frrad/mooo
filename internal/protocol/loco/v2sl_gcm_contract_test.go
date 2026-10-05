@@ -56,6 +56,18 @@ func v2SLOpen(key, envelope, aad []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
+// observedV2SLOuterAssembly models the source-driven state boundary around
+// the primitive. The outer operation owns the nonce and tag destination and
+// does not discard them merely because the primitive produced no ciphertext.
+func observedV2SLOuterAssembly(nonce, initialTag []byte, primitive func([]byte) []byte) []byte {
+	tag := append([]byte(nil), initialTag...)
+	ciphertext := primitive(tag)
+	out := make([]byte, 0, len(nonce)+len(ciphertext)+len(tag))
+	out = append(out, nonce...)
+	out = append(out, ciphertext...)
+	return append(out, tag...)
+}
+
 func TestV2SLGCMContractPinnedVector(t *testing.T) {
 	key := []byte("0123456789abcdef")
 	nonce := []byte("123456789012")
@@ -128,5 +140,29 @@ func TestV2SLGCMContractRejectsInvalidSizes(t *testing.T) {
 	}
 	if _, err := v2SLOpen(validKey, validNonce, nil); !errors.Is(err, errV2SLInvalidParameters) {
 		t.Fatalf("short envelope error = %v", err)
+	}
+}
+
+func TestV2SLOuterAssemblyRetainsTagWhenPrimitiveHasNoCiphertext(t *testing.T) {
+	nonce := []byte("123456789012")
+	initialTag := bytes.Repeat([]byte{0xa5}, v2SLTagSize)
+	out := observedV2SLOuterAssembly(nonce, initialTag, func(tag []byte) []byte {
+		// Synthetic context-creation failure: no ciphertext and no tag write.
+		return nil
+	})
+	if len(out) != v2SLNonceSize+v2SLTagSize {
+		t.Fatalf("failure envelope length = %d, want %d", len(out), v2SLNonceSize+v2SLTagSize)
+	}
+	if !bytes.Equal(out[:v2SLNonceSize], nonce) || !bytes.Equal(out[v2SLNonceSize:], initialTag) {
+		t.Fatalf("failure envelope = %x", out)
+	}
+
+	writtenTag := bytes.Repeat([]byte{0x3c}, v2SLTagSize)
+	out = observedV2SLOuterAssembly(nonce, initialTag, func(tag []byte) []byte {
+		copy(tag, writtenTag)
+		return []byte("ciphertext")
+	})
+	if !bytes.Equal(out[:v2SLNonceSize], nonce) || !bytes.Equal(out[v2SLNonceSize+len("ciphertext"):], writtenTag) {
+		t.Fatalf("successful envelope state = %x", out)
 	}
 }
