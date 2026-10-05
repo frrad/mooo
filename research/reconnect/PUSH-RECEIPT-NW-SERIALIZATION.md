@@ -36,17 +36,16 @@ fields. `LocoBlockSyncPushReceipt` adds signed `int32 revision` and
 `packetData`; the serialized key order and field-presence/default policy remain
 unresolved even though the framing implementation is now localized.
 
-The inherited `JSONObject` implementation at `0x101355b04` supplies a bounded
-object-to-dictionary step before `BSONData`: it obtains the superclass JSON
-object, makes a mutable dictionary, walks the receiver class's declared
-properties, reads each property value, and inserts only nonnil values. The
-`LocoPushReceipt` properties therefore contribute `method` when nonnil and
-`packetId` as its unsigned 32-bit scalar value. `LocoHintPushReceipt` adds no
-declared properties. `LocoBlockSyncPushReceipt` contributes `revision` and
-`plusRevision` as signed 32-bit scalar values, including zero; its inherited
-properties remain supplied by the superclass JSON object. This proves the
-property-to-dictionary names and nil omission boundary, but dictionary/BSON
-key order and any subclass-specific default injection remain unproven.
+The inherited `JSONObject` implementation at `0x101355b04` begins from the
+superclass JSON object and makes a mutable dictionary. Its raw class reference
+at `0x102113298` resolves to the static `LocoPushReceipt` class; the method
+enumerates that class's declared properties and calls `removeObjectForKey:`
+(`0x101901660`) for each property name. It then enumerates
+`nameMappingDictionary` and applies the mapping block through keyed lookup and
+keyed assignment. This proves a static base-class removal plus name-mapping
+phase, not direct insertion of HINT/BLOCKSYNC fields. Exact mapping contents,
+subclass property contribution, BSON key order, and default/omission policy
+remain unresolved.
 
 The NW send completion is a Swift `NWConnection.SendCompletion` closure at
 `0x100d4a840`. Its body weak-loads the owner and returns when that owner has
@@ -71,9 +70,8 @@ Framing cases derive the header body length, mutable-data capacity
 results; they cover zero-length omission and a deliberately different second
 conversion. NW cases then model only the wrapper's packet-data result guard,
 encryption nil path, connection gate, send scheduling, and timeout argument.
-The JSON-object fixture separately derives HINT/BLOCKSYNC dictionary keys,
-nil-method omission, unsigned packet IDs, and signed revision values before
-BSON conversion.
+The JSON-object projection remains an explicit gap until the static mapping
+dictionary and subclass path are traced.
 It records BSON key order/default policy, encryption output, and any server
 response as explicit gaps. Completion vectors cover owner lifetime, success,
 the observed POSIX `0x59`/89 cleanup predicate, neighboring POSIX and
