@@ -19,11 +19,14 @@ result is bridged into the send content; a nil encryption result takes a
 separate nil-content path. The connection presence gates the NW send. After
 that guarded send section, the wrapper calls `toggleOutSegmentTimeout:true`
 (`0x100d498dc`, `w2 = 1`). The `packetData` implementation
-is `0x10175a1c0`: it reads `body`, calls `BSONData`, obtains the BSON length,
-sets the header body length, reads header `data`, and appends header bytes
-followed by BSON body bytes to mutable output. The source proves this framing
-order, but does not prove BSON key order, field-presence/default policy,
-encryption output, or any server response.
+is `0x10175a1c0`: it reads `body`, calls `BSONData`, obtains the first BSON
+length, sets the header body length, reads header `data`, and appends the
+header bytes to mutable output. A zero first length skips the body append. A
+nonzero length re-reads `body`, calls `BSONData` a second time, and appends
+that second result. The source therefore does not justify assuming the first
+and second conversion results are interchangeable. It proves this framing
+and guard order, but does not prove BSON key order, field-presence/default
+policy, encryption output, or any server response.
 
 The request object field inventory remains separate from wire serialization.
 `LocoPushReceipt` inherits from `LocoModel`/`SGJsonObject` and declares
@@ -42,7 +45,8 @@ belong to the base Objective-C path and are kept as a separate explicit gap.
 
 ## Synthetic contract
 
-The fixture checks the observed NW packet-data framing, nil-result guards,
+The fixture checks the observed NW packet-data framing, zero-length body
+omission, nonzero re-read/second-conversion branch, nil-result guards,
 encryption nil path, connection gate, send scheduling, and timeout argument.
 It records BSON key order/defaults, completion closure behavior, and pending
 correlation as explicit gaps rather than inventing wire fields, ACK behavior,
