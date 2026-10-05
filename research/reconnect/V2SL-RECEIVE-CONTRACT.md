@@ -60,3 +60,20 @@ an explicit gap.
 Private provenance for this subsection is the sanitized receipt names
 `reconnect-conf-model/otool-objc.txt`, `credential-storage/raw/cs1/objc-stubs-disassembly.txt`,
 and `nw-readbody-closure-20261005.txt` in the external parity archive.
+
+### Raw nil and short-input boundaries
+
+The raw `didReadV2slData:` body at `0x101773aa0` branches only on the
+presence of `_v2slCrypto` at `+0x18`. In the crypto branch it calls
+`decrypt:` and then unconditionally calls `supplyRawData:` (`0x101933520`);
+the raw sequence at `0x101773ae0`–`0x101773af4` has no result-presence branch.
+Thus a nil decrypt return remains a supply call with a nil argument, rather
+than an inferred early return or cancellation. Without crypto, the same
+selector receives the original data object.
+
+The decrypt IMP at `0x101685970` computes the cipher length as the input
+length minus `0x1c` and passes that value directly to the NSData constructor;
+there is no observed comparison or branch guarding short input before that
+constructor. The public fixtures therefore use N≥28 only to keep the
+input-derived slice arithmetic representable. Short-input range behavior is
+still an explicit raw-runtime gap, not a claimed protocol validation rule.

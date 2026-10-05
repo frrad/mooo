@@ -54,11 +54,15 @@ func projectV2SLReceive(c v2slReceiveCase) v2slReceiveProjection {
 	if c.DecryptResultPresent {
 		supplyIdentity = c.CryptoResultIdentity
 	}
+	supplyEffect := "supply_decrypt_result"
+	if !c.DecryptResultPresent {
+		supplyEffect = "supply_decrypt_result_nil"
+	}
 	return v2slReceiveProjection{
 		SupplyPresent: c.DecryptResultPresent, SupplyIdentity: supplyIdentity,
 		IVOffset: &ivOffset, IVLength: &ivLength, CipherOffset: &cipherOffset, CipherLength: &cipherLength,
 		TagOffset: &tagOffset, TagLength: &tagLength,
-		Effects: []string{"construct_iv_data_length_12", "construct_cipher_data_offset_12", "construct_cipher_data_length_input_minus_28", "construct_tag_data_tail_length_16", "invoke_decrypt_gcm", "supply_decrypt_result"},
+		Effects: []string{"construct_iv_data_length_12", "construct_cipher_data_offset_12", "construct_cipher_data_length_input_minus_28", "construct_tag_data_tail_length_16", "invoke_decrypt_gcm", supplyEffect},
 	}
 }
 

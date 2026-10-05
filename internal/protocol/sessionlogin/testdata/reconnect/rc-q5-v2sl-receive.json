@@ -68,7 +68,7 @@
         "construct_cipher_data_length_input_minus_28",
         "construct_tag_data_tail_length_16",
         "invoke_decrypt_gcm",
-        "supply_decrypt_result"
+        "supply_decrypt_result_nil"
       ]
     },
     {
