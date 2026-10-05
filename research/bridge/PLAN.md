@@ -37,7 +37,7 @@ distinguish implemented behavior from planned integrations.
 | IDs | Portal = Kakao chat ID. Ghost = Kakao user ID. Message = `chatID:logID`. Outbound messages record the `WriteResponse` log ID. |
 | Inbound | `Client.Events()` feeds remote events, which are queued in per-chat delivery order. `CommitEvent` is called only after the framework reports the event as handled. Delivery is at-least-once, and the framework's message-ID dedup absorbs replays. |
 | Outbound | Text, reply, photo, and reaction go to the existing client methods. An ambiguous delivery fails the Matrix event and is never resent. |
-| Reactions | Kakao pushes aggregate counts (`CHGLOGMETA`). Per-sender Matrix reactions are derived from `ReactionMembers` / `MiniReactionDetails` lookups; the exact reconciliation design is an open question. |
+| Reactions | Kakao pushes aggregate counts (`CHGLOGMETA`). PR #179 reconciles per-sender Matrix reactions from `ReactionMembers` / `MiniReactionDetails` with checked add/remove operations, database postconditions, replay-safe revision persistence, and explicit lookup/failure handling. Live acceptance remains open. |
 | Own messages | Messages written by the logged-in account on another device are sent through double puppeting. |
 | Connection | The bridge decides when to reconnect. Kakao gives it no reconnect of its own. Retries use exponential backoff and then run a bounded `CatchUp`. A dropped connection is reported as a transient disconnect; `KICKOUT` is reported as logged out or bad credentials. |
 | Read state | Matrix read receipts go to `MarkRead`. `DECUNREAD` becomes ghost read receipts. Catch-up and backfill use `SYNCMSG`, which can mark messages read on the server, so both are bounded and backfill is opt-in. |
@@ -91,7 +91,9 @@ Read receipts and opt-in historical backfill follow the alpha. Resolve the
 Deterministic typed-photo failures now become persisted notices under their
 original source IDs (PR #181; [policy](conversion-failure-policy.md)). Transient
 transfer or Matrix failures remain uncommitted. Parser failures with validated source identities now become explicit notices;
-PR #187 has merged with continuity guards. Unidentifiable envelopes stop admission
+PR #187 has merged with continuity guards. PR #197 classifies validated
+chat/log positions with invalid content metadata as explicit `Type=0` gaps;
+unidentifiable envelopes stop admission
 without inventing a cursor and report the stable `kakao-unidentifiable-message`
 state without automatic reconnect; operator recovery remains an open acceptance
 item ([policy](continuity-failure-policy.md)).
@@ -132,8 +134,8 @@ connector tests (PR #163) have merged. Their synthetic tests do not complete
 the live acceptance criteria. Avatars/membership updates (PR #173) and login
 collision protection (PR #175)
 have also merged with synthetic regression coverage. Reconnect (PR #172) has merged with real scripted recovery and shutdown
-regressions. Reactions (PR #179) remain in review; their actual framework
-failure/replay coverage has been extended. Container
+regressions. Reactions (PR #179) have merged with actual framework
+failure/replay coverage; direct/group and live reaction acceptance remains open. Container
 packaging has merged
 (PR #170); startup and restart smoke evidence is recorded in
 [deployment validation](DEPLOYMENT-VALIDATION.md). Read receipts, historical backfill, cloud backup/restore,
@@ -188,7 +190,8 @@ and full official-client parity remain outside this alpha goal.
 - [ ] Read-state follow-up: the client records a local read watermark after
       every `SYNCMSG`, including `cnt=0` recovery, which one run suggests does
       not mark messages read. Confirm with an A/B test before B4 read receipts
-      rely on that watermark.
+      rely on that watermark; see
+      [`syncmsg-read-side-effect-procedure.md`](syncmsg-read-side-effect-procedure.md).
 - [x] Exercise the connector through the reusable scripted protocol backend
       in `internal/testsupport/loco` (PR #163): failed catch-up aborts before
       live subscription, fresh-process replay precedes live messages, ambiguous
@@ -223,7 +226,9 @@ and full official-client parity remain outside this alpha goal.
       rejection, chat/receiver guards, UTF-16-bounded previews, and single-attempt
       sends. Synthetic connector and SQLite round-trip tests pass (PR #164).
 - [ ] Live-validate outbound replies, including reply after bridge restart.
-- [ ] Reactions in both directions, with the aggregate-to-per-sender strategy.
+- [x] Reactions in both directions, with checked aggregate-to-per-sender
+      reconciliation, replay-safe revisions, and explicit Matrix failure
+      handling (PR #179). Live direct/group acceptance remains outstanding.
 
 ### B2: chat metadata (protocol research first)
 
@@ -263,6 +268,10 @@ The implemented supervisor and its bounded policy are documented in
       missed-message recovery before subscription, old-lease release before
       replacement, one outbound WRITE despite a dropped response, terminal
       KICKOUT, and CHANGESVR recovery.
+- [x] Require confirmed gap notices before live subscription (PR #198), and
+      stop safely on unidentifiable message identity while preserving
+      identity-bearing content gaps (PR #197). These are synthetic/scripted
+      validations; live recovery and operator tooling remain open.
 - [x] Recorded live restart resume/catch-up validation for previously committed
       chats on 2026-09-30.
 - [ ] Extend controlled owned-account resume/catch-up validation to automatic
