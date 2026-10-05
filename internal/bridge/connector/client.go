@@ -282,9 +282,9 @@ func (kc *KakaoClient) Disconnect() {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	err := c.Shutdown(ctx)
 	deadline, hasDeadline := ctx.Deadline()
-	cancel()
 	if err == nil && done != nil {
 		wait := time.Until(deadline)
 		if !hasDeadline || wait <= 0 {
