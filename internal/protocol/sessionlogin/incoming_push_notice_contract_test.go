@@ -66,6 +66,12 @@ func TestIncomingPushNoticeSourceContractFixture(t *testing.T) {
 		t.Fatalf("incoming mapping=%v want %v", fixture.BlockSyncMapping, wantMapping)
 	}
 	seen := map[string]bool{}
+	wantModels := map[string][2]string{
+		"hint_nil_body_stops_before_delegate_or_receipt":                    {"hint", "nil"},
+		"hint_empty_dictionary_constructs_nested_chat_log_from_same_object": {"hint", "empty_dictionary"},
+		"block_sync_nsnull_fields_keep_defaults":                            {"block_sync", "dictionary_with_nsnull_fields"},
+		"block_sync_typed_signed_int32_mapping":                             {"block_sync", "dictionary_with_typed_int32_fields"},
+	}
 	wantEffects := map[string][]string{
 		"hint_nil_body_stops_before_delegate_or_receipt": {
 			"method_lookup", "construct_notice", "read_packet_body", "loco_model_passes_nil_to_super",
@@ -91,8 +97,9 @@ func TestIncomingPushNoticeSourceContractFixture(t *testing.T) {
 			t.Fatalf("duplicate/empty case %q", c.Name)
 		}
 		seen[c.Name] = true
-		if c.Model != "hint" && c.Model != "block_sync" {
-			t.Fatalf("%s model=%q", c.Name, c.Model)
+		wantModelBody, ok := wantModels[c.Name]
+		if !ok || c.Model != wantModelBody[0] || c.Body != wantModelBody[1] {
+			t.Fatalf("%s model/body=(%q,%q) want (%q,%q)", c.Name, c.Model, c.Body, wantModelBody[0], wantModelBody[1])
 		}
 		if got, want := c.ExpectedEffects, wantEffects[c.Name]; !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s effects=%v want %v", c.Name, got, want)
