@@ -1,0 +1,118 @@
+{
+  "status": "reviewed-platform-bounded-synthetic",
+  "platform": "macOS 26.6.2 (25G83 arm64)",
+  "cases": [
+    {
+      "name": "literal_decimal",
+      "input": "42",
+      "input_class": "__NSCFConstantString",
+      "input_objc_type": "@",
+      "expected_value": 42
+    },
+    {
+      "name": "runtime_decimal",
+      "input": "42",
+      "input_class": "__NSCFString",
+      "input_objc_type": "@",
+      "expected_value": 42
+    },
+    {
+      "name": "leading_newline",
+      "input": "\n42",
+      "input_class": "__NSCFConstantString",
+      "input_objc_type": "@",
+      "expected_value": 0
+    },
+    {
+      "name": "leading_cr",
+      "input": "\r42",
+      "input_class": "__NSCFConstantString",
+      "input_objc_type": "@",
+      "expected_value": 0
+    },
+    {
+      "name": "leading_formfeed",
+      "input": "\f42",
+      "input_class": "__NSCFConstantString",
+      "input_objc_type": "@",
+      "expected_value": 0
+    },
+    {
+      "name": "leading_vertical_tab",
+      "input": "\u000b42",
+      "input_class": "__NSCFConstantString",
+      "input_objc_type": "@",
+      "expected_value": 0
+    },
+    {
+      "name": "leading_tab",
+      "input": "\t42",
+      "input_class": "__NSCFConstantString",
+      "input_objc_type": "@",
+      "expected_value": 42
+    },
+    {
+      "name": "leading_space",
+      "input": " 42",
+      "input_class": "__NSCFConstantString",
+      "input_objc_type": "@",
+      "expected_value": 42
+    },
+    {
+      "name": "leading_nbsp",
+      "input": " 42",
+      "input_class": "__NSCFString",
+      "input_objc_type": "@",
+      "expected_value": 42
+    },
+    {
+      "name": "leading_em_space",
+      "input": " 42",
+      "input_class": "__NSCFString",
+      "input_objc_type": "@",
+      "expected_value": 42
+    },
+    {
+      "name": "leading_ideographic_space",
+      "input": "　42",
+      "input_class": "__NSCFString",
+      "input_objc_type": "@",
+      "expected_value": 42
+    },
+    {
+      "name": "arabic_indic_digits",
+      "input": "٤٢",
+      "input_class": "__NSCFString",
+      "input_objc_type": "@",
+      "expected_value": 42
+    },
+    {
+      "name": "fullwidth_digits",
+      "input": "４２",
+      "input_class": "__NSCFString",
+      "input_objc_type": "@",
+      "expected_value": 42
+    },
+    {
+      "name": "signed_space",
+      "input": "- 42",
+      "input_class": "__NSCFString",
+      "input_objc_type": "@",
+      "expected_value": -42
+    },
+    {
+      "name": "numeric_prefix",
+      "input": "42suffix",
+      "input_class": "__NSCFString",
+      "input_objc_type": "@",
+      "expected_value": 42
+    },
+    {
+      "name": "positive_signed_overflow",
+      "input": "999999999999999999999999",
+      "input_class": "__NSCFString",
+      "input_objc_type": "@",
+      "expected_value": 2147483647
+    }
+  ]
+}
