@@ -96,7 +96,7 @@ completion representation. Its error path classifies POSIX errors and treats
 POSIX code 0x59 specially, skipping the ordinary logging/cancellation branch.
 For a data branch it computes the received Data length and compares it with
 the saved requested length. The equality path bridges the Data to NSData and
-calls `didReadBody:`; the mismatch path performs cleanup and can cancel the
+calls `didReadHeader:` (`0x1018c70a0`, IMP `0x101773a34`); the mismatch path performs cleanup and can cancel the
 current connection when the callback flag permits. The current connection is
 loaded from the owner at that point, so it is distinct from the connection
 that scheduled the receive. These facts describe the header completion body;
@@ -119,3 +119,10 @@ inherit receive bounds; a callback-time current connection is a separate input
 used only for cancellation. A high-bit requested length records the observed
 post-timeout trap before the receive call rather than masquerading as a normal
 maximum length.
+
+The selector-to-IMP map confirms the consumer split: `didReadHeader:` is
+`0x1018c70a0` → IMP `0x101773a34`, while `didReadBody:` is
+`0x1018c7080` → IMP `0x101773aa0`. The `0x100d47f10` equality branch therefore
+belongs to header parsing. The body completion closure at `0x100d483dc`
+invokes the body IMP and then schedules the next header read; its effects must
+remain a separate operation in any implementation model.
