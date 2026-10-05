@@ -181,7 +181,17 @@ and full official-client parity remain outside this alpha goal.
 
 ### B1: login and media
 
-- [ ] QR login inside the bridge.
+- [x] Implement bridge-native QR login. The bridge creates a fresh owner-only
+      client profile, applies an explicit clean-room QR URL allowlist, drives
+      typed approval polling,
+      cancellation, and expiry, persists only a complete server-issued
+      credential set, and resumes through `LoadUserLogin`. The official Mac
+      check-key algorithm and complete success-field parity remain unresolved;
+      the URL allowlist is an explicit clean-room safety policy and does not
+      claim official-client parity.
+- [ ] Live-validate fresh bridge enrollment, device-authorization code,
+      expiry/cancellation, and restart resume with the owned disposable
+      account. No live account or network enrollment is part of this change.
 - [ ] Photos in both directions. Inbound photo events currently carry no
       author or timestamp; resolve that in the client first.
 - [x] Inbound reply conversion with chat-scoped source message IDs.

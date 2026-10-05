@@ -13,6 +13,8 @@ import (
 	up "go.mau.fi/util/configupgrade"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
+
+	"github.com/frrad/mooo/internal/authstate"
 )
 
 //go:embed example-config.yaml
@@ -38,6 +40,13 @@ var ErrUnsafeEventDelivery = errors.New("connector: bridge.portal_event_buffer m
 type KakaoConnector struct {
 	Bridge *bridgev2.Bridge
 	Config Config
+
+	// qrBackendFactory is deliberately injected rather than guessed from the
+	// official client. The reviewed Mac QR check-key validator and complete
+	// success-material mapping are not yet established in public evidence.
+	// Production therefore fails closed until a reviewed backend is supplied;
+	// tests use a fake transport here.
+	qrBackendFactory func(context.Context, authstate.Identity) (qrBackend, error)
 }
 
 var (

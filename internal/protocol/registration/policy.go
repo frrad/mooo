@@ -52,7 +52,7 @@ func DecodeQROutcome64(code int64) Outcome {
 		return OutcomeSuspended
 	case 13:
 		return OutcomeUnsupportedDevice
-	case 14:
+	case -150, 14:
 		return OutcomePending
 	case 15:
 		return OutcomeRejected

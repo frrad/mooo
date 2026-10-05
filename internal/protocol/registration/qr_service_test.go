@@ -154,6 +154,43 @@ func TestQRServicePollReturnsExplicitSuccessOrServerError(t *testing.T) {
 	}
 }
 
+func TestQRServicePollPreservesUnregisteredDevicePasscodeWithoutLeakingIt(t *testing.T) {
+	service, _ := newQRServiceForTest(t, 200, `{"status":-100,"passcode":"A1B2","remainingSeconds":30}`, &fakeQRValidator{})
+	result, err := service.Poll(context.Background(), syntheticQRLoginRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Kind != QRPollServerError || result.ServerError == nil || result.ServerError.QROutcome() != OutcomeUnregisteredDevice {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.DeviceAuthCode != "A1B2" || result.DeviceAuthRemainingSeconds != 30 {
+		t.Fatalf("device auth fields = %#v", result)
+	}
+	if strings.Contains(result.String(), "A1B2") || strings.Contains(result.GoString(), "A1B2") {
+		t.Fatal("device authorization code leaked through formatting")
+	}
+}
+
+func TestQRServicePollReadsNestedDeviceAuthorizationEnvelope(t *testing.T) {
+	service, _ := newQRServiceForTest(t, 200, `{"status":-100,"response":{"passcode":"5678","remainingSeconds":12}}`, &fakeQRValidator{})
+	result, err := service.Poll(context.Background(), syntheticQRLoginRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.DeviceAuthCode != "5678" || result.DeviceAuthRemainingSeconds != 12 {
+		t.Fatalf("nested device auth fields = %#v", result)
+	}
+
+	service, _ = newQRServiceForTest(t, 200, `{"status":-100,"passcode":"bad","remainingSeconds":12}`, &fakeQRValidator{})
+	if _, err := service.Poll(context.Background(), syntheticQRLoginRequest()); !errors.Is(err, ErrWrongJSONType) {
+		t.Fatalf("malformed passcode error = %v", err)
+	}
+	service, _ = newQRServiceForTest(t, 200, `{"status":-100,"passcode":"bad","response":{"passcode":"5678","remainingSeconds":12}}`, &fakeQRValidator{})
+	if _, err := service.Poll(context.Background(), syntheticQRLoginRequest()); !errors.Is(err, ErrWrongJSONType) {
+		t.Fatalf("ambiguous passcode precedence error = %v", err)
+	}
+}
+
 func TestQRServicePollFailsClosedWithoutRetryOnMalformedBody(t *testing.T) {
 	service, doer := newQRServiceForTest(t, 200, `{"status":0,"user":{"userId":1.5}}`, &fakeQRValidator{})
 	_, err := service.Poll(context.Background(), syntheticQRLoginRequest())
