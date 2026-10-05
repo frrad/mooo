@@ -25,12 +25,15 @@ inspection, and a clean bridge shutdown. The observed path was:
 
 The inbound path above is specifically the logged-in device's own-device
 delivery. It does not prove delivery from another Kakao participant. The photo
-observation covers Matrix-to-Kakao only.
+observation covers both directions: the 2026-10-05 follow-up at source
+revision `a8d8970` verified one Kakao-to-Matrix 64x64 PNG with matching payload
+hash and one completed Matrix event, also through the logged-in own-device
+path.
 
 ## Explicit gaps
 
-This run did not prove group rooms, encrypted rooms, Kakao-to-Matrix photos,
-reactions, restart/offline recovery, or fresh QR enrollment. It did not prove
+This run did not prove group rooms, encrypted rooms, reactions, restart/offline
+recovery, or fresh QR enrollment. It did not prove
 the full alpha acceptance sequence. The QR follow-up used source revision
 `324ad37caa52a3a56960c60acd8b63dc4b247220` (the PR183 head, rather than current
 main), a fresh profile, and exercised bounded expiry and profile cleanup after
