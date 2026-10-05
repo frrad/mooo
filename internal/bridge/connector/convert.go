@@ -309,6 +309,9 @@ func convertPhoto(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 	defer cancel()
 	data, err := media.DownloadPhoto(transferCtx, photoHTTPClient, msg.Message.Attachment)
 	if err != nil {
+		if category, ok := deterministicPhotoFailure(err); ok {
+			return photoConversionGapNotice(msg, category), nil
+		}
 		return nil, errPhotoTransfer
 	}
 	attachment := msg.Message.Attachment
@@ -328,4 +331,27 @@ func convertPhoto(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 	converted := &bridgev2.ConvertedMessage{Parts: []*bridgev2.ConvertedMessagePart{{Type: event.EventMessage, Content: content}}}
 	converted.Parts[0].DBMetadata = newKakaoMessageMetadata(msg.Message.ChatID, msg.Message.LogID, msg.Message.AuthorID, media.PhotoType, "[image]", 0)
 	return converted, nil
+}
+
+func deterministicPhotoFailure(err error) (string, bool) {
+	switch {
+	case errors.Is(err, media.ErrExpired):
+		return "expired", true
+	case errors.Is(err, media.ErrChecksumMismatch):
+		return "checksum", true
+	case errors.Is(err, media.ErrInvalidAttachment):
+		return "invalid_attachment", true
+	case errors.Is(err, media.ErrUnsupportedImage):
+		return "unsupported_image", true
+	case errors.Is(err, media.ErrUnsafeURL):
+		return "unsafe_url", true
+	default:
+		return "", false
+	}
+}
+
+func photoConversionGapNotice(msg events.PhotoMessage, category string) *bridgev2.ConvertedMessage {
+	metadata := newKakaoMessageMetadata(msg.Message.ChatID, msg.Message.LogID, msg.Message.AuthorID, media.PhotoType, "[photo unavailable]", 0)
+	metadata.ConversionGap = category
+	return messageWithMetadata(event.MsgNotice, fmt.Sprintf("A KakaoTalk photo could not be displayed (%s).", category), metadata)
 }

@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +23,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2"
 	bridgev2database "maunium.net/go/mautrix/bridgev2/database"
 	bridgematrix "maunium.net/go/mautrix/bridgev2/matrix"
+	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/crypto/attachment"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -33,6 +36,15 @@ type photoMatrixAPI struct {
 	bridgev2.MatrixAPI
 	uploaded  []byte
 	uploadErr error
+}
+
+func connectorPNG(t *testing.T) []byte {
+	t.Helper()
+	var out bytes.Buffer
+	if err := png.Encode(&out, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
 }
 
 type photoRoundTripper func(*http.Request) (*http.Response, error)
@@ -61,7 +73,7 @@ func TestConvertPhotoSanitizesTransferErrors(t *testing.T) {
 }
 
 func TestConvertPhotoDownloadsAndUploadsExactBytes(t *testing.T) {
-	data := []byte("synthetic-photo-bytes")
+	data := connectorPNG(t)
 	sum := sha1.Sum(data)
 	attachment := media.PhotoAttachment{Width: 3, Height: 2, Size: int64(len(data)), Checksum: hex.EncodeToString(sum[:]), MediaType: "image/png", URL: "https://talk.kakaocdn.net/photo", ThumbnailURL: "https://talk.kakaocdn.net/thumb"}
 	oldClient := photoHTTPClient
@@ -82,6 +94,119 @@ func TestConvertPhotoDownloadsAndUploadsExactBytes(t *testing.T) {
 	content := converted.Parts[0].Content
 	if content.MsgType != event.MsgImage || content.FileName != "photo.png" || content.Info.Width != 3 || content.Info.Height != 2 {
 		t.Fatalf("content = %+v", content)
+	}
+}
+
+func TestConvertPhotoDeterministicFailureBecomesPersistableNotice(t *testing.T) {
+	msg := events.PhotoMessage{Message: media.PhotoMessage{
+		ChatID: testChatID, LogID: 77, AuthorID: testOtherID,
+		Attachment: media.PhotoAttachment{Size: 1, Checksum: strings.Repeat("0", 40), MediaType: "image/jpeg", URL: "https://talk.kakaocdn.net/file", ExpiresAt: 1},
+	}}
+	converted, err := convertPhoto(context.Background(), nil, nil, msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := converted.Parts[0].Content
+	metadata, ok := converted.Parts[0].DBMetadata.(*KakaoMessageMetadata)
+	if content.MsgType != event.MsgNotice || !ok || metadata.ChatID != testChatID || metadata.LogID != 77 || metadata.AuthorID != testOtherID || metadata.Type != media.PhotoType || metadata.ConversionGap != "expired" {
+		t.Fatalf("notice content=%+v metadata=%+v", content, metadata)
+	}
+	if strings.Contains(content.Body, "https://") || strings.Contains(content.Body, "file") {
+		t.Fatalf("notice leaked source details: %q", content.Body)
+	}
+}
+
+func TestDeterministicPhotoNoticeCommitsOriginalSourceEvent(t *testing.T) {
+	kc, _ := newTestClient(t, nil)
+	fake := &fakeKakao{}
+	photo := events.PhotoMessage{Message: media.PhotoMessage{
+		ChatID: testChatID, LogID: 78, AuthorID: testOtherID,
+		Attachment: media.PhotoAttachment{Size: 1, Checksum: strings.Repeat("0", 40), MediaType: "image/jpeg", URL: "https://talk.kakaocdn.net/file", ExpiresAt: 1},
+	}}
+	kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		msg, ok := remote.(*simplevent.Message[events.PhotoMessage])
+		if !ok {
+			t.Fatalf("queued event = %T", remote)
+		}
+		converted, err := msg.ConvertMessage(context.Background(), nil, nil)
+		if err != nil || converted.Parts[0].Content.MsgType != event.MsgNotice {
+			t.Fatalf("deterministic conversion = %#v/%v", converted, err)
+		}
+		return bridgev2.EventHandlingResultSuccess
+	}
+	if !kc.handleEvent(fake, photo) {
+		t.Fatal("deterministic notice was not handled")
+	}
+	committed := fake.committed()
+	if len(committed) != 1 || committed[0] != photo {
+		t.Fatalf("committed source events = %#v, want one original event", committed)
+	}
+}
+
+func TestDeterministicPhotoNoticeDeliveryFailureDoesNotCommit(t *testing.T) {
+	kc, _ := newTestClient(t, nil)
+	fake := &fakeKakao{}
+	photo := events.PhotoMessage{Message: media.PhotoMessage{ChatID: testChatID, LogID: 79, AuthorID: testOtherID, Attachment: media.PhotoAttachment{Size: 1, Checksum: strings.Repeat("0", 40), MediaType: "image/jpeg", URL: "https://talk.kakaocdn.net/file", ExpiresAt: 1}}}
+	kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		msg := remote.(*simplevent.Message[events.PhotoMessage])
+		if converted, err := msg.ConvertMessage(context.Background(), nil, nil); err != nil || converted.Parts[0].Content.MsgType != event.MsgNotice {
+			t.Fatalf("notice conversion = %#v/%v", converted, err)
+		}
+		return bridgev2.EventHandlingResultFailed.WithError(errors.New("Matrix notice delivery failed"))
+	}
+	if kc.handleEvent(fake, photo) || len(fake.committed()) != 0 {
+		t.Fatal("source event committed after notice delivery failure")
+	}
+}
+
+func TestTransientPhotoFailuresRemainUncommitted(t *testing.T) {
+	data := connectorPNG(t)
+	sum := sha1.Sum(data)
+	attachment := media.PhotoAttachment{Size: int64(len(data)), Checksum: hex.EncodeToString(sum[:]), MediaType: "image/png", URL: "https://talk.kakaocdn.net/photo"}
+	photo := events.PhotoMessage{Message: media.PhotoMessage{ChatID: testChatID, LogID: 80, AuthorID: testOtherID, Attachment: attachment}}
+	portal := &bridgev2.Portal{Portal: &bridgev2database.Portal{MXID: "!room:test"}}
+	cases := []struct {
+		name   string
+		client *http.Client
+		intent bridgev2.MatrixAPI
+	}{
+		{name: "network", client: &http.Client{Transport: photoRoundTripper(func(*http.Request) (*http.Response, error) { return nil, errors.New("temporary network failure") })}, intent: &photoMatrixAPI{}},
+		{name: "truncated", client: &http.Client{Transport: photoRoundTripper(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(data[:len(data)-1])), Request: req}, nil
+		})}, intent: &photoMatrixAPI{}},
+		{name: "upload", client: &http.Client{Transport: photoRoundTripper(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(data)), Request: req}, nil
+		})}, intent: &photoMatrixAPI{uploadErr: errors.New("temporary Matrix upload failure")}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			oldClient := photoHTTPClient
+			photoHTTPClient = tc.client
+			t.Cleanup(func() { photoHTTPClient = oldClient })
+			kc, _ := newTestClient(t, nil)
+			fake := &fakeKakao{}
+			kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+				msg := remote.(*simplevent.Message[events.PhotoMessage])
+				_, err := msg.ConvertMessage(context.Background(), portal, tc.intent)
+				if err == nil {
+					return bridgev2.EventHandlingResultSuccess
+				}
+				return bridgev2.EventHandlingResultFailed.WithError(err)
+			}
+			if kc.handleEvent(fake, photo) || len(fake.committed()) != 0 {
+				t.Fatal("transient photo failure advanced source cursor")
+			}
+		})
+	}
+}
+
+func TestQueuedPhotoHandlingDoesNotCommitSourceEvent(t *testing.T) {
+	kc, _ := newTestClient(t, nil)
+	fake := &fakeKakao{}
+	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult { return bridgev2.EventHandlingResultQueued }
+	photo := events.PhotoMessage{Message: media.PhotoMessage{ChatID: testChatID, LogID: 81, AuthorID: testOtherID, Attachment: media.PhotoAttachment{Size: 1, Checksum: strings.Repeat("0", 40), MediaType: "image/jpeg", URL: "https://talk.kakaocdn.net/file", ExpiresAt: 1}}}
+	if kc.handleEvent(fake, photo) || len(fake.committed()) != 0 {
+		t.Fatal("queued source event was committed")
 	}
 }
 
