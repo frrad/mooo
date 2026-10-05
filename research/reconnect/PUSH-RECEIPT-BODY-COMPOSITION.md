@@ -30,11 +30,13 @@ projection and packet framing are separate objects and separate guards.
 
 The composition test constructs the inherited header property dictionary from
 synthetic method/packet inputs, applies static removal, maps BLOCKSYNC fields,
-and encodes the resulting int32 dictionary as deterministic little-endian
-BSON. It checks that HINT header properties do not leak into the empty body,
-that a no-removal negative control differs, and that BLOCKSYNC emits only
-`r`/`pr` with input-derived signed values. The separate packetData contract
-proves header/body framing and the second BSON conversion guard.
+and encodes the resulting typed dictionary as deterministic synthetic BSON.
+It checks that HINT header properties do not leak into the empty body, that a
+no-removal negative control differs, and that BLOCKSYNC emits only `r`/`pr`
+with input-derived signed values. Sorted key order and the test-only uint32
+leakage encoding are synthetic assertions; they do not claim the official
+NSNumber/BSON support matrix or wire key ordering. The separate packetData
+contract proves header/body framing and the second BSON conversion guard.
 
 ## Provenance
 

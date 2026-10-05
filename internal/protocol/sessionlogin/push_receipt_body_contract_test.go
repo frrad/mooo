@@ -70,6 +70,9 @@ func encodeReceiptBSON(values map[string]any) []byte {
 			body = append(body, value...)
 			body = append(body, 0)
 		case uint32:
+			// This uint32 branch exists only so the negative-control mutation
+			// produces observable bytes. It is not an assertion about the
+			// official NSNumber/BSON support matrix.
 			body = append(body, 0x12)
 			body = append(body, key...)
 			body = append(body, 0)
