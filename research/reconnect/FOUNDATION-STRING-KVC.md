@@ -18,8 +18,15 @@ runtime strings built by the probe's `[[NSString alloc]
 initWithUTF8String:]` path (which may materialize as
 `NSTaggedPointerString` or `__NSCFString`) and found the same values for the
 recorded domain. This runtime factory is probe provenance; it is not claimed to
-be the official decoder's `stringWithCString:encoding:` implementation. The
-fixture retains all 40 initial inputs and all 24 follow-up inputs, including
+be the official decoder's `stringWithCString:encoding:` implementation. A
+separate account-free native Foundation probe then passed all 64 fixture inputs
+through `stringWithCString:encoding:4`; its direct `intValue` and Ti KVC values
+matched every fixture value. That probe is a construction/KVC cross-check, not
+proof that the official decoder uses the same runtime class. Its source and
+sanitized output are retained outside the repository at
+`/private/tmp/mooo-string-cstring-encoding4-20261004.m` and
+`/private/tmp/mooo-string-cstring-encoding4-20261004.txt`.
+The fixture retains all 40 initial inputs and all 24 follow-up inputs, including
 overflow, prefix, NUL, sign, control-character, selected-whitespace, Arabic,
 Devanagari, and fullwidth-digit cases. These are captured examples rather than
 a grammar claim.
