@@ -314,14 +314,6 @@ func retryableRecoveryError(err error) bool {
 	return true
 }
 
-func retryableBootstrapError(err error) bool {
-	// Catch-up conversion/commit failures are durable poison for this
-	// generation. Retrying them in a tight recovery loop would replay the same
-	// event without advancing its checkpoint; leave the session disconnected
-	// for an operator or explicit restart instead.
-	return err != nil && !strings.Contains(err.Error(), "catch up")
-}
-
 // shutdownBootstrap releases an owner retained before bootstrap calls. A
 // concurrent Disconnect owns cleanup once it marks stopping, so Connect must
 // leave that shutdown and any retry to Disconnect.
