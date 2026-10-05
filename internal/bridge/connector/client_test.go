@@ -1016,7 +1016,7 @@ func TestOutboundEmoteIsPrefixed(t *testing.T) {
 func TestCapabilitiesAdvertisePartialReplies(t *testing.T) {
 	kc := connectedClient(t, &fakeKakao{})
 	features := kc.GetCapabilities(context.Background(), nil)
-	if features.Reply != event.CapLevelPartialSupport || features.ID != "com.github.frrad.mooo.capabilities.2026_10_04" {
+	if features.Reply != event.CapLevelPartialSupport || features.ID != "com.github.frrad.mooo.capabilities.2026_10_04.photos1" {
 		t.Fatalf("capabilities = %+v", features)
 	}
 }

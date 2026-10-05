@@ -245,7 +245,9 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 			return fmt.Errorf("catch up chat: %w", err)
 		}
 		for _, evt := range missed {
-			kc.handleEvent(c, evt)
+			if !kc.handleEvent(c, evt) {
+				return errors.New("catch-up event was not committed")
+			}
 		}
 	}
 	return nil
@@ -291,11 +293,11 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	}
 }
 
-func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) {
+func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 	remote := kc.remoteEventFor(evt)
 	if remote == nil {
 		kc.log().Debug().Str("kind", string(evt.Kind())).Msg("Ignoring Kakao event not bridged yet")
-		return
+		return true
 	}
 	result := kc.queue(remote)
 	if !committable(result) {
@@ -303,11 +305,13 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) {
 			Bool("success", result.Success).
 			Bool("queued", result.Queued).
 			Msg("Kakao message was not confirmed as bridged; leaving it uncommitted for replay")
-		return
+		return false
 	}
 	if err := c.CommitEvent(evt); err != nil {
 		kc.log().Err(err).Msg("Failed to commit bridged Kakao message")
+		return false
 	}
+	return true
 }
 
 // committable reports whether the bridge finished handling an event. Ignored
@@ -576,7 +580,7 @@ func userInfoForMember(profile chatmeta.Member) *bridgev2.UserInfo {
 
 func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Portal) *event.RoomFeatures {
 	return &event.RoomFeatures{
-		ID:            "com.github.frrad.mooo.capabilities.2026_10_04",
+		ID:            "com.github.frrad.mooo.capabilities.2026_10_04.photos1",
 		MaxTextLength: maxTextLength,
 		Reply:         event.CapLevelPartialSupport,
 		File: event.FileFeatureMap{event.MsgImage: &event.FileFeatures{
