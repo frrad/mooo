@@ -107,7 +107,7 @@ func observedV2SLDecryptState(trace *v2SLPrimitiveTrace, plaintext []byte) []byt
 		return nil
 	}
 	trace.steps = append(trace.steps, "decrypt-update", "set-tag", "decrypt-final")
-	trace.effects = append(trace.effects, "decrypt-update", "set-tag", "free", "decrypt-final")
+	trace.effects = append(trace.effects, "decrypt-update", "set-tag", "decrypt-final", "free")
 	trace.freed = true
 	trace.effects = append(trace.effects, "predicate")
 	if trace.finalCode < 1 {
@@ -240,7 +240,7 @@ func TestV2SLPrimitiveFailureStateAndIgnoredStatuses(t *testing.T) {
 		if (code < 1) != (got == nil) || !trace.freed {
 			t.Fatalf("final code %d: output=%q freed=%v", code, got, trace.freed)
 		}
-		wantEffects := []string{"context", "decrypt-update", "set-tag", "free", "decrypt-final", "predicate"}
+		wantEffects := []string{"context", "decrypt-update", "set-tag", "decrypt-final", "free", "predicate"}
 		if code >= 1 {
 			wantEffects = append(wantEffects, "publish")
 		}
