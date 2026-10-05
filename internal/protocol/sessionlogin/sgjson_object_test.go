@@ -68,6 +68,9 @@ func TestProjectSGJSONObjectTypedNilAndOpaqueContainers(t *testing.T) {
 	if got, err := ProjectSGJSONObject(nilArray); err != nil || !reflect.DeepEqual(got, SGJSONNull{}) {
 		t.Fatalf("typed nil SGNumberArray projection=%#v err=%v, want explicit null", got, err)
 	}
+	if got, err := ProjectSGJSONObject("NSNull"); err != nil || got != "NSNull" {
+		t.Fatalf("ordinary NSNull string changed: %#v err=%v", got, err)
+	}
 	mapInput := map[string]any{"nested": syntheticSGJSON{value: "opaque"}}
 	if got, err := ProjectSGJSONObject(mapInput); err != nil || !reflect.DeepEqual(got, mapInput) {
 		t.Fatalf("ordinary map was recursively projected: %#v err=%v", got, err)
