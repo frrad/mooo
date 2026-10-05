@@ -129,19 +129,19 @@ timing remain separate evidence gaps.
 ### Push-receipt transport integration plan
 
 The reviewed manager and carriage-agent owners are intentionally transport
-independent. The existing Session has no receipt callsite: unmatched packets
-leave `dispatchPacket` and enter the raw/typed push streams, while the existing
-asynchronous out-segment submitter is an opt-in writer for already serialized
-payloads. Separate typed body and plaintext packet builders are merged; neither
-transport seam calls them yet.
+independent. Session now has a generic, transport-independent opt-in receipt
+hook: `BindPushReceipt` installs an injected sender and eligibility predicate
+before reader startup, `dispatchPushReceipt` runs it only for unmatched packets,
+and shutdown waits for its registered closer. The ordinary raw/typed push stream
+remains intact. The hook does not build, serialize, encrypt, or write receipt
+packets; its sender accepts an already prepared payload.
 
 The source-derived receipt body and packet constructor contracts are reviewed.
-Before binding receipts to Session, resolve the incoming eligibility predicate
-through the official parser, notice decoder, and handler chain. The integration
-must then add an opt-in callback at the unmatched-push boundary, injected before reader startup. It should receive only
-an eligible, source-modeled push representation and compose the agent owner with
-the manager owner. Session must retain ordinary push delivery and must not
-activate this callback by default.
+The remaining integration work is to resolve typed, source-qualified incoming
+eligibility through the official parser, notice decoder, and handler chain, then
+compose the reviewed body/packet/encryption/write layers behind the existing
+opt-in hook. The adapter must remain opt-in and must not activate receipt
+sending by default.
 
 The adapter must keep receipt sending separate from the existing out-segment
 worker until the receipt packet shape, serialization, callback-tag mapping, and
@@ -198,8 +198,10 @@ Required synthetic integration coverage after request approval:
    and bounded shutdown are exercised only after the receipt serialization and
    completion contract specifies how they map to receipt outcomes.
 
-The manager/agent composition harness is tracked separately in PR138; this plan
-does not authorize Session binding, packet construction, or default activation.
+The manager/agent composition and Session opt-in lifecycle are now covered by
+merged owner and session tests. Remaining work is typed eligibility and the
+source-qualified builder/encryption/write composition; no default activation is
+authorized.
 
 ### Push-receipt builders and remaining integration boundaries
 
