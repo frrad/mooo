@@ -17,7 +17,9 @@ type nwCompletionFixture struct {
 type nwCompletionCase struct {
 	Name              string   `json:"name"`
 	OwnerPresent      bool     `json:"owner_present"`
-	ErrorKind         string   `json:"error_kind"`
+	ErrorPresent      bool     `json:"error_present"`
+	ErrorDomain       string   `json:"error_domain,omitempty"`
+	ErrorCode         int      `json:"error_code,omitempty"`
 	ConnectionPresent bool     `json:"connection_present"`
 	ExpectedEffects   []string `json:"expected_effects"`
 }
@@ -26,23 +28,20 @@ func expectedNWCompletionEffects(c nwCompletionCase) []string {
 	if !c.OwnerPresent {
 		return []string{"weak_owner_load", "owner_nil_return"}
 	}
-	effects := []string{"weak_owner_load", "toggle_out_segment_timeout"}
-	switch c.ErrorKind {
-	case "success":
+	effects := []string{"weak_owner_load", "toggle_out_segment_timeout_false"}
+	if !c.ErrorPresent {
 		return append(effects, "success_cleanup")
-	case "posix_0x59":
-		return append(effects, "posix_0x59_cleanup")
-	case "other_error":
-		effects = append(effects, "error_log")
-		if c.ConnectionPresent {
-			effects = append(effects, "nw_connection_cancel")
-		} else {
-			effects = append(effects, "no_connection_cancel")
-		}
-		return append(effects, "error_cleanup")
-	default:
-		return nil
 	}
+	if c.ErrorDomain == "posix" && c.ErrorCode == 89 {
+		return append(effects, "posix_89_cleanup")
+	}
+	effects = append(effects, "error_log")
+	if c.ConnectionPresent {
+		effects = append(effects, "nw_connection_cancel")
+	} else {
+		effects = append(effects, "no_connection_cancel")
+	}
+	return append(effects, "error_cleanup")
 }
 
 func TestNWReceiptCompletionFixture(t *testing.T) {
@@ -56,7 +55,7 @@ func TestNWReceiptCompletionFixture(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 5 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 8 {
 		t.Fatalf("header %#v", f)
 	}
 	seen := map[string]bool{}
@@ -65,11 +64,11 @@ func TestNWReceiptCompletionFixture(t *testing.T) {
 			t.Fatalf("duplicate/empty %q", c.Name)
 		}
 		seen[c.Name] = true
-		if c.ErrorKind != "success" && c.ErrorKind != "posix_0x59" && c.ErrorKind != "other_error" {
-			t.Fatalf("%s error_kind=%q", c.Name, c.ErrorKind)
+		if c.ErrorDomain != "" && c.ErrorDomain != "posix" && c.ErrorDomain != "nonposix" {
+			t.Fatalf("%s error_domain=%q", c.Name, c.ErrorDomain)
 		}
-		if c.OwnerPresent && c.ErrorKind == "" {
-			t.Fatalf("%s missing error kind", c.Name)
+		if c.ErrorPresent && c.ErrorDomain == "" {
+			t.Fatalf("%s missing error domain", c.Name)
 		}
 		if got, want := c.ExpectedEffects, expectedNWCompletionEffects(c); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s effects=%v want %v", c.Name, got, want)

@@ -1,10 +1,13 @@
 {
   "status": "reviewed-static-unexecuted-runtime",
   "cases": [
-    {"name":"owner_deallocated","owner_present":false,"error_kind":"success","connection_present":false,"expected_effects":["weak_owner_load","owner_nil_return"]},
-    {"name":"success_cleanup","owner_present":true,"error_kind":"success","connection_present":true,"expected_effects":["weak_owner_load","toggle_out_segment_timeout","success_cleanup"]},
-    {"name":"posix_59_cleanup","owner_present":true,"error_kind":"posix_0x59","connection_present":true,"expected_effects":["weak_owner_load","toggle_out_segment_timeout","posix_0x59_cleanup"]},
-    {"name":"other_error_cancels_connection","owner_present":true,"error_kind":"other_error","connection_present":true,"expected_effects":["weak_owner_load","toggle_out_segment_timeout","error_log","nw_connection_cancel","error_cleanup"]},
-    {"name":"other_error_without_connection","owner_present":true,"error_kind":"other_error","connection_present":false,"expected_effects":["weak_owner_load","toggle_out_segment_timeout","error_log","no_connection_cancel","error_cleanup"]}
+    {"name":"owner_deallocated","owner_present":false,"error_present":false,"connection_present":false,"expected_effects":["weak_owner_load","owner_nil_return"]},
+    {"name":"success_cleanup","owner_present":true,"error_present":false,"connection_present":true,"expected_effects":["weak_owner_load","toggle_out_segment_timeout_false","success_cleanup"]},
+    {"name":"posix_89_cleanup","owner_present":true,"error_present":true,"error_domain":"posix","error_code":89,"connection_present":true,"expected_effects":["weak_owner_load","toggle_out_segment_timeout_false","posix_89_cleanup"]},
+    {"name":"posix_88_logs_and_cancels","owner_present":true,"error_present":true,"error_domain":"posix","error_code":88,"connection_present":true,"expected_effects":["weak_owner_load","toggle_out_segment_timeout_false","error_log","nw_connection_cancel","error_cleanup"]},
+    {"name":"posix_90_logs_and_cancels","owner_present":true,"error_present":true,"error_domain":"posix","error_code":90,"connection_present":true,"expected_effects":["weak_owner_load","toggle_out_segment_timeout_false","error_log","nw_connection_cancel","error_cleanup"]},
+    {"name":"nonposix_89_logs_and_cancels","owner_present":true,"error_present":true,"error_domain":"nonposix","error_code":89,"connection_present":true,"expected_effects":["weak_owner_load","toggle_out_segment_timeout_false","error_log","nw_connection_cancel","error_cleanup"]},
+    {"name":"other_error_without_connection","owner_present":true,"error_present":true,"error_domain":"nonposix","error_code":1,"connection_present":false,"expected_effects":["weak_owner_load","toggle_out_segment_timeout_false","error_log","no_connection_cancel","error_cleanup"]},
+    {"name":"posix_89_without_connection","owner_present":true,"error_present":true,"error_domain":"posix","error_code":89,"connection_present":false,"expected_effects":["weak_owner_load","toggle_out_segment_timeout_false","posix_89_cleanup"]}
   ]
 }

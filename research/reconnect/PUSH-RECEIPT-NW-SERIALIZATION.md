@@ -38,11 +38,12 @@ unresolved even though the framing implementation is now localized.
 
 The NW send completion is a Swift `NWConnection.SendCompletion` closure at
 `0x100d4a840`. Its body weak-loads the owner and returns when that owner has
-gone away. With an owner, it invokes `toggleOutSegmentTimeout:` and then
+gone away. With an owner, it invokes `toggleOutSegmentTimeout:false` and then
 branches on the `NWError` completion value. The success branch performs
-cleanup only. Error branches inspect the POSIX error representation; the
-observed POSIX code `0x59` takes the cleanup path, while the other observed
-error path logs and cancels the owner's captured `NWConnection` when present.
+cleanup only. Error branches inspect the POSIX error representation; only the
+POSIX code `0x59` (decimal 89) takes the cleanup path, while other POSIX
+codes and non-POSIX errors log and cancel the owner's captured `NWConnection`
+when present.
 The reviewed closure body contains no pending-map lookup, request-tag
 correlation, status write, or completion callback invocation. Pending-map and
 socket-disconnect consumers from the base Objective-C path remain separate
@@ -58,9 +59,10 @@ conversion. NW cases then model only the wrapper's packet-data result guard,
 encryption nil path, connection gate, send scheduling, and timeout argument.
 It records BSON key order/default policy, encryption output, and any server
 response as explicit gaps. Completion vectors cover owner lifetime, success,
-the observed POSIX `0x59` cleanup branch, and the other-error connection-cancel
-branch in `rc-q5-push-receipt-nw-completion.json`; they do not invent ACK or
-retry behavior.
+the observed POSIX `0x59`/89 cleanup predicate, neighboring POSIX and
+non-POSIX values, and the other-error connection-cancel branch in
+`rc-q5-push-receipt-nw-completion.json`; they do not invent ACK or retry
+behavior.
 
 ## Provenance
 
