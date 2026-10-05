@@ -78,7 +78,7 @@ func metadataFromMessage(message *database.Message) (*KakaoMessageMetadata, erro
 }
 
 func replyTargetFor(message *database.Message, portal networkid.PortalKey) (chat.ReplyTarget, error) {
-	if message == nil || message.Room.ID != "" && (message.Room.ID != portal.ID || message.Room.Receiver != "" && message.Room.Receiver != portal.Receiver) {
+	if message == nil || message.Room.ID != "" && message.Room.ID != portal.ID || message != nil && message.Room.Receiver != "" && message.Room.Receiver != portal.Receiver {
 		return chat.ReplyTarget{}, errCrossChatReply
 	}
 	metadata, err := metadataFromMessage(message)

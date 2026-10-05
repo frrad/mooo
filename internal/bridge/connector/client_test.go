@@ -1066,6 +1066,7 @@ func TestOutboundReplyRejectsOldCrossChatAndUnresolvedTargets(t *testing.T) {
 		{name: "cross chat", reply: &database.Message{ID: makeMessageID(4000, 11), Room: makePortalKey(4000, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(4000, 11, testOtherID, chat.TextType, "source", 0)}, want: errCrossChatReply},
 		{name: "sender mismatch", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(9999), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0)}, want: errReplySenderMismatch},
 		{name: "receiver mismatch", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, makeUserLoginID(9999)), SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0)}, want: errCrossChatReply},
+		{name: "empty room id wrong receiver", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: networkid.PortalKey{Receiver: makeUserLoginID(9999)}, SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0)}, want: errCrossChatReply},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

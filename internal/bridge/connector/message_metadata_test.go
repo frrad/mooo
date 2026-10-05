@@ -47,7 +47,7 @@ func TestKakaoMessageMetadataPersistsThroughBridgeDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer raw.RawDB.Close()
+	defer func() { _ = raw.RawDB.Close() }()
 	db := database.New(networkid.BridgeID("test"), (&KakaoConnector{}).GetDBMetaTypes(), raw)
 	if err := db.Upgrade(ctx); err != nil {
 		t.Fatal(err)
