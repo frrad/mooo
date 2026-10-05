@@ -48,12 +48,16 @@ distinguish implemented behavior from planned integrations.
 B0 is a working minimal text bridge, with recorded live validation against a
 throwaway Synapse on 2026-09-30. Text works in both directions, replies work
 inbound, and restart catch-up recovers missed messages for previously committed
-chats. Unsupported message kinds become notices. Initial room/member metadata,
-outbound replies, bridge-native QR enrollment, and bounded photo transfers
-have since landed with synthetic validation;
-their direct/group live validation remains outstanding. The framework supplies appservice, encryption,
-and double-puppeting machinery; that does not establish deployment validation
-for every homeserver or Beeper configuration.
+chats. The 2026-10-04 native run additionally exercised direct own-device text,
+replies, and Matrix-to-Kakao photos; a 2026-10-05 (UTC) follow-up exercised
+Kakao-to-Matrix photos. A 2026-10-05 Docker resume exercised
+the existing profile, one text, one encrypted-media attachment in an
+unencrypted portal, and one persistent restart; the reply and reaction probes
+were rejected/failed and were not retried. Group/other-participant delivery,
+Matrix room E2EE, reaction acceptance, and broader recovery remain open. The
+framework supplies appservice, encryption, and double-puppeting machinery; that
+does not establish deployment validation for every homeserver or Beeper
+configuration.
 
 The next milestone is a usable single-user alpha. Execute the work in this
 order; the B0–B4 sections below remain feature inventories rather than a strict
@@ -219,16 +223,19 @@ and full official-client parity remain outside this alpha goal.
       transfer deadlines, and persisted photo source metadata. Optional inbound
       author/timestamp fields have synthetic parser coverage; live encoding
       remains an explicit gap. Image replies are rejected.
-- [ ] Live-validate direct/group photo transfers, encrypted Matrix media, and
-      author/timestamp attribution.
+- [ ] Live-validate direct/group photo transfers, Matrix room E2EE media, and
+      author/timestamp attribution. The Docker attachment probe covered
+      encrypted media transport in an unencrypted portal only.
 - [x] Inbound reply conversion with chat-scoped source message IDs.
 - [x] Outbound replies with persisted source metadata, explicit missing-source
       rejection, chat/receiver guards, UTF-16-bounded previews, and single-attempt
       sends. Synthetic connector and SQLite round-trip tests pass (PR #164).
-- [ ] Live-validate outbound replies, including reply after bridge restart.
+- [ ] Live-validate outbound replies, including reply after bridge restart. The
+      Docker synthetic-target probe was rejected before Kakao mutation.
 - [x] Reactions in both directions, with checked aggregate-to-per-sender
       reconciliation, replay-safe revisions, and explicit Matrix failure
-      handling (PR #179). Live direct/group acceptance remains outstanding.
+      handling (PR #179). Live direct/group acceptance remains outstanding; the
+      Docker heart probe returned a Kakao mutation error and was not retried.
 
 ### B2: chat metadata (protocol research first)
 
@@ -284,7 +291,9 @@ The implemented supervisor and its bounded policy are documented in
 - [ ] Read receipts in both directions, once the read-state dossier settles.
 - [x] Docker image, example configuration, and documentation with no operator
       values (PR #170). Authenticated appservice startup/restart smoke passed;
-      full messaging deployment acceptance remains separate.
+      a bounded existing-profile text/media resume and one restart are recorded
+      in [direct messaging validation](DIRECT-MESSAGING-VALIDATION.md); full
+      messaging deployment acceptance remains separate.
 - [ ] Validate both required deployment targets: standard Matrix appservice
       installation and separate Beeper self-hosting.
 
