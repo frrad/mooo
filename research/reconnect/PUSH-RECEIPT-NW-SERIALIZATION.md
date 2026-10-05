@@ -45,8 +45,11 @@ belong to the base Objective-C path and are kept as a separate explicit gap.
 
 ## Synthetic contract
 
-The fixture checks the observed NW packet-data framing, zero-length body
-omission, nonzero re-read/second-conversion branch, nil-result guards,
+The fixture separates the packet-data framing operation from the NW wrapper.
+Framing cases derive the header body length, mutable-data capacity
+(`bodyLength + 22`), and output bytes from synthetic first/second BSON
+results; they cover zero-length omission and a deliberately different second
+conversion. NW cases then model only the wrapper's packet-data result guard,
 encryption nil path, connection gate, send scheduling, and timeout argument.
 It records BSON key order/defaults, completion closure behavior, and pending
 correlation as explicit gaps rather than inventing wire fields, ACK behavior,
