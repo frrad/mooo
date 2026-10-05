@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/bridgev2"
@@ -29,6 +30,7 @@ type kakaoClient interface {
 	CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error)
 	SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error)
 	Close() error
+	Shutdown(ctx context.Context) error
 }
 
 func openProfileClient(statePath string) (kakaoClient, error) {
@@ -269,10 +271,13 @@ func (kc *KakaoClient) Disconnect() {
 	if c == nil {
 		return
 	}
-	if err := c.Close(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	err := c.Shutdown(ctx)
+	cancel()
+	if err != nil {
 		kc.log().Err(err).Msg("Failed to close Kakao client")
 	}
-	if done != nil {
+	if err == nil && done != nil {
 		<-done
 	}
 }
