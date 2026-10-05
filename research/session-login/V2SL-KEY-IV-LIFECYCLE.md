@@ -16,7 +16,8 @@ material accessor appends the key and then appends the current IV when one is
 present. Consequently, the pre-encryption material is key-only (16 bytes).
 
 Each encryption generates a fresh 12-byte IV and stores it as the current IV
-before invoking the AES-128-GCM primitive. After the first encryption, the
+before invoking the AES-128-GCM primitive. The synthetic contract injects a
+primitive observer and checks the state visible at both invocations. After the first encryption, the
 accessor returns `key || current-IV` (28 bytes). A later encryption replaces
 the current IV; it does not append a history of nonces. The retained property
 is object state and is distinct from the per-message freshness requirement.
@@ -24,7 +25,9 @@ is object state and is distinct from the per-message freshness requirement.
 The handshake framing records the encrypted-result length, key-material length,
 and secure-layer type as little-endian 32-bit values before the encrypted
 result. The observed successful values are `256`, `16`, and `3`, followed by
-the RSA result. The synthetic fixture also records the mechanical framing of
+the opaque RSA result. The synthetic fixture compares the complete frame bytes
+against that little-endian prefix plus a 256-byte distinct synthetic RSA body.
+It also records the mechanical framing of
 an empty RSA result, but does not classify that result as success, retry, or
 fatal failure because the downstream consumer was not traced.
 
