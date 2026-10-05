@@ -1,0 +1,74 @@
+{
+  "status": "reviewed-static-framework-bounded-synthetic",
+  "platform": "macOS KakaoTalk 26.8.0 arm64 SGJsonKit",
+  "cases": [
+    {
+      "name": "int32_values_boundaries",
+      "class": "SGInt32Array",
+      "superclass": "SGIntArray",
+      "width": 4,
+      "values": [-2147483648, -1, 0, 2147483647],
+      "expected_data_hex": "00000080ffffffff00000000ffffff7f",
+      "expected_count": 4
+    },
+    {
+      "name": "int64_values_boundaries",
+      "class": "SGInt64Array",
+      "superclass": "SGLongArray",
+      "width": 8,
+      "values": [-9223372036854775808, -1, 0, 9223372036854775807],
+      "expected_data_hex": "0000000000000080ffffffffffffffff0000000000000000ffffffffffffff7f",
+      "expected_count": 4
+    },
+    {
+      "name": "int32_number_array_uses_int_value",
+      "class": "SGInt32Array",
+      "superclass": "SGIntArray",
+      "width": 4,
+      "number_values": [4294967297, -4294967297],
+      "expected_data_hex": "01000000ffffffff",
+      "expected_count": 2
+    },
+    {
+      "name": "int64_number_array_uses_long_value",
+      "class": "SGInt64Array",
+      "superclass": "SGLongArray",
+      "width": 8,
+      "number_values": [9223372036854775807, -9223372036854775808],
+      "expected_data_hex": "ffffffffffffff7f0000000000000080",
+      "expected_count": 2
+    },
+    {
+      "name": "empty_int32_values",
+      "class": "SGInt32Array",
+      "superclass": "SGIntArray",
+      "width": 4,
+      "values": [],
+      "expected_data_hex": "",
+      "expected_count": 0
+    },
+    {
+      "name": "empty_int64_number_array",
+      "class": "SGInt64Array",
+      "superclass": "SGLongArray",
+      "width": 8,
+      "number_values": [],
+      "expected_data_hex": "",
+      "expected_count": 0
+    },
+    {
+      "name": "nil_number_array_initializes_empty",
+      "class": "SGInt32Array",
+      "superclass": "SGIntArray",
+      "width": 4,
+      "number_values": null,
+      "expected_data_hex": "",
+      "expected_count": 0
+    }
+  ],
+  "gaps": [
+    "superclass init failure behavior is not runtime-executed",
+    "out-of-range numberAtIndex reads are unchecked and remain an explicit safety gap",
+    "nil element behavior inside a nonnil NSArray is not used as a production policy"
+  ]
+}
