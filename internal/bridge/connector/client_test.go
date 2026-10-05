@@ -386,6 +386,20 @@ func TestKickoutReportsBadCredentials(t *testing.T) {
 	}
 }
 
+func TestChangeServerReportsDistinctTerminalDisconnect(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result, 2)}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+
+	kc.Connect(context.Background())
+	fake.stream <- events.Result{Event: events.ChangeServer{}}
+	close(fake.stream)
+
+	waitForState(t, harness, status.StateTransientDisconnect)
+	if got := harness.lastState().Error; got != stateChangeServer {
+		t.Fatalf("error = %q, want %q", got, stateChangeServer)
+	}
+}
+
 func TestDisconnectClosesClientWithoutReportingFailure(t *testing.T) {
 	fake := &fakeKakao{stream: make(chan events.Result)}
 	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })

@@ -25,10 +25,11 @@ This leaves two integration gaps:
 1. CHANGESVR needs an injected manager/recovery effect boundary that can clear
    the cached route and perform the ordered logout before any fresh booking is
    considered. The source contract does not authorize an automatic retry.
-2. KICKOUT needs one guarded terminal operation that owns the logged-in and
-   logging-out checks, logout, and the reason-1/10 reset decision. Splitting
-   `EffectLogout` and `EffectResetDatabase` across unrelated bridge calls could
-   violate the traced `logoutWithResetDatabase:` ordering and storage guards.
+2. KICKOUT needs one guarded terminal operation that always owns the logged-in
+   and logging-out checks and logout. Its reset argument is true only for
+   reasons 1 and 10. Splitting `EffectLogout` and `EffectResetDatabase` across
+   unrelated bridge calls could violate the traced
+   `logoutWithResetDatabase:` ordering and storage guards.
 
 The current generation checks prevent reducer callbacks from changing a
 terminal state, but terminal effects still carry the pre-terminal generation.
@@ -45,20 +46,24 @@ receive typed events from the single event-loop goroutine and return before the
 terminal state is published. It must preserve ordinary push ordering and must
 not map terminal notices to bridge remote events.
 
-The first implementation should be effect-only and test-backed:
+The first implementation should be effect-only and test-backed. The bridge now
+reports an admitted CHANGESVR as a distinct transient-disconnect error after
+the stream ends, preserving the no-auto-reconnect policy; this is a reporting
+boundary, not route mutation.
 
 * CHANGESVR records clear-route, ticket-cursor selection, logout, and carriage
   disconnect in source order; no automatic reconnect is inferred.
 * KICKOUT rejects unauthenticated or already-logging-out input, records the
-  reason, and invokes one combined logout/reset operation only for reasons 1 and
-  10. Optional notification projection remains a separate callback.
+  reason, and invokes one combined logout/reset operation with reset true only
+  for reasons 1 and 10. Optional notification projection remains a separate
+  callback.
 * A stale generation and a terminal duplicate produce no external operation.
 * A stream ending after CHANGESVR reports the terminal result rather than the
-  generic transient-disconnect state; a KICKOUT reports bad credentials only
+  generic transient-disconnect error; a KICKOUT reports bad credentials only
   after its terminal operation accepts the event.
 
-Required storage and route contracts must be approved before wiring database
+The callback-return-before-state-publication ordering is a proposed integration
+policy until failure and acceptance behavior are traced. Required storage and route contracts must be approved before wiring database
 deletion, observer/UI notifications, or automatic booking. Until then, the
 bridge should continue its current safe behavior for those unresolved effects
 and expose the gap through tests rather than guessing side effects.
-
