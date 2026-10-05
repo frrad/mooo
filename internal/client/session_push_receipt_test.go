@@ -182,6 +182,84 @@ func TestPushReceiptBindingCloseDoesNotWaitForBlockedSender(t *testing.T) {
 	<-dispatchDone
 }
 
+func TestEligibleReceiptCallbackCanCloseRealWireSession(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+	session := &Session{
+		wire:    &wireConn{c: clientConn},
+		pushes:  make(chan loco.Packet, 1),
+		pending: make(map[uint32]chan requestResult),
+	}
+	closed := make(chan struct{})
+	if err := session.BindPushReceipt(&receiptSenderSpy{}, func(loco.Packet) bool {
+		_ = session.Close()
+		close(closed)
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session.startReadLoop()
+	frame, err := (loco.Packet{Header: loco.Header{Method: "HINT"}, Body: []byte{1}}).MarshalBinary(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = serverConn.Write(frame) }()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("eligible callback did not reenter Session.Close")
+	}
+}
+
+type fifoReceiptSender struct {
+	firstStarted chan struct{}
+	firstRelease chan struct{}
+	second       chan struct{}
+	mu           sync.Mutex
+	count        int
+}
+
+func (s *fifoReceiptSender) Send(packet any) error {
+	s.mu.Lock()
+	s.count++
+	count := s.count
+	s.mu.Unlock()
+	if count == 1 {
+		close(s.firstStarted)
+		<-s.firstRelease
+	} else {
+		close(s.second)
+	}
+	return nil
+}
+
+func TestReceiptWorkerPreservesFIFOAndSuppressesQueuedAfterClose(t *testing.T) {
+	session := newSession(nil)
+	sender := &fifoReceiptSender{firstStarted: make(chan struct{}), firstRelease: make(chan struct{}), second: make(chan struct{})}
+	if err := session.BindPushReceipt(sender, func(loco.Packet) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	session.dispatchPushReceipt(loco.Packet{Header: loco.Header{PacketID: 1}})
+	session.dispatchPushReceipt(loco.Packet{Header: loco.Header{PacketID: 2}})
+	select {
+	case <-sender.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first receipt did not start")
+	}
+	select {
+	case <-sender.second:
+		t.Fatal("second receipt ran before first release")
+	case <-time.After(20 * time.Millisecond):
+	}
+	_ = session.Close()
+	close(sender.firstRelease)
+	select {
+	case <-sender.second:
+		t.Fatal("queued receipt sent after Session.Close")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func TestClientShutdownRetainsLeaseUntilReceiptSenderJoins(t *testing.T) {
 	dir := t.TempDir()
 	leasePath := filepath.Join(dir, "profile.lock")
