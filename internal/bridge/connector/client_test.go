@@ -60,6 +60,9 @@ type fakeKakao struct {
 	eventsEntered     chan struct{}
 	eventsRelease     <-chan struct{}
 	eventsEnterOnce   sync.Once
+	catchupEntered    chan struct{}
+	catchupRelease    <-chan struct{}
+	catchupEnterOnce  sync.Once
 }
 
 func (f *fakeKakao) Connect(ctx context.Context) error { return f.connectErr }
@@ -91,9 +94,20 @@ func (f *fakeKakao) ResumeTargets(ctx context.Context) ([]syncmsg.Target, error)
 
 func (f *fakeKakao) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls = append(f.calls, fmt.Sprintf("CatchUp(%d,%d)", chatID, targetMax))
 	result := f.catchUps[chatID]
+	entered, release := f.catchupEntered, f.catchupRelease
+	f.mu.Unlock()
+	if entered != nil {
+		f.catchupEnterOnce.Do(func() { close(entered) })
+	}
+	if release != nil {
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	return result.events, result.err
 }
 
@@ -721,6 +735,46 @@ func TestDisconnectOwnsBootstrapSubscriptionBeforeEventsReturns(t *testing.T) {
 	case <-connectDone:
 	case <-time.After(time.Second):
 		t.Fatal("Connect did not unwind after Events release")
+	}
+}
+
+func TestDisconnectDoesNotAdmitReplacementDuringBootstrap(t *testing.T) {
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	fake := &fakeKakao{
+		stream:         make(chan events.Result),
+		resumeTargets:  []syncmsg.Target{{ChatID: testChatID, MaxLogID: 1}},
+		catchupEntered: entered,
+		catchupRelease: release,
+	}
+	opens := 0
+	kc, _ := newTestClient(t, func() (kakaoClient, error) {
+		opens++
+		return fake, nil
+	})
+	connectDone := make(chan struct{})
+	go func() {
+		kc.Connect(context.Background())
+		close(connectDone)
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("bootstrap catch-up did not block")
+	}
+	kc.Disconnect()
+	kc.Connect(context.Background())
+	if opens != 1 {
+		t.Fatalf("replacement opened during old bootstrap: opens=%d, want 1", opens)
+	}
+	close(release)
+	select {
+	case <-connectDone:
+	case <-time.After(time.Second):
+		t.Fatal("old bootstrap did not unwind")
+	}
+	if kc.IsLoggedIn() {
+		t.Fatal("stale bootstrap installed a client after Disconnect")
 	}
 }
 
