@@ -90,8 +90,9 @@ Read receipts and opt-in historical backfill follow the alpha. Resolve the
 `SYNCMSG` read-side-effect and local watermark discrepancy before enabling either.
 Deterministic typed-photo failures now become persisted notices under their
 original source IDs (PR #181; [policy](conversion-failure-policy.md)). Transient
-transfer or Matrix failures remain uncommitted. Parser failures before a typed
-event still need continuity guards and explicit notices; PR #187 is in review.
+transfer or Matrix failures remain uncommitted. Parser failures with validated source identities now become explicit notices;
+PR #187 has merged with continuity guards. Unidentifiable envelopes stop admission
+without inventing a cursor; operator recovery remains an open acceptance item.
 Neither a silent cursor advance nor an indefinite chat block satisfies alpha
 acceptance.
 
@@ -280,7 +281,7 @@ The implemented supervisor and its bounded policy are documented in
 
 - How should operator recovery surface an unidentifiable malformed MSG without
   inventing a cursor? Typed photo notices are implemented, and parser-gap
-  continuity guards remain in review (PR #187). Infrastructure and Matrix
+  continuity guards have merged (PR #187). Infrastructure and Matrix
   failures remain uncommitted and recoverable.
 - Database: the framework supports cgo SQLite (`sqlite3-fk-wal`) and
   Postgres. Is SQLite enough for the homelab target?
