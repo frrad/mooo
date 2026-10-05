@@ -1,0 +1,30 @@
+{
+  "status": "reviewed-static-source-unexecuted-runtime",
+  "source": {
+    "default_receive_handler": "0x10152049c",
+    "method_lookup": "packet.header.method then objectForKeyedSubscript:",
+    "typed_constructor": "alloc then initWithPacket:",
+    "selector_derivation": "NSStringFromClass then substringFromIndex:4 then stringWithFormat:handle%@:packetHeader: then NSSelectorFromString; nil class probes as handle(null):packetHeader:"
+  },
+  "cases": [
+    {
+      "name": "unknown_method_has_no_registered_class",
+      "method": "UNRECOGNIZED",
+      "class_lookup": "absent",
+      "expected_effects": [
+        "read_header_method",
+        "lookup_class_absent",
+        "alloc_nil_class_is_nil_safe",
+        "init_with_packet_on_nil_is_nil_safe",
+        "derive_selector_handle(null):packetHeader:",
+        "owner_gate_evaluated",
+        "owner_gate_false_no_perform_selector"
+      ]
+    }
+  ],
+  "gaps": [
+    "production owner registration for the nil-derived handle(null):packetHeader: selector remains untraced",
+    "runtime Foundation nil-message behavior is modeled, not executed",
+    "outer callback exception and disconnect policy are untraced"
+  ]
+}
