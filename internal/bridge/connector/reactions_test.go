@@ -8,7 +8,6 @@ import (
 
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
-	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
@@ -18,13 +17,17 @@ import (
 
 type reactionTestBackend struct {
 	*fakeKakao
-	members  reactions.MembersResponse
-	err      error
-	requests []reactions.Request
+	members     reactions.MembersResponse
+	err         error
+	requests    []reactions.Request
+	mutationErr error
 }
 
 func (b *reactionTestBackend) React(_ context.Context, request reactions.Request) (reactions.Response, error) {
 	b.requests = append(b.requests, request)
+	if b.mutationErr != nil {
+		return reactions.Response{}, b.mutationErr
+	}
 	return reactions.Response{Status: 0}, nil
 }
 
@@ -41,14 +44,14 @@ func TestReactionSyncUsersRequiresCompletePositiveLegacyRevision(t *testing.T) {
 			"2":        []byte(`[43]`),
 			"revision": []byte(`7`),
 		},
-	})
+	}, 1000, "1000")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(users) != 2 || !users[makeUserID(42)].HasAllReactions || len(users[makeUserID(42)].Reactions) != 1 {
 		t.Fatalf("users = %#v", users)
 	}
-	if _, err := reactionSyncUsers(reactions.MembersResponse{Revision: 0}); err == nil {
+	if _, err := reactionSyncUsers(reactions.MembersResponse{Revision: 0}, 1000, "1000"); err == nil {
 		t.Fatal("missing revision accepted")
 	}
 }
@@ -59,12 +62,12 @@ func TestReactionSyncUsersRejectsConflictingAndUnknownBuckets(t *testing.T) {
 		Members:  map[reactions.Type][]int64{reactions.Heart: {42}, reactions.Like: {42}},
 		Fields:   map[string]json.RawMessage{"1": []byte(`[42]`), "2": []byte(`[42]`)},
 	}
-	if _, err := reactionSyncUsers(base); err == nil {
+	if _, err := reactionSyncUsers(base, 1000, "1000"); err == nil {
 		t.Fatal("conflicting attribution accepted")
 	}
 	base.Members = nil
 	base.Fields = map[string]json.RawMessage{"7": []byte(`[42]`)}
-	if _, err := reactionSyncUsers(base); err == nil {
+	if _, err := reactionSyncUsers(base, 1000, "1000"); err == nil {
 		t.Fatal("unknown numeric bucket accepted")
 	}
 }
@@ -85,8 +88,8 @@ func TestLegacyReactionEmojiTableIsExplicit(t *testing.T) {
 func TestReactionEventFetchesMembersForEmptyAggregateAndPersistsRevision(t *testing.T) {
 	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
 		Revision: 4,
-		Members:  map[reactions.Type][]int64{reactions.Heart: {42}},
-		Fields:   map[string]json.RawMessage{"1": []byte(`[42]`)},
+		Members:  map[reactions.Type][]int64{reactions.Heart: {testSelfID}},
+		Fields:   map[string]json.RawMessage{"1": []byte(`[1000]`)},
 	}}
 	kc, harness := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
 	kc.client = backend
@@ -97,9 +100,13 @@ func TestReactionEventFetchesMembersForEmptyAggregateAndPersistsRevision(t *test
 	if len(harness.queued) != 1 {
 		t.Fatalf("queued = %d, want 1", len(harness.queued))
 	}
-	syncEvent, ok := harness.queued[0].(*simplevent.ReactionSync)
+	syncEvent, ok := harness.queued[0].(*kakaoReactionSync)
 	if !ok || len(syncEvent.Reactions.Users) != 1 || !syncEvent.Reactions.HasAllUsers {
 		t.Fatalf("queued event = %#v", harness.queued[0])
+	}
+	selfReaction := syncEvent.Reactions.Users[makeUserID(testSelfID)].Reactions[0]
+	if !selfReaction.Sender.IsFromMe || selfReaction.Sender.SenderLogin != kc.login.ID {
+		t.Fatalf("self reaction sender = %#v", selfReaction.Sender)
 	}
 	if !kc.handleEvent(backend, change) {
 		t.Fatal("duplicate reaction event was not handled")
@@ -128,6 +135,45 @@ func TestReactionEventRejectsMiniAndLookupFailureWithoutQueue(t *testing.T) {
 	}
 	if len(harness.queued) != 2 {
 		t.Fatal("lookup failure notice was not queued")
+	}
+}
+
+func TestReactionEventRejectsOlderMembersRevision(t *testing.T) {
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
+		Revision: 2,
+		Members:  map[reactions.Type][]int64{reactions.Heart: {42}},
+		Fields:   map[string]json.RawMessage{"1": []byte(`[42]`)},
+	}}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
+	kc.client = backend
+	if _, err := kc.reactionRemote(context.Background(), backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 9}); err == nil {
+		t.Fatal("older members revision accepted for newer event")
+	}
+}
+
+func TestReactionEventPersistsAppliedMembersRevision(t *testing.T) {
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
+		Revision: 12,
+		Members:  map[reactions.Type][]int64{reactions.Heart: {42}},
+		Fields:   map[string]json.RawMessage{"1": []byte(`[42]`)},
+	}}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
+	kc.client = backend
+	if !kc.handleEvent(backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 9}) {
+		t.Fatal("reaction event was not handled")
+	}
+	if len(harness.queued) != 1 {
+		t.Fatalf("queued = %d, want 1", len(harness.queued))
+	}
+	syncEvent := harness.queued[0].(*kakaoReactionSync)
+	if syncEvent.AppliedRevision != 12 {
+		t.Fatalf("applied revision = %d, want 12", syncEvent.AppliedRevision)
+	}
+	if !kc.handleEvent(backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 10}) {
+		t.Fatal("stale event was not handled")
+	}
+	if len(harness.queued) != 1 {
+		t.Fatalf("stale event queued again: %d", len(harness.queued))
 	}
 }
 
@@ -181,5 +227,28 @@ func TestMatrixReactionSendAndStaleRemoveAreBounded(t *testing.T) {
 	}
 	if len(backend.requests) != 2 {
 		t.Fatalf("stale remove canceled replacement: %#v", backend.requests)
+	}
+}
+
+func TestMatrixReactionMutationAmbiguousTransportIsSentOnce(t *testing.T) {
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, err: nil}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
+	kc.login.UserMXID = id.UserID("@self:test")
+	kc.client = backend
+	backend.mutationErr = errors.New("synthetic ambiguous transport")
+	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, kc.login.ID)}}
+	msg := &bridgev2.MatrixReaction{
+		MatrixEventBase: bridgev2.MatrixEventBase[*event.ReactionEventContent]{
+			Event:   &event.Event{Sender: kc.login.UserMXID},
+			Content: &event.ReactionEventContent{RelatesTo: event.RelatesTo{Key: "👍"}},
+			Portal:  portal,
+		},
+		TargetMessage: &database.Message{ID: makeMessageID(testChatID, 99)},
+	}
+	if _, err := kc.HandleMatrixReaction(context.Background(), msg); !errors.Is(err, errReactionMutation) {
+		t.Fatalf("error = %v, want sanitized mutation error", err)
+	}
+	if len(backend.requests) != 1 {
+		t.Fatalf("mutation requests = %d, want 1", len(backend.requests))
 	}
 }

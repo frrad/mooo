@@ -20,12 +20,15 @@ import (
 
 const reactionLookupTimeout = 30 * time.Second
 const reactionNoticeSuppression = 24 * time.Hour
+const reactionNoticeLimit = 256
 
 var (
 	errReactionUnsupported = errors.New("connector: Kakao reaction is unsupported")
 	errReactionTarget      = errors.New("connector: invalid Kakao reaction target")
 	errReactionSender      = errors.New("connector: reaction sender is not this login")
 	errReactionRevision    = errors.New("connector: invalid Kakao reaction revision")
+	errReactionMutation    = errors.New("connector: Kakao reaction mutation failed")
+	errReactionLookup      = errors.New("connector: Kakao reaction lookup failed")
 )
 
 type reactionAPI interface {
@@ -87,7 +90,7 @@ func validateMatrixReaction(kc *KakaoClient, msg *bridgev2.MatrixReaction) (reac
 	emoji   string
 	emojiID networkid.EmojiID
 }, error) {
-	if kc == nil || kc.login == nil || msg == nil || msg.TargetMessage == nil || msg.Portal == nil || msg.Event == nil {
+	if kc == nil || kc.login == nil || msg == nil || msg.TargetMessage == nil || msg.Portal == nil || msg.Event == nil || msg.Content == nil {
 		return reactions.Request{}, struct {
 			typeID  reactions.Type
 			emoji   string
@@ -132,6 +135,14 @@ func validateMatrixReaction(kc *KakaoClient, msg *bridgev2.MatrixReaction) (reac
 			emojiID networkid.EmojiID
 		}{}, errReactionTarget
 	}
+	if (msg.TargetMessage.Room.ID != "" && msg.TargetMessage.Room.ID != msg.Portal.ID) ||
+		(msg.TargetMessage.Room.Receiver != "" && msg.TargetMessage.Room.Receiver != kc.login.ID) {
+		return reactions.Request{}, struct {
+			typeID  reactions.Type
+			emoji   string
+			emojiID networkid.EmojiID
+		}{}, errReactionTarget
+	}
 	entry, ok := reactionForEmoji(msg.Content.RelatesTo.Key)
 	if !ok {
 		return reactions.Request{}, struct {
@@ -170,7 +181,7 @@ func (kc *KakaoClient) HandleMatrixReaction(ctx context.Context, msg *bridgev2.M
 		return nil, err
 	}
 	if _, err = api.React(ctx, request); err != nil {
-		return nil, err
+		return nil, errReactionMutation
 	}
 	return nil, nil
 }
@@ -191,6 +202,10 @@ func (kc *KakaoClient) HandleMatrixReactionRemove(ctx context.Context, msg *brid
 	}
 	portalChat, err := parseChatID(msg.Portal.ID)
 	if err != nil || portalChat != chatID || msg.Portal.Receiver != kc.login.ID {
+		return errReactionTarget
+	}
+	if (msg.TargetReaction.Room.ID != "" && msg.TargetReaction.Room.ID != msg.Portal.ID) ||
+		(msg.TargetReaction.Room.Receiver != "" && msg.TargetReaction.Room.Receiver != kc.login.ID) {
 		return errReactionTarget
 	}
 	var wanted reactions.Type
@@ -221,15 +236,22 @@ func (kc *KakaoClient) HandleMatrixReactionRemove(ctx context.Context, msg *brid
 	// Confirm the row being redacted is still the authenticated user's remote
 	// reaction. This prevents a stale Matrix redaction from canceling a newer
 	// replacement sent by the same user.
-	members, err := api.ReactionMembers(ctx, chatID, logID)
+	lookupCtx, cancel := context.WithTimeout(ctx, reactionLookupTimeout)
+	defer cancel()
+	members, err := api.ReactionMembers(lookupCtx, chatID, logID)
 	if err != nil {
-		return err
+		return errReactionLookup
+	}
+	if _, err := reactionSyncUsers(members, kc.userID, kc.login.ID); err != nil {
+		return errReactionLookup
 	}
 	if !containsReactionUser(members.Members[wanted], kc.userID) {
 		return nil
 	}
-	_, err = api.React(ctx, reactions.Request{ChatID: chatID, LogID: logID, Type: reactions.Cancel})
-	return err
+	if _, err = api.React(lookupCtx, reactions.Request{ChatID: chatID, LogID: logID, Type: reactions.Cancel}); err != nil {
+		return errReactionMutation
+	}
+	return nil
 }
 
 func containsReactionUser(values []int64, userID int64) bool {
@@ -270,11 +292,14 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 	if err != nil {
 		return nil, err
 	}
-	users, err := reactionSyncUsers(members)
+	if members.Revision < change.Revision || members.Revision < stored {
+		return nil, errReactionRevision
+	}
+	users, err := reactionSyncUsers(members, kc.userID, kc.login.ID)
 	if err != nil {
 		return nil, err
 	}
-	return &simplevent.ReactionSync{
+	return &kakaoReactionSync{ReactionSync: simplevent.ReactionSync{
 		EventMeta: simplevent.EventMeta{
 			Type:         bridgev2.RemoteEventReactionSync,
 			PortalKey:    makePortalKey(change.ChatID, kc.login.ID),
@@ -283,7 +308,12 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 		},
 		TargetMessage: makeMessageID(change.ChatID, change.LogID),
 		Reactions:     &bridgev2.ReactionSyncData{Users: users, HasAllUsers: true},
-	}, nil
+	}, AppliedRevision: members.Revision}, nil
+}
+
+type kakaoReactionSync struct {
+	simplevent.ReactionSync
+	AppliedRevision int64
 }
 
 func (kc *KakaoClient) reportReactionFailure(change events.ReactionChanged, err error) bool {
@@ -296,6 +326,21 @@ func (kc *KakaoClient) reportReactionFailure(change events.ReactionChanged, err 
 	kc.reactionNoticeMu.Lock()
 	if kc.reactionNotices == nil {
 		kc.reactionNotices = make(map[string]time.Time)
+	}
+	for existing, timestamp := range kc.reactionNotices {
+		if now.Sub(timestamp) >= reactionNoticeSuppression {
+			delete(kc.reactionNotices, existing)
+		}
+	}
+	if len(kc.reactionNotices) >= reactionNoticeLimit {
+		var oldestKey string
+		var oldest time.Time
+		for existing, timestamp := range kc.reactionNotices {
+			if oldestKey == "" || timestamp.Before(oldest) {
+				oldestKey, oldest = existing, timestamp
+			}
+		}
+		delete(kc.reactionNotices, oldestKey)
 	}
 	last, seen := kc.reactionNotices[key]
 	if !seen || now.Sub(last) >= reactionNoticeSuppression {
@@ -324,7 +369,7 @@ func (kc *KakaoClient) reportReactionFailure(change events.ReactionChanged, err 
 	return result
 }
 
-func reactionSyncUsers(members reactions.MembersResponse) (map[networkid.UserID]*bridgev2.ReactionSyncUser, error) {
+func reactionSyncUsers(members reactions.MembersResponse, selfID int64, loginID networkid.UserLoginID) (map[networkid.UserID]*bridgev2.ReactionSyncUser, error) {
 	if members.Revision <= 0 {
 		return nil, errReactionRevision
 	}
@@ -362,8 +407,13 @@ func reactionSyncUsers(members reactions.MembersResponse) (map[networkid.UserID]
 			}
 			seenTypes[id] = typeID
 			entry := legacyReactionByType(typeID)
+			sender := bridgev2.EventSender{Sender: id}
+			if userID == selfID {
+				sender.IsFromMe = true
+				sender.SenderLogin = loginID
+			}
 			users[id] = &bridgev2.ReactionSyncUser{
-				Reactions:       []*bridgev2.BackfillReaction{{Sender: bridgev2.EventSender{Sender: id}, EmojiID: entry.emojiID, Emoji: entry.emoji}},
+				Reactions:       []*bridgev2.BackfillReaction{{Sender: sender, EmojiID: entry.emojiID, Emoji: entry.emoji}},
 				HasAllReactions: true,
 			}
 		}
@@ -413,12 +463,15 @@ func (kc *KakaoClient) storedReactionRevision(ctx context.Context, change events
 	return cached, nil
 }
 
-func (kc *KakaoClient) persistReactionRevision(ctx context.Context, change events.ReactionChanged) error {
+func (kc *KakaoClient) persistReactionRevision(ctx context.Context, change events.ReactionChanged, appliedRevision int64) error {
+	if appliedRevision <= 0 {
+		return errReactionRevision
+	}
 	key := string(makeMessageID(change.ChatID, change.LogID))
 	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
 		kc.reactionMu.Lock()
-		if change.Revision > kc.reactionRevisions[key] {
-			kc.reactionRevisions[key] = change.Revision
+		if appliedRevision > kc.reactionRevisions[key] {
+			kc.reactionRevisions[key] = appliedRevision
 		}
 		kc.reactionMu.Unlock()
 		return nil
@@ -436,16 +489,16 @@ func (kc *KakaoClient) persistReactionRevision(ctx context.Context, change event
 			return errReactionRevision
 		}
 	}
-	if change.Revision <= metadata.ReactionRevision {
+	if appliedRevision <= metadata.ReactionRevision {
 		return nil
 	}
-	metadata.ReactionRevision = change.Revision
+	metadata.ReactionRevision = appliedRevision
 	if err := kc.login.Bridge.DB.Message.Update(ctx, msg); err != nil {
 		return err
 	}
 	kc.reactionMu.Lock()
-	if change.Revision > kc.reactionRevisions[key] {
-		kc.reactionRevisions[key] = change.Revision
+	if appliedRevision > kc.reactionRevisions[key] {
+		kc.reactionRevisions[key] = appliedRevision
 	}
 	kc.reactionMu.Unlock()
 	return nil
