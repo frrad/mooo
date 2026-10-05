@@ -428,7 +428,9 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 		missed, err := c.CatchUp(ctx, target.ChatID, target.MaxLogID)
 		if errors.Is(err, client.ErrGapUnresolved) {
 			kc.log().Warn().Int64("kakao_chat_id", target.ChatID).Msg("Could not recover messages missed while disconnected")
-			kc.queue(kc.gapNotice(target.ChatID, target.MaxLogID))
+			if result := kc.queue(kc.gapNotice(target.ChatID, target.MaxLogID)); !committable(result) {
+				return errors.New("catch-up gap notice was not confirmed as bridged")
+			}
 			continue
 		} else if err != nil {
 			return fmt.Errorf("catch up chat: %w", err)

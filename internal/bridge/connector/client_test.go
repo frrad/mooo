@@ -1441,6 +1441,50 @@ func TestUnrecoverableGapPostsNoticeAndKeepsConnecting(t *testing.T) {
 	}
 }
 
+func TestUnrecoverableGapRequiresNoticeACKBeforeLiveSubscription(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result bridgev2.EventHandlingResult
+	}{
+		{name: "failed", result: bridgev2.EventHandlingResultFailed.WithError(errors.New("synthetic notice send failure"))},
+		{name: "queued", result: bridgev2.EventHandlingResultQueued},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			kc, harness := newTestClient(t, nil)
+			harness.results = []bridgev2.EventHandlingResult{tc.result, bridgev2.EventHandlingResultSuccess}
+			newSource := func() *fakeKakao {
+				return &fakeKakao{stream: make(chan events.Result), resumeTargets: []syncmsg.Target{{ChatID: testChatID, MaxLogID: 42}}, catchUps: map[int64]catchUpResult{testChatID: {err: client.ErrGapUnresolved}}}
+			}
+			first := newSource()
+			defer close(first.stream)
+			if _, err := kc.connectAndSubscribe(context.Background(), first); err == nil {
+				t.Fatal("subscribed to live events without a confirmed gap notice")
+			}
+			for _, call := range first.calls {
+				if call == "Events" {
+					t.Fatal("live subscription crossed an unreported gap")
+				}
+			}
+			second := newSource()
+			defer close(second.stream)
+			if stream, err := kc.connectAndSubscribe(context.Background(), second); err != nil || stream != second.stream {
+				t.Fatalf("successful notice replay did not permit subscription: stream=%v err=%v", stream != nil, err)
+			}
+			if len(harness.queued) != 2 {
+				t.Fatalf("notice attempts = %d, want 2", len(harness.queued))
+			}
+			firstNotice := harness.queued[0].(*simplevent.Message[string])
+			secondNotice := harness.queued[1].(*simplevent.Message[string])
+			if firstNotice.ID != secondNotice.ID || firstNotice.ID != "gap:3000:42" {
+				t.Fatalf("gap replay identity changed: %q -> %q", firstNotice.ID, secondNotice.ID)
+			}
+			if len(first.committed()) != 0 || len(second.committed()) != 0 {
+				t.Fatal("gap notice invented a source message commit")
+			}
+		})
+	}
+}
+
 func TestCatchUpFailureAbortsConnectBeforeLiveEvents(t *testing.T) {
 	for name, fake := range map[string]*fakeKakao{
 		"targets": {resumeErr: errors.New("targets failed")},
