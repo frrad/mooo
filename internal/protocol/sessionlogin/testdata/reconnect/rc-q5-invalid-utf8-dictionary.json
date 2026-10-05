@@ -4,14 +4,16 @@
     {
       "name": "invalid_value_then_later",
       "bson_hex": "1a00000002720003000000c32800027072000300000034320000",
-      "expected": {"pr": 42},
+      "expected": {
+        "pr": "42"
+      },
       "outcome": "ok"
     },
     {
       "name": "duplicate_invalid_then_valid",
       "bson_hex": "20000000026669656c640003000000c32800026669656c640002000000370000",
       "expected": {
-        "field": 7
+        "field": "7"
       },
       "outcome": "ok"
     },
@@ -19,7 +21,7 @@
       "name": "duplicate_valid_then_invalid",
       "bson_hex": "20000000026669656c6400020000003700026669656c640003000000c3280000",
       "expected": {
-        "field": 7
+        "field": "7"
       },
       "outcome": "ok"
     },
@@ -32,6 +34,36 @@
     {
       "name": "invalid_key_valid_value",
       "bson_hex": "1000000002c328000300000034320000",
+      "expected": {},
+      "outcome": "error"
+    },
+    {
+      "name": "valid_empty_value",
+      "bson_hex": "11000000026669656c6400010000000000",
+      "expected": {
+        "field": ""
+      },
+      "outcome": "ok"
+    },
+    {
+      "name": "valid_empty_key",
+      "bson_hex": "0e00000002000300000034320000",
+      "expected": {
+        "": "42"
+      },
+      "outcome": "ok"
+    },
+    {
+      "name": "first_nul_truncates_invalid_tail",
+      "bson_hex": "16000000026669656c640006000000343200c3280000",
+      "expected": {
+        "field": "42"
+      },
+      "outcome": "ok"
+    },
+    {
+      "name": "invalid_key_empty_value",
+      "bson_hex": "0e00000002c32800010000000000",
       "expected": {},
       "outcome": "error"
     }

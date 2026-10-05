@@ -1,9 +1,11 @@
 package sessionlogin
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,20 +19,22 @@ type invalidUTF8DictionaryFixture struct {
 }
 
 type invalidUTF8DictionaryCase struct {
-	Name     string         `json:"name"`
-	BSONHex  string         `json:"bson_hex"`
-	Expected map[string]int `json:"expected"`
-	Outcome  string         `json:"outcome"`
+	Name     string            `json:"name"`
+	BSONHex  string            `json:"bson_hex"`
+	Expected map[string]string `json:"expected"`
+	Outcome  string            `json:"outcome"`
 }
 
 // projectInvalidUTF8Dictionary is a bounded model for the observed string
 // factory and dictionary boundary. It accepts only the two ASCII values used
 // by the synthetic fixtures; it is not the production BSON decoder.
-func projectInvalidUTF8Dictionary(raw []byte) (map[string]int, error) {
+var errInvalidDictionaryKey = errors.New("invalid dictionary key")
+
+func projectInvalidUTF8Dictionary(raw []byte) (map[string]string, error) {
 	if len(raw) < 5 || int(binary.LittleEndian.Uint32(raw[:4])) != len(raw) {
 		return nil, fmt.Errorf("invalid BSON framing")
 	}
-	out := make(map[string]int)
+	out := make(map[string]string)
 	for pos := 4; pos < len(raw); {
 		if raw[pos] == 0 {
 			if pos != len(raw)-1 {
@@ -69,36 +73,21 @@ func projectInvalidUTF8Dictionary(raw []byte) (map[string]int, error) {
 			continue
 		}
 		if !keyOK {
-			return nil, fmt.Errorf("dictionary insertion with non-nil value and nil key")
+			return nil, fmt.Errorf("%w: nonnil value %q", errInvalidDictionaryKey, value)
 		}
-		parsed, ok := boundedFixtureInteger(value)
-		if !ok {
-			return nil, fmt.Errorf("unsupported captured value %q", value)
-		}
-		out[key] = parsed // later nonnil values replace earlier values
+		out[key] = value // later nonnil values replace earlier values
 	}
 	return nil, fmt.Errorf("missing BSON terminator")
 }
 
 func boundedCString(raw []byte) (string, bool) {
-	if len(raw) > 0 && raw[len(raw)-1] == 0 {
-		raw = raw[:len(raw)-1]
+	if nul := bytes.IndexByte(raw, 0); nul >= 0 {
+		raw = raw[:nul]
 	}
 	if !utf8.Valid(raw) {
 		return "", false
 	}
 	return string(raw), true
-}
-
-func boundedFixtureInteger(value string) (int, bool) {
-	switch value {
-	case "7":
-		return 7, true
-	case "42":
-		return 42, true
-	default:
-		return 0, false
-	}
 }
 
 func TestInvalidUTF8DictionaryFixture(t *testing.T) {
@@ -110,7 +99,7 @@ func TestInvalidUTF8DictionaryFixture(t *testing.T) {
 	if err := json.Unmarshal(body, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.Status != "reviewed-platform-bounded-synthetic" || len(fixture.Cases) != 5 {
+	if fixture.Status != "reviewed-platform-bounded-synthetic" || len(fixture.Cases) != 9 {
 		t.Fatalf("fixture header=%#v", fixture)
 	}
 	for _, tc := range fixture.Cases {
@@ -121,8 +110,8 @@ func TestInvalidUTF8DictionaryFixture(t *testing.T) {
 			}
 			got, modelErr := projectInvalidUTF8Dictionary(raw)
 			if tc.Outcome == "error" {
-				if modelErr == nil {
-					t.Fatalf("model succeeded with %#v, want explicit insertion error", got)
+				if !errors.Is(modelErr, errInvalidDictionaryKey) {
+					t.Fatalf("error=%v, want invalid dictionary key", modelErr)
 				}
 				return
 			}
@@ -134,7 +123,7 @@ func TestInvalidUTF8DictionaryFixture(t *testing.T) {
 			}
 			for key, want := range tc.Expected {
 				if got[key] != want {
-					t.Errorf("%q=%d want %d", key, got[key], want)
+					t.Errorf("%q=%q want %q", key, got[key], want)
 				}
 			}
 		})
