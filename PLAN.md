@@ -126,6 +126,53 @@ through every terminal fan-out path.
 Mapping the serialized ping configuration key and claiming official queue
 timing remain separate evidence gaps.
 
+### Push-receipt transport integration plan
+
+The reviewed manager and carriage-agent owners are intentionally transport
+independent. The existing Session has no receipt callsite: unmatched packets
+leave `dispatchPacket` and enter the raw/typed push streams, while the existing
+asynchronous out-segment submitter is an opt-in writer for already serialized
+payloads. Neither seam can construct or infer a receipt packet yet.
+
+Before binding receipts to Session, approve the source-derived request model and
+eligibility predicate. The integration must then add an opt-in callback at the
+unmatched-push boundary, injected before reader startup. It should receive only
+an eligible, source-modeled push representation and compose the agent owner with
+the manager owner. Session must retain ordinary push delivery and must not
+activate this callback by default.
+
+The adapter must keep receipt sending separate from the existing out-segment
+worker until the receipt packet shape, serialization, negative-tag callback, and
+completion semantics are approved. The worker currently accepts serialized
+payloads, reports partial/ambiguous write progress, and closes the carriage on
+partial write failure; it has no receipt-specific packet identity or callback
+tag contract. Reusing it prematurely would conflate reviewed receipt admission
+with unresolved packet construction and write completion behavior.
+
+Pending-request correlation is likewise separate. `dispatchPacket` keys waiters
+by method plus packet ID and routes misses as pushes; a negative receipt tag is
+an agent send argument and must never become a Session request ID or pending-map
+key. Any future receipt completion path must define whether it is fire-and-forget
+or correlated before adding entries to the pending maps.
+
+Required synthetic integration coverage after request approval:
+
+1. An eligible unmatched push reaches the injected receipt callback while the
+   ordinary push stream remains ordered and usable.
+2. Manager cancellation and scheduling retain the manager instance target,
+   while inline dispatch resolves the current carriage agent instance.
+3. Agent status is reread at execution; non-3 suppresses packet access and
+   sending, and status 3 preserves uint32 packet identity and the signed tag.
+4. The receipt path never inserts a negative tag into request correlation and
+   never treats an unsolicited receipt acknowledgement as an ordinary waiter
+   completion without an approved method/ID model.
+5. Out-segment partial progress, zero-byte errors, ambiguous failures, close,
+   and bounded shutdown are exercised only after the receipt serialization and
+   completion contract specifies how they map to receipt outcomes.
+
+The manager/agent composition harness is tracked separately in PR138; this plan
+does not authorize Session binding, packet construction, or default activation.
+
 ### Default status/config owner binding proposal
 
 The next reconnect slice is a constructor-bound integration layer for the
