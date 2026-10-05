@@ -129,6 +129,8 @@ func projectBSONBytes(raw []byte) ([]string, []int, string, error) {
 		key := string(raw[pos : pos+keyEnd])
 		pos += keyEnd + 1
 		switch typ {
+		case 0x06, 0x0a: // Cursor-recognized undefined/null: no decoded value or payload.
+			// The outer dictionary skips insertion and retains any prior duplicate.
 		case 0x10: // BSON int32: the cursor advances over four payload bytes.
 			if len(raw)-pos < 4 {
 				return entries, steps, "malformed_input_unresolved", nil
@@ -176,7 +178,7 @@ func TestBSONDecoderObservedContract(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.BSON.Status != "reviewed-static-unexecuted-runtime" || len(f.BSON.Cases) != 5 {
+	if f.BSON.Status != "reviewed-static-unexecuted-runtime" || len(f.BSON.Cases) != 10 {
 		t.Fatalf("fixture bson header=%#v", f.BSON)
 	}
 	seen := map[string]bool{}

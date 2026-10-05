@@ -163,6 +163,72 @@
           "x=2:int32"
         ],
         "expected_stop": "terminator_stops_element_loop"
+      },
+      {
+        "name": "null_value_keeps_empty_dictionary",
+        "bson_hex": "080000000a720000",
+        "expected_cursor_steps": [
+          3,
+          0
+        ],
+        "expected_dictionary": [],
+        "expected_stop": "terminator_stops_element_loop"
+      },
+      {
+        "name": "null_value_continues_to_following_field",
+        "bson_hex": "100000000a7200107072000300000000",
+        "expected_cursor_steps": [
+          3,
+          8,
+          0
+        ],
+        "expected_dictionary": [
+          "pr=3:int32"
+        ],
+        "expected_stop": "terminator_stops_element_loop"
+      },
+      {
+        "name": "null_duplicate_preserves_prior_value",
+        "bson_hex": "170000001072000c0000000a7200107072000300000000",
+        "expected_cursor_steps": [
+          7,
+          3,
+          8,
+          0
+        ],
+        "expected_dictionary": [
+          "r=12:int32",
+          "pr=3:int32"
+        ],
+        "expected_stop": "terminator_stops_element_loop"
+      },
+      {
+        "name": "value_after_null_is_inserted",
+        "bson_hex": "0f0000000a72001072000c00000000",
+        "expected_cursor_steps": [
+          3,
+          7,
+          0
+        ],
+        "expected_dictionary": [
+          "r=12:int32"
+        ],
+        "expected_stop": "terminator_stops_element_loop"
+      },
+      {
+        "name": "undefined_duplicate_preserves_prior_value",
+        "bson_hex": "170000001072000c000000067200107072000300000000",
+        "expected_cursor_steps": [
+          7,
+          3,
+          8,
+          0
+        ],
+        "expected_dictionary": [
+          "r=12:int32",
+          "pr=3:int32"
+        ],
+        "expected_stop": "terminator_stops_element_loop"
       }
     ]
   }
