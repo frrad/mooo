@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -23,12 +24,13 @@ const reactionNoticeSuppression = 24 * time.Hour
 const reactionNoticeLimit = 256
 
 var (
-	errReactionUnsupported = errors.New("connector: Kakao reaction is unsupported")
-	errReactionTarget      = errors.New("connector: invalid Kakao reaction target")
-	errReactionSender      = errors.New("connector: reaction sender is not this login")
-	errReactionRevision    = errors.New("connector: invalid Kakao reaction revision")
-	errReactionMutation    = errors.New("connector: Kakao reaction mutation failed")
-	errReactionLookup      = errors.New("connector: Kakao reaction lookup failed")
+	errReactionUnsupported   = errors.New("connector: Kakao reaction is unsupported")
+	errReactionTarget        = errors.New("connector: invalid Kakao reaction target")
+	errReactionSender        = errors.New("connector: reaction sender is not this login")
+	errReactionRevision      = errors.New("connector: invalid Kakao reaction revision")
+	errReactionMutation      = errors.New("connector: Kakao reaction mutation failed")
+	errReactionLookup        = errors.New("connector: Kakao reaction lookup failed")
+	errReactionTargetMissing = errors.New("connector: reaction target message missing")
 )
 
 type reactionAPI interface {
@@ -314,6 +316,108 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 		TargetMessage: makeMessageID(change.ChatID, change.LogID),
 		Reactions:     &bridgev2.ReactionSyncData{Users: users, HasAllUsers: true},
 	}, AppliedRevision: members.Revision}, nil
+}
+
+// reactionDeliveryEvents expands an authoritative aggregate into individual
+// framework operations. ReactionSync currently logs Matrix redaction failures
+// and still returns success, which would advance the Kakao checkpoint while
+// leaving stale reactions behind. Individual operations propagate send errors;
+// callers additionally verify the database postcondition after each one.
+func (kc *KakaoClient) reactionDeliveryEvents(ctx context.Context, sync *kakaoReactionSync) ([]bridgev2.RemoteEvent, error) {
+	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
+		return nil, errors.New("connector: reaction database is unavailable")
+	}
+	target := sync.TargetMessage
+	message, err := kc.login.Bridge.DB.Message.GetFirstPartByID(ctx, kc.login.ID, target)
+	if err != nil {
+		return nil, err
+	}
+	if message == nil {
+		return nil, errReactionTargetMissing
+	}
+	existing, err := kc.login.Bridge.DB.Reaction.GetAllToMessage(ctx, kc.login.ID, target)
+	if err != nil {
+		return nil, err
+	}
+	type reactionKey struct {
+		sender networkid.UserID
+		emoji  networkid.EmojiID
+	}
+	existingByKey := make(map[reactionKey]*database.Reaction, len(existing))
+	for _, row := range existing {
+		existingByKey[reactionKey{row.SenderID, row.EmojiID}] = row
+	}
+	type addition struct {
+		sender bridgev2.EventSender
+		emoji  networkid.EmojiID
+		text   string
+	}
+	var additions []addition
+	for senderID, user := range sync.Reactions.Users {
+		if user == nil {
+			continue
+		}
+		sender := bridgev2.EventSender{Sender: senderID}
+		if senderID == makeUserID(kc.userID) {
+			sender.IsFromMe = true
+			sender.SenderLogin = kc.login.ID
+		}
+		for _, reaction := range user.Reactions {
+			if reaction == nil || reaction.EmojiID == "" {
+				continue
+			}
+			key := reactionKey{senderID, reaction.EmojiID}
+			if old := existingByKey[key]; old != nil && old.MXID != "" {
+				delete(existingByKey, key)
+				continue
+			}
+			additions = append(additions, addition{sender: sender, emoji: reaction.EmojiID, text: reaction.Emoji})
+			delete(existingByKey, key)
+		}
+	}
+	sort.Slice(additions, func(i, j int) bool {
+		if additions[i].sender.Sender != additions[j].sender.Sender {
+			return additions[i].sender.Sender < additions[j].sender.Sender
+		}
+		return additions[i].emoji < additions[j].emoji
+	})
+	sort.Slice(existing, func(i, j int) bool {
+		if existing[i].SenderID != existing[j].SenderID {
+			return existing[i].SenderID < existing[j].SenderID
+		}
+		return existing[i].EmojiID < existing[j].EmojiID
+	})
+	var result []bridgev2.RemoteEvent
+	for _, add := range additions {
+		result = append(result, &simplevent.Reaction{
+			EventMeta:     simplevent.EventMeta{Type: bridgev2.RemoteEventReaction, PortalKey: sync.PortalKey, Sender: add.sender, StreamOrder: sync.StreamOrder},
+			TargetMessage: target, EmojiID: add.emoji, Emoji: add.text,
+		})
+	}
+	if sync.Reactions.HasAllUsers {
+		for _, old := range existing {
+			if _, known := legacyReactionEmojiID(old.EmojiID); !known {
+				continue
+			}
+			if _, stillPresent := existingByKey[reactionKey{old.SenderID, old.EmojiID}]; !stillPresent {
+				continue
+			}
+			result = append(result, &simplevent.Reaction{
+				EventMeta:     simplevent.EventMeta{Type: bridgev2.RemoteEventReactionRemove, PortalKey: sync.PortalKey, Sender: bridgev2.EventSender{Sender: old.SenderID}, StreamOrder: sync.StreamOrder},
+				TargetMessage: target, EmojiID: old.EmojiID, Emoji: old.Emoji,
+			})
+		}
+	}
+	return result, nil
+}
+
+func legacyReactionEmojiID(value networkid.EmojiID) (reactions.Type, bool) {
+	for _, entry := range legacyReactionTable {
+		if entry.emojiID == value {
+			return entry.typeID, true
+		}
+	}
+	return 0, false
 }
 
 type kakaoReactionSync struct {
