@@ -1,0 +1,95 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {
+      "name": "cipher_absent_returns_input_identity",
+      "cipher_present": false,
+      "input_present": true,
+      "input_identity": "input-a",
+      "encrypted_result": "",
+      "encrypted_bytes": "",
+      "encrypted_length": 0,
+      "expected_output_hex": "",
+      "expected_output_identity": "input-a",
+      "expected_output_status": "input_identity",
+      "expected_effects": ["retain_input", "return_input_identity"]
+    },
+    {
+      "name": "cipher_absent_nil_input_returns_nil",
+      "cipher_present": false,
+      "input_present": false,
+      "input_identity": "stale-input-must-not-leak",
+      "encrypted_result": "",
+      "encrypted_bytes": "",
+      "encrypted_length": 0,
+      "expected_output_hex": "",
+      "expected_output_status": "nil_input",
+      "expected_effects": ["retain_input", "return_input_identity"]
+    },
+    {
+      "name": "cipher_bytes_prefixes_little_endian_length",
+      "cipher_present": true,
+      "mutable_data_present": true,
+      "input_present": true,
+      "input_identity": "input-b",
+      "encrypted_result": "bytes",
+      "encrypted_bytes": "010203",
+      "encrypted_length": 3,
+      "expected_output_hex": "03000000010203",
+      "expected_output_status": "framed_bytes",
+      "expected_effects": ["allocate_mutable_data", "invoke_crypto_encrypt", "read_result_length_uint32", "append_length_prefix_little_endian", "append_crypto_result"]
+    },
+    {
+      "name": "cipher_empty_result_keeps_zero_prefix",
+      "cipher_present": true,
+      "mutable_data_present": true,
+      "input_present": true,
+      "input_identity": "input-c",
+      "encrypted_result": "empty",
+      "encrypted_bytes": "",
+      "encrypted_length": 0,
+      "expected_output_hex": "00000000",
+      "expected_output_status": "framed_bytes",
+      "expected_effects": ["allocate_mutable_data", "invoke_crypto_encrypt", "read_result_length_uint32", "append_length_prefix_little_endian", "append_crypto_result"]
+    },
+    {
+      "name": "cipher_nil_result_platform_append_probe",
+      "cipher_present": true,
+      "mutable_data_present": true,
+      "input_present": true,
+      "input_identity": "input-d",
+      "encrypted_result": "nil",
+      "encrypted_bytes": "",
+      "encrypted_length": 0,
+      "expected_output_hex": "00000000",
+      "expected_output_status": "framed_nil_crypto_result_platform_probe",
+      "expected_effects": ["allocate_mutable_data", "invoke_crypto_encrypt", "read_result_length_uint32", "append_length_prefix_little_endian", "append_crypto_result_nil"]
+    },
+    {
+      "name": "cipher_length_truncates_to_uint32",
+      "cipher_present": true,
+      "mutable_data_present": true,
+      "input_present": true,
+      "input_identity": "input-e",
+      "encrypted_result": "bytes",
+      "encrypted_bytes": "ff",
+      "encrypted_length": 4294967297,
+      "expected_output_hex": "01000000ff",
+      "expected_output_status": "framed_bytes",
+      "expected_effects": ["allocate_mutable_data", "invoke_crypto_encrypt", "read_result_length_uint32", "append_length_prefix_little_endian", "append_crypto_result"]
+    },
+    {
+      "name": "mutable_data_allocation_nil_returns_nil_container",
+      "cipher_present": true,
+      "mutable_data_present": false,
+      "input_present": true,
+      "input_identity": "input-f",
+      "encrypted_result": "bytes",
+      "encrypted_bytes": "0102",
+      "encrypted_length": 2,
+      "expected_output_hex": "",
+      "expected_output_status": "nil_mutable_container",
+      "expected_effects": ["allocate_mutable_data", "invoke_crypto_encrypt", "read_result_length_uint32", "append_length_prefix_little_endian", "append_crypto_result"]
+    }
+  ]
+}
