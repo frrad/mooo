@@ -97,23 +97,34 @@ func TestUnknownIncomingMethodSelectorArguments(t *testing.T) {
 		t.Fatalf("known class selector=%q", got)
 	}
 	header := &incomingUnknownHeader{Method: "UNRECOGNIZED", PacketID: 23}
-	var selector string
+	var respondedSelector, performedSelector string
+	var performCount int
 	var notice, gotHeader any
 	effects := dispatchUnknownIncomingMethod("UNRECOGNIZED", map[string]string{}, header, incomingUnknownMethodHooks{
 		responds: func(got string) bool {
-			selector = got
+			respondedSelector = got
 			return true
 		},
 		perform: func(got string, gotNotice any, gotOriginalHeader any) {
-			selector = got
+			performedSelector = got
+			performCount++
 			notice, gotHeader = gotNotice, gotOriginalHeader
 		},
 	})
-	if selector != "handle(null):packetHeader:" || notice != nil || gotHeader != header {
-		t.Fatalf("selector callback selector=%q notice=%#v header=%p want=%p", selector, notice, gotHeader, header)
+	if respondedSelector != "handle(null):packetHeader:" || performedSelector != respondedSelector || performCount != 1 || notice != nil || gotHeader != header {
+		t.Fatalf("selector callback responds=%q perform=%q count=%d notice=%#v header=%p want=%p", respondedSelector, performedSelector, performCount, notice, gotHeader, header)
 	}
 	if got := effects[len(effects)-2:]; !reflect.DeepEqual(got, []string{"owner_gate_evaluated", "owner_gate_true_perform_selector_with_nil_notice"}) {
 		t.Fatalf("selector callback effects tail=%v", got)
+	}
+	var falseRespondedSelector string
+	falsePerformCount := 0
+	dispatchUnknownIncomingMethod("UNRECOGNIZED", map[string]string{}, header, incomingUnknownMethodHooks{
+		responds: func(got string) bool { falseRespondedSelector = got; return false },
+		perform:  func(string, any, any) { falsePerformCount++ },
+	})
+	if falseRespondedSelector != "handle(null):packetHeader:" || falsePerformCount != 0 {
+		t.Fatalf("owner=false responds=%q perform count=%d", falseRespondedSelector, falsePerformCount)
 	}
 }
 

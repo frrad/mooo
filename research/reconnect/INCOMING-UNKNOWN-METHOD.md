@@ -26,7 +26,10 @@ formatted selector `handle(null):packetHeader:`, and a non-nil `SEL`. A normal
 owner did not respond; an owner dynamically given that selector did respond and
 received a nil notice plus the original header. This confirms the gate is
 conditional without claiming that production owners register that selector.
-Callback exception and disconnect policy remain gaps.
+The probe ran account-free on macOS 26.6.2 (25G83, arm64, Apple Clang 21)
+with a synthetic NSObject owner; the SDK emitted its nil-input warning, so
+this records bounded platform behavior rather than a universal Foundation
+contract. Callback exception and disconnect policy remain gaps.
 
 This path is distinct from a recognized HINT initializer that returns nil for a
 nonnull body: the default block does not check the initializer result before
