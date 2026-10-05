@@ -245,7 +245,12 @@ Session.Shutdown remains the worker-join boundary. A regression should still
 exercise a pending Events subscription plus concurrent Disconnect when the
 bootstrap fake exposes that seam, proving the client handle remains retained
 through a timeout and Connect cannot reopen it. This is a lifecycle proof,
-not a reason to add a new bridge-side close or reset effect.
+not a reason to add a new bridge-side close or reset effect. The audit also
+finds a precise boundary: if `Events(ctx)` itself blocks before Connect stores
+the cleanup owner, Disconnect cannot see that local client. The production
+Events implementation must return a subscription promptly or honor context
+cancellation; otherwise the next bridge fix must register the bootstrap owner
+before that call and retain it through the same bounded shutdown path.
 
 The manager/agent composition harness is tracked separately in PR138; this plan
 does not authorize Session binding, packet construction, or default activation.
