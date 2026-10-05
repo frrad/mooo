@@ -1,8 +1,8 @@
 {
   "status": "reviewed-static-unexecuted-runtime",
   "cases": [
-    {"name":"receipt_reads_current_carriage_agent","agent_property_present":true,"selection_proven":false,"expected_effects":["read_carriage_agent","dynamic_send_push_receipt"]},
-    {"name":"connect_stores_carriage_agent","agent_property_present":true,"selection_proven":false,"expected_effects":["set_carriage_agent"]},
-    {"name":"factory_selection_untraced","agent_property_present":false,"selection_proven":false,"expected_effects":["transport_factory_selection_gap"]}
+    {"name":"receipt_reads_current_carriage_agent","operation":"receipt_send","current_agent_identity":"agent-current","callback_arg_identity":"agent-current","expected_current_identity":"agent-current","expected_effects":["read_current_carriage_agent","dynamic_send_push_receipt"]},
+    {"name":"connect_constructs_and_stores_new_agent","operation":"connect_set","current_agent_identity":"agent-old","new_agent_identity":"agent-new","callback_arg_identity":"agent-new","expected_current_identity":"agent-new","expected_effects":["construct_carriage_agent","disable_fallback","set_carriage_agent","install_status_handler","set_manager_status","connect_agent"]},
+    {"name":"factory_selection_unproven","operation":"factory_selection","expected_effects":["factory_selection_unproven"]}
   ]
 }

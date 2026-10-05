@@ -14,20 +14,26 @@ type carriageAgentFixture struct {
 	Cases  []carriageAgentCase `json:"cases"`
 }
 type carriageAgentCase struct {
-	Name                 string   `json:"name"`
-	AgentPropertyPresent bool     `json:"agent_property_present"`
-	SelectionProven      bool     `json:"selection_proven"`
-	ExpectedEffects      []string `json:"expected_effects"`
+	Name                    string   `json:"name"`
+	Operation               string   `json:"operation"`
+	CurrentAgentIdentity    string   `json:"current_agent_identity"`
+	NewAgentIdentity        string   `json:"new_agent_identity"`
+	CallbackArgIdentity     string   `json:"callback_arg_identity"`
+	ExpectedCurrentIdentity string   `json:"expected_current_identity"`
+	ExpectedEffects         []string `json:"expected_effects"`
 }
 
 func expectedCarriageAgent(c carriageAgentCase) []string {
-	if c.AgentPropertyPresent {
-		if c.Name[0] == 'r' {
-			return []string{"read_carriage_agent", "dynamic_send_push_receipt"}
-		}
-		return []string{"set_carriage_agent"}
+	switch c.Operation {
+	case "receipt_send":
+		return []string{"read_current_carriage_agent", "dynamic_send_push_receipt"}
+	case "connect_set":
+		return []string{"construct_carriage_agent", "disable_fallback", "set_carriage_agent", "install_status_handler", "set_manager_status", "connect_agent"}
+	case "factory_selection":
+		return []string{"factory_selection_unproven"}
+	default:
+		return nil
 	}
-	return []string{"transport_factory_selection_gap"}
 }
 func TestPushReceiptCarriageAgentFixture(t *testing.T) {
 	b, e := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-push-receipt-carriage-agent.json"))
@@ -49,8 +55,25 @@ func TestPushReceiptCarriageAgentFixture(t *testing.T) {
 			t.Fatal("duplicate name")
 		}
 		seen[c.Name] = true
+		if c.Operation != "receipt_send" && c.Operation != "connect_set" && c.Operation != "factory_selection" {
+			t.Errorf("%s operation=%q", c.Name, c.Operation)
+		}
 		if g, w := c.ExpectedEffects, expectedCarriageAgent(c); !reflect.DeepEqual(g, w) {
 			t.Errorf("%s=%v want %v", c.Name, g, w)
+		}
+		switch c.Operation {
+		case "receipt_send":
+			if c.CurrentAgentIdentity == "" || c.CallbackArgIdentity != c.CurrentAgentIdentity || c.ExpectedCurrentIdentity != c.CurrentAgentIdentity {
+				t.Errorf("%s receipt identity handoff=%q callback=%q expected=%q", c.Name, c.CurrentAgentIdentity, c.CallbackArgIdentity, c.ExpectedCurrentIdentity)
+			}
+		case "connect_set":
+			if c.NewAgentIdentity == "" || c.CallbackArgIdentity != c.NewAgentIdentity || c.ExpectedCurrentIdentity != c.NewAgentIdentity {
+				t.Errorf("%s connect identity current=%q new=%q callback=%q expected=%q", c.Name, c.CurrentAgentIdentity, c.NewAgentIdentity, c.CallbackArgIdentity, c.ExpectedCurrentIdentity)
+			}
+		case "factory_selection":
+			if c.ExpectedCurrentIdentity != "" || c.NewAgentIdentity != "" || c.CallbackArgIdentity != "" {
+				t.Errorf("%s unproven factory must not invent identities", c.Name)
+			}
 		}
 	}
 }
