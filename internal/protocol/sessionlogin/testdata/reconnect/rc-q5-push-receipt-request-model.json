@@ -1,0 +1,9 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {"name":"hint_header_fields","handler":"hint","header_method_present":true,"header_packet_id_present":true,"revision":null,"plus_revision":null,"expected_effects":["delegate_callback_attempt","construct_from_header","copy_header_method","copy_header_packet_id","send_carriage_push_receipt"]},
+    {"name":"block_sync_revision_fields","handler":"block_sync","header_method_present":true,"header_packet_id_present":true,"revision":12,"plus_revision":3,"expected_effects":["delegate_callback_attempt","construct_from_header","set_revision","set_plus_revision","send_carriage_push_receipt"]},
+    {"name":"send_status_three_packet_id_17","handler":"send","owner_status":3,"packet_id":17,"expected_effects":["queue_owner_block","read_execution_status","read_packet_header","read_packet_id","derive_tag_negation","send_packet_tag"]},
+    {"name":"send_status_other_suppressed","handler":"send","owner_status":2,"packet_id":17,"expected_effects":["queue_owner_block","read_execution_status"]}
+  ]
+}
