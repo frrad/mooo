@@ -39,11 +39,12 @@ hook and must not prepend an unproven host or rewrite the challenge.
 The first fresh bridge presentation was rejected by the owned Android client
 (`You cannot use this QR code.`). No scan or authorization was retried. The
 failure's stage is unresolved: it may be image decoding, scanner route
-classification, QR-info lookup, or a later account-side policy response. No
-offline decoder differential or complete Android result-handler trace has yet
-isolated the cause. A controlled image comparison and the full scanner-to-info
-request path are required before changing the renderer or claiming payload
-normalization fixes enrollment.
+classification, QR-info lookup, or a later account-side policy response. The
+offline APK audit now traces the scanner-to-info request and its broad result
+routing, but it does not prove which stage produced the generic rejection in
+the failed bridge presentation. No decoder differential has isolated the
+cause, and the bridgev2 renderer is supplied by the framework rather than the
+connector.
 
 ### Official Android presentation and scan path (source audit)
 
@@ -56,8 +57,9 @@ routes to the QR-login approval screen; a general-not-found response reports
 the invalid-QR state, while other server failures surface a service message.
 The official QR display path passes the server URL directly to a ZXing QR
 writer configured with error correction `H`, zero quiet-zone margin, and a
-150dp square bitmap. This establishes a renderer-parity target for a future
-controlled decoder comparison, but it does not establish that error
-correction or image sizing caused the observed rejection. The current bridge
-test therefore verifies raw-payload preservation and leaves the rejection
-stage unresolved pending decoder differential and end-to-end route evidence.
+150dp square bitmap. The bridgev2 command path currently renders QR values
+with `go-qrcode` at error correction `Low` and a 512px image. This is a
+concrete renderer-parity difference to test offline; it is not yet evidence
+that `Low` caused the Android rejection. The current bridge test therefore
+verifies raw-payload preservation while the rejection stage remains pending a
+decoder differential and controlled end-to-end confirmation.
