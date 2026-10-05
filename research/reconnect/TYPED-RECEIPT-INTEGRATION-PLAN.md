@@ -64,6 +64,19 @@ before runtime binding:
   path is conditional on the delegate returning normally; it does not forbid
   the resulting zero-valued receipt.
 
+The nested `LocoChatLog` lineage is bounded at the model boundary. In the
+26.8.0 arm64 metadata, `LocoChatLog` is a `LocoModel` subclass and declares
+typed properties including signed `type`, `scope`, `referer`, `revision`, and
+`sentAt`, 64-bit IDs, a `BOOL` silence flag, a `double` expiry, and string
+message/attachment/supplement/extra fields. It does not declare its own
+`initWithJSONObject:` override: construction uses `LocoModel` IMP
+`0x10167beb0`, which copies dictionary input, applies the model mapping block,
+and forwards to `SGJsonObject`. The source evidence does not establish an
+additional mandatory-field validator on this path. Property conversion and
+unsupported KVC input failures therefore remain the SGJson/KVC boundary; the
+adapter must receive a notice that already passed the appropriate upstream
+constructor path rather than treating arbitrary decoded maps as eligible.
+
 Strict BSON rejection is not part of this source contract. The source BSON
 decoder returns the documented partial dictionary on an unknown element type;
 that observed behavior remains the compatibility boundary and is separate from
