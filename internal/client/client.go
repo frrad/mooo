@@ -58,6 +58,7 @@ type Client struct {
 	lease            *profileLease
 	pushConsumer     pushConsumerMode
 	eventStream      chan events.Result
+	eventDone        chan struct{}
 	commitMu         sync.Mutex
 	commitActive     int
 	commitDone       chan struct{}
@@ -315,11 +316,16 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 		return stream, nil
 	}
 	stream := make(chan events.Result, requestLimit)
+	done := make(chan struct{})
 	c.pushConsumer = pushConsumerTyped
 	c.eventStream = stream
+	c.eventDone = done
 	checkpoint := c.checkpoint
 	c.mu.Unlock()
-	go decodeEventStreamWithTerminal(raw, stream, checkpoint, c.queueCommit, c.interruptTerminal)
+	go func() {
+		defer close(done)
+		decodeEventStreamWithTerminal(raw, stream, checkpoint, c.queueCommit, c.interruptTerminal)
+	}()
 	return stream, nil
 }
 
@@ -734,6 +740,17 @@ func (c *Client) Shutdown(ctx context.Context) error {
 				return errors.Join(interruptErr, err)
 			}
 		}
+		c.mu.Lock()
+		eventDone := c.eventDone
+		c.mu.Unlock()
+		if eventDone != nil {
+			select {
+			case <-eventDone:
+			case <-ctx.Done():
+				finish()
+				return errors.Join(interruptErr, ctx.Err())
+			}
+		}
 		if checkpoint != nil {
 			if err := checkpoint.MarkClean(); err != nil {
 				finish()
@@ -750,6 +767,7 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		if c.session == session || c.cleanupSession == session {
 			c.session = nil
 			c.cleanupSession = nil
+			c.eventDone = nil
 			c.checkpoint = nil
 			c.lease = nil
 		}

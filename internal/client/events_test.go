@@ -143,6 +143,35 @@ func TestTerminalNoticeClosesOwnedCarriageAndRejectsSend(t *testing.T) {
 	}
 }
 
+func TestShutdownJoinsBlockedEventDecoderBeforeReturning(t *testing.T) {
+	raw := make(chan loco.Packet, requestLimit+1)
+	for i := 0; i < cap(raw); i++ {
+		raw <- loco.Packet{Header: loco.Header{Method: "UNKNOWN"}}
+	}
+	session := &Session{pushes: raw}
+	api := &Client{session: session}
+	stream, err := api.Events(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err = api.Shutdown(ctx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("shutdown with blocked decoder error = %v, want deadline", err)
+	}
+	close(raw)
+	go func() {
+		for range stream {
+		}
+	}()
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := api.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown after decoder release: %v", err)
+	}
+}
+
 func TestDecodeEventStreamSuppressesCommittedAndInProcessDuplicates(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o700); err != nil {
