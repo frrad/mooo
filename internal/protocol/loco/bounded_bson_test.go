@@ -125,3 +125,14 @@ func TestDecodeObservedBSONRecognizedDBPointerUsesDeclaredWidth(t *testing.T) {
 		t.Fatalf("result=%#v", got)
 	}
 }
+
+func TestDecodeObservedBSONGlobalWorkBound(t *testing.T) {
+	// Nested declared widths can cause the source cursor to revisit suffix
+	// bytes after an early nested terminator. The Go adapter bounds total work
+	// independently of MaxDepth and MaxBytes.
+	data := []byte{1, 0, 0, 0, 0x03, 'n', 0, 5, 0, 0, 0, 0, 0}
+	_, err := DecodeObservedBSON(data, BSONDecodeOptions{MaxWork: 1})
+	if !errors.Is(err, ErrBSONDecodeBounds) {
+		t.Fatalf("err=%v", err)
+	}
+}
