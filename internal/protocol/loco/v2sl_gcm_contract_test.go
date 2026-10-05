@@ -71,7 +71,10 @@ func observedV2SLOuterAssembly(nonce, initialTag []byte, primitive func([]byte) 
 
 type v2SLPrimitiveTrace struct {
 	contextCreated bool
+	statuses       []int
 	steps          []string
+	seenStatuses   []int
+	effects        []string
 	finalCode      int
 	freed          bool
 }
@@ -80,21 +83,37 @@ type v2SLPrimitiveTrace struct {
 // primitive stops at context creation failure; once a context exists, later
 // low-level statuses do not short-circuit the sequence.
 func observedV2SLPrimitiveState(trace *v2SLPrimitiveTrace, tag []byte) []byte {
+	trace.effects = append(trace.effects, "context")
 	trace.steps = append(trace.steps, "context")
 	if !trace.contextCreated {
 		return nil
 	}
-	trace.steps = append(trace.steps, "init", "iv", "update", "final", "get-tag")
+	for i, step := range []string{"init", "iv", "update", "final", "get-tag"} {
+		trace.steps = append(trace.steps, step)
+		trace.effects = append(trace.effects, step)
+		if i < len(trace.statuses) {
+			trace.seenStatuses = append(trace.seenStatuses, trace.statuses[i])
+		}
+	}
 	copy(tag, bytes.Repeat([]byte{0x3c}, len(tag)))
+	trace.effects = append(trace.effects, "free")
+	trace.freed = true
 	return []byte("ciphertext")
 }
 
 func observedV2SLDecryptState(trace *v2SLPrimitiveTrace, plaintext []byte) []byte {
+	trace.effects = append(trace.effects, "context")
+	if !trace.contextCreated {
+		return nil
+	}
 	trace.steps = append(trace.steps, "decrypt-update", "set-tag", "decrypt-final")
+	trace.effects = append(trace.effects, "decrypt-update", "set-tag", "free", "decrypt-final")
 	trace.freed = true
+	trace.effects = append(trace.effects, "predicate")
 	if trace.finalCode < 1 {
 		return nil
 	}
+	trace.effects = append(trace.effects, "publish")
 	return append([]byte(nil), plaintext...)
 }
 
@@ -204,15 +223,29 @@ func TestV2SLPrimitiveFailureStateAndIgnoredStatuses(t *testing.T) {
 	if got := observedV2SLPrimitiveState(failed, tag); got != nil || !bytes.Equal(tag, bytes.Repeat([]byte{0xa5}, v2SLTagSize)) || !reflect.DeepEqual(failed.steps, []string{"context"}) {
 		t.Fatalf("context failure state: output=%x tag=%x steps=%v", got, tag, failed.steps)
 	}
-	active := &v2SLPrimitiveTrace{contextCreated: true}
-	if got := observedV2SLPrimitiveState(active, tag); !bytes.Equal(got, []byte("ciphertext")) || !reflect.DeepEqual(active.steps, []string{"context", "init", "iv", "update", "final", "get-tag"}) {
+	active := &v2SLPrimitiveTrace{contextCreated: true, statuses: []int{-1, 0, -1, 0, -1}}
+	if got := observedV2SLPrimitiveState(active, tag); !bytes.Equal(got, []byte("ciphertext")) || !reflect.DeepEqual(active.steps, []string{"context", "init", "iv", "update", "final", "get-tag"}) || !reflect.DeepEqual(active.seenStatuses, active.statuses) || !active.freed {
 		t.Fatalf("post-context state: output=%x steps=%v", got, active.steps)
 	}
+	if !reflect.DeepEqual(active.effects, []string{"context", "init", "iv", "update", "final", "get-tag", "free"}) {
+		t.Fatalf("encryption effects = %v", active.effects)
+	}
+	noContext := &v2SLPrimitiveTrace{contextCreated: false, finalCode: 1}
+	if got := observedV2SLDecryptState(noContext, []byte("plaintext")); got != nil || noContext.freed {
+		t.Fatalf("context failure decrypt state: output=%q freed=%v", got, noContext.freed)
+	}
 	for _, code := range []int{-1, 0, 1, 2} {
-		trace := &v2SLPrimitiveTrace{finalCode: code}
+		trace := &v2SLPrimitiveTrace{contextCreated: true, finalCode: code}
 		got := observedV2SLDecryptState(trace, []byte("plaintext"))
 		if (code < 1) != (got == nil) || !trace.freed {
 			t.Fatalf("final code %d: output=%q freed=%v", code, got, trace.freed)
+		}
+		wantEffects := []string{"context", "decrypt-update", "set-tag", "free", "decrypt-final", "predicate"}
+		if code >= 1 {
+			wantEffects = append(wantEffects, "publish")
+		}
+		if !reflect.DeepEqual(trace.effects, wantEffects) {
+			t.Fatalf("final code %d effects = %v", code, trace.effects)
 		}
 	}
 }

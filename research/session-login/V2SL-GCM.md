@@ -27,7 +27,10 @@ The outer V2 operation places the fresh nonce before the ciphertext and tag:
 nonce[12] || ciphertext[len(plaintext)] || tag[16]
 ```
 
-The nonce is generated for each operation. The tag is collected from the GCM
+The nonce is generated for each operation. The object may retain the current IV
+as state between calls, but the per-message nonce is freshly replaced before
+each encryption; this does not make a prior IV durable protocol material. The
+tag is collected from the GCM
 operation after ciphertext generation; it is not a second encryption or a
 checksum. The outer framing layer may add its own length prefix. That framing,
 key provisioning, handshake acceptance, and transport response handling are
@@ -52,7 +55,8 @@ creation are not individually branched on before tag collection; this is an
 observed source behavior, not a recommendation to accept partially initialized
 results. A context-creation failure stops before those operations. Decryption
 returns no plaintext after context or authentication failure, including after
-its cleanup path.
+its cleanup path when a context was created. A context-creation failure returns
+before context cleanup.
 
 This is a primitive contract, not a claim that all surrounding client paths
 have been traced. In particular, the public evidence does not establish the
