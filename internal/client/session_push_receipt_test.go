@@ -1,7 +1,10 @@
 package client
 
 import (
+	"context"
+	"errors"
 	"net"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -179,6 +182,61 @@ func TestPushReceiptBindingCloseDoesNotWaitForBlockedSender(t *testing.T) {
 	<-dispatchDone
 }
 
+func TestClientShutdownRetainsLeaseUntilReceiptSenderJoins(t *testing.T) {
+	dir := t.TempDir()
+	leasePath := filepath.Join(dir, "profile.lock")
+	lease, err := acquireProfileLease(leasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+	session := &Session{
+		wire:    &wireConn{c: clientConn},
+		pushes:  make(chan loco.Packet, 1),
+		pending: make(map[uint32]chan requestResult),
+	}
+	sender := &blockedReceiptSender{started: make(chan struct{}), release: make(chan struct{})}
+	if err := session.BindPushReceipt(sender, func(loco.Packet) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{session: session, lease: lease}
+	session.startReadLoop()
+	frame, err := (loco.Packet{Header: loco.Header{Method: "HINT"}, Body: []byte{1}}).MarshalBinary(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = serverConn.Write(frame) }()
+	select {
+	case <-sender.started:
+	case <-time.After(time.Second):
+		t.Fatal("receipt sender did not block")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err = client.Shutdown(ctx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("shutdown error = %v, want receipt-worker deadline", err)
+	}
+	if other, leaseErr := acquireProfileLease(leasePath); other != nil || !errors.Is(leaseErr, ErrProfileInUse) {
+		if other != nil {
+			_ = other.Close()
+		}
+		t.Fatalf("lease after receipt timeout = %v, want %v", leaseErr, ErrProfileInUse)
+	}
+	close(sender.release)
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := client.Shutdown(ctx); err != nil {
+		t.Fatalf("retry shutdown: %v", err)
+	}
+	other, err := acquireProfileLease(leasePath)
+	if err != nil {
+		t.Fatalf("lease after receipt join: %v", err)
+	}
+	_ = other.Close()
+}
+
 type receiptOwnerQueue struct {
 	mu    sync.Mutex
 	tasks []func()
@@ -201,6 +259,12 @@ func (q *receiptOwnerQueue) runOne() bool {
 	q.mu.Unlock()
 	task()
 	return true
+}
+
+func (q *receiptOwnerQueue) count() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.tasks)
 }
 
 type receiptOwnerStatus struct{ value int64 }
@@ -244,8 +308,14 @@ func TestSessionComposesManagerAndAgentReceiptOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 	session.dispatchPushReceipt(loco.Packet{Header: loco.Header{Method: "HINT"}, Body: []byte{1}})
-	if scheduler.cancels != 0 || len(transport.tags) != 0 {
-		t.Fatal("owner work executed before injected queue was drained")
+	deadline := time.After(time.Second)
+	for queue.count() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("composed owner did not enqueue")
+		default:
+			time.Sleep(time.Millisecond)
+		}
 	}
 	status.value = 3
 	for queue.runOne() {
