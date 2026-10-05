@@ -12,14 +12,16 @@ initializer calls return nil; this is a Foundation behavior represented by the
 synthetic fixture, not a Go runtime policy.
 
 The block then derives the manager callback selector from the selected class:
-`NSStringFromClass`, `substringFromIndex:`, `stringWithFormat:`, and
-`NSSelectorFromString`. It checks the weak owner with
+`NSStringFromClass`, `substringFromIndex:4`, `stringWithFormat:` using the
+`handle%@:packetHeader:` format, and `NSSelectorFromString`. It checks the weak owner with
 `respondsToSelector:` before calling `performSelector:withObject:withObject:`
 with the constructed notice and original packet header. An absent class
-therefore reaches the selector derivation/gate with no usable notice and has no
-registered delegate or receipt call in the bounded source model. The exact
-format string, substring index, and Foundation behavior for a nil selector are
-not published here; callback exception and disconnect policy are also gaps.
+therefore reaches the selector derivation/gate with no usable notice. The
+source proves only the conditional owner gate: a false gate skips
+`performSelector`, while a true gate would receive the nil notice and original
+header. It does not prove an unconditional unknown-method drop or the later
+delegate/receipt behavior. Foundation behavior for a nil class name and the
+outer callback exception/disconnect policy remain gaps.
 
 This path is distinct from a recognized HINT initializer that returns nil for a
 nonnull body: the default block does not check the initializer result before
