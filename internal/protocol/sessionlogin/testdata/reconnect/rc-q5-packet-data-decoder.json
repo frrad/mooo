@@ -11,7 +11,9 @@
       "expected_returned": false,
       "expected_body": "",
       "expected_slice_length": 0,
-      "expected_effects": ["super_init_returns_nil"]
+      "expected_effects": [
+        "super_init_returns_nil"
+      ]
     },
     {
       "name": "zero_header_length_leaves_default_nil_body",
@@ -92,34 +94,67 @@
         "trailing_bytes": false,
         "unknown_type_after_elements": false,
         "expected_dictionary": [],
-        "expected_stop": "terminator_stops_element_loop"
+        "expected_stop": "terminator_stops_element_loop",
+        "bson_hex": "0500000000",
+        "expected_cursor_steps": [
+          0
+        ]
       },
       {
         "name": "signed_scalar_fields",
-        "elements": ["revision=-1:int32", "count=4294967296:int64"],
+        "elements": [
+          "revision=-1:int32",
+          "count=4294967296:int64"
+        ],
         "terminator_present": true,
         "trailing_bytes": false,
         "unknown_type_after_elements": false,
-        "expected_dictionary": ["revision=-1:int32", "count=4294967296:int64"],
-        "expected_stop": "terminator_stops_element_loop"
+        "expected_dictionary": [
+          "revision=-1:int32",
+          "count=4294967296:int64"
+        ],
+        "expected_stop": "terminator_stops_element_loop",
+        "bson_hex": "22000000107265766973696f6e00ffffffff12636f756e7400000000000100000000",
+        "expected_cursor_steps": [
+          14,
+          15,
+          0
+        ]
       },
       {
         "name": "terminator_ignores_coalesced_trailing_bytes",
-        "elements": ["method=HINT:string"],
+        "elements": [
+          "method=HINT:string"
+        ],
         "terminator_present": true,
         "trailing_bytes": true,
         "unknown_type_after_elements": false,
-        "expected_dictionary": ["method=HINT:string"],
-        "expected_stop": "terminator_stops_element_loop"
+        "expected_dictionary": [
+          "method=HINT:string"
+        ],
+        "expected_stop": "terminator_stops_element_loop",
+        "bson_hex": "16000000026d6574686f64000500000048494e540000ffeedd",
+        "expected_cursor_steps": [
+          17,
+          0
+        ]
       },
       {
         "name": "unknown_type_returns_accumulated_dictionary",
-        "elements": ["method=HINT:string"],
+        "elements": [
+          "method=HINT:string"
+        ],
         "terminator_present": false,
         "trailing_bytes": false,
         "unknown_type_after_elements": true,
-        "expected_dictionary": ["method=HINT:string"],
-        "expected_stop": "unknown_type_stops_with_partial_dictionary"
+        "expected_dictionary": [
+          "method=HINT:string"
+        ],
+        "expected_stop": "unknown_type_stops_with_partial_dictionary",
+        "bson_hex": "00000000026d6574686f64000500000048494e54007f62616400",
+        "expected_cursor_steps": [
+          17
+        ]
       }
     ]
   }

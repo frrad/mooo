@@ -2,7 +2,10 @@ package sessionlogin
 
 import (
 	"bytes"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -35,6 +38,8 @@ type bsonDecoderFixture struct {
 
 type bsonDecoderCase struct {
 	Name                     string   `json:"name"`
+	BSONHex                  string   `json:"bson_hex"`
+	ExpectedCursorSteps      []int    `json:"expected_cursor_steps"`
 	Elements                 []string `json:"elements"`
 	TerminatorPresent        bool     `json:"terminator_present"`
 	TrailingBytes            bool     `json:"trailing_bytes"`
@@ -106,6 +111,67 @@ func projectBSONDecoder(c bsonDecoderCase) ([]string, string) {
 	return append([]string{}, c.Elements...), "unterminated_input_behavior_unresolved"
 }
 
+// projectBSONBytes is a bounded test model for the source-observed cases. It
+// intentionally starts at byte four and never uses the BSON document-length
+// prefix: the reviewed IMP passes a raw NSData pointer to its cursor helper,
+// which has no NSData length argument. This is not the production parser.
+func projectBSONBytes(raw []byte) ([]string, []int, string, error) {
+	if len(raw) < 4 {
+		return nil, nil, "malformed_input_unresolved", nil
+	}
+	pos := 4
+	entries := []string{}
+	steps := []int{}
+	for pos < len(raw) {
+		start := pos
+		typ := raw[pos]
+		if typ == 0 {
+			return entries, append(steps, 0), "terminator_stops_element_loop", nil
+		}
+		pos++
+		keyEnd := bytes.IndexByte(raw[pos:], 0)
+		if keyEnd < 0 {
+			return entries, steps, "malformed_input_unresolved", nil
+		}
+		key := string(raw[pos : pos+keyEnd])
+		pos += keyEnd + 1
+		switch typ {
+		case 0x10: // BSON int32: the cursor advances over four payload bytes.
+			if len(raw)-pos < 4 {
+				return entries, steps, "malformed_input_unresolved", nil
+			}
+			value := int32(binary.LittleEndian.Uint32(raw[pos : pos+4]))
+			entries = append(entries, fmt.Sprintf("%s=%d:int32", key, value))
+			pos += 4
+		case 0x12: // BSON int64: the cursor advances over eight payload bytes.
+			if len(raw)-pos < 8 {
+				return entries, steps, "malformed_input_unresolved", nil
+			}
+			value := int64(binary.LittleEndian.Uint64(raw[pos : pos+8]))
+			entries = append(entries, fmt.Sprintf("%s=%d:int64", key, value))
+			pos += 8
+		case 0x02: // BSON string: four-byte byte length, bytes, then NUL.
+			if len(raw)-pos < 4 {
+				return entries, steps, "malformed_input_unresolved", nil
+			}
+			length := int(binary.LittleEndian.Uint32(raw[pos : pos+4]))
+			pos += 4
+			if length < 1 || length > len(raw)-pos {
+				return entries, steps, "malformed_input_unresolved", nil
+			}
+			if raw[pos+length-1] != 0 {
+				return entries, steps, "malformed_input_unresolved", nil
+			}
+			entries = append(entries, fmt.Sprintf("%s=%s:string", key, string(raw[pos:pos+length-1])))
+			pos += length
+		default:
+			return entries, steps, "unknown_type_stops_with_partial_dictionary", nil
+		}
+		steps = append(steps, pos-start)
+	}
+	return entries, steps, "unterminated_input_behavior_unresolved", nil
+}
+
 func TestBSONDecoderObservedContract(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-packet-data-decoder.json"))
 	if err != nil {
@@ -129,6 +195,34 @@ func TestBSONDecoderObservedContract(t *testing.T) {
 		got, stop := projectBSONDecoder(c)
 		if !reflect.DeepEqual(got, c.ExpectedDictionary) || stop != c.ExpectedStop {
 			t.Errorf("%s result=(%v,%q)", c.Name, got, stop)
+		}
+		if c.BSONHex == "" {
+			t.Errorf("%s missing bounded BSON hex vector", c.Name)
+			continue
+		}
+		raw, err := hex.DecodeString(c.BSONHex)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries, steps, byteStop, err := projectBSONBytes(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(entries, c.ExpectedDictionary) || !reflect.DeepEqual(steps, c.ExpectedCursorSteps) || byteStop != c.ExpectedStop {
+			t.Errorf("%s bytes result=(%v,%v,%q)", c.Name, entries, steps, byteStop)
+		}
+		// The source cursor ignores the document-length prefix. Mutating it
+		// must not change the bounded valid/partial projection.
+		if len(raw) >= 4 {
+			mutated := append([]byte(nil), raw...)
+			binary.LittleEndian.PutUint32(mutated[:4], 1)
+			mutEntries, mutSteps, mutStop, err := projectBSONBytes(mutated)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(mutEntries, entries) || !reflect.DeepEqual(mutSteps, steps) || mutStop != byteStop {
+				t.Errorf("%s declared length unexpectedly affected decode: got=(%v,%v,%q) want=(%v,%v,%q)", c.Name, mutEntries, mutSteps, mutStop, entries, steps, byteStop)
+			}
 		}
 	}
 }

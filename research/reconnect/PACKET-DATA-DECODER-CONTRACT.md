@@ -18,13 +18,21 @@ object is passed directly to `setBody:` without a result or error branch. A
 nil decoder result therefore follows the same setter path as a decoded object.
 
 The bundled `dictionaryWithBSONData:` implementation is IMP `0x1017eb434`.
-It creates a mutable dictionary, obtains the NSData byte pointer, and walks
-elements with a cursor helper. A zero BSON element type terminates the loop,
-so the valid empty-document vector (`05 00 00 00 00`) returns an empty
-dictionary. Decoded signed int32/int64 and other scalar values are inserted as
-dictionary entries. An unknown element type makes the cursor helper log and
-return zero; the outer loop then returns the dictionary accumulated so far.
-Bytes after a valid zero-type terminator are not inspected by this loop.
+It creates a mutable dictionary, obtains the NSData byte pointer, advances
+four bytes past the BSON document-length prefix, and walks elements with a
+cursor helper. The helper never receives the NSData length and does not read
+the four-byte declared document length; the synthetic vectors therefore
+re-run with that prefix replaced by `1` and retain the same bounded result.
+A zero BSON element type terminates the loop, so the valid empty-document
+vector (`05 00 00 00 00`) returns an empty dictionary. The source-observed
+cursor advances 4 payload bytes for signed int32 (`0x10`), 8 for signed int64
+(`0x12`), and for strings (`0x02`) advances over the NUL-terminated key, the
+four-byte string length, the string bytes, and its trailing NUL. The fixture
+pins those per-element consumed widths, not only predecoded labels. Decoded
+signed int32/int64 and other scalar values are inserted as dictionary
+entries. An unknown element type makes the cursor helper return zero; the
+outer loop then returns the dictionary accumulated so far. Bytes after a
+valid zero-type terminator are not inspected by this loop.
 
 The decoder has no visible NSError result. Its cursor uses raw pointer reads,
 `strlen`, and element lengths without an NSData-length parameter. Exact
@@ -47,5 +55,5 @@ handling.
   `unknown type: ...`; it is recorded only as behavior, not copied into the
   implementation.
 - Body setter dispatch `0x10190cf60` resolves to `setBody:`.
-- Synthetic cases are in
+- Synthetic cases, including raw BSON hex and expected cursor widths, are in
   `internal/protocol/sessionlogin/testdata/reconnect/rc-q5-packet-data-decoder.json`.
