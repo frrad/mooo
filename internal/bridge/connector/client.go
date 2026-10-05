@@ -602,6 +602,13 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 			Msg("Kakao message was not confirmed as bridged; leaving it uncommitted for replay")
 		return false
 	}
+	// Membership and metadata events can be delivered to the bridge without
+	// carrying a Kakao message cursor. They are complete once the bridge
+	// accepts them; attempting CommitEvent would report a successful refresh as
+	// an ErrProtocol because no message position exists.
+	if _, _, ok := events.MessagePosition(evt); !ok {
+		return true
+	}
 	if err := c.CommitEvent(evt); err != nil {
 		kc.log().Err(err).Msg("Failed to commit bridged Kakao message")
 		return false
