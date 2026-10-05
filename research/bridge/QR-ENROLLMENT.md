@@ -40,6 +40,34 @@ body or explicit status zero is accepted; a nonzero or malformed status body
 is rejected. This is an implementation safety policy, not a claim that the
 full official cancellation response contract has been recovered.
 
+### Mac check-key boundary (static correction)
+
+A fresh Mach-O metadata pass on the owned macOS 26.8.0 binary resolves the
+`qrLoginCheckKey` selector to the `FCAuthController` instance method with
+Objective-C type `@16@0:8`. Its method body conditionally bridges Swift
+`Foundation.Data` to `NSData` and returns an autoreleased object. The earlier
+description of this as a mistaken selector-to-IMP mapping was incorrect: the
+Swift data helper is the method body boundary itself. Static references do not
+show a direct caller, so Swift direct dispatch or runtime selector dispatch
+remains possible.
+
+The static trace still does not establish what bytes populate the returned
+`Data`, whether they derive from the device/challenge state, or where the
+getter feeds QR generation or polling. The route-specific QR-generate parser
+contains no `checkKey` dictionary lookup, and the authorized debug run reached
+generation without entering this getter. No check-key algorithm or input
+recipe is therefore transferred into the bridge.
+
+The helper body itself performs additional object lookups through an owned
+authentication/configuration object, conditionally extracts a string-like
+value, constructs an Objective-C string, applies another object operation, and
+bridges the resulting `NSData` back to Swift `Data`. The available stripped
+metadata does not resolve those dynamic selectors or identify the backing
+field, so this narrows the boundary to object-backed state without proving
+whether that state is a device secret, challenge-derived value, or cached
+configuration. The QR URL parser's `id` extraction remains a separate,
+observable path and is not evidence that it supplies this getter.
+
 ## Presentation boundary and current live gap
 
 The connector preserves the complete server QR string in the bridgev2 display
