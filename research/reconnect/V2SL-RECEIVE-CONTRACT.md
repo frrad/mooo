@@ -19,8 +19,7 @@ The `LocoV2SLCrypto decrypt:` IMP is `0x101685970`. For an input of length N,
 it constructs an IV data object from bytes `[0,12)`, a cipher data object from
 offset 12 with length N-28, and a 16-byte tag object from the final 16 bytes.
 It reads the crypto object's AES key and IV and calls
-`decryptAES128GCMWithKey:iv:aad:tag:` with nil AAD. The secure body contract
-requires N≥28; behavior for shorter input is left outside this bounded slice.
+`decryptAES128GCMWithKey:iv:aad:tag:` with nil AAD. The synthetic secure fixtures are bounded to N≥28 so the observed slice lengths are representable. The source passes N-28 to NSData without a guard in this slice; behavior for shorter input, including any Foundation range failure, remains untraced and is not presented as an official validation rule.
 
 The synthetic fixture derives the cipher length from the input length and
 keeps a failed/nil decrypt result separate from the call and supply effects.
@@ -39,3 +38,25 @@ Private provenance (not part of the repository):
   IV/cipher/tag slices and decrypt call.
 - `credential-storage/raw/cs1/objc-stubs-disassembly.txt` resolves the
   `decryptAES128GCMWithKey:iv:aad:tag:` selector stub.
+
+## Selected LocoNWAgent read callback
+
+The selected manager transport is `LocoNWAgent`, whose `readHeader` and
+`readBody:` methods call the receive helper at `0x100d48298`. The helper reads
+the current `connection` ivar at callback time. A missing owner or connection
+returns before scheduling a receive. With a connection it enables the outgoing
+segment timeout and calls `NWConnection.receive` with minimum length 1 and
+maximum length equal to the requested input length.
+
+For a data completion, the closure disables the incoming segment timeout,
+bridges the received Data to NSData, calls `didReadBody:`, then calls
+`readHeader`. For an error completion, POSIX code 0x59 skips the log/cancel
+branch. Other errors log the read-body failure and cancel the current
+connection loaded from the owner at callback time; a replacement connection
+therefore changes the cancellation identity. This closure has no observed
+pending-map or status publication effect, so those downstream consumers remain
+an explicit gap.
+
+Private provenance for this subsection is the sanitized receipt names
+`reconnect-conf-model/otool-objc.txt`, `credential-storage/raw/cs1/objc-stubs-disassembly.txt`,
+and `nw-readbody-closure-20261005.txt` in the external parity archive.
