@@ -13,15 +13,18 @@ type pushReceiptRequestModelFixture struct {
 	Cases  []pushReceiptRequestModelCase `json:"cases"`
 }
 type pushReceiptRequestModelCase struct {
-	Name                  string   `json:"name"`
-	Handler               string   `json:"handler"`
-	HeaderMethodPresent   bool     `json:"header_method_present"`
-	HeaderPacketIDPresent bool     `json:"header_packet_id_present"`
-	Revision              *int     `json:"revision"`
-	PlusRevision          *int     `json:"plus_revision"`
-	OwnerStatus           int      `json:"owner_status"`
-	PacketID              uint32   `json:"packet_id"`
-	ExpectedEffects       []string `json:"expected_effects"`
+	Name             string   `json:"name"`
+	Handler          string   `json:"handler"`
+	HeaderMethod     string   `json:"header_method"`
+	HeaderPacketID   uint32   `json:"header_packet_id"`
+	Revision         *int32   `json:"revision"`
+	PlusRevision     *int32   `json:"plus_revision"`
+	OwnerStatus      uint8    `json:"owner_status"`
+	PacketID         uint32   `json:"packet_id"`
+	ExpectedMethod   string   `json:"expected_method"`
+	ExpectedPacketID uint32   `json:"expected_packet_id"`
+	ExpectedTag      int64    `json:"expected_tag"`
+	ExpectedEffects  []string `json:"expected_effects"`
 }
 
 func expectedPushReceiptRequestModel(c pushReceiptRequestModelCase) []string {
@@ -49,10 +52,21 @@ func TestPushReceiptRequestModelFixture(t *testing.T) {
 	if err = json.Unmarshal(body, &f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 4 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 8 {
 		t.Fatalf("fixture header = %#v", f)
 	}
 	for _, c := range f.Cases {
+		if c.Handler != "hint" && c.Handler != "block_sync" && c.Handler != "send" {
+			t.Errorf("unsupported handler %q", c.Handler)
+		}
+		if c.Handler == "hint" || c.Handler == "block_sync" {
+			if c.ExpectedMethod != c.HeaderMethod || c.ExpectedPacketID != c.HeaderPacketID {
+				t.Errorf("%s header projection = %q/%d, want %q/%d", c.Name, c.ExpectedMethod, c.ExpectedPacketID, c.HeaderMethod, c.HeaderPacketID)
+			}
+		}
+		if c.Handler == "send" && c.OwnerStatus == 3 && c.ExpectedTag != -int64(c.PacketID) {
+			t.Errorf("%s tag = %d, want %d", c.Name, c.ExpectedTag, -int64(c.PacketID))
+		}
 		if got, want := c.ExpectedEffects, expectedPushReceiptRequestModel(c); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s = %v, want %v", c.Name, got, want)
 		}

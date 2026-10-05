@@ -4,11 +4,13 @@ Status: reviewed static source chain, runtime unexecuted. Observation date:
 2026-10-04. Client build: macOS KakaoTalk 26.8.0.
 
 The HINT handler constructs a request with `initWithPacketHeader:`. That
-initializer calls the base initializer, copies the supplied header's `method`
+initializer calls the base initializer, whose `initWithPacketHeader:` result is
+checked for non-null, then copies the supplied header's `method`
 into the request method, and copies its `packetId` into the request packet ID.
 The BLOCKSYNC handler constructs a request with
 `initWithPacketHeader:revision:plusRevision:`. Its base initializer receives the
-header; the initializer then stores the supplied revision and plus-revision
+header through the same HINT request initializer path; the result is checked
+before the initializer stores the supplied revision and plus-revision
 integers. The two handlers invoke their delegate callback attempt before these
 request constructors and call `sendCarriagePushReceipt:` only after construction.
 
@@ -31,10 +33,13 @@ contract.
 
 ## Provenance
 
-- HINT request initializer: `initWithPacketHeader:` IMP `0x101355a60`;
-  method/packet-ID field calls at `0x101355aac` and `0x101355ad4`.
+- HINT request allocation/callsite: alloc `0x101515338`, initializer call
+  `0x101515340`; initializer IMP `0x101355a60`; method/packet-ID field calls
+  at `0x101355aac` and `0x101355ad4`.
 - BLOCKSYNC request initializer: `initWithPacketHeader:revision:plusRevision:`
-  IMP `0x1016bb15c`; revision stores at `0x1016bb1a4` and `0x1016bb1b0`.
+  metadata `@32@0:8@16i24i28`, IMP `0x1016bb15c`; its base initializer call is
+  `0x1016bb190`, followed by signed-32 revision stores at `0x1016bb1a4` and
+  `0x1016bb1b0`.
 - `sendPushReceipt:` IMP `0x1017734f4`; owner block `0x1017751d8`.
 - `sendPacket:tag:` implementations: `0x100d48dfc` and `0x101773670`.
 - packet data/encryption/socket/write/timeout callsites:

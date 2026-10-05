@@ -1,9 +1,13 @@
 {
   "status": "reviewed-static-unexecuted-runtime",
   "cases": [
-    {"name":"hint_header_fields","handler":"hint","header_method_present":true,"header_packet_id_present":true,"revision":null,"plus_revision":null,"expected_effects":["delegate_callback_attempt","construct_from_header","copy_header_method","copy_header_packet_id","send_carriage_push_receipt"]},
-    {"name":"block_sync_revision_fields","handler":"block_sync","header_method_present":true,"header_packet_id_present":true,"revision":12,"plus_revision":3,"expected_effects":["delegate_callback_attempt","construct_from_header","set_revision","set_plus_revision","send_carriage_push_receipt"]},
-    {"name":"send_status_three_packet_id_17","handler":"send","owner_status":3,"packet_id":17,"expected_effects":["queue_owner_block","read_execution_status","read_packet_header","read_packet_id","derive_tag_negation","send_packet_tag"]},
-    {"name":"send_status_other_suppressed","handler":"send","owner_status":2,"packet_id":17,"expected_effects":["queue_owner_block","read_execution_status"]}
+    {"name":"hint_header_method_and_id","handler":"hint","header_method":"HINT","header_packet_id":17,"expected_method":"HINT","expected_packet_id":17,"expected_effects":["delegate_callback_attempt","construct_from_header","copy_header_method","copy_header_packet_id","send_carriage_push_receipt"]},
+    {"name":"hint_zero_packet_id","handler":"hint","header_method":"HINT","header_packet_id":0,"expected_method":"HINT","expected_packet_id":0,"expected_effects":["delegate_callback_attempt","construct_from_header","copy_header_method","copy_header_packet_id","send_carriage_push_receipt"]},
+    {"name":"block_sync_negative_revision","handler":"block_sync","header_method":"BLOCKSYNC","header_packet_id":17,"revision":-1,"plus_revision":0,"expected_method":"BLOCKSYNC","expected_packet_id":17,"expected_effects":["delegate_callback_attempt","construct_from_header","set_revision","set_plus_revision","send_carriage_push_receipt"]},
+    {"name":"block_sync_max_revision","handler":"block_sync","header_method":"BLOCKSYNC","header_packet_id":4294967295,"revision":2147483647,"plus_revision":-2147483648,"expected_method":"BLOCKSYNC","expected_packet_id":4294967295,"expected_effects":["delegate_callback_attempt","construct_from_header","set_revision","set_plus_revision","send_carriage_push_receipt"]},
+    {"name":"send_status_three_packet_id_17","handler":"send","owner_status":3,"packet_id":17,"expected_tag":-17,"expected_effects":["queue_owner_block","read_execution_status","read_packet_header","read_packet_id","derive_tag_negation","send_packet_tag"]},
+    {"name":"send_status_three_max_packet_id","handler":"send","owner_status":3,"packet_id":4294967295,"expected_tag":-4294967295,"expected_effects":["queue_owner_block","read_execution_status","read_packet_header","read_packet_id","derive_tag_negation","send_packet_tag"]},
+    {"name":"send_status_zero_suppressed","handler":"send","owner_status":0,"packet_id":17,"expected_effects":["queue_owner_block","read_execution_status"]},
+    {"name":"send_status_two_suppressed","handler":"send","owner_status":2,"packet_id":17,"expected_effects":["queue_owner_block","read_execution_status"]}
   ]
 }
