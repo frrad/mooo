@@ -132,9 +132,10 @@ The reviewed manager and carriage-agent owners are intentionally transport
 independent. Session now has a generic, transport-independent opt-in receipt
 hook: `BindPushReceipt` installs an injected sender and eligibility predicate
 before reader startup, `dispatchPushReceipt` runs it only for unmatched packets,
-and shutdown waits for its registered closer. The ordinary raw/typed push stream
-remains intact. The hook does not build, serialize, encrypt, or write receipt
-packets; its sender accepts an already prepared payload.
+and shutdown waits for the binding worker and any optional sender owner. The
+ordinary raw/typed push stream remains intact. The hook forwards the unmatched
+input `loco.Packet` to the injected sender; it does not build, serialize,
+encrypt, or write a receipt packet itself.
 
 The source-derived receipt body and packet constructor contracts are reviewed.
 The remaining integration work is to resolve typed, source-qualified incoming
