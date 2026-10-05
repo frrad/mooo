@@ -104,20 +104,70 @@ type pushReceiptBinding struct {
 	sender   PushReceiptSender
 	eligible func(loco.Packet) bool
 	closed   bool
+	jobs     chan loco.Packet
+	stop     chan struct{}
+	stopOnce sync.Once
+	done     chan struct{}
+}
+
+func newPushReceiptBinding(sender PushReceiptSender, eligible func(loco.Packet) bool) *pushReceiptBinding {
+	b := &pushReceiptBinding{
+		sender:   sender,
+		eligible: eligible,
+		jobs:     make(chan loco.Packet, requestLimit),
+		stop:     make(chan struct{}),
+		done:     make(chan struct{}),
+	}
+	go b.run()
+	return b
+}
+
+func (b *pushReceiptBinding) run() {
+	defer close(b.done)
+	for {
+		select {
+		case packet := <-b.jobs:
+			b.send(packet)
+		case <-b.stop:
+			return
+		}
+	}
+}
+
+func (b *pushReceiptBinding) enqueue(packet loco.Packet) {
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return
+	}
+	jobs, stop := b.jobs, b.stop
+	b.mu.Unlock()
+	select {
+	case jobs <- packet:
+	case <-stop:
+	}
 }
 
 func (b *pushReceiptBinding) send(packet loco.Packet) {
 	b.mu.Lock()
-	if b.closed || !b.eligible(packet) {
+	if b.closed {
 		b.mu.Unlock()
 		return
 	}
+	eligible := b.eligible
 	sender := b.sender
 	b.mu.Unlock()
-	// Sender execution is deliberately outside the binding lock. Injected
-	// owners may synchronously reenter Session or block on transport; Close
-	// must remain able to invalidate the binding in either case.
-	_ = sender.Send(packet)
+	// Eligibility and sender execution are both outside the binding lock so
+	// injected callbacks may synchronously reenter Session or block on I/O.
+	if !eligible(packet) {
+		return
+	}
+	b.mu.Lock()
+	closed := b.closed
+	b.mu.Unlock()
+	if !closed {
+		_ = sender.Send(packet)
+	}
 }
 
 func (b *pushReceiptBinding) close() {
@@ -129,8 +179,18 @@ func (b *pushReceiptBinding) close() {
 	b.closed = true
 	sender := b.sender
 	b.mu.Unlock()
+	b.stopOnce.Do(func() { close(b.stop) })
 	if closer, ok := sender.(pushReceiptCloser); ok {
 		closer.Close()
+	}
+}
+
+func (b *pushReceiptBinding) wait(ctx context.Context) error {
+	select {
+	case <-b.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -162,7 +222,6 @@ type Session struct {
 	receiveHeaderTimeout       receiveHeaderTimeoutController
 	inSegmentTimeout           InSegmentTimeoutController
 	pushReceipt                *pushReceiptBinding
-	receiptWorkers             int
 	receiptDone                chan struct{}
 	receiveHeaderTimeoutEnable func(command string, packetID uint32) (byte, bool)
 	receiveHeaderTimeoutState  map[uint32]*receiveHeaderTimeoutToken
@@ -875,31 +934,17 @@ func (s *Session) BindPushReceipt(sender PushReceiptSender, eligible func(loco.P
 	if s.pushReceipt != nil {
 		return fmt.Errorf("client: push-receipt owner already bound")
 	}
-	s.pushReceipt = &pushReceiptBinding{sender: sender, eligible: eligible}
+	s.pushReceipt = newPushReceiptBinding(sender, eligible)
+	s.receiptDone = s.pushReceipt.done
 	return nil
 }
 
 func (s *Session) dispatchPushReceipt(packet loco.Packet) {
 	s.mu.Lock()
 	binding := s.pushReceipt
-	if binding != nil {
-		if s.receiptWorkers == 0 {
-			s.receiptDone = make(chan struct{})
-		}
-		s.receiptWorkers++
-	}
-	done := s.receiptDone
 	s.mu.Unlock()
 	if binding != nil {
-		go func() {
-			binding.send(packet)
-			s.mu.Lock()
-			s.receiptWorkers--
-			if s.receiptWorkers == 0 {
-				close(done)
-			}
-			s.mu.Unlock()
-		}()
+		binding.enqueue(packet)
 	}
 }
 
@@ -1111,16 +1156,12 @@ func (s *Session) Shutdown(ctx context.Context) error {
 	if submitter != nil {
 		waitErr = submitter.Wait(ctx)
 	}
-	s.mu.Lock()
-	receiptDone := s.receiptDone
-	s.mu.Unlock()
 	var receiptErr error
-	if receiptDone != nil {
-		select {
-		case <-receiptDone:
-		case <-ctx.Done():
-			receiptErr = ctx.Err()
-		}
+	s.mu.Lock()
+	binding := s.pushReceipt
+	s.mu.Unlock()
+	if binding != nil {
+		receiptErr = binding.wait(ctx)
 	}
 	return errors.Join(closeErr, waitErr, receiptErr)
 }
