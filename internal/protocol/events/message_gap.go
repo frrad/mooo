@@ -20,9 +20,8 @@ func (MessageGap) isEvent()   {}
 // Decode remains the strict protocol parser. An invalid or ambiguous identity
 // remains an error: callers must stop message admission rather than skip it.
 func DecodeForDelivery(packet loco.Packet) (Event, error) {
-	result, err := Decode(packet)
-	if err == nil || packet.Header.Method != "MSG" {
-		return result, err
+	if packet.Header.Method != "MSG" {
+		return Decode(packet)
 	}
 	raw := bson.Raw(packet.Body)
 	chatID, logID, typ, log, envelopeErr := messageEnvelope(raw)
@@ -42,6 +41,10 @@ func DecodeForDelivery(packet loco.Packet) (Event, error) {
 		if e != nil || outer != logID {
 			return nil, ErrMalformedEvent
 		}
+	}
+	result, err := Decode(packet)
+	if err == nil {
+		return result, nil
 	}
 	return MessageGap{ChatID: chatID, LogID: logID, Type: typ,
 		AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt")}, nil

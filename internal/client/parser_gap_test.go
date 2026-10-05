@@ -79,3 +79,27 @@ func TestMalformedNonMessagePacketDoesNotStopDelivery(t *testing.T) {
 		t.Fatal("malformed non-message packet triggered terminal interruption")
 	}
 }
+
+func TestLiveMessageWithConflictingIdentityStopsAdmission(t *testing.T) {
+	body, err := bson.Marshal(bson.D{
+		{Key: "chatId", Value: int64(42)},
+		{Key: "chatId", Value: int64(43)},
+		{Key: "chatLog", Value: bson.D{{Key: "logId", Value: int64(100)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "valid"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := make(chan loco.Packet, 1)
+	out := make(chan events.Result, 1)
+	raw <- loco.Packet{Header: loco.Header{Method: "MSG"}, Body: body}
+	close(raw)
+	interrupted := false
+	decodeEventStreamWithTerminal(raw, out, nil, nil, func() { interrupted = true })
+	result := <-out
+	if !errors.Is(result.Err, events.ErrMalformedEvent) || result.Event != nil {
+		t.Fatalf("result = %#v, want identity failure", result)
+	}
+	if !interrupted {
+		t.Fatal("conflicting message identity did not interrupt live admission")
+	}
+}

@@ -53,3 +53,24 @@ func TestDecodeForDeliveryRejectsAmbiguousIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodeForDeliveryValidContentStillValidatesEnvelope(t *testing.T) {
+	baseLog := bson.D{{Key: "logId", Value: int64(100)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "valid"}}
+	cases := []struct {
+		name  string
+		outer bson.D
+		log   bson.D
+	}{
+		{name: "duplicate chat", outer: bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatId", Value: int64(42)}}, log: baseLog},
+		{name: "conflicting outer log", outer: bson.D{{Key: "chatId", Value: int64(42)}, {Key: "logId", Value: int64(101)}}, log: baseLog},
+		{name: "conflicting inner log", outer: bson.D{{Key: "chatId", Value: int64(42)}}, log: append(append(bson.D{}, baseLog...), bson.E{Key: "logId", Value: int64(101)})},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := DecodeForDelivery(gapPacket(t, tc.outer, tc.log))
+			if got != nil || !errors.Is(err, ErrMalformedEvent) {
+				t.Fatalf("decoded=%#v err=%v, want fail-closed identity", got, err)
+			}
+		})
+	}
+}

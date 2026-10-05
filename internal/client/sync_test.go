@@ -111,6 +111,28 @@ func TestCatchUpPreservesMalformedMessagePositionAndCommitOrder(t *testing.T) {
 	backend.wait(t)
 }
 
+func TestCatchUpRejectsConflictingValidMessageIdentity(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitMessage(42, 99); err != nil {
+		t.Fatal(err)
+	}
+	backend := newScriptedBackend(t, false,
+		expectRequest("SYNCMSG", checkSyncRequest(42, 99, 100), statusDocument(
+			bson.E{Key: "chatLogs", Value: bson.A{
+				bson.D{{Key: "logId", Value: int64(100)}, {Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "valid"}},
+			}},
+		)),
+	)
+	api := testContinuityClient(t, checkpoint, backend)
+	if _, err := api.CatchUp(t.Context(), 42, 100); !errors.Is(err, events.ErrMalformedEvent) {
+		t.Fatalf("CatchUp error = %v, want malformed identity", err)
+	}
+	if !checkpoint.IsCommitted(42, 99) || checkpoint.IsCommitted(42, 100) {
+		t.Fatal("conflicting identity changed the durable checkpoint")
+	}
+	backend.wait(t)
+}
+
 func TestCatchUpFailsOnNoProgress(t *testing.T) {
 	checkpoint := testCheckpoint(t)
 	if _, err := checkpoint.CommitMessage(42, 100); err != nil {
