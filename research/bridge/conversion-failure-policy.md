@@ -22,7 +22,7 @@ ambiguous retry.
 
 Transport and infrastructure failures remain transient: cancellation, network
 failure, timeouts, CDN unavailability, truncated bodies, and Matrix upload
-failure do not advance the cursor. They are replayed by the normal framework
-queue. This policy does not claim coverage for parser failures before a typed
+failure do not advance the cursor. They remain eligible for catch-up replay after restart or reconnect; the
+framework queue does not automatically retry a failed conversion. This policy does not claim coverage for parser failures before a typed
 photo event, other message subtypes, OpenChat-specific behavior, or live CDN
 encoding and availability. Those remain explicit follow-up gaps.
