@@ -32,9 +32,42 @@ four-byte string length, the string bytes, and its trailing NUL. The fixture
 pins those per-element consumed widths, not only predecoded labels. Decoded
 signed int32/int64 and other scalar values are inserted as dictionary
 entries. An unknown element type makes the cursor helper return zero; the
-outer loop then returns the dictionary accumulated so far. Repeated keys are
-assigned through `setObject:forKey:`, so a later value replaces the earlier
+outer loop then returns the dictionary accumulated so far. Repeated keys with nonnil decoded values are
+assigned through `setObject:forKey:`, so a later nonnil value replaces the earlier
 value. Bytes after a valid zero-type terminator are not inspected by this loop.
+
+## Cursor-recognized null and undefined values
+
+The cursor and value decoder have different supported-type boundaries.
+The cursor recognizes BSON null (`0x0a`) and undefined (`0x06`), advances
+past the type byte and NUL-terminated key with zero payload bytes, and
+continues to the next element. The value helper (`0x1017eb504`) returns
+nil for both types. The dictionary loop's nil-result branch at
+`0x1017eb4bc` skips insertion and continues; it does not insert `NSNull`,
+remove the key, or terminate parsing.
+
+Consequently a null-only dictionary is empty, a field after null is still
+decoded, and a null duplicate retains any earlier nonnil value. The synthetic
+vectors distinguish `r=12; r=null; pr=3` (both integer values retained)
+from `r=null; r=12` (the later integer inserted). Undefined follows the same
+bounded skip-and-continue behavior. A cursor-unsupported type such as the
+fixture's `0x7f` remains a separate stop-with-partial-dictionary path.
+
+This is a BSON decoder boundary, distinct from the incoming model's
+`NSNull` mapping and KVC guards. A generic decoder that inserts null and
+overwrites duplicates would erase the retained `r` value before notice
+projection. Full incoming eligibility must preserve the observed decoder
+behavior rather than using the model's null guard to infer BSON behavior.
+These vectors do not establish every other cursor-recognized type, nested
+array behavior, malformed-pointer behavior, or downstream receipt acceptance.
+
+The cursor's jump table at `0x101a4f38c` maps both `0x06` and `0x0a` to
+`0x10164bcc0` with payload width zero. The shared cursor advancement at
+`0x10164bcc0` consumes the type byte, key bytes, key terminator, and payload;
+the next type is returned at `0x10164bcd8`. The value-helper dispatch and
+outer nil-result branch were independently traced in the authorized
+26.8.0 ARM64 client. This observation is static source evidence; live decoder
+execution remains untested.
 
 The decoder has no visible NSError result. Its cursor uses raw pointer reads,
 `strlen`, and element lengths without an NSData-length parameter. Exact
