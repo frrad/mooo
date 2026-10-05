@@ -208,3 +208,23 @@ func TestSendMatrixImageDoesNotRetryAmbiguousSend(t *testing.T) {
 		t.Fatal("image was not attempted exactly once")
 	}
 }
+
+func TestSendMatrixImageUsesCapturedClientAfterDisconnect(t *testing.T) {
+	chatLog, _ := bson.Marshal(bson.D{{Key: "logId", Value: int64(78)}, {Key: "sendAt", Value: int64(1700000000)}})
+	fake := &fakeKakao{imageResp: media.SendResult{ChatLog: chatLog}}
+	kc := connectedClient(t, fake)
+	oldDownloader := matrixImageDownloader
+	matrixImageDownloader = func(context.Context, bridgev2.MatrixAPI, id.ContentURIString, *event.EncryptedFileInfo) ([]byte, error) {
+		kc.mu.Lock()
+		kc.client = nil
+		kc.mu.Unlock()
+		return []byte("image"), nil
+	}
+	t.Cleanup(func() { matrixImageDownloader = oldDownloader })
+	if _, err := kc.sendMatrixImage(context.Background(), fake, &photoMatrixAPI{}, 3000, "mxc://example/image", nil); err != nil {
+		t.Fatal(err)
+	}
+	if fake.imageCalls != 1 {
+		t.Fatalf("image calls=%d, want 1", fake.imageCalls)
+	}
+}
