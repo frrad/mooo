@@ -2,24 +2,56 @@
   "status": "reviewed-static-synthetic",
   "cases": [
     {
-      "name": "nil_and_nsnull_values_are_serialized_as_nsnull",
-      "input": {"nil_value": null, "explicit_nsnull": "NSNull"},
-      "expected": {"nil_value": "NSNull", "explicit_nsnull": "NSNull"}
+      "name": "dynamic_properties_stop_before_sgjsonobject",
+      "subclass_properties": ["child"],
+      "superclass_properties": ["base"],
+      "values": [
+        {"name": "child", "kind": "scalar", "scalar_result": "child-value"},
+        {"name": "base", "kind": "scalar", "scalar_result": "0"}
+      ],
+      "expected_properties": ["child", "base"],
+      "expected": {
+        "child": {"kind": "scalar", "value": "child-value"},
+        "base": {"kind": "scalar", "value": "0"}
+      }
     },
     {
-      "name": "ordinary_scalar_is_retained",
-      "input": {"method": "HINT", "packet_id": 7, "zero": 0},
-      "expected": {"method": "HINT", "packet_id": 7, "zero": 0}
+      "name": "nil_and_nsnull_are_distinct_from_ordinary_string",
+      "values": [
+        {"name": "nil_value", "kind": "nil"},
+        {"name": "explicit_nsnull", "kind": "nsnull"},
+        {"name": "ordinary", "kind": "scalar", "scalar_result": "NSNull"}
+      ],
+      "expected_properties": [],
+      "expected": {
+        "nil_value": {"kind": "nsnull", "value": "NSNull"},
+        "explicit_nsnull": {"kind": "nsnull", "value": "NSNull"},
+        "ordinary": {"kind": "scalar", "value": "NSNull"}
+      }
     },
     {
-      "name": "nested_sgjson_value_is_projected_recursively",
-      "input": {"body": {"revision": 0, "plus_revision": 42}},
-      "expected": {"body": {"revision": 0, "plus_revision": 42}}
+      "name": "sgjson_precedes_number_array_when_both_protocols_present",
+      "values": [
+        {"name": "nested", "kind": "object", "conforms_json": true, "conforms_number_array": true, "json_object_result": "json-result", "number_array_result": "array-result"}
+      ],
+      "expected_properties": [],
+      "expected": {"nested": {"kind": "json", "value": "json-result"}}
     },
     {
-      "name": "number_array_projection_retains_order_and_values",
-      "input": {"numbers": [0, -1, 4294967295]},
-      "expected": {"numbers": [0, -1, 4294967295]}
+      "name": "number_array_uses_number_array_projection",
+      "values": [
+        {"name": "numbers", "kind": "array", "conforms_number_array": true, "number_array_result": "[0,-1,4294967295]"}
+      ],
+      "expected_properties": [],
+      "expected": {"numbers": {"kind": "number_array", "value": "[0,-1,4294967295]"}}
+    },
+    {
+      "name": "ordinary_scalar_zero_is_retained",
+      "values": [
+        {"name": "zero", "kind": "scalar", "scalar_result": "0"}
+      ],
+      "expected_properties": [],
+      "expected": {"zero": {"kind": "scalar", "value": "0"}}
     }
   ]
 }

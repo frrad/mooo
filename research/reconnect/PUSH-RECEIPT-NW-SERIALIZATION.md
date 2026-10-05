@@ -29,7 +29,8 @@ and guard order, but does not prove BSON key order, field-presence/default
 policy, encryption output, or any server response.
 
 The request object field inventory remains separate from wire serialization.
-`LocoPushReceipt` inherits from `SGJsonObject` and declares `method`
+`LocoPushReceipt` inherits from `LocoModel` (which inherits from
+`SGJsonObject`) and declares `method`
 (`NSString`) and `packetId` (`uint32`). `LocoHintPushReceipt` adds no fields.
 `LocoBlockSyncPushReceipt` adds signed `int32 revision` and `plusRevision`.
 The bundled first-party `SGJsonKit` implementation enumerates the dynamic
@@ -69,12 +70,13 @@ mapping dictionary. A separate app `LocoModel` implementation of
 `nameMappingDictionary` at `0x10167bea0` returns nil, and its neighboring
 `0x10167bea8` implementation also returns nil; the `0x10167beb0`
 `initWithJSONObject:` path calls that selector while constructing a model.
-The class metadata places `LocoPushReceipt` directly under `SGJsonObject`,
-not under `LocoModel`, so this nil fallback is a bounded model fact and does
-not establish that HINT dispatches through `LocoModel`. `SGJsonKit` itself has
-no `nameMappingDictionary` method. No HINT body key or default value is
-established. The static base removal is bounded to the `LocoPushReceipt`
-property list (`method` and `packetId`).
+The class metadata resolves `LocoPushReceipt`'s superclass pointer
+`0x1021ae3c8` to `LocoModel`, whose superclass is
+`_OBJC_CLASS_$_SGJsonObject`. Thus HINT reaches the nil `LocoModel` mapping
+fallback through `LocoPushReceipt` → `LocoModel` → `SGJsonObject`;
+`SGJsonKit` itself has no `nameMappingDictionary` method. No HINT body key or
+default value is established. The static base removal is bounded to the
+`LocoPushReceipt` property list (`method` and `packetId`).
 
 The NW send completion is a Swift `NWConnection.SendCompletion` closure at
 `0x100d4a840`. Its body weak-loads the owner and returns when that owner has
