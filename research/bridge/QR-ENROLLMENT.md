@@ -21,16 +21,19 @@ enrollment (approval, device authorization, credential persistence, and
 restart resume) still requires live validation. The probe used an authorized
 owned lab environment and did not import official-client credentials.
 
-The second controlled observation (2026-10-04 America/Los_Angeles) used the
-owned B Android AVD, a fresh bridge profile directory, and the disposable
-Matrix homeserver. The QR image was created about 0.7 seconds after the
-`login qr` command; its authenticated Matrix media replay decoded successfully
-with ZXing and matched the Matrix event body exactly. Importing that image
-through KakaoTalk's Album scanner produced the generic “You cannot use this
-QR code” modal. The bridge received no approval, device-authorization code, or
-successful poll transition and eventually expired the challenge. The fresh
-profile, temporary image, and Android copy were removed afterward; no
-credentials were installed.
+Two separate fresh-profile Android observations followed the structural probe.
+The first used a disposable container installation with an empty profile
+directory; the QR delivered to its Matrix management room was imported through
+the owned Android 26.8.2 Album scanner and produced the generic “You cannot use
+this QR code” modal. The second used the native bridge binary with another
+fresh profile in the same acceptance window and produced the same modal before
+approval. Neither attempt received device authorization or persisted
+credentials; transient profiles and captures were removed afterward.
+
+For the recovered native-attempt image, authenticated Matrix media replay
+decoded successfully with ZXing and matched the Matrix event body exactly.
+This rules out media transport and payload mutation for that attempt, but it
+does not make the server challenge acceptable.
 
 The bridge treats QR cancellation as fail closed: an HTTP 200 with an empty
 body or explicit status zero is accepted; a nonzero or malformed status body
@@ -115,16 +118,11 @@ host. The shared bridgev2 command currently owns PNG generation (including its
 error-correction and raster settings); the connector has no image-rendering
 hook and must not prepend an unproven host or rewrite the challenge.
 
-The controlled presentation observation was rejected by the owned Android
-client with the modal above. A private replay of the actual rejected Matrix
-image (retrieved from the disposable homeserver and deleted after analysis)
-decoded successfully with ZXing and matched the original Matrix event body
-byte-for-byte. This rules out media corruption, PNG transport, and raw-payload
-mutation for that attempt. The modal/source trace assigns the failure to the
-scanner's QR-info `GENERAL_NOT_FOUND` branch; the remaining cause is the
-server-side reason for that response, which is not exposed by the sanitized
-observation. The bridgev2 renderer is supplied by the framework rather than
-the connector.
+The modal/source trace assigns both failed scans to the scanner's QR-info
+`GENERAL_NOT_FOUND` branch. Offline decoding only proves that the recovered
+image preserved the server payload; the remaining cause is the server-side
+reason for that response, which is not exposed by the sanitized observations.
+The bridgev2 renderer is supplied by the framework rather than the connector.
 
 The observed modal can now be assigned to a concrete Android branch from the
 offline source audit. The scanner's QR item posts the invalid-message event
