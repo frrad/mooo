@@ -36,17 +36,19 @@ type PushReceiptPingConfig interface{ PingInterval() time.Duration }
 // The carriage-agent send remains an injected inline callback; the separate
 // agent status gate and packet-tag derivation are outside this owner.
 type PushReceiptOwner struct {
-	mu         sync.Mutex
-	manager    string
-	agent      func() string
-	queue      PushReceiptQueue
-	scheduler  PushReceiptPingScheduler
-	config     PushReceiptPingConfig
-	send       func(target string, packet any)
-	closeChild func()
-	child      PushReceiptChild
-	closed     bool
-	generation uint64
+	mu          sync.Mutex
+	manager     string
+	agent       func() string
+	queue       PushReceiptQueue
+	scheduler   PushReceiptPingScheduler
+	config      PushReceiptPingConfig
+	send        func(target string, packet any)
+	closeChild  func()
+	child       PushReceiptChild
+	closed      bool
+	generation  uint64
+	activeCount int
+	activeDone  chan struct{}
 }
 
 func NewPushReceiptOwner(managerTarget string, agentResolver func() string, queue PushReceiptQueue, scheduler PushReceiptPingScheduler, config PushReceiptPingConfig, send func(target string, packet any), childCloser ...func()) (*PushReceiptOwner, error) {
@@ -57,7 +59,9 @@ func NewPushReceiptOwner(managerTarget string, agentResolver func() string, queu
 	if len(childCloser) > 0 {
 		closeChild = childCloser[0]
 	}
-	return &PushReceiptOwner{manager: managerTarget, agent: agentResolver, queue: queue, scheduler: scheduler, config: config, send: send, closeChild: closeChild}, nil
+	done := make(chan struct{})
+	close(done)
+	return &PushReceiptOwner{manager: managerTarget, agent: agentResolver, queue: queue, scheduler: scheduler, config: config, send: send, closeChild: closeChild, activeDone: done}, nil
 }
 
 // NewPushReceiptOwnerWithChild composes manager shutdown with the downstream
@@ -90,9 +94,10 @@ func (o *PushReceiptOwner) Send(packet any) error {
 		return nil
 	}
 	queue.Enqueue(func() {
-		if !o.active(generation) {
+		if !o.begin(generation) {
 			return
 		}
+		defer o.end()
 		scheduler.Cancel(o.manager, PushReceiptPingSelector, nil)
 	})
 	if !o.active(generation) {
@@ -103,9 +108,10 @@ func (o *PushReceiptOwner) Send(packet any) error {
 		return nil
 	}
 	queue.Enqueue(func() {
-		if !o.active(generation) {
+		if !o.begin(generation) {
 			return
 		}
+		defer o.end()
 		delay := config.PingInterval()
 		if !o.active(generation) {
 			return
@@ -119,6 +125,28 @@ func (o *PushReceiptOwner) active(generation uint64) bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return !o.closed && o.generation == generation
+}
+
+func (o *PushReceiptOwner) begin(generation uint64) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed || o.generation != generation {
+		return false
+	}
+	if o.activeCount == 0 {
+		o.activeDone = make(chan struct{})
+	}
+	o.activeCount++
+	return true
+}
+
+func (o *PushReceiptOwner) end() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.activeCount--
+	if o.activeCount == 0 {
+		close(o.activeDone)
+	}
 }
 
 // Close invalidates queued manager cancellation/scheduling and future sends.
@@ -154,9 +182,15 @@ func (o *PushReceiptOwner) Wait(ctx context.Context) error {
 	}
 	o.mu.Lock()
 	child := o.child
+	done := o.activeDone
 	o.mu.Unlock()
-	if child == nil {
-		return nil
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	return child.Wait(ctx)
+	if child != nil {
+		return child.Wait(ctx)
+	}
+	return nil
 }

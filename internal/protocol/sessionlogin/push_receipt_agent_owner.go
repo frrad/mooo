@@ -120,7 +120,12 @@ func (o *PushReceiptAgentOwner) Close() {
 	o.mu.Lock()
 	o.closed = true
 	o.generation++
+	done := o.activeDone
 	o.mu.Unlock()
+	// Close is called by Session's interrupt-only closer goroutine. Waiting
+	// here keeps the downstream callback inside the receipt owner's join
+	// boundary while remaining safe for callbacks that reenter Session.Close.
+	<-done
 }
 
 // Wait joins callbacks admitted before Close. Queued work rejected by Close
