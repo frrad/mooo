@@ -15,20 +15,21 @@
         "start_on_queue"
       ],
       "pending_map_gap": true,
-      "immediate_failure": false,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "receive_work_item_present": false,
       "path_present": false,
       "path_status": "",
       "owner_fallback_predicate": false,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
       "expected_status_updates": [],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "setup_replaces_previous_connection",
@@ -46,20 +47,21 @@
         "start_on_queue"
       ],
       "pending_map_gap": true,
-      "immediate_failure": false,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "receive_work_item_present": false,
       "path_present": false,
       "path_status": "",
       "owner_fallback_predicate": false,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
       "expected_status_updates": [],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "owner_lifetime_guard",
@@ -72,20 +74,21 @@
       "expected_cancel_id": "",
       "expected_effects": [],
       "pending_map_gap": true,
-      "immediate_failure": false,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "receive_work_item_present": false,
       "path_present": false,
       "path_status": "",
       "owner_fallback_predicate": false,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
       "expected_status_updates": [],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "waiting_extracts_error_without_fallback",
@@ -109,14 +112,12 @@
         "fail_pending_requests_with_error"
       ],
       "pending_map_gap": true,
-      "immediate_failure": true,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "receive_work_item_present": true,
       "path_present": true,
       "path_status": "satisfied",
       "owner_fallback_predicate": false,
-      "dispatcher_error_predicate": true,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
@@ -124,7 +125,10 @@
         0
       ],
       "expected_local_error_code": -1,
-      "expected_local_error_domain": "LocoAgent"
+      "expected_local_error_domain": "LocoAgent",
+      "immediate_failure_code": 61,
+      "dispatcher_error_code": 54,
+      "dispatcher_tls_error": false
     },
     {
       "name": "failed_allows_fallback_input",
@@ -144,20 +148,21 @@
         "fallback_to_v2sl"
       ],
       "pending_map_gap": true,
-      "immediate_failure": false,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "receive_work_item_present": true,
       "path_present": false,
       "path_status": "",
       "owner_fallback_predicate": true,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
       "expected_status_updates": [],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "setup_state_logs_only",
@@ -172,20 +177,21 @@
         "log_state"
       ],
       "pending_map_gap": true,
-      "immediate_failure": false,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "receive_work_item_present": false,
       "path_present": false,
       "path_status": "",
       "owner_fallback_predicate": false,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
       "expected_status_updates": [],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "preparing_state_logs_only",
@@ -200,20 +206,21 @@
         "log_state"
       ],
       "pending_map_gap": true,
-      "immediate_failure": false,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "receive_work_item_present": false,
       "path_present": false,
       "path_status": "",
       "owner_fallback_predicate": false,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
       "expected_status_updates": [],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "ready_logs_tls_and_followup",
@@ -236,14 +243,12 @@
         "read_header"
       ],
       "pending_map_gap": true,
-      "immediate_failure": false,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "receive_work_item_present": false,
       "path_present": false,
       "path_status": "",
       "owner_fallback_predicate": false,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": true,
       "handshake_data_present": true,
       "ready_status": 3,
@@ -251,7 +256,10 @@
         3
       ],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "cancelled_cancels_work_and_dispatches_error",
@@ -270,14 +278,12 @@
         "fail_pending_requests_with_error"
       ],
       "pending_map_gap": true,
-      "immediate_failure": false,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "receive_work_item_present": true,
       "path_present": false,
       "path_status": "",
       "owner_fallback_predicate": false,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
@@ -285,7 +291,10 @@
         0
       ],
       "expected_local_error_code": -1,
-      "expected_local_error_domain": "LocoAgent"
+      "expected_local_error_domain": "LocoAgent",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "unknown_state_logs",
@@ -300,20 +309,21 @@
         "log_unknown_state"
       ],
       "pending_map_gap": true,
-      "immediate_failure": false,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "receive_work_item_present": false,
       "path_present": false,
       "path_status": "",
       "owner_fallback_predicate": false,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
       "expected_status_updates": [],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "failed_owner_virtual_predicate_forces_error",
@@ -337,14 +347,12 @@
         "fail_pending_requests_with_error"
       ],
       "pending_map_gap": true,
-      "immediate_failure": false,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "receive_work_item_present": true,
       "path_present": false,
       "path_status": "",
       "owner_fallback_predicate": false,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
@@ -352,7 +360,10 @@
         0
       ],
       "expected_local_error_code": -1,
-      "expected_local_error_domain": "LocoAgent"
+      "expected_local_error_domain": "LocoAgent",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "failed_owner_flags_force_error",
@@ -376,14 +387,12 @@
         "fail_pending_requests_with_error"
       ],
       "pending_map_gap": true,
-      "immediate_failure": false,
       "owner_flag_a": true,
       "owner_flag_b": false,
       "receive_work_item_present": true,
       "path_present": false,
       "path_status": "",
       "owner_fallback_predicate": true,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
@@ -391,7 +400,10 @@
         0
       ],
       "expected_local_error_code": -1,
-      "expected_local_error_domain": "LocoAgent"
+      "expected_local_error_domain": "LocoAgent",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "waiting_path_absent_logs_only",
@@ -404,7 +416,6 @@
       "receive_work_item_present": true,
       "path_present": false,
       "path_status": "",
-      "immediate_failure": true,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "expected_cancel_id": "",
@@ -413,13 +424,15 @@
       ],
       "pending_map_gap": true,
       "owner_fallback_predicate": true,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
       "expected_status_updates": [],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 61,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "waiting_unsatisfied_path_logs_only",
@@ -432,7 +445,6 @@
       "receive_work_item_present": true,
       "path_present": true,
       "path_status": "unsatisfied",
-      "immediate_failure": true,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "expected_cancel_id": "",
@@ -441,13 +453,15 @@
       ],
       "pending_map_gap": true,
       "owner_fallback_predicate": true,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
       "expected_status_updates": [],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 61,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "waiting_flags_block_helper",
@@ -460,7 +474,6 @@
       "receive_work_item_present": true,
       "path_present": true,
       "path_status": "satisfied",
-      "immediate_failure": true,
       "owner_flag_a": true,
       "owner_flag_b": false,
       "expected_cancel_id": "",
@@ -469,13 +482,15 @@
       ],
       "pending_map_gap": true,
       "owner_fallback_predicate": true,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
       "expected_status_updates": [],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 61,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "waiting_predicates_false_logs_only",
@@ -488,7 +503,6 @@
       "receive_work_item_present": true,
       "path_present": true,
       "path_status": "requires_connection",
-      "immediate_failure": false,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "expected_cancel_id": "",
@@ -497,13 +511,15 @@
       ],
       "pending_map_gap": true,
       "owner_fallback_predicate": false,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
       "expected_status_updates": [],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "failed_without_work_or_connection",
@@ -516,7 +532,6 @@
       "receive_work_item_present": false,
       "path_present": false,
       "path_status": "",
-      "immediate_failure": true,
       "owner_flag_a": false,
       "owner_flag_b": false,
       "expected_cancel_id": "",
@@ -531,7 +546,6 @@
       ],
       "pending_map_gap": true,
       "owner_fallback_predicate": false,
-      "dispatcher_error_predicate": false,
       "ready_handshake_enabled": false,
       "handshake_data_present": false,
       "ready_status": 3,
@@ -539,7 +553,10 @@
         0
       ],
       "expected_local_error_code": -1,
-      "expected_local_error_domain": "LocoAgent"
+      "expected_local_error_domain": "LocoAgent",
+      "immediate_failure_code": 61,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "waiting_path_predicate_invokes_fallback_helper",
@@ -552,8 +569,6 @@
       "receive_work_item_present": true,
       "path_present": true,
       "path_status": "satisfied",
-      "immediate_failure": false,
-      "dispatcher_error_predicate": true,
       "owner_fallback_predicate": true,
       "owner_flag_a": false,
       "owner_flag_b": false,
@@ -572,7 +587,10 @@
       "ready_status": 3,
       "expected_status_updates": [],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 54,
+      "dispatcher_tls_error": false
     },
     {
       "name": "waiting_immediate_predicate_invokes_helper",
@@ -585,8 +603,6 @@
       "receive_work_item_present": true,
       "path_present": true,
       "path_status": "requires_connection",
-      "immediate_failure": true,
-      "dispatcher_error_predicate": false,
       "owner_fallback_predicate": true,
       "owner_flag_a": false,
       "owner_flag_b": false,
@@ -611,7 +627,10 @@
         0
       ],
       "expected_local_error_code": -1,
-      "expected_local_error_domain": "LocoAgent"
+      "expected_local_error_domain": "LocoAgent",
+      "immediate_failure_code": 61,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "ready_crypto_without_connection",
@@ -624,8 +643,6 @@
       "receive_work_item_present": false,
       "path_present": false,
       "path_status": "",
-      "immediate_failure": false,
-      "dispatcher_error_predicate": false,
       "owner_fallback_predicate": false,
       "owner_flag_a": false,
       "owner_flag_b": false,
@@ -646,7 +663,10 @@
         3
       ],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     },
     {
       "name": "ready_connection_nil_handshake_sends_none",
@@ -659,8 +679,6 @@
       "receive_work_item_present": false,
       "path_present": false,
       "path_status": "",
-      "immediate_failure": false,
-      "dispatcher_error_predicate": false,
       "owner_fallback_predicate": false,
       "owner_flag_a": false,
       "owner_flag_b": false,
@@ -684,7 +702,10 @@
         3
       ],
       "expected_local_error_code": null,
-      "expected_local_error_domain": ""
+      "expected_local_error_domain": "",
+      "immediate_failure_code": 0,
+      "dispatcher_error_code": 0,
+      "dispatcher_tls_error": false
     }
   ]
 }

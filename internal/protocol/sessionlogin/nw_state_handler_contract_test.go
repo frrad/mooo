@@ -24,8 +24,9 @@ type nwStateCase struct {
 	ReceiveWorkItemPresent       bool     `json:"receive_work_item_present"`
 	PathPresent                  bool     `json:"path_present"`
 	PathStatus                   string   `json:"path_status"`
-	ImmediateFailure             bool     `json:"immediate_failure"`
-	DispatcherErrorPredicate     bool     `json:"dispatcher_error_predicate"`
+	ImmediateFailureCode         int      `json:"immediate_failure_code"`
+	DispatcherErrorCode          int      `json:"dispatcher_error_code"`
+	DispatcherTLSError           bool     `json:"dispatcher_tls_error"`
 	OwnerFallbackPredicate       bool     `json:"owner_fallback_predicate"`
 	OwnerFlagA                   bool     `json:"owner_flag_a"`
 	OwnerFlagB                   bool     `json:"owner_flag_b"`
@@ -72,7 +73,7 @@ func projectNWState(c nwStateCase) nwStateResult {
 		// predicates.
 		if !c.OwnerFlagA && !c.OwnerFlagB && c.PathPresent &&
 			(c.PathStatus == "satisfied" || c.PathStatus == "requires_connection") &&
-			(c.DispatcherErrorPredicate || c.ImmediateFailure) {
+			(dispatcherErrorPredicate(c) || immediateFailurePredicate(c)) {
 			effects = append(effects, "extract_state_error", "invoke_failure_helper")
 			appendFailureHelperEffects(&effects, c)
 			cancelID = helperCancelID(c)
@@ -153,11 +154,23 @@ func appendFailureHelperEffects(effects *[]string, c nwStateCase) {
 	if c.CurrentConnectionPresent {
 		*effects = append(*effects, "clear_state_handler", "cancel_current_connection")
 	}
-	if c.ImmediateFailure || !c.OwnerFallbackPredicate || c.OwnerFlagA || c.OwnerFlagB {
+	if immediateFailurePredicate(c) || !c.OwnerFallbackPredicate || c.OwnerFlagA || c.OwnerFlagB {
 		*effects = append(*effects, "convert_nw_error", "set_status_error", "dispatch_main_queue", "construct_locoagent_error", "fail_pending_requests_with_error")
 	} else {
 		*effects = append(*effects, "fallback_to_v2sl")
 	}
+}
+
+// These predicates are sourced from the actual error payload. The dispatcher
+// compares POSIX code 0x36 (54) or the TLS error case; the helper's immediate
+// failure check compares POSIX code 0x3d (61). Adjacent codes do not satisfy
+// either comparison.
+func dispatcherErrorPredicate(c nwStateCase) bool {
+	return c.DispatcherErrorCode == 54 || c.DispatcherTLSError
+}
+
+func immediateFailurePredicate(c nwStateCase) bool {
+	return c.ImmediateFailureCode == 61
 }
 
 func TestNWStateHandlerFixture(t *testing.T) {
@@ -193,5 +206,23 @@ func TestNWStateHandlerFixture(t *testing.T) {
 			got.LocalErrorDomain != c.ExpectedLocalErrorDomain {
 			t.Errorf("%s result=%+v want effects=%v cancel=%q", c.Name, got, c.Expected, c.ExpectedCancelID)
 		}
+	}
+}
+
+func TestNWStateErrorPredicatesUseObservedCodeBoundaries(t *testing.T) {
+	for _, code := range []int{53, 55, 60, 62} {
+		c := nwStateCase{DispatcherErrorCode: code, ImmediateFailureCode: code}
+		if dispatcherErrorPredicate(c) || immediateFailurePredicate(c) {
+			t.Fatalf("adjacent code %d unexpectedly matched", code)
+		}
+	}
+	if !dispatcherErrorPredicate(nwStateCase{DispatcherErrorCode: 54}) {
+		t.Fatal("POSIX 54 dispatcher error did not match")
+	}
+	if !dispatcherErrorPredicate(nwStateCase{DispatcherTLSError: true}) {
+		t.Fatal("TLS dispatcher error did not match")
+	}
+	if !immediateFailurePredicate(nwStateCase{ImmediateFailureCode: 61}) {
+		t.Fatal("POSIX 61 immediate failure did not match")
 	}
 }

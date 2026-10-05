@@ -12,9 +12,10 @@ replacement, and starts it on its queue.
 
 The dispatcher compares the actual `NWConnection.State` cases. `setup` and
 `preparing` log only. `ready` logs TLS information and calls its ready
-follow-up. `cancelled` conditionally cancels the stored receive work item,
-constructs a `LocoAgent` error, and invokes `0x100d47a3c`, which dispatches a
-main-queue block. The callback's unknown/default path logs only.
+follow-up. `cancelled` conditionally cancels the stored receive work item and invokes
+`0x100d47a3c` with an absent underlying NW error. That helper sets status 0,
+enqueues the main-queue delayed-work cancellation, then constructs the separate
+`LocoAgent` error and fans it out. The callback's unknown/default path logs only.
 
 `failed` always invokes `handleConnectFailure(_:allowFallback:)` at
 `0x100d45de8` with the observed allow-fallback argument set. The helper first
@@ -31,8 +32,9 @@ source-observed; these are separate status and pending-request effects. Otherwis
 
 `waiting` does not unconditionally call the helper. After reading the current
 NW path, it requires both owner flags to be clear, a nonnil path, and path
-status `satisfied` or `requiresConnection`. It then evaluates the dispatcher error predicate (`0x100d460fc` or the
-immediate-failure predicate at `0x100d462f8`); only that branch calls
+status `satisfied` or `requiresConnection`. It then evaluates the dispatcher error predicate (`0x100d460fc`, whose
+observed payload branches include POSIX code 54 and TLS) or the immediate-failure
+predicate at `0x100d462f8` (POSIX code 61); only that branch calls
 `0x100d45de8`. The helper's owner fallback predicate is evaluated again
 inside the helper. Other waiting callbacks log/return. These dispatcher
 predicates and the helper's own guard are separate source stages.
@@ -74,9 +76,9 @@ pending-map lookup, so correlation details remain an explicit gap.
 ## Synthetic contract
 
 `rc-q5-nw-state-handler.json` uses actual enum case names and input-derived
-branches for owner lifetime, path presence/status, owner flags, immediate
-failure, the helper fallback predicate, current/replacement connection
-presence, dispatcher-error predicate, owner-fallback predicate, and
+branches for owner lifetime, path presence/status, owner flags, POSIX error
+codes 54/61 and the TLS dispatcher case, the helper fallback predicate,
+current/replacement connection presence, owner-fallback predicate, and
 receive-work-item presence. It asserts ordered effects and keeps
 setup replacement, waiting dispatch gating, failed-helper cleanup/decision, and
 cancelled cleanup separate. Each case keeps pending-map correlation details as a gap; the observed
