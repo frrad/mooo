@@ -371,7 +371,21 @@ func decodeEventStreamWithTerminalStop(raw <-chan loco.Packet, output chan<- eve
 	defer close(output)
 	seen := make(map[messagePosition]struct{})
 	order := make([]messagePosition, 0, observedPositionLimit)
-	for packet := range raw {
+	for {
+		var packet loco.Packet
+		var ok bool
+		if stop == nil {
+			packet, ok = <-raw
+		} else {
+			select {
+			case packet, ok = <-raw:
+			case <-stop:
+				return
+			}
+		}
+		if !ok {
+			return
+		}
 		event, err := events.Decode(packet)
 		if err == nil {
 			if chatID, logID, ok := events.MessagePosition(event); ok {
