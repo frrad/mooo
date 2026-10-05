@@ -50,14 +50,19 @@ throwaway Synapse on 2026-09-30. Text works in both directions, replies work
 inbound, and restart catch-up recovers missed messages for previously committed
 chats. The 2026-10-04 native run additionally exercised direct own-device text,
 replies, and Matrix-to-Kakao photos; a 2026-10-05 (UTC) follow-up exercised
-Kakao-to-Matrix photos. A 2026-10-05 Docker resume exercised
+Kakao-to-Matrix photos. A separate 2026-10-05 (UTC) existing-portal crypto run
+configured Megolm, synchronized a tester, and sent one encrypted Matrix text
+that the bridge decrypted and persisted (message count 8 to 9). The encrypted
+Matrix-to-Kakao write was acknowledged with positive source IDs, and the owned
+B phone displayed the exact fixture in the existing self-chat. A 2026-10-05
+Docker resume exercised
 the existing profile, one text, one encrypted-media attachment in an
 unencrypted portal, and one persistent restart; the reply and reaction probes
 were rejected/failed and were not retried. Group/other-participant delivery,
-Matrix room E2EE, reaction acceptance, and broader recovery remain open. The
-framework supplies appservice, encryption, and double-puppeting machinery; that
-does not establish deployment validation for every homeserver or Beeper
-configuration.
+inbound encrypted Kakao-to-Matrix text, encrypted media parity, reaction
+acceptance, and broader recovery remain open. The framework supplies appservice,
+encryption, and double-puppeting machinery; that does not establish deployment
+validation for every homeserver or Beeper configuration.
 
 The next milestone is a usable single-user alpha. Execute the work in this
 order; the B0–B4 sections below remain feature inventories rather than a strict
