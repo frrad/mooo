@@ -21,6 +21,20 @@ enrollment (approval, device authorization, credential persistence, and
 restart resume) still requires live validation. The probe used an authorized
 owned lab environment and did not import official-client credentials.
 
+On 2026-10-04 America/Los_Angeles, one controlled fresh observation used the
+owned B Android AVD, a fresh bridge profile directory, and the disposable
+Matrix homeserver. The QR image was created about 0.7 seconds after the
+`login qr` command; its authenticated Matrix media replay decoded successfully
+with ZXing and matched the Matrix event body exactly. Importing that image
+through KakaoTalk's Album scanner again showed the generic “You cannot use
+this QR code” message. The bridge received no approval, device-authorization
+code, or successful poll transition and eventually expired the challenge.
+The observation therefore rules out media transport and payload mutation for
+this attempt, but does not identify whether Android rejected it during route
+classification, the info request, or account-side response handling. The
+fresh profile, temporary image, and Android copy were removed afterward; no
+credentials were installed.
+
 The bridge treats QR cancellation as fail closed: an HTTP 200 with an empty
 body or explicit status zero is accepted; a nonzero or malformed status body
 is rejected. This is an implementation safety policy, not a claim that the
