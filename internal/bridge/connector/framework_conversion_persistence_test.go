@@ -98,6 +98,8 @@ func TestFrameworkInlineBlockedRemoteEventDisconnectLeavesSourceUncommitted(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Register database cleanup first: later worker cleanup runs before this.
+	t.Cleanup(func() { _ = raw.RawDB.Close() })
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	done := make(chan struct{})
@@ -106,26 +108,53 @@ func TestFrameworkInlineBlockedRemoteEventDisconnectLeavesSourceUncommitted(t *t
 	intent := &frameworkPersistenceIntent{err: errors.New("blocked delivery released as failure"), entered: entered, release: release, done: done}
 	bridge, err := newFrameworkConversionBridge(ctx, raw, intent)
 	if err != nil {
-		_ = raw.RawDB.Close()
 		t.Fatal(err)
 	}
-	defer func() { _ = raw.RawDB.Close() }()
 	user, err := bridge.GetUserByMXID(ctx, id.UserID("@owner:test"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), UserMXID: user.MXID}, Bridge: bridge, User: user}
+	var openMu sync.Mutex
 	openCount := 0
+	firstOpen := make(chan struct{})
+	secondOpen := make(chan struct{})
+	initialDone := make(chan struct{})
+	replacementDone := make(chan struct{})
+	freshDone := make(chan struct{})
+	var pumpDone chan struct{}
 	fake := &fakeKakao{stream: make(chan events.Result)}
 	kc := newKakaoClient(login, testSelfID, func() (kakaoClient, error) {
+		openMu.Lock()
 		openCount++
+		switch openCount {
+		case 1:
+			close(firstOpen)
+		case 2:
+			close(secondOpen)
+		}
+		openMu.Unlock()
 		return fake, nil
 	})
 	kc.sendState = func(status.BridgeState) {}
+	previousTimeout := terminalDisconnectTimeout
+	terminalDisconnectTimeout = 50 * time.Millisecond
+	// Cleanup registration is LIFO: workers first, timeout restoration second,
+	// and the database cleanup registered above last.
+	t.Cleanup(func() { terminalDisconnectTimeout = previousTimeout })
 	t.Cleanup(func() {
 		releaseOnce.Do(func() { close(release) })
 		streamCloseOnce.Do(func() { close(fake.stream) })
 		kc.Disconnect()
+		for _, worker := range []chan struct{}{initialDone, replacementDone, freshDone, pumpDone} {
+			if worker == nil {
+				continue
+			}
+			select {
+			case <-worker:
+			case <-time.After(time.Second):
+			}
+		}
 	})
 	var queueResult bridgev2.EventHandlingResult
 	kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
@@ -133,7 +162,12 @@ func TestFrameworkInlineBlockedRemoteEventDisconnectLeavesSourceUncommitted(t *t
 		return queueResult
 	}
 	evt := events.TextMessage{ChatID: testChatID, LogID: 102, AuthorID: testOtherID, SentAt: 1700000002, Message: "blocked inline delivery"}
-	go kc.Connect(ctx)
+	go func() { kc.Connect(ctx); close(initialDone) }()
+	select {
+	case <-firstOpen:
+	case <-time.After(time.Second):
+		t.Fatal("real client event pump did not open")
+	}
 	deadline := time.Now().Add(time.Second)
 	for !kc.IsLoggedIn() && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
@@ -142,7 +176,7 @@ func TestFrameworkInlineBlockedRemoteEventDisconnectLeavesSourceUncommitted(t *t
 		t.Fatal("real client event pump did not connect")
 	}
 	kc.mu.Lock()
-	pumpDone := kc.done
+	pumpDone = kc.done
 	kc.mu.Unlock()
 	if pumpDone == nil {
 		t.Fatal("connected client did not expose event-pump completion")
@@ -156,27 +190,41 @@ func TestFrameworkInlineBlockedRemoteEventDisconnectLeavesSourceUncommitted(t *t
 	if got := len(fake.committed()); got != 0 {
 		t.Fatalf("source commits while Matrix delivery is blocked = %d, want 0", got)
 	}
-	previousTimeout := terminalDisconnectTimeout
-	terminalDisconnectTimeout = 50 * time.Millisecond
-	defer func() { terminalDisconnectTimeout = previousTimeout }()
 	started := time.Now()
 	kc.Disconnect()
 	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
 		t.Fatalf("Disconnect while Matrix delivery is blocked took %v", elapsed)
 	}
 	kc.mu.Lock()
-	if kc.cleanup != fake || kc.client != nil {
+	cleanupOwner, activeClient := kc.cleanup, kc.client
+	if cleanupOwner != fake || activeClient != nil {
 		kc.mu.Unlock()
-		t.Fatalf("blocked pump cleanup owner = (%v, %v), want retained fake and nil client", kc.cleanup == fake, kc.client == nil)
+		t.Fatalf("blocked pump cleanup owner = (%v, %v), want retained fake and nil client", cleanupOwner == fake, activeClient == nil)
 	}
 	kc.mu.Unlock()
 	// A retained owner prevents a replacement profile from opening while the
 	// event pump still owns the old session.
-	go kc.Connect(ctx)
-	time.Sleep(25 * time.Millisecond)
-	if openCount != 1 {
-		t.Fatalf("replacement opened while blocked pump retained owner: opens=%d", openCount)
+	go func() { kc.Connect(ctx); close(replacementDone) }()
+	select {
+	case <-replacementDone:
+	case <-time.After(time.Second):
+		t.Fatal("replacement Connect attempt did not return")
 	}
+	openMu.Lock()
+	gotOpenCount := openCount
+	openMu.Unlock()
+	if gotOpenCount != 1 {
+		t.Fatalf("replacement opened while blocked pump retained owner: opens=%d", gotOpenCount)
+	}
+	// Retrying cleanup before the blocked pump exits must retain ownership too:
+	// kc.done was cleared by the first Disconnect, but pumpDone remains live.
+	kc.Disconnect()
+	kc.mu.Lock()
+	if kc.cleanup != fake {
+		kc.mu.Unlock()
+		t.Fatal("second Disconnect released cleanup owner while event pump was blocked")
+	}
+	kc.mu.Unlock()
 	releaseOnce.Do(func() { close(release) })
 	select {
 	case <-done:
@@ -198,6 +246,17 @@ func TestFrameworkInlineBlockedRemoteEventDisconnectLeavesSourceUncommitted(t *t
 	kc.mu.Unlock()
 	if retained != nil {
 		t.Fatalf("cleanup owner retained after event pump joined: %v", retained)
+	}
+	go func() { kc.Connect(ctx); close(freshDone) }()
+	select {
+	case <-secondOpen:
+	case <-time.After(time.Second):
+		t.Fatal("fresh connection was not admitted after retained pump joined")
+	}
+	select {
+	case <-freshDone:
+	case <-time.After(time.Second):
+		t.Fatal("fresh Connect attempt did not return")
 	}
 	if got := len(fake.committed()); got != 0 {
 		t.Fatalf("source commits after blocked Matrix delivery = %d, want 0", got)
