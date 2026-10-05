@@ -71,6 +71,17 @@ type receiveHeaderTimeoutController interface {
 	Close()
 }
 
+// InSegmentTimeoutController is an optional body-read watchdog owner. Session
+// only forwards the reviewed body transitions; it does not construct a clock,
+// queue, timeout configuration, or production owner by default.
+// InSegmentTimeoutController is the narrow owner contract accepted by
+// BindInSegmentTimeout. Implementations normally come from
+// sessionlogin.NewInSegmentTimeoutOwner.
+type InSegmentTimeoutController interface {
+	Toggle(enableByte byte) (bool, error)
+	Close()
+}
+
 // Session owns one authenticated carriage. A background reader dispatches
 // correlated responses and preserves unsolicited packets for the caller.
 type Session struct {
@@ -97,6 +108,7 @@ type Session struct {
 	// while that loop is running.
 	headerObserver             func(loco.Header)
 	receiveHeaderTimeout       receiveHeaderTimeoutController
+	inSegmentTimeout           InSegmentTimeoutController
 	receiveHeaderTimeoutEnable func(command string, packetID uint32) (byte, bool)
 	receiveHeaderTimeoutState  map[uint32]*receiveHeaderTimeoutToken
 	initialChatData            []bson.Raw
@@ -106,6 +118,7 @@ type Session struct {
 	loginCursor                loginCursor
 	bootstrapDone              bool
 	bootstrapPushes            []loco.Packet
+	readLoopStarted            bool
 }
 
 type receiveHeaderTimeoutToken struct {
@@ -185,6 +198,7 @@ type pingSessionOptions struct {
 	interval               time.Duration
 	timeout                time.Duration
 	beforeBootstrapRequest func()
+	inSegmentTimeoutOwner  InSegmentTimeoutController
 }
 
 type sessionDialers struct {
@@ -296,6 +310,11 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	session.userID = state.Credentials.UserID
 	session.appVersion = state.Identity.Metadata.AppVersion
 	session.mediaDial = dialers.secure
+	if pingOptions.inSegmentTimeoutOwner != nil {
+		if err := session.BindInSegmentTimeout(pingOptions.inSegmentTimeoutOwner); err != nil {
+			return nil, ErrBootstrap
+		}
+	}
 	cleanup := true
 	defer func() {
 		if cleanup {
@@ -313,7 +332,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	if err != nil {
 		return nil, ErrBootstrap
 	}
-	go session.readLoop()
+	session.startReadLoop()
 	loginReply, err := session.requestRaw(ctx, 2, "LOGINLIST", loginBody)
 	if err != nil {
 		return nil, ErrLogin
@@ -755,9 +774,74 @@ func (s *Session) closeReceiveHeaderTimeout() {
 	}
 }
 
+// BindInSegmentTimeout installs the opt-in body-progress watchdog before the
+// session reader starts. A nil owner disables the seam. The owner is closed
+// with the Session and is never activated by an ordinary Session constructor.
+func (s *Session) BindInSegmentTimeout(owner InSegmentTimeoutController) error {
+	if s == nil {
+		return ErrClosed
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.closing || s.readLoopStarted {
+		return ErrClosed
+	}
+	if s.inSegmentTimeout != nil {
+		return fmt.Errorf("client: in-segment timeout owner already bound")
+	}
+	s.inSegmentTimeout = owner
+	return nil
+}
+
+func (s *Session) closeInSegmentTimeout() {
+	s.mu.Lock()
+	owner := s.inSegmentTimeout
+	s.mu.Unlock()
+	if owner != nil {
+		owner.Close()
+	}
+}
+
+func (s *Session) bodyProgressCallbacks() bodyProgressCallbacks {
+	s.mu.Lock()
+	owner := s.inSegmentTimeout
+	s.mu.Unlock()
+	if owner == nil {
+		return bodyProgressCallbacks{}
+	}
+	return bodyProgressCallbacks{
+		schedule: func() { _, _ = owner.Toggle(1) },
+		partial:  func() { _, _ = owner.Toggle(0); _, _ = owner.Toggle(1) },
+		complete: func() { _, _ = owner.Toggle(0) },
+	}
+}
+
 func (s *Session) readLoop() {
+	s.mu.Lock()
+	if s.readLoopStarted {
+		s.mu.Unlock()
+		return
+	}
+	s.readLoopStarted = true
+	s.mu.Unlock()
+	s.readLoopBody()
+}
+
+func (s *Session) startReadLoop() {
+	s.mu.Lock()
+	if s.readLoopStarted {
+		s.mu.Unlock()
+		return
+	}
+	s.readLoopStarted = true
+	s.mu.Unlock()
+	go s.readLoopBody()
+}
+
+func (s *Session) readLoopBody() {
+	progress := s.bodyProgressCallbacks()
 	for {
-		packet, err := s.wire.readWithHeaderObserver(s.observeHeader)
+		packet, err := s.wire.readWithHeaderObserverAndProgress(s.observeHeader, progress)
 		if err != nil {
 			s.finishRead(err)
 			return
@@ -847,6 +931,7 @@ func (s *Session) finishRead(err error) {
 	}
 	s.stopLifecycle()
 	s.closeReceiveHeaderTimeout()
+	s.closeInSegmentTimeout()
 	s.resetReceiveHeaderTimeout()
 	if submitter != nil {
 		submitter.Close()
@@ -876,6 +961,7 @@ func (s *Session) Close() error {
 		s.mu.Unlock()
 		s.stopLifecycle()
 		s.closeReceiveHeaderTimeout()
+		s.closeInSegmentTimeout()
 		if submitter != nil {
 			submitter.Close()
 		}
@@ -884,6 +970,7 @@ func (s *Session) Close() error {
 	s.mu.Unlock()
 	s.stopLifecycle()
 	s.closeReceiveHeaderTimeout()
+	s.closeInSegmentTimeout()
 	s.resetReceiveHeaderTimeout()
 	if submitter != nil {
 		submitter.Close()
@@ -916,6 +1003,12 @@ type wireConn struct {
 	c        net.Conn
 	secure   *loco.SecureV3
 	producer *loco.Producer
+}
+
+type bodyProgressCallbacks struct {
+	schedule func()
+	partial  func()
+	complete func()
 }
 
 func dialTLS(ctx context.Context, host string, port int) (*wireConn, error) {
@@ -991,6 +1084,10 @@ func (w *wireConn) read() (loco.Packet, error) {
 // only after the authenticated envelope has been decrypted; the secure layer
 // does not expose plaintext header bytes earlier.
 func (w *wireConn) readWithHeaderObserver(observe func(loco.Header)) (loco.Packet, error) {
+	return w.readWithHeaderObserverAndProgress(observe, bodyProgressCallbacks{})
+}
+
+func (w *wireConn) readWithHeaderObserverAndProgress(observe func(loco.Header), progress bodyProgressCallbacks) (loco.Packet, error) {
 	// Plain transport retains the reviewed header-before-body boundary. Exact
 	// reads naturally preserve split headers/bodies and leave any coalesced
 	// following frame for the next call.
@@ -1007,7 +1104,7 @@ func (w *wireConn) readWithHeaderObserver(observe func(loco.Header)) (loco.Packe
 			observe(header)
 		}
 		body := make([]byte, int(header.BodyLen))
-		if _, err := io.ReadFull(w.c, body); err != nil {
+		if err := readBodyWithProgress(w.c, body, progress); err != nil {
 			return loco.Packet{}, err
 		}
 		return loco.Packet{Header: header, Body: body}, nil
@@ -1039,7 +1136,7 @@ func (w *wireConn) readWithHeaderObserver(observe func(loco.Header)) (loco.Packe
 		}
 		envelope := make([]byte, 4+int(n))
 		copy(envelope, prefix)
-		if _, err := io.ReadFull(w.c, envelope[4:]); err != nil {
+		if err := readBodyWithProgress(w.c, envelope[4:], progress); err != nil {
 			return loco.Packet{}, err
 		}
 		var err error
@@ -1051,6 +1148,51 @@ func (w *wireConn) readWithHeaderObserver(observe func(loco.Header)) (loco.Packe
 			return loco.Packet{}, err
 		}
 	}
+}
+
+// readBodyWithProgress keeps header bytes outside the in-segment watchdog and
+// reports each transport body transition in source order. A short read resets
+// the watchdog; completion only disables it after the requested body is full.
+func readBodyWithProgress(r io.Reader, body []byte, progress bodyProgressCallbacks) error {
+	if len(body) == 0 {
+		return nil
+	}
+	if progress.schedule == nil && progress.partial == nil && progress.complete == nil {
+		_, err := io.ReadFull(r, body)
+		return err
+	}
+	if progress.schedule != nil {
+		progress.schedule()
+	}
+	read := 0
+	for read < len(body) {
+		n, err := r.Read(body[read:])
+		if n > 0 {
+			read += n
+			if read < len(body) && progress.partial != nil {
+				progress.partial()
+			}
+		}
+		if read == len(body) {
+			if progress.complete != nil {
+				progress.complete()
+			}
+			return nil
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) && read > 0 {
+				return io.ErrUnexpectedEOF
+			}
+			return err
+		}
+		if n == 0 {
+			return io.ErrNoProgress
+		}
+	}
+	if progress.complete != nil {
+		progress.complete()
+	}
+	return nil
 }
 
 func checkin(ctx context.Context, hosts []string, ports []int, body []byte, dialers sessionDialers) (loco.Packet, *wireConn, error) {
