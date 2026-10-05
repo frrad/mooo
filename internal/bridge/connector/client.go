@@ -514,14 +514,14 @@ func (kc *KakaoClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 func (kc *KakaoClient) metadataClient() (kakaoClient, error) {
 	kc.mu.Lock()
 	defer kc.mu.Unlock()
+	if kc.stopping {
+		return nil, bridgev2.ErrNotLoggedIn
+	}
 	if kc.client != nil {
 		return kc.client, nil
 	}
-	if kc.cleanup != nil {
+	if kc.connecting && kc.cleanup != nil {
 		return kc.cleanup, nil
-	}
-	if kc.client == nil {
-		return nil, bridgev2.ErrNotLoggedIn
 	}
 	return nil, bridgev2.ErrNotLoggedIn
 }
