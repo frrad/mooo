@@ -63,6 +63,19 @@ cause of that attempt; the remaining stage is scanner route classification,
 QR-info lookup, or a later account-side response. The bridgev2 renderer is
 supplied by the framework rather than the connector.
 
+The observed modal can now be assigned to a concrete Android branch from the
+offline source audit. The scanner's QR item posts the invalid-message event
+only when its `qrCodeLogin/info` call raises a `GENERAL_NOT_FOUND`
+`TalkStatusException`. The active scanner fragment receives that event and
+constructs the modal dialog containing “You cannot use this QR code.” The same
+string is also used by the separate sub-device QR display fragment for its
+inline invalid state and accessibility description, so the string resource by
+itself is ambiguous; the modal presentation identifies the scanner event path.
+This proves that the observed attempt reached the scanner's QR-info error
+handling, subject to the source audit's clean-room interpretation. It does not
+expose the request URL, server response body, account policy cause, or prove
+that the bridge challenge would be accepted after a different presentation.
+
 ### Official Android presentation and scan path (source audit)
 
 An offline audit of the owned Android 26.8.2 APK traced the relevant chain
