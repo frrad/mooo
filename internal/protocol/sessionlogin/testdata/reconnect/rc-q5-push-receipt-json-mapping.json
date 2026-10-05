@@ -7,7 +7,9 @@
       "expected": null,
       "effects": [
         "return_super_result_unchanged"
-      ]
+      ],
+      "opaque_input": "opaque-superclass-value",
+      "expected_opaque": "opaque-superclass-value"
     },
     {
       "name": "missing_source_skips_assignment_and_removal",
@@ -178,6 +180,33 @@
         "source_lookup_present",
         "assign_destination",
         "remove_source"
+      ]
+    },
+    {
+      "name": "base_removal_makes_mapping_source_absent",
+      "input_kind": "dictionary",
+      "input": {
+        "method": "M",
+        "plusRevision": "99"
+      },
+      "base_remove": [
+        "method",
+        "plusRevision"
+      ],
+      "mappings": [
+        [
+          "pr",
+          "plusRevision"
+        ]
+      ],
+      "expected": {},
+      "effects": [
+        "mutable_dictionary",
+        "remove_static_property",
+        "remove_static_property",
+        "source_lookup_absent",
+        "skip_assignment",
+        "no_source_removal"
       ]
     }
   ]

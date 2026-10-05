@@ -29,12 +29,15 @@ and guard order, but does not prove BSON key order, field-presence/default
 policy, encryption output, or any server response.
 
 The request object field inventory remains separate from wire serialization.
-`LocoPushReceipt` inherits from `LocoModel`/`SGJsonObject` and declares
-`method` (`NSString`) and `packetId` (`uint32`). `LocoHintPushReceipt` adds no
-fields. `LocoBlockSyncPushReceipt` adds signed `int32 revision` and
-`plusRevision`. These fields describe the source object available to
-`packetData`; the serialized key order and field-presence/default policy remain
-unresolved even though the framing implementation is now localized.
+`LocoPushReceipt` inherits from `SGJsonObject` and declares `method`
+(`NSString`) and `packetId` (`uint32`). `LocoHintPushReceipt` adds no fields.
+`LocoBlockSyncPushReceipt` adds signed `int32 revision` and `plusRevision`.
+The bundled first-party `SGJsonKit` implementation enumerates the dynamic
+class's properties through (but excluding) `SGJsonObject`, reads each value by
+KVC, and puts it into a mutable dictionary. A nil or `NSNull` value is emitted
+as `NSNull`; non-null values are retained unless they conform to `SGJson` (then
+`JSONObject` is used) or `SGNumberArray` (then `numberArray` is used). Integer
+zero is therefore retained as a value rather than treated as absent.
 
 The inherited `JSONObject` implementation at `0x101355b04` begins from the
 superclass JSON object and makes a mutable dictionary only when that object is
@@ -56,17 +59,16 @@ receipt decodes its destination keys as `pr` and `r`, with source keys
 `plusRevision` and `revision`, respectively. Therefore the observed mapping
 phase renames those two fields to the short keys and removes their source
 spellings. This proves static base-class removal plus subclass mapping behavior,
-including its missing and `NSNull` guards; it does not yet prove the complete
-superclass JSON property contribution, HINT defaults, BSON key order, or final
-field omission policy.
+including its missing and `NSNull` guards. The framework serializer establishes
+the property contribution and nil/scalar conversion boundary; final BSON key
+order, HINT defaults, and packet-level omission policy remain unresolved.
 
 `LocoHintPushReceipt` declares no own methods or properties and inherits
 `LocoPushReceipt` directly. Consequently its local class contributes no
-mapping dictionary; the exact `SGJsonObject` default returned by the inherited
-`nameMappingDictionary` dispatch is outside the analyzed app image. The static
-base removal observed above is therefore bounded to the `LocoPushReceipt`
-property list (`method` and `packetId`); it does not establish a HINT body key
-or default value.
+mapping dictionary. `SGJsonKit` itself has no `nameMappingDictionary` method;
+the app-side inherited dispatch target is therefore still unlocated, and no
+HINT body key or default value is established. The static base removal is
+bounded to the `LocoPushReceipt` property list (`method` and `packetId`).
 
 The NW send completion is a Swift `NWConnection.SendCompletion` closure at
 `0x100d4a840`. Its body weak-loads the owner and returns when that owner has
@@ -91,11 +93,11 @@ Framing cases derive the header body length, mutable-data capacity
 results; they cover zero-length omission and a deliberately different second
 conversion. NW cases then model only the wrapper's packet-data result guard,
 encryption nil path, connection gate, send scheduling, and timeout argument.
-The JSON-object projection fixture remains an explicit gap for the untraced
-superclass property contribution and final BSON policy. The observed mapping
-phase is bounded separately: dictionary versus non-dictionary input, absent
-source, `NSNull` source, and ordinary source-to-destination rename are distinct
-cases and must not be collapsed into a generic field-copy operation.
+The JSON-object projection fixture remains an explicit gap for the app-side
+mapping-dispatch default and final BSON policy. The observed mapping phase is
+bounded separately: dictionary versus non-dictionary input, absent source,
+`NSNull` source, and ordinary source-to-destination rename are distinct cases
+and must not be collapsed into a generic field-copy operation.
 It records BSON key order/default policy, encryption output, and any server
 response as explicit gaps. Completion vectors cover owner lifetime, success,
 the observed POSIX `0x59`/89 cleanup predicate, neighboring POSIX and
@@ -133,3 +135,6 @@ claim about NSDictionary enumeration order.
 - JSON projection and mapping guards: private `nw-push-receipt-methods/decompile.txt`,
   `nw-push-receipt-block/decompile.txt`, and the constant-data extraction under
   `nw-name-map/` (including the private `0x101f71678` memory receipt).
+- First-party serializer implementation: private `sgjsonkit-source/decompile-object.txt`,
+  `sgjsonkit-source/decompile-category.txt`, and `sgjsonkit-source/otool-objc.txt`
+  from the bundled SGJsonKit arm64 slice.

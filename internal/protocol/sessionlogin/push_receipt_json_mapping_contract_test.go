@@ -15,13 +15,15 @@ type receiptJSONMappingFixture struct {
 }
 
 type receiptJSONMappingCase struct {
-	Name       string             `json:"name"`
-	InputKind  string             `json:"input_kind"`
-	Input      map[string]*string `json:"input,omitempty"`
-	BaseRemove []string           `json:"base_remove,omitempty"`
-	Mappings   [][2]string        `json:"mappings,omitempty"`
-	Expected   map[string]*string `json:"expected,omitempty"`
-	Effects    []string           `json:"effects"`
+	Name           string             `json:"name"`
+	InputKind      string             `json:"input_kind"`
+	Input          map[string]*string `json:"input,omitempty"`
+	OpaqueInput    *string            `json:"opaque_input,omitempty"`
+	ExpectedOpaque *string            `json:"expected_opaque,omitempty"`
+	BaseRemove     []string           `json:"base_remove,omitempty"`
+	Mappings       [][2]string        `json:"mappings,omitempty"`
+	Expected       map[string]*string `json:"expected,omitempty"`
+	Effects        []string           `json:"effects"`
 }
 
 func projectReceiptJSONMapping(c receiptJSONMappingCase) map[string]*string {
@@ -54,12 +56,19 @@ func expectedReceiptJSONMappingEffects(c receiptJSONMappingCase) []string {
 		return []string{"return_super_result_unchanged"}
 	}
 	effects := []string{"mutable_dictionary"}
+	working := make(map[string]*string, len(c.Input))
+	for k, v := range c.Input {
+		working[k] = v
+	}
 	for range c.BaseRemove {
 		effects = append(effects, "remove_static_property")
 	}
+	for _, key := range c.BaseRemove {
+		delete(working, key)
+	}
 	for _, mapping := range c.Mappings {
 		_, source := mapping[0], mapping[1]
-		value, present := c.Input[source]
+		value, present := working[source]
 		if !present {
 			effects = append(effects, "source_lookup_absent", "skip_assignment", "no_source_removal")
 			continue
@@ -71,6 +80,10 @@ func expectedReceiptJSONMappingEffects(c receiptJSONMappingCase) []string {
 			effects = append(effects, "assign_destination")
 		}
 		effects = append(effects, "remove_source")
+		if value != nil {
+			working[mapping[0]] = value
+		}
+		delete(working, source)
 	}
 	return effects
 }
@@ -86,7 +99,7 @@ func TestPushReceiptJSONMappingFixture(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 7 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 8 {
 		t.Fatalf("header %#v", f)
 	}
 	seen := map[string]bool{}
@@ -97,6 +110,12 @@ func TestPushReceiptJSONMappingFixture(t *testing.T) {
 		seen[c.Name] = true
 		if c.InputKind != "dictionary" && c.InputKind != "non_dictionary" {
 			t.Fatalf("%s input_kind=%q", c.Name, c.InputKind)
+		}
+		if c.InputKind == "non_dictionary" && c.OpaqueInput == nil {
+			t.Errorf("%s missing opaque superclass result", c.Name)
+		}
+		if c.InputKind == "non_dictionary" && !reflect.DeepEqual(c.OpaqueInput, c.ExpectedOpaque) {
+			t.Errorf("%s opaque=%v want %v", c.Name, c.OpaqueInput, c.ExpectedOpaque)
 		}
 		if got := projectReceiptJSONMapping(c); !reflect.DeepEqual(got, c.Expected) {
 			t.Errorf("%s output=%v want %v", c.Name, got, c.Expected)
