@@ -42,14 +42,20 @@ stored receive work item when present, sets the observed owner flag, and calls
 `readHeader` after its guarded initial-send section. When the second owner flag
 is set and a current connection is available, it sends data with the Network
 `contentProcessed` completion, default-message context, and `isComplete=true`.
-Its completion callback is a weak-owner closure at `0x100d4998c`; that closure
-filters POSIX error 0x59, logs other completion errors, and logs successful
-connectivity. The callback does not expose a pending-map lookup.
+Its completion callback enters at `0x100d4998c` and forwards its captured
+context to `0x100d47784`; this path does not perform a weak-owner load. It
+filters POSIX error 0x59 before the remaining error/logging path. The exact
+owner operation after that branch is an implementation boundary; no pending-map
+lookup is visible in this callback.
 
 The V2SL fallback at `0x100d47238` sets the fallback owner flag, attempts to
 derive and validate an endpoint port, and calls the replacement setup path
 when both are available. Missing or invalid endpoint data constructs an
 NWError and routes through `0x100d47a3c`.
+
+The main-queue thunk at `0x100d49960` captures the owner context and performs
+an Objective-C message send through an NSObject receiver; the selector is not
+resolved by the available stub metadata.
 
 The raw state path now proves an owner `setStatus:error:` call and a
 `failPendingRequestsWithError:` fanout on the error path. It does not expose a
@@ -75,6 +81,5 @@ or claim server behavior.
   `nw-state-dispatch-20261004.txt` (private parity lab receipt), covering callback `0x100d4a6b4`, dispatcher `0x100d464d4`, setup `0x100d454d8`, helper `0x100d45de8`, TLS helper `0x100d46fd4`, error dispatch `0x100d47a3c`, and fallback `0x100d47238`.
 - Private downstream decompile receipts `nw-state-downstream-20261004.txt` and
   `nw-state-downstream-blocks-20261004.txt`, covering ready follow-up
-  `0x100d47508`, error dispatch block `0x100004760`, and weak completion
-  callback `0x100d4998c`.
+  `0x100d47508`, error dispatch block `0x100004760`, and completion callback `0x100d4998c` and handoff `0x100d47784`.
 - Private arm64 disassembly of connection construction and callback installation around `0x100d454d8`.
