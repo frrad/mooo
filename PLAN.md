@@ -199,6 +199,47 @@ Required synthetic integration coverage after request approval:
 The manager/agent composition harness is tracked separately in PR138; this plan
 does not authorize Session binding, packet construction, or default activation.
 
+### Push-receipt builder boundary after scalar conformance
+
+The production BSON conformance slice now verifies the reviewed scalar vectors by
+passing explicit typed Go values through the existing Mongo BSON encoder. It
+covers boolean, double (including signed negative zero), signed int32, signed
+int64, and null payload bytes and widths. Unsupported Objective-C encodings
+remain explicit fixture rejection cases; they do not justify a generic fallback
+converter.
+
+The next builder boundary is therefore a typed, opt-in composition layer. A
+BLOCKSYNC model may carry signed `int32 revision` and `plusRevision`; after the
+reviewed SGJSON projection and static base-property removal, its mapping phase
+uses `plusRevision -> pr` and `revision -> r`. The builder must pass those typed
+values to the existing BSON encoder and assert the resulting element types and
+bytes. It must preserve ordinary opaque values and explicit-null guards from the
+projection/mapping helpers. It must not infer BSON key order, add HINT defaults,
+or serialize a receipt until the remaining superclass-property and field
+presence contract is approved.
+
+HINT has no declared subclass fields in the reviewed object inventory. Its body
+may be empty after the complete superclass projection and static `method` /
+`packetId` removal, but that is a pending source conclusion rather than a
+runtime default. A builder test must use an explicitly approved projected input
+and assert empty-body behavior only after that evidence is complete.
+
+The outer adapter should remain layered: typed receipt model -> SGJSON
+projection/mapping -> BSON body -> packet-data framing -> packet encryption ->
+connection write. Packet-header/ID allocation belongs to the transport adapter;
+the agent owner's signed admission tag remains a separate argument and must not
+be inserted into Session pending maps or silently substituted for the lower
+socket tag. Each layer needs injected seams for deterministic tests and must
+remain disabled unless an opt-in Session constructor path supplies it.
+
+Required integration tests after the source model is complete are: exact typed
+BLOCKSYNC `pr`/`r` BSON bytes; approved HINT empty-body behavior; packet ID and
+header allocation; encryption input/output and nil/error paths; ordered
+manager/agent owner admission; unmatched-push delivery remaining ordered; and
+shutdown/close generation invalidation while queued or active receipt work is
+present. No receipt acknowledgement, retry, default activation, or pending-map
+correlation should be added without a separate source contract.
+
 ### Default status/config owner binding proposal
 
 The next reconnect slice is a constructor-bound integration layer for the
