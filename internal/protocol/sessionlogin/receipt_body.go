@@ -3,7 +3,6 @@ package sessionlogin
 import (
 	"errors"
 	"fmt"
-	"sort"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -71,20 +70,7 @@ func BuildReceiptBody(input ReceiptBody) ([]byte, error) {
 	if mapped == nil {
 		return nil, errors.New("sessionlogin: receipt body projection returned nil")
 	}
-	valuesMap, ok := mapped.(map[string]any)
-	if !ok {
-		return nil, errors.New("sessionlogin: receipt body projection was not a dictionary")
-	}
-	keys := make([]string, 0, len(valuesMap))
-	for key := range valuesMap {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	ordered := make(bson.D, 0, len(keys))
-	for _, key := range keys {
-		ordered = append(ordered, bson.E{Key: key, Value: valuesMap[key]})
-	}
-	body, err := bson.Marshal(ordered)
+	body, err := bson.Marshal(mapped)
 	if err != nil {
 		return nil, fmt.Errorf("sessionlogin: encode receipt body: %w", err)
 	}
