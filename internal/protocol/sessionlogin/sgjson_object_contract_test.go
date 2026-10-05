@@ -19,6 +19,7 @@ type sgJSONCase struct {
 	SuperclassProperties []string                `json:"superclass_properties"`
 	Values               []sgJSONValue           `json:"values"`
 	ExpectedProperties   []string                `json:"expected_properties"`
+	ExpectedGetterCalls  []string                `json:"expected_getter_calls"`
 	Expected             map[string]sgJSONResult `json:"expected"`
 }
 
@@ -42,24 +43,26 @@ type sgJSONResult struct {
 // slice as an SGJson implementation.
 func projectSGJSONObject(c sgJSONCase) (map[string]sgJSONResult, []string) {
 	properties := append(append([]string{}, c.SubclassProperties...), c.SuperclassProperties...)
-	allowed := make(map[string]bool, len(properties))
-	for _, property := range properties {
-		allowed[property] = true
-	}
 	out := make(map[string]sgJSONResult, len(c.Values))
+	values := make(map[string]sgJSONValue, len(c.Values))
 	for _, value := range c.Values {
-		if !allowed[value.Name] {
+		values[value.Name] = value
+	}
+	for _, property := range properties {
+		value, present := values[property]
+		if !present {
+			out[property] = sgJSONResult{Kind: "nsnull", Value: "NSNull"}
 			continue
 		}
 		switch {
 		case value.Kind == "nil" || value.Kind == "nsnull":
-			out[value.Name] = sgJSONResult{Kind: "nsnull", Value: "NSNull"}
+			out[property] = sgJSONResult{Kind: "nsnull", Value: "NSNull"}
 		case value.ConformsJSON:
-			out[value.Name] = sgJSONResult{Kind: "json", Value: value.JSONObjectResult}
+			out[property] = sgJSONResult{Kind: "json", Value: value.JSONObjectResult}
 		case value.ConformsNumberArray:
-			out[value.Name] = sgJSONResult{Kind: "number_array", Value: value.NumberArrayResult}
+			out[property] = sgJSONResult{Kind: "number_array", Value: value.NumberArrayResult}
 		default:
-			out[value.Name] = sgJSONResult{Kind: "scalar", Value: value.ScalarResult}
+			out[property] = sgJSONResult{Kind: "scalar", Value: value.ScalarResult}
 		}
 	}
 	return out, properties
@@ -74,13 +77,16 @@ func TestSGJSONObjectProjectionFixture(t *testing.T) {
 	if err := json.Unmarshal(body, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.Status != "reviewed-static-synthetic" || len(fixture.Cases) != 6 {
+	if fixture.Status != "reviewed-static-synthetic" || len(fixture.Cases) != 7 {
 		t.Fatalf("header %#v", fixture)
 	}
 	for _, c := range fixture.Cases {
 		got, properties := projectSGJSONObject(c)
 		if !reflect.DeepEqual(properties, c.ExpectedProperties) {
 			t.Errorf("%s properties=%v want %v", c.Name, properties, c.ExpectedProperties)
+		}
+		if !reflect.DeepEqual(properties, c.ExpectedGetterCalls) {
+			t.Errorf("%s getter calls=%v want %v", c.Name, properties, c.ExpectedGetterCalls)
 		}
 		if !reflect.DeepEqual(got, c.Expected) {
 			t.Errorf("%s output=%#v want %#v", c.Name, got, c.Expected)

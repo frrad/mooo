@@ -34,7 +34,11 @@
           "kind": "scalar",
           "value": "0"
         }
-      }
+      },
+      "expected_getter_calls": [
+        "child",
+        "base"
+      ]
     },
     {
       "name": "nil_and_nsnull_are_distinct_from_ordinary_string",
@@ -76,6 +80,11 @@
         "nil_value",
         "explicit_nsnull",
         "ordinary"
+      ],
+      "expected_getter_calls": [
+        "nil_value",
+        "explicit_nsnull",
+        "ordinary"
       ]
     },
     {
@@ -101,6 +110,9 @@
       },
       "subclass_properties": [
         "nested"
+      ],
+      "expected_getter_calls": [
+        "nested"
       ]
     },
     {
@@ -124,6 +136,9 @@
       },
       "subclass_properties": [
         "numbers"
+      ],
+      "expected_getter_calls": [
+        "numbers"
       ]
     },
     {
@@ -145,6 +160,9 @@
         }
       },
       "subclass_properties": [
+        "zero"
+      ],
+      "expected_getter_calls": [
         "zero"
       ]
     },
@@ -178,6 +196,29 @@
         "child": {
           "kind": "scalar",
           "value": "kept"
+        }
+      },
+      "expected_getter_calls": [
+        "child"
+      ]
+    },
+    {
+      "name": "missing_kvc_value_becomes_nsnull",
+      "subclass_properties": [
+        "missing"
+      ],
+      "superclass_properties": [],
+      "values": [],
+      "expected_properties": [
+        "missing"
+      ],
+      "expected_getter_calls": [
+        "missing"
+      ],
+      "expected": {
+        "missing": {
+          "kind": "nsnull",
+          "value": "NSNull"
         }
       }
     }

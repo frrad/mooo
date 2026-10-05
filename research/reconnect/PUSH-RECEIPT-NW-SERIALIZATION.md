@@ -141,6 +141,13 @@ The framework conversion cases are in `rc-q5-sgjson-object.json`. They cover
 nil/`NSNull`, scalar zero, nested `SGJson` recursion, and ordered number-array
 projection as synthetic values; they do not claim app wire encoding.
 
+The scalar BSON vectors are in `rc-q5-bson-scalars.json`. They assert the
+observed BSON element type, little-endian payload bytes, and payload width for
+boolean, double, int32, int64, and null branches, including signed integer
+boundaries. The current-platform KVC probe used macOS 26.6.2 and an
+`NSObject` signed-int32 property; it is a synthetic local probe rather than a
+live account or server observation.
+
 ## Provenance
 
 - Manager class reference: private
