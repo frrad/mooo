@@ -124,7 +124,9 @@ tracked separately:
 Native QR enrollment (PR #166), photo transfer (PR #167), and scripted-protocol
 connector tests (PR #163) have merged. Their synthetic tests do not complete
 the live acceptance criteria. Reconnect, avatars/membership updates, reactions,
-login collision protection, and container packaging are in review. Read receipts, historical backfill, cloud backup/restore,
+and login collision protection are in review. Container packaging has merged
+(PR #170); startup and restart smoke evidence is recorded in
+[deployment validation](DEPLOYMENT-VALIDATION.md). Read receipts, historical backfill, cloud backup/restore,
 and full official-client parity remain outside this alpha goal.
 
 ## Phases
@@ -248,8 +250,9 @@ Reconnect is planned in detail in [`../reconnect.md`](../reconnect.md).
 ### B4: polish and packaging
 
 - [ ] Read receipts in both directions, once the read-state dossier settles.
-- [ ] Docker image, example configuration, and documentation with no operator
-      values.
+- [x] Docker image, example configuration, and documentation with no operator
+      values (PR #170). Authenticated appservice startup/restart smoke passed;
+      full messaging deployment acceptance remains separate.
 - [ ] Choose and validate the deployment targets: standard appservice and/or
       Beeper self-hosting.
 
