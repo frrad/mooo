@@ -39,15 +39,17 @@ func projectPacketConstructor(c packetConstructorCase) (bool, string, *packetHea
 		return false, "", nil, []string{"super_init_returns_nil"}
 	}
 	effects := []string{"store_body", "init_header_with_defaults"}
+	bodyIdentity := c.BodyIdentity
 	if !c.BodyPresent {
 		effects[0] = "store_body_nil"
+		bodyIdentity = ""
 	}
 	if !c.HeaderInitOK {
 		effects = append(effects, "store_header_nil")
-		return true, c.BodyIdentity, nil, effects
+		return true, bodyIdentity, nil, effects
 	}
 	effects = append(effects, "store_header")
-	return true, c.BodyIdentity, &packetHeader{PacketID: c.PacketID, Method: c.Method}, effects
+	return true, bodyIdentity, &packetHeader{PacketID: c.PacketID, Method: c.Method}, effects
 }
 func TestPacketConstructorContract(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-packet-constructor.json"))

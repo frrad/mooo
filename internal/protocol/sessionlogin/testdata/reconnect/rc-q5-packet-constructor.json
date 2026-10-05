@@ -48,11 +48,11 @@
       "header_init_ok": true
     },
     {
-      "name": "nil_body_identity_is_retained",
+      "name": "nil_body_discards_stale_identity",
       "super_init_ok": true,
       "packet_id": 0,
       "method": "HINT",
-      "body_identity": "",
+      "body_identity": "stale-body",
       "expected_returned": true,
       "expected_body_identity": "",
       "expected_header": {
@@ -75,7 +75,7 @@
       "super_init_ok": true,
       "packet_id": 0,
       "method": "HINT",
-      "body_identity": "",
+      "body_identity": "stale-header-body",
       "expected_returned": true,
       "expected_body_identity": "",
       "expected_header": null,
