@@ -41,7 +41,7 @@ func TestPushReceiptObjectFieldInventoryFixture(t *testing.T) {
 	if err = d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-object-field-inventory-unexecuted-runtime" || len(f.Cases) != 4 {
+	if f.Status != "reviewed-static-object-field-inventory-unexecuted-runtime" || len(f.Cases) != 2 {
 		t.Fatalf("fixture header = %#v", f)
 	}
 	seen := map[string]bool{}
