@@ -25,7 +25,9 @@ separately from the consumed-byte and delegate dispatch effects because the
 raw call sequence has no observed guard that suppresses those later optional
 delegate checks. Buffered trailing bytes begin a fresh header parse. The
 synthetic multi-frame case supplies distinct per-frame header and packet-init
-results, rather than reusing one global frame description.
+results, rather than reusing one global frame description. The
+`frame_input_exhausted` result is a synthetic fixture-domain guard, not an
+observed official stop or zero-return behavior.
 
 Header initializer nil and malformed-header behavior require separate runtime
 or lower-level source proof and are not generalized here; the bounded fixture
