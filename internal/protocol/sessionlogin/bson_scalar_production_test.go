@@ -57,7 +57,7 @@ func TestProductionBSONScalarFixture(t *testing.T) {
 			if !testCase.ExpectedReject {
 				t.Errorf("%s: unsupported encoding lacks expected_reject", testCase.Name)
 			}
-			t.Logf("%s: skip unreviewed Objective-C encoding %q", testCase.Name, testCase.ObjCType)
+			t.Logf("%s: no Go scalar equivalent; Objective-C fixture expects rejection for %q", testCase.Name, testCase.ObjCType)
 			continue
 		}
 		wire, err := bson.Marshal(bson.D{{Key: "value", Value: value}})
