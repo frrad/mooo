@@ -98,6 +98,7 @@ func EligiblePushReceiptPacket(packet loco.Packet) bool {
 }
 
 type pushReceiptCloser interface{ Close() }
+type pushReceiptWaiter interface{ Wait(context.Context) error }
 
 type pushReceiptBinding struct {
 	mu         sync.Mutex
@@ -200,7 +201,16 @@ func (b *pushReceiptBinding) wait(ctx context.Context) error {
 	if err := waitFor(ctx, b.done); err != nil {
 		return err
 	}
-	return waitFor(ctx, b.closerDone)
+	if err := waitFor(ctx, b.closerDone); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	sender := b.sender
+	b.mu.Unlock()
+	if waiter, ok := sender.(pushReceiptWaiter); ok {
+		return waiter.Wait(ctx)
+	}
+	return nil
 }
 
 func waitFor(ctx context.Context, done <-chan struct{}) error {

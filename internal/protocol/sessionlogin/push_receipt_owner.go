@@ -1,10 +1,19 @@
 package sessionlogin
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 )
+
+// PushReceiptChild is the optional downstream owner in the manager/agent
+// composition. Close invalidates queued work; Wait joins callbacks already
+// admitted before that invalidation.
+type PushReceiptChild interface {
+	Close()
+	Wait(context.Context) error
+}
 
 const (
 	PushReceiptPingSelector = "sendPingRequest:"
@@ -35,6 +44,7 @@ type PushReceiptOwner struct {
 	config     PushReceiptPingConfig
 	send       func(target string, packet any)
 	closeChild func()
+	child      PushReceiptChild
 	closed     bool
 	generation uint64
 }
@@ -48,6 +58,17 @@ func NewPushReceiptOwner(managerTarget string, agentResolver func() string, queu
 		closeChild = childCloser[0]
 	}
 	return &PushReceiptOwner{manager: managerTarget, agent: agentResolver, queue: queue, scheduler: scheduler, config: config, send: send, closeChild: closeChild}, nil
+}
+
+// NewPushReceiptOwnerWithChild composes manager shutdown with the downstream
+// agent owner while preserving the legacy constructor for uncomposed callers.
+func NewPushReceiptOwnerWithChild(managerTarget string, agentResolver func() string, queue PushReceiptQueue, scheduler PushReceiptPingScheduler, config PushReceiptPingConfig, send func(target string, packet any), child PushReceiptChild) (*PushReceiptOwner, error) {
+	owner, err := NewPushReceiptOwner(managerTarget, agentResolver, queue, scheduler, config, send)
+	if err != nil {
+		return nil, err
+	}
+	owner.child = child
+	return owner, nil
 }
 
 // Send enqueues manager PING cancellation, invokes the carriage-agent send
@@ -116,8 +137,26 @@ func (o *PushReceiptOwner) Close() {
 	o.generation++
 	closeChild := o.closeChild
 	o.closeChild = nil
+	child := o.child
 	o.mu.Unlock()
+	if child != nil {
+		child.Close()
+	}
 	if closeChild != nil {
 		closeChild()
 	}
+}
+
+// Wait joins callbacks admitted by the optional downstream owner.
+func (o *PushReceiptOwner) Wait(ctx context.Context) error {
+	if o == nil || ctx == nil {
+		return context.Canceled
+	}
+	o.mu.Lock()
+	child := o.child
+	o.mu.Unlock()
+	if child == nil {
+		return nil
+	}
+	return child.Wait(ctx)
 }

@@ -459,6 +459,16 @@ type receiptOwnerSender struct{ tags []int64 }
 
 func (s *receiptOwnerSender) SendPushReceipt(_ any, tag int64) { s.tags = append(s.tags, tag) }
 
+type blockedReceiptOwnerSender struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s *blockedReceiptOwnerSender) SendPushReceipt(any, int64) {
+	close(s.started)
+	<-s.release
+}
+
 type receiptPingScheduler struct{ cancels, schedules int }
 
 func (s *receiptPingScheduler) Cancel(string, string, any)                  { s.cancels++ }
@@ -477,9 +487,9 @@ func TestSessionComposesManagerAndAgentReceiptOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 	scheduler := &receiptPingScheduler{}
-	manager, err := sessionlogin.NewPushReceiptOwner("manager-instance", func() string { return "agent-instance" }, queue, scheduler, receiptPingConfig{}, func(_ string, packet any) {
+	manager, err := sessionlogin.NewPushReceiptOwnerWithChild("manager-instance", func() string { return "agent-instance" }, queue, scheduler, receiptPingConfig{}, func(_ string, packet any) {
 		_ = agent.Send(packet)
-	}, agent.Close)
+	}, agent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -514,9 +524,9 @@ func TestSessionShutdownInvalidatesQueuedComposedReceiptOwnerWork(t *testing.T) 
 		t.Fatal(err)
 	}
 	scheduler := &receiptPingScheduler{}
-	manager, err := sessionlogin.NewPushReceiptOwner("manager-instance", func() string { return "agent-instance" }, queue, scheduler, receiptPingConfig{}, func(_ string, packet any) {
+	manager, err := sessionlogin.NewPushReceiptOwnerWithChild("manager-instance", func() string { return "agent-instance" }, queue, scheduler, receiptPingConfig{}, func(_ string, packet any) {
 		_ = agent.Send(packet)
-	}, agent.Close)
+	}, agent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,5 +551,47 @@ func TestSessionShutdownInvalidatesQueuedComposedReceiptOwnerWork(t *testing.T) 
 	}
 	if len(transport.tags) != 0 || scheduler.cancels != 0 || scheduler.schedules != 0 {
 		t.Fatalf("shutdown admitted obsolete composed work: tags=%v cancels=%d schedules=%d", transport.tags, scheduler.cancels, scheduler.schedules)
+	}
+}
+
+func TestSessionShutdownJoinsActiveDownstreamReceiptOwner(t *testing.T) {
+	queue := &receiptOwnerQueue{}
+	status := &receiptOwnerStatus{value: 3}
+	sender := &blockedReceiptOwnerSender{started: make(chan struct{}), release: make(chan struct{})}
+	agent, err := sessionlogin.NewPushReceiptAgentOwner(queue, status, receiptOwnerAccessor{id: 17}, sender)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := newSession(nil)
+	if err := session.BindPushReceipt(agent, func(loco.Packet) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	session.dispatchPushReceipt(loco.Packet{})
+	deadline := time.After(time.Second)
+	for queue.count() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("downstream receipt owner did not enqueue")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	go queue.runOne()
+	select {
+	case <-sender.started:
+	case <-time.After(time.Second):
+		t.Fatal("downstream receipt sender did not start")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err = session.Shutdown(ctx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("shutdown while downstream sender blocked = %v, want deadline", err)
+	}
+	close(sender.release)
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := session.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown after downstream sender release: %v", err)
 	}
 }
