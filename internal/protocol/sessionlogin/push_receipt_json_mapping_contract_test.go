@@ -45,6 +45,29 @@ func projectReceiptJSONMapping(c receiptJSONMappingCase) map[string]*string {
 	return out
 }
 
+func expectedReceiptJSONMappingEffects(c receiptJSONMappingCase) []string {
+	if c.InputKind != "dictionary" {
+		return []string{"return_super_result_unchanged"}
+	}
+	effects := []string{"mutable_dictionary"}
+	for _, mapping := range c.Mappings {
+		_, source := mapping[0], mapping[1]
+		value, present := c.Input[source]
+		if !present {
+			effects = append(effects, "source_lookup_absent", "skip_assignment", "no_source_removal")
+			continue
+		}
+		effects = append(effects, "source_lookup_present")
+		if value == nil {
+			effects = append(effects, "nsnull_guard")
+		} else {
+			effects = append(effects, "assign_destination")
+		}
+		effects = append(effects, "remove_source")
+	}
+	return effects
+}
+
 func TestPushReceiptJSONMappingFixture(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-push-receipt-json-mapping.json"))
 	if err != nil {
@@ -71,8 +94,8 @@ func TestPushReceiptJSONMappingFixture(t *testing.T) {
 		if got := projectReceiptJSONMapping(c); !reflect.DeepEqual(got, c.Expected) {
 			t.Errorf("%s output=%v want %v", c.Name, got, c.Expected)
 		}
-		if len(c.Effects) == 0 {
-			t.Errorf("%s has no guarded effects", c.Name)
+		if got := c.Effects; !reflect.DeepEqual(got, expectedReceiptJSONMappingEffects(c)) {
+			t.Errorf("%s effects=%v want %v", c.Name, got, expectedReceiptJSONMappingEffects(c))
 		}
 	}
 }
