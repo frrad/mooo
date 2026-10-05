@@ -41,10 +41,13 @@ The first fresh bridge presentation was rejected by the owned Android client
 failure's stage is unresolved: it may be image decoding, scanner route
 classification, QR-info lookup, or a later account-side policy response. The
 offline APK audit now traces the scanner-to-info request and its broad result
-routing, but it does not prove which stage produced the generic rejection in
-the failed bridge presentation. No decoder differential has isolated the
-cause, and the bridgev2 renderer is supplied by the framework rather than the
-connector.
+routing. A private replay of the actual rejected Matrix image (retrieved from
+the disposable homeserver and deleted after analysis) decoded successfully
+with ZXing and matched the original Matrix event body byte-for-byte. This
+rules out media corruption, PNG transport, and raw-payload mutation as the
+cause of that attempt; the remaining stage is scanner route classification,
+QR-info lookup, or a later account-side response. The bridgev2 renderer is
+supplied by the framework rather than the connector.
 
 ### Official Android presentation and scan path (source audit)
 
@@ -60,6 +63,7 @@ writer configured with error correction `H`, zero quiet-zone margin, and a
 150dp square bitmap. The bridgev2 command path currently renders QR values
 with `go-qrcode` at error correction `Low` and a 512px image. This is a
 concrete renderer-parity difference to test offline; it is not yet evidence
-that `Low` caused the Android rejection. The current bridge test therefore
-verifies raw-payload preservation while the rejection stage remains pending a
-decoder differential and controlled end-to-end confirmation.
+that `Low` caused the Android rejection: the recovered failed image decoded
+correctly and preserved its payload. The current bridge test therefore
+verifies raw-payload preservation while the post-decode rejection path remains
+pending controlled info-response observation.
