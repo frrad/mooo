@@ -1,0 +1,10 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {"name":"owner_deallocated","owner_present":false,"error_kind":"success","connection_present":false,"expected_effects":["weak_owner_load","owner_nil_return"]},
+    {"name":"success_cleanup","owner_present":true,"error_kind":"success","connection_present":true,"expected_effects":["weak_owner_load","toggle_out_segment_timeout","success_cleanup"]},
+    {"name":"posix_59_cleanup","owner_present":true,"error_kind":"posix_0x59","connection_present":true,"expected_effects":["weak_owner_load","toggle_out_segment_timeout","posix_0x59_cleanup"]},
+    {"name":"other_error_cancels_connection","owner_present":true,"error_kind":"other_error","connection_present":true,"expected_effects":["weak_owner_load","toggle_out_segment_timeout","error_log","nw_connection_cancel","error_cleanup"]},
+    {"name":"other_error_without_connection","owner_present":true,"error_kind":"other_error","connection_present":false,"expected_effects":["weak_owner_load","toggle_out_segment_timeout","error_log","no_connection_cancel","error_cleanup"]}
+  ]
+}
