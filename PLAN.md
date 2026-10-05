@@ -201,10 +201,11 @@ does not authorize Session binding, packet construction, or default activation.
 
 ### Push-receipt builder boundary after scalar conformance
 
-The production BSON conformance slice now verifies the reviewed scalar vectors by
+The prepared BSON conformance slice verifies the reviewed scalar vectors by
 passing explicit typed Go values through the existing Mongo BSON encoder. It
 covers boolean, double (including signed negative zero), signed int32, signed
-int64, and null payload bytes and widths. Unsupported Objective-C encodings
+int64, and null payload bytes and widths; the slice lands independently only
+after its review and CI merge gates complete. Unsupported Objective-C encodings
 remain explicit fixture rejection cases; they do not justify a generic fallback
 converter.
 
