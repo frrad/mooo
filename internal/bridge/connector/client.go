@@ -46,6 +46,8 @@ const (
 	stateChangeServer       status.BridgeStateErrorCode = "kakao-change-server"
 )
 
+var terminalDisconnectTimeout = 5 * time.Second
+
 func init() {
 	status.BridgeStateHumanErrors.Update(status.BridgeStateErrorMap{
 		stateProfileUnavailable: "The Kakao profile could not be opened; it may be in use by another process.",
@@ -74,14 +76,14 @@ type KakaoClient struct {
 	queue     func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult
 	sendState func(status.BridgeState)
 
-	mu           sync.Mutex
-	disconnectMu sync.Mutex
-	client       kakaoClient
-	cleanup      kakaoClient
-	connecting   bool
-	stopping     bool
-	done         chan struct{}
-	cleanupDone  chan struct{}
+	mu             sync.Mutex
+	disconnectGate chan struct{}
+	client         kakaoClient
+	cleanup        kakaoClient
+	connecting     bool
+	stopping       bool
+	done           chan struct{}
+	cleanupDone    chan struct{}
 }
 
 var (
@@ -264,8 +266,20 @@ func committable(result bridgev2.EventHandlingResult) bool {
 }
 
 func (kc *KakaoClient) Disconnect() {
-	kc.disconnectMu.Lock()
-	defer kc.disconnectMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), terminalDisconnectTimeout)
+	defer cancel()
+	kc.mu.Lock()
+	if kc.disconnectGate == nil {
+		kc.disconnectGate = make(chan struct{}, 1)
+	}
+	gate := kc.disconnectGate
+	kc.mu.Unlock()
+	select {
+	case gate <- struct{}{}:
+		defer func() { <-gate }()
+	case <-ctx.Done():
+		return
+	}
 	kc.mu.Lock()
 	c := kc.client
 	done := kc.done
@@ -284,8 +298,6 @@ func (kc *KakaoClient) Disconnect() {
 	if c == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	err := c.Shutdown(ctx)
 	deadline, hasDeadline := ctx.Deadline()
 	if err == nil && done != nil {
