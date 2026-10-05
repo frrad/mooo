@@ -7,15 +7,17 @@ direct room. It does not establish general Kakao or Matrix parity.
 
 On 2026-10-04, the native bridge at source revision `a8d8970` was exercised
 with the owned tester and an imported secondary-device profile. The method used
-the Matrix management-room invitation/join flow, phone UI observation, Matrix
-event inspection, and a clean bridge shutdown. The observed path was:
+the Matrix portal invitation/join flow, phone UI observation, Matrix event
+inspection, and a clean bridge shutdown. The observed path was:
 
 - a phone own-device message arrived in Matrix and created one direct portal
   with one stored message;
 - Matrix text sent back to Kakao arrived in the phone conversation;
-- an inbound Kakao text was replied to from Matrix, and the phone bubble showed
-  the expected reply relation to the known Matrix event;
-- a Matrix reply to a Kakao message arrived in the phone conversation;
+- a Matrix reply to a persisted phone-originated message appeared in Kakao with
+  the original Kakao message context;
+- a phone-originated reply to Matrix text arrived as a Matrix event; HTTP 200
+  inspection confirmed `m.relates_to.m.in_reply_to` targeted the known Matrix
+  event. The phone UI itself does not expose the Matrix event ID;
 - one Matrix-to-Kakao PNG completed as a rendered photo bubble, rather than a
   loading placeholder;
 - the final private database observation had one login, one portal, and five
@@ -29,10 +31,11 @@ observation covers Matrix-to-Kakao only.
 
 This run did not prove group rooms, encrypted rooms, Kakao-to-Matrix photos,
 reactions, restart/offline recovery, or fresh QR enrollment. It did not prove
-the full alpha acceptance sequence. The current QR follow-up on 2026-10-05
-used a fresh profile and exercised bounded expiry and profile cleanup after an
-invalid input selection; it did not establish renderer lookup, approval, or a
-server-side cause.
+the full alpha acceptance sequence. The QR follow-up used source revision
+`324ad37caa52a3a56960c60acd8b63dc4b247220` (the PR183 head, rather than current
+main), a fresh profile, and exercised bounded expiry and profile cleanup after
+an invalid input selection. It produced no Matrix renderer lookup result and
+did not establish approval or a server-side cause.
 
 ## Container smoke
 
