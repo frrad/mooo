@@ -30,6 +30,14 @@ value by KVC, then passes the resulting value to the scalar BSON conversion
 branch. This note records the conversion boundary only; it does not claim a
 default HINT/BLOCKSYNC activation policy or a server-side acceptance rule.
 
+The reviewed static chain places the inherited `LocoPushReceipt` JSON
+implementation at `0x101355b04`; its mutable-dictionary path removes the
+class properties before applying the mapping dictionary. The
+`LocoBlockSyncPushReceipt` mapping override is at `0x1016bb150`. These source
+receipts establish where the typed property value enters projection and
+mapping; they do not turn the local Foundation coercion result into a claim
+about every model class or every platform release.
+
 The synthetic vector test records the input class and Objective-C type for all
 21 cases, including the seven factory-created signed-64-bit inputs. It is
 `internal/protocol/sessionlogin/foundation_int32_kvc_contract_test.go`, with
