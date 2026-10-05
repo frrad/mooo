@@ -205,7 +205,8 @@ and full official-client parity remain outside this alpha goal.
       expiry/cancellation, and restart resume with the owned disposable
       account. The first bridge-native scan on 2026-10-04 displayed a QR in
       Matrix, but Android rejected it before approval. No fresh credentials
-      were installed. The failing stage and corrective regression remain open;
+      were installed. Source tracing identifies the rejection as QR-info not found; the cause and
+      corrective regression remain open;
       see [deployment validation](DEPLOYMENT-VALIDATION.md).
 - [x] Bounded photos in both directions (PR #167): authenticated Matrix
       streaming download with encrypted-media validation, Kakao upload/download,

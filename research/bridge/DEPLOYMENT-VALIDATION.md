@@ -37,9 +37,11 @@ screen captures were removed from the lab devices.
 
 This does not establish a rendering defect. Previous successful clean-room
 registration and the official macOS presentation path both preserve the
-server-issued payload unchanged. The rejection stage remains unresolved:
-image decoding, route classification, QR-info lookup, or subsequent account
-policy. Fresh enrollment acceptance requires identifying the cause, adding a
+server-issued payload unchanged. A second fresh-profile attempt also failed. Offline decoding recovered the
+exact server-issued payload. Android source tracing identifies the observed
+scanner modal as the QR-info endpoint's `GENERAL_NOT_FOUND` branch: the scan
+reached lookup, but the server did not resolve the challenge. The underlying
+generation, check-key, or account-policy cause remains unresolved. Fresh enrollment acceptance requires identifying the cause, adding a
 regression, and completing a controlled retry followed by restart/resume.
 
 ## Beeper: independent gate
