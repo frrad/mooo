@@ -56,3 +56,9 @@ The fixtures are strict characterizations of the reviewed admission, reread,
 queue, cancellation, terminal-disconnect, and LocoAgent read-routing behavior.
 They do not claim a runtime timer implementation, decrypted wire-field
 interpretation, or socket error policy.
+
+The clean-room `InSegmentTimeoutOwner` adds an implementation-level terminal
+guard: once its timer fires, it retires queued and scheduled owner work and
+invokes its disconnect callback once. This is an explicit lifecycle decision for
+the reusable owner and does not assert that the official callback's reentrancy
+behavior was independently observed.

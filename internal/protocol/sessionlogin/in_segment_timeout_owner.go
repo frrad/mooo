@@ -23,7 +23,10 @@ type InSegmentTimeoutConfig interface{ InSegmentTimeout() time.Duration }
 // InSegmentTimeoutOwner models the reviewed in-segment watchdog. It is opt-in:
 // callers own transport shutdown and choose when to admit a toggle. A positive
 // admission read queues the main-queue operation; only enable rereads the
-// timeout at execution. Fire disconnects this owner exactly once.
+// timeout at execution. This clean-room owner retires all queued and scheduled
+// work on its terminal fire and disconnects once; that terminal one-shot policy
+// is an implementation decision, not a claim about the official callback's
+// independently observed reentrancy behavior.
 type InSegmentTimeoutOwner struct {
 	mu      sync.Mutex
 	clock   InSegmentTimeoutClock
@@ -99,6 +102,11 @@ func (o *InSegmentTimeoutOwner) fire(entry *inSegmentTimer) {
 	}
 	delete(o.timers, entry)
 	o.closed = true
+	clear(o.queued)
+	for other := range o.timers {
+		other.timer.Stop()
+		delete(o.timers, other)
+	}
 	disconnect := o.disconn
 	o.mu.Unlock()
 	disconnect()
