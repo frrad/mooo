@@ -82,6 +82,24 @@
         "store_header",
         "header_body_length_reads_nil_as_zero"
       ]
+    },
+    {
+      "name": "nonzero_large_input_length_uses_uint64_remainder",
+      "super_init_ok": true,
+      "header_init_ok": true,
+      "input_length": 4294967318,
+      "header_body_length": 1,
+      "decoder_result": "decoded-body",
+      "expected_returned": true,
+      "expected_body": "decoded-body",
+      "expected_slice_length": 4294967296,
+      "expected_effects": [
+        "init_header_from_first_22_bytes",
+        "store_header",
+        "slice_body_from_offset_22",
+        "decode_dictionary_with_bson_data",
+        "store_body_decoder_result"
+      ]
     }
   ],
   "bson_decoder": {
@@ -89,10 +107,6 @@
     "cases": [
       {
         "name": "empty_document",
-        "elements": [],
-        "terminator_present": true,
-        "trailing_bytes": false,
-        "unknown_type_after_elements": false,
         "expected_dictionary": [],
         "expected_stop": "terminator_stops_element_loop",
         "bson_hex": "0500000000",
@@ -102,13 +116,6 @@
       },
       {
         "name": "signed_scalar_fields",
-        "elements": [
-          "revision=-1:int32",
-          "count=4294967296:int64"
-        ],
-        "terminator_present": true,
-        "trailing_bytes": false,
-        "unknown_type_after_elements": false,
         "expected_dictionary": [
           "revision=-1:int32",
           "count=4294967296:int64"
@@ -123,12 +130,6 @@
       },
       {
         "name": "terminator_ignores_coalesced_trailing_bytes",
-        "elements": [
-          "method=HINT:string"
-        ],
-        "terminator_present": true,
-        "trailing_bytes": true,
-        "unknown_type_after_elements": false,
         "expected_dictionary": [
           "method=HINT:string"
         ],
@@ -141,12 +142,6 @@
       },
       {
         "name": "unknown_type_returns_accumulated_dictionary",
-        "elements": [
-          "method=HINT:string"
-        ],
-        "terminator_present": false,
-        "trailing_bytes": false,
-        "unknown_type_after_elements": true,
         "expected_dictionary": [
           "method=HINT:string"
         ],
@@ -155,6 +150,19 @@
         "expected_cursor_steps": [
           17
         ]
+      },
+      {
+        "name": "duplicate_key_replaces_prior_value",
+        "bson_hex": "1b000000107800010000001078000200000000",
+        "expected_cursor_steps": [
+          7,
+          7,
+          0
+        ],
+        "expected_dictionary": [
+          "x=2:int32"
+        ],
+        "expected_stop": "terminator_stops_element_loop"
       }
     ]
   }
