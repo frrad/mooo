@@ -74,11 +74,13 @@ type KakaoClient struct {
 	queue     func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult
 	sendState func(status.BridgeState)
 
-	mu         sync.Mutex
-	client     kakaoClient
-	connecting bool
-	stopping   bool
-	done       chan struct{}
+	mu          sync.Mutex
+	client      kakaoClient
+	cleanup     kakaoClient
+	connecting  bool
+	stopping    bool
+	done        chan struct{}
+	cleanupDone chan struct{}
 }
 
 var (
@@ -111,7 +113,7 @@ func (kc *KakaoClient) log() *zerolog.Logger {
 
 func (kc *KakaoClient) Connect(ctx context.Context) {
 	kc.mu.Lock()
-	if kc.client != nil || kc.connecting {
+	if kc.client != nil || kc.cleanup != nil || kc.connecting {
 		kc.mu.Unlock()
 		return
 	}
@@ -264,22 +266,54 @@ func (kc *KakaoClient) Disconnect() {
 	kc.mu.Lock()
 	c := kc.client
 	done := kc.done
+	if c == nil {
+		c = kc.cleanup
+		done = kc.cleanupDone
+	}
 	kc.stopping = true
 	kc.client = nil
 	kc.done = nil
+	if c != nil {
+		kc.cleanup = c
+		kc.cleanupDone = done
+	}
 	kc.mu.Unlock()
 	if c == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	err := c.Shutdown(ctx)
+	deadline, hasDeadline := ctx.Deadline()
 	cancel()
+	if err == nil && done != nil {
+		wait := time.Until(deadline)
+		if !hasDeadline || wait <= 0 {
+			err = context.DeadlineExceeded
+		} else {
+			timer := time.NewTimer(wait)
+			select {
+			case <-done:
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+			case <-timer.C:
+				err = context.DeadlineExceeded
+			}
+		}
+	}
 	if err != nil {
 		kc.log().Err(err).Msg("Failed to close Kakao client")
+		return
 	}
-	if err == nil && done != nil {
-		<-done
+	kc.mu.Lock()
+	if kc.cleanup == c {
+		kc.cleanup = nil
+		kc.cleanupDone = nil
 	}
+	kc.mu.Unlock()
 }
 
 func (kc *KakaoClient) IsLoggedIn() bool {

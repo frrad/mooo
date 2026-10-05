@@ -38,8 +38,10 @@ The bridge disconnect seam now calls the client's context-bounded `Shutdown`
 operation instead of `Close`. This matters after terminal admission: `Close`
 is intentionally idempotent once the client is marked closed, while
 `Shutdown` still joins the Session worker and then releases the profile lease.
-If the deadline expires, the bridge records the error and does not wait
-unboundedly; a later explicit shutdown can retry ownership release.
+If the deadline expires, the bridge records the error, retains the cleanup
+client and worker handle, and does not wait unboundedly. A later disconnect
+retries the same owner; new connection admission is blocked while cleanup is
+retained.
 
 This leaves two integration gaps:
 

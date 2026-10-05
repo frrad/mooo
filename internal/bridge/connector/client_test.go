@@ -40,19 +40,20 @@ type catchUpResult struct {
 }
 
 type fakeKakao struct {
-	mu            sync.Mutex
-	connectErr    error
-	resumeTargets []syncmsg.Target
-	resumeErr     error
-	catchUps      map[int64]catchUpResult
-	calls         []string
-	stream        chan events.Result
-	commits       []events.Event
-	sends         []sentText
-	sendResp      chat.WriteResponse
-	sendErr       error
-	closeCalls    int
-	shutdownCalls int
+	mu               sync.Mutex
+	connectErr       error
+	resumeTargets    []syncmsg.Target
+	resumeErr        error
+	catchUps         map[int64]catchUpResult
+	calls            []string
+	stream           chan events.Result
+	commits          []events.Event
+	sends            []sentText
+	sendResp         chat.WriteResponse
+	sendErr          error
+	closeCalls       int
+	shutdownCalls    int
+	shutdownFailures int
 }
 
 func (f *fakeKakao) Connect(ctx context.Context) error { return f.connectErr }
@@ -103,6 +104,11 @@ func (f *fakeKakao) Close() error {
 func (f *fakeKakao) Shutdown(ctx context.Context) error {
 	f.mu.Lock()
 	f.shutdownCalls++
+	if f.shutdownFailures > 0 {
+		f.shutdownFailures--
+		f.mu.Unlock()
+		return context.DeadlineExceeded
+	}
 	f.mu.Unlock()
 	return f.Close()
 }
@@ -470,6 +476,47 @@ func TestDisconnectClosesClientWithoutReportingFailure(t *testing.T) {
 	}
 	if last := harness.lastState().StateEvent; last != status.StateConnected {
 		t.Fatalf("last state = %s; a requested disconnect is not a failure", last)
+	}
+}
+
+func TestDisconnectRetainsCleanupOwnerAfterShutdownTimeout(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result), shutdownFailures: 1}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.Connect(context.Background())
+	go func() {
+		for {
+			fake.mu.Lock()
+			closed := fake.closeCalls > 0
+			fake.mu.Unlock()
+			if closed {
+				close(fake.stream)
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	kc.Disconnect()
+	kc.mu.Lock()
+	retained := kc.cleanup != nil && kc.client == nil
+	kc.mu.Unlock()
+	if !retained {
+		t.Fatal("timed-out shutdown did not retain cleanup owner")
+	}
+	kc.Connect(context.Background())
+	kc.mu.Lock()
+	if kc.client != nil {
+		kc.mu.Unlock()
+		t.Fatal("Connect admitted while cleanup owner was retained")
+	}
+	kc.mu.Unlock()
+
+	kc.Disconnect()
+	kc.mu.Lock()
+	retained = kc.cleanup != nil
+	kc.mu.Unlock()
+	if retained {
+		t.Fatal("successful retry retained cleanup owner")
 	}
 }
 
