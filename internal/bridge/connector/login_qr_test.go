@@ -368,17 +368,27 @@ func (b blockingGenerateBackend) Cancel(ctx context.Context, req registration.QR
 
 func TestQRLoginCancelDuringLateGenerateCancelsReturnedChallenge(t *testing.T) {
 	release := make(chan struct{})
+	started := make(chan struct{})
+	cancelObserved := make(chan struct{})
 	backend := newFakeQRBackend(t, `{"status":0,"user":{"userId":42},"accessToken":"access","refreshToken":"refresh","tokenType":"bearer"}`)
 	login := newQRTestLogin(t, backend)
 	login.backendFactory = func(context.Context, authstate.Identity) (qrBackend, error) {
-		return lateGenerateBackend{release: release, result: backend}, nil
+		return lateGenerateBackend{release: release, started: started, cancelObserved: cancelObserved, result: backend}, nil
 	}
 	startDone := make(chan struct{})
 	go func() { _, _ = login.Start(context.Background()); close(startDone) }()
-	time.Sleep(10 * time.Millisecond)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("late generation did not start")
+	}
 	cancelDone := make(chan struct{})
 	go func() { login.Cancel(); close(cancelDone) }()
-	time.Sleep(10 * time.Millisecond)
+	select {
+	case <-cancelObserved:
+	case <-time.After(time.Second):
+		t.Fatal("generation did not observe cancellation")
+	}
 	close(release)
 	select {
 	case <-startDone:
@@ -399,12 +409,20 @@ func TestQRLoginCancelDuringLateGenerateCancelsReturnedChallenge(t *testing.T) {
 }
 
 type lateGenerateBackend struct {
-	release chan struct{}
-	result  *fakeQRBackend
+	release        chan struct{}
+	started        chan struct{}
+	cancelObserved chan struct{}
+	result         *fakeQRBackend
 }
 
-func (b lateGenerateBackend) Generate(context.Context, registration.QRGenerateRequest) (registration.QRChallenge, error) {
-	<-b.release
+func (b lateGenerateBackend) Generate(ctx context.Context, _ registration.QRGenerateRequest) (registration.QRChallenge, error) {
+	close(b.started)
+	select {
+	case <-ctx.Done():
+		close(b.cancelObserved)
+		<-b.release
+	case <-b.release:
+	}
 	return b.result.challenge, nil
 }
 func (b lateGenerateBackend) Poll(ctx context.Context, req registration.QRLoginRequest) (qrPollResult, error) {
