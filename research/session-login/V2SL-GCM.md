@@ -4,9 +4,10 @@ Status: reviewed clean-room partial specification, 2026-10-05.
 
 This contract records a version-scoped, implementation-neutral observation of
 the V2 secure-layer crypto primitive. The evidence is static binary analysis of
-an authorized macOS client, transferred through sanitized experiment
-`SL-BIN-V2SL-GCM-2026-10-05`. No account data, live key, packet capture, or
-proprietary source is part of this repository.
+an authorized macOS 26.8.0 client, transferred through sanitized experiment
+`SL-BIN-V2SL-GCM-2026-10-05`. The private transfer record is the
+`v2sl-gcm-failure-contract` receipt. No account data, live key, packet capture,
+or proprietary source is part of this repository.
 
 ## Primitive
 
@@ -34,8 +35,11 @@ separate contracts and are intentionally not inferred here.
 
 Decryption authenticates before exposing plaintext. A wrong key, nonce,
 ciphertext, tag, or associated-data value fails authentication and returns no
-plaintext; cleanup still runs before the primitive returns. Inputs with
-unsupported key, nonce, or tag sizes are invalid.
+plaintext; cleanup still runs before the primitive returns. The observed
+finalization predicate accepts signed return values greater than or equal to
+one; zero and negative values return no plaintext. The source widths are
+observed for the selected path, while unsupported-size rejection remains an
+implementation choice outside this static contract.
 
 The failure boundary is asymmetric. If the primitive cannot create its cipher
 context, it returns no ciphertext. The observed outer V2 assembly has already
@@ -46,8 +50,9 @@ authenticated application data, and a caller must reject it before interpreting
 plaintext. On the reviewed path, the low-level operation statuses after context
 creation are not individually branched on before tag collection; this is an
 observed source behavior, not a recommendation to accept partially initialized
-results. Decryption returns no plaintext after context or authentication
-failure, including after its cleanup path.
+results. A context-creation failure stops before those operations. Decryption
+returns no plaintext after context or authentication failure, including after
+its cleanup path.
 
 This is a primitive contract, not a claim that all surrounding client paths
 have been traced. In particular, the public evidence does not establish the
@@ -61,11 +66,12 @@ and the Go standard library. It checks a pinned `nonce || ciphertext || tag`
 vector, successful round-trip, and rejection after changing the key, nonce,
 ciphertext, tag, or associated data. A separate state fixture records the
 observed outer fall-through when primitive context creation returns no
-ciphertext. The strict key/nonce checks in the Go helper are synthetic
-implementation guards; the source evidence establishes the widths supplied by
-the reviewed path, not a complete invalid-size branch table. The vectors are
-independent characterizations of the published byte layout, not live-client
-captures.
+ciphertext. The state fixture also models the observed context and
+finalization return-code predicates. The strict key/nonce checks in the Go
+helper are synthetic implementation guards; the source evidence establishes
+the widths supplied by the reviewed path, not a complete invalid-size branch
+table. The vectors are independent characterizations of the published byte
+layout, not live-client captures.
 
 ## Confidence and scope
 

@@ -6,6 +6,7 @@ import (
 	"crypto/cipher"
 	"encoding/hex"
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -66,6 +67,35 @@ func observedV2SLOuterAssembly(nonce, initialTag []byte, primitive func([]byte) 
 	out = append(out, nonce...)
 	out = append(out, ciphertext...)
 	return append(out, tag...)
+}
+
+type v2SLPrimitiveTrace struct {
+	contextCreated bool
+	steps          []string
+	finalCode      int
+	freed          bool
+}
+
+// observedV2SLPrimitiveState records the reviewed control-flow boundary. The
+// primitive stops at context creation failure; once a context exists, later
+// low-level statuses do not short-circuit the sequence.
+func observedV2SLPrimitiveState(trace *v2SLPrimitiveTrace, tag []byte) []byte {
+	trace.steps = append(trace.steps, "context")
+	if !trace.contextCreated {
+		return nil
+	}
+	trace.steps = append(trace.steps, "init", "iv", "update", "final", "get-tag")
+	copy(tag, bytes.Repeat([]byte{0x3c}, len(tag)))
+	return []byte("ciphertext")
+}
+
+func observedV2SLDecryptState(trace *v2SLPrimitiveTrace, plaintext []byte) []byte {
+	trace.steps = append(trace.steps, "decrypt-update", "set-tag", "decrypt-final")
+	trace.freed = true
+	if trace.finalCode < 1 {
+		return nil
+	}
+	return append([]byte(nil), plaintext...)
 }
 
 func TestV2SLGCMContractPinnedVector(t *testing.T) {
@@ -162,7 +192,27 @@ func TestV2SLOuterAssemblyRetainsTagWhenPrimitiveHasNoCiphertext(t *testing.T) {
 		copy(tag, writtenTag)
 		return []byte("ciphertext")
 	})
-	if !bytes.Equal(out[:v2SLNonceSize], nonce) || !bytes.Equal(out[v2SLNonceSize+len("ciphertext"):], writtenTag) {
+	want := append(append(append([]byte(nil), nonce...), []byte("ciphertext")...), writtenTag...)
+	if !bytes.Equal(out, want) {
 		t.Fatalf("successful envelope state = %x", out)
+	}
+}
+
+func TestV2SLPrimitiveFailureStateAndIgnoredStatuses(t *testing.T) {
+	tag := bytes.Repeat([]byte{0xa5}, v2SLTagSize)
+	failed := &v2SLPrimitiveTrace{contextCreated: false}
+	if got := observedV2SLPrimitiveState(failed, tag); got != nil || !bytes.Equal(tag, bytes.Repeat([]byte{0xa5}, v2SLTagSize)) || !reflect.DeepEqual(failed.steps, []string{"context"}) {
+		t.Fatalf("context failure state: output=%x tag=%x steps=%v", got, tag, failed.steps)
+	}
+	active := &v2SLPrimitiveTrace{contextCreated: true}
+	if got := observedV2SLPrimitiveState(active, tag); !bytes.Equal(got, []byte("ciphertext")) || !reflect.DeepEqual(active.steps, []string{"context", "init", "iv", "update", "final", "get-tag"}) {
+		t.Fatalf("post-context state: output=%x steps=%v", got, active.steps)
+	}
+	for _, code := range []int{-1, 0, 1, 2} {
+		trace := &v2SLPrimitiveTrace{finalCode: code}
+		got := observedV2SLDecryptState(trace, []byte("plaintext"))
+		if (code < 1) != (got == nil) || !trace.freed {
+			t.Fatalf("final code %d: output=%q freed=%v", code, got, trace.freed)
+		}
 	}
 }
