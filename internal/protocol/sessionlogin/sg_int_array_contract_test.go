@@ -99,3 +99,77 @@ func hexDecode(s string) ([]byte, error) {
 	}
 	return out, nil
 }
+
+func TestSGIntArrayElementCoercionFixture(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-sg-int-array.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		ElementCases []struct {
+			Name         string `json:"name"`
+			Class        string `json:"class"`
+			Width        int    `json:"width"`
+			Kind         string `json:"kind"`
+			ExpectedData string `json:"expected_data_hex"`
+			FailureIndex int    `json:"failure_index"`
+		} `json:"element_cases"`
+	}
+	if err := json.Unmarshal(body, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if len(fixture.ElementCases) != 12 {
+		t.Fatalf("element cases=%d, want 12", len(fixture.ElementCases))
+	}
+	for _, tc := range fixture.ElementCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			got, failureIndex, ok := modelSGArrayElement(tc.Kind, tc.Width)
+			want, err := hexDecode(tc.ExpectedData)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !ok {
+				if failureIndex != tc.FailureIndex {
+					t.Fatalf("failure index=%d want %d", failureIndex, tc.FailureIndex)
+				}
+				if !bytes.Equal(got, want) {
+					t.Fatalf("prefix=%x want %x", got, want)
+				}
+				return
+			}
+			if tc.FailureIndex != 0 || !bytes.Equal(got, want) {
+				t.Fatalf("data=%x/failure=%d want data=%x/no failure", got, tc.FailureIndex, want)
+			}
+		})
+	}
+}
+
+// modelSGArrayElement contains only the captured Foundation values. The
+// strings are probe inputs, not a general numeric-string parser.
+func modelSGArrayElement(kind string, width int) ([]byte, int, bool) {
+	var value int64
+	switch kind {
+	case "bool_true":
+		value = 1
+	case "bool_false", "string_invalid":
+		value = 0
+	case "int64_above_int32":
+		value = 4294967297
+	case "double_fraction":
+		value = 3
+	case "double_negative_fraction", "string_fraction":
+		value = -3
+	case "positive_infinity":
+		value = 2147483647
+	case "negative_infinity":
+		value = -9223372036854775808
+	case "string_decimal":
+		value = 42
+	case "nsnull_after_prefix", "array_after_prefix":
+		prefix := modelSGIntArray([]int64{1}, width)
+		return prefix, 1, false
+	default:
+		return nil, 0, false
+	}
+	return modelSGIntArray([]int64{value}, width), 0, true
+}

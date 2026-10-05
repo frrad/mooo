@@ -7,7 +7,12 @@
       "class": "SGInt32Array",
       "superclass": "SGIntArray",
       "width": 4,
-      "values": [-2147483648, -1, 0, 2147483647],
+      "values": [
+        -2147483648,
+        -1,
+        0,
+        2147483647
+      ],
       "expected_data_hex": "00000080ffffffff00000000ffffff7f",
       "expected_count": 4
     },
@@ -16,7 +21,12 @@
       "class": "SGInt64Array",
       "superclass": "SGLongArray",
       "width": 8,
-      "values": [-9223372036854775808, -1, 0, 9223372036854775807],
+      "values": [
+        -9223372036854775808,
+        -1,
+        0,
+        9223372036854775807
+      ],
       "expected_data_hex": "0000000000000080ffffffffffffffff0000000000000000ffffffffffffff7f",
       "expected_count": 4
     },
@@ -25,7 +35,10 @@
       "class": "SGInt32Array",
       "superclass": "SGIntArray",
       "width": 4,
-      "number_values": [4294967297, -4294967297],
+      "number_values": [
+        4294967297,
+        -4294967297
+      ],
       "expected_data_hex": "01000000ffffffff",
       "expected_count": 2
     },
@@ -34,7 +47,10 @@
       "class": "SGInt64Array",
       "superclass": "SGLongArray",
       "width": 8,
-      "number_values": [9223372036854775807, -9223372036854775808],
+      "number_values": [
+        9223372036854775807,
+        -9223372036854775808
+      ],
       "expected_data_hex": "ffffffffffffff7f0000000000000080",
       "expected_count": 2
     },
@@ -70,5 +86,93 @@
     "superclass init failure behavior is not runtime-executed",
     "out-of-range numberAtIndex reads are unchecked and remain an explicit safety gap",
     "nil element behavior inside a nonnil NSArray is not used as a production policy"
+  ],
+  "element_cases": [
+    {
+      "name": "int32_bool_true",
+      "class": "SGInt32Array",
+      "width": 4,
+      "kind": "bool_true",
+      "expected_data_hex": "01000000"
+    },
+    {
+      "name": "int64_bool_false",
+      "class": "SGInt64Array",
+      "width": 8,
+      "kind": "bool_false",
+      "expected_data_hex": "0000000000000000"
+    },
+    {
+      "name": "int32_int64_above_boundary",
+      "class": "SGInt32Array",
+      "width": 4,
+      "kind": "int64_above_int32",
+      "expected_data_hex": "01000000"
+    },
+    {
+      "name": "int64_int64_above_boundary",
+      "class": "SGInt64Array",
+      "width": 8,
+      "kind": "int64_above_int32",
+      "expected_data_hex": "0100000001000000"
+    },
+    {
+      "name": "int32_double_fraction",
+      "class": "SGInt32Array",
+      "width": 4,
+      "kind": "double_fraction",
+      "expected_data_hex": "03000000"
+    },
+    {
+      "name": "int64_double_negative_fraction",
+      "class": "SGInt64Array",
+      "width": 8,
+      "kind": "double_negative_fraction",
+      "expected_data_hex": "fdffffffffffffff"
+    },
+    {
+      "name": "int32_positive_infinity",
+      "class": "SGInt32Array",
+      "width": 4,
+      "kind": "positive_infinity",
+      "expected_data_hex": "ffffff7f"
+    },
+    {
+      "name": "int64_negative_infinity",
+      "class": "SGInt64Array",
+      "width": 8,
+      "kind": "negative_infinity",
+      "expected_data_hex": "0000000000000080"
+    },
+    {
+      "name": "int32_string_decimal",
+      "class": "SGInt32Array",
+      "width": 4,
+      "kind": "string_decimal",
+      "expected_data_hex": "2a000000"
+    },
+    {
+      "name": "int64_string_fraction",
+      "class": "SGInt64Array",
+      "width": 8,
+      "kind": "string_fraction",
+      "expected_data_hex": "fdffffffffffffff"
+    },
+    {
+      "name": "int32_nsnull_failure_after_prefix",
+      "class": "SGInt32Array",
+      "width": 4,
+      "kind": "nsnull_after_prefix",
+      "expected_data_hex": "01000000",
+      "failure_index": 1
+    },
+    {
+      "name": "int64_array_failure_after_prefix",
+      "class": "SGInt64Array",
+      "width": 8,
+      "kind": "array_after_prefix",
+      "expected_data_hex": "0100000000000000",
+      "failure_index": 1
+    }
   ]
 }

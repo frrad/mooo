@@ -26,6 +26,16 @@ result. It uses little-endian arm64 synthetic bytes and does not activate
 production array decoding. Superclass-init failure, nil elements inside a
 nonnull source array, and unchecked out-of-range reads remain gaps.
 
+The element fixture also records account-free Foundation captures for bool,
+signed integer, finite and nonfinite double, and selected string values. The
+four-byte path uses Foundation `intValue`; the eight-byte path uses
+`longValue` (64-bit `long` on arm64). `NSNull`, arrays, and dictionaries raise
+`NSInvalidArgumentException` for both accessors. The nil-element cases model
+the source effect order: values appended before the exception remain the
+already-built prefix, while the initializer itself does not return a completed
+array. String cases are exact captured inputs only and do not define a string
+grammar.
+
 ## Provenance
 
 Framework-relative symbols from the authorized SGJsonKit binary:
@@ -42,3 +52,5 @@ Framework-relative symbols from the authorized SGJsonKit binary:
 The executable bounded contract is in
 `internal/protocol/sessionlogin/sg_int_array_contract_test.go` with vectors in
 `internal/protocol/sessionlogin/testdata/reconnect/rc-q5-sg-int-array.json`.
+The sanitized Foundation element probe is retained outside the repository at
+`/private/tmp/mooo-sg-array-element-coercion-20261005.txt`.
