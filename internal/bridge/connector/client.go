@@ -138,7 +138,9 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	}
 	stream, err := kc.connectAndSubscribe(ctx, c)
 	if err != nil {
-		_ = c.Close()
+		if shutdownErr := shutdownKakaoClient(c); shutdownErr != nil {
+			kc.log().Err(shutdownErr).Msg("Failed to clean up Kakao client after connect failure")
+		}
 		kc.log().Err(err).Msg("Failed to connect to KakaoTalk")
 		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
 		return
@@ -147,7 +149,9 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	kc.mu.Lock()
 	if kc.stopping {
 		kc.mu.Unlock()
-		_ = c.Close()
+		if shutdownErr := shutdownKakaoClient(c); shutdownErr != nil {
+			kc.log().Err(shutdownErr).Msg("Failed to clean up stopped Kakao client")
+		}
 		return
 	}
 	kc.client = c
@@ -155,6 +159,12 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	kc.mu.Unlock()
 	kc.sendState(status.BridgeState{StateEvent: status.StateConnected})
 	go kc.run(c, stream, done)
+}
+
+func shutdownKakaoClient(c kakaoClient) error {
+	ctx, cancel := context.WithTimeout(context.Background(), terminalDisconnectTimeout)
+	defer cancel()
+	return c.Shutdown(ctx)
 }
 
 // connectAndSubscribe logs in, recovers what was missed while disconnected,

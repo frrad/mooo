@@ -576,7 +576,7 @@ func TestConcurrentDisconnectRetriesRetainedOwner(t *testing.T) {
 
 func TestConcurrentDisconnectSharesOverallTimeoutBudget(t *testing.T) {
 	previous := terminalDisconnectTimeout
-	terminalDisconnectTimeout = 20 * time.Millisecond
+	terminalDisconnectTimeout = 50 * time.Millisecond
 	t.Cleanup(func() { terminalDisconnectTimeout = previous })
 	block := make(chan struct{})
 	shutdownEntered := make(chan struct{})
@@ -591,7 +591,7 @@ func TestConcurrentDisconnectSharesOverallTimeoutBudget(t *testing.T) {
 	}
 	startedAt := time.Now()
 	kc.Disconnect()
-	if elapsed := time.Since(startedAt); elapsed > 100*time.Millisecond {
+	if elapsed := time.Since(startedAt); elapsed > 80*time.Millisecond {
 		t.Fatalf("second Disconnect exceeded shared timeout budget: %v", elapsed)
 	}
 	fake.mu.Lock()
@@ -626,6 +626,25 @@ func TestConnectFailuresAreReportedWithoutRetry(t *testing.T) {
 	}
 	if kc.IsLoggedIn() {
 		t.Fatal("logged in after failed connect")
+	}
+}
+
+func TestConnectFailureUsesShutdownForCleanup(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result), resumeErr: errors.New("bootstrap failed")}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.Connect(context.Background())
+	fake.mu.Lock()
+	shutdownCalls := fake.shutdownCalls
+	closeCalls := fake.closeCalls
+	fake.mu.Unlock()
+	if shutdownCalls != 1 {
+		t.Fatalf("shutdown calls = %d, want one cleanup join", shutdownCalls)
+	}
+	if closeCalls != 1 {
+		t.Fatalf("close calls = %d, want one shutdown-owned close", closeCalls)
+	}
+	if got := harness.lastState(); got.StateEvent != status.StateTransientDisconnect || got.Error != stateConnectFailed {
+		t.Fatalf("connect failure state = %+v", got)
 	}
 }
 
