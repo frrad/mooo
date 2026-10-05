@@ -144,6 +144,18 @@ func TestTerminalNoticeClosesOwnedCarriageAndRejectsSend(t *testing.T) {
 }
 
 func TestShutdownCancelsBlockedEventDecoder(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := continuity.Open(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := acquireProfileLease(filepath.Join(dir, "profile.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = serverConn.Close() }()
 	session := &Session{
@@ -151,18 +163,25 @@ func TestShutdownCancelsBlockedEventDecoder(t *testing.T) {
 		pushes:  make(chan loco.Packet, requestLimit),
 		pending: make(map[uint32]chan requestResult),
 	}
-	api := &Client{session: session}
+	api := &Client{session: session, checkpoint: checkpoint, lease: lease}
 	stream, err := api.Events(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	session.startReadLoop()
-	frame, err := (loco.Packet{Header: loco.Header{Method: "UNKNOWN"}}).MarshalBinary(0)
-	if err != nil {
-		t.Fatal(err)
-	}
 	go func() {
-		for i := 0; i < requestLimit+1; i++ {
+		for i := int64(1); i <= requestLimit+1; i++ {
+			body, marshalErr := bson.Marshal(bson.D{
+				{Key: "chatId", Value: int64(42)},
+				{Key: "chatLog", Value: bson.D{{Key: "logId", Value: i}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "replay"}}},
+			})
+			if marshalErr != nil {
+				return
+			}
+			frame, marshalErr := (loco.Packet{Header: loco.Header{Method: "MSG"}, Body: body}).MarshalBinary(0)
+			if marshalErr != nil {
+				return
+			}
 			if _, writeErr := serverConn.Write(frame); writeErr != nil {
 				return
 			}
@@ -181,6 +200,27 @@ func TestShutdownCancelsBlockedEventDecoder(t *testing.T) {
 	defer cancel()
 	if err := api.Shutdown(ctx); err != nil {
 		t.Fatalf("shutdown with blocked decoder: %v", err)
+	}
+	if checkpoint.IsCommitted(42, 1) {
+		t.Fatal("shutdown committed an undelivered event")
+	}
+	otherLease, err := acquireProfileLease(filepath.Join(dir, "profile.lock"))
+	if err != nil {
+		t.Fatalf("profile lease after decoder shutdown: %v", err)
+	}
+	_ = otherLease.Close()
+}
+
+func TestShutdownCancelsIdleEventDecoder(t *testing.T) {
+	session := &Session{pushes: make(chan loco.Packet)}
+	api := &Client{session: session}
+	if _, err := api.Events(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := api.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown with idle decoder: %v", err)
 	}
 }
 
