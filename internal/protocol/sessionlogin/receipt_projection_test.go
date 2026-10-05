@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/frrad/mooo/internal/protocol/loco"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 func TestProjectIncomingReceiptBody(t *testing.T) {
@@ -107,11 +108,29 @@ func TestProjectIncomingReceiptBody(t *testing.T) {
 			want: ReceiptBody{Kind: ReceiptBodyBlockSync, PacketID: 14, Revision: math.MinInt32},
 		},
 		{
-			name: "unsupported scalar remains explicit",
+			name: "bool source uses Foundation Ti conversion",
+			input: IncomingReceiptInput{
+				Header: loco.Header{PacketID: 17, Method: "BLOCKSYNC"},
+				Method: "BLOCKSYNC",
+				Body:   map[string]any{"r": true, "pr": false},
+			},
+			want: ReceiptBody{Kind: ReceiptBodyBlockSync, PacketID: 17, Revision: 1},
+		},
+		{
+			name: "double source truncates through Foundation Ti conversion",
+			input: IncomingReceiptInput{
+				Header: loco.Header{PacketID: 18, Method: "BLOCKSYNC"},
+				Method: "BLOCKSYNC",
+				Body:   map[string]any{"r": 4294967297.75, "pr": -2.5},
+			},
+			want: ReceiptBody{Kind: ReceiptBodyBlockSync, PacketID: 18, Revision: 1, PlusRevision: -2},
+		},
+		{
+			name: "unsupported string remains explicit",
 			input: IncomingReceiptInput{
 				Header: loco.Header{PacketID: 15, Method: "BLOCKSYNC"},
 				Method: "BLOCKSYNC",
-				Body:   map[string]any{"r": float64(14)},
+				Body:   map[string]any{"r": "14"},
 			},
 			wantErr: ErrReceiptFieldType,
 		},
@@ -186,6 +205,35 @@ func TestProjectIncomingReceiptBodyPreservesHeaderIdentityThroughBuilder(t *test
 	}
 	if len(wire) != loco.HeaderSize+5 {
 		t.Fatalf("wire length=%d, want empty BSON frame length %d", len(wire), loco.HeaderSize+5)
+	}
+}
+
+func TestProjectIncomingReceiptBodyBuildsBSONForFoundationScalarRevisions(t *testing.T) {
+	input := IncomingReceiptInput{
+		Header: loco.Header{PacketID: 0xfeedbeef, Method: "BLOCKSYNC"},
+		Method: "BLOCKSYNC",
+		Body:   map[string]any{"r": true, "pr": 4294967297.75},
+	}
+	body, err := ProjectIncomingReceiptBody(input)
+	if err != nil {
+		t.Fatalf("projection error=%v", err)
+	}
+	wire, err := BuildReceiptPacket(ReceiptPacket{PacketID: input.Header.PacketID, Method: input.Method, Body: body}, 64)
+	if err != nil {
+		t.Fatalf("packet build error=%v", err)
+	}
+	raw := bson.Raw(wire[loco.HeaderSize:])
+	for _, tc := range []struct {
+		key  string
+		want int32
+	}{
+		{key: "r", want: 1},
+		{key: "pr", want: 1},
+	} {
+		value := raw.Lookup(tc.key)
+		if value.Type != bson.TypeInt32 || value.Int32() != tc.want {
+			t.Fatalf("%s=%v/%d, want BSON int32(%d)", tc.key, value.Type, value.Int32(), tc.want)
+		}
 	}
 }
 

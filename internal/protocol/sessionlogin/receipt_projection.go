@@ -80,14 +80,8 @@ func projectReceiptInt32Field(fields map[string]any, source, destination string)
 }
 
 func receiptInt32(value any, field string) (int32, error) {
-	switch value := value.(type) {
-	case int32:
-		return value, nil
-	case int64:
-		// Source factory path is NSNumber numberWithInt64: -> initWithLong:
-		// (q on arm64), followed by Ti KVC low-word signed storage.
-		return int32(uint32(value)), nil
-	default:
-		return 0, fmt.Errorf("%w: %s has %T; unsupported scalar coercion", ErrReceiptFieldType, field, value)
+	if converted, ok := coerceFoundationTi(value); ok {
+		return converted, nil
 	}
+	return 0, fmt.Errorf("%w: %s has %T; unsupported scalar coercion", ErrReceiptFieldType, field, value)
 }
