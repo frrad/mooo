@@ -68,6 +68,71 @@ func TestCatchUpPagesWithoutAdvancingCheckpoint(t *testing.T) {
 	backend.wait(t)
 }
 
+func TestCatchUpPreservesMalformedMessagePositionAndCommitOrder(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitMessage(42, 99); err != nil {
+		t.Fatal(err)
+	}
+	backend := newScriptedBackend(t, false,
+		expectRequest("SYNCMSG", checkSyncRequest(42, 99, 101), statusDocument(
+			bson.E{Key: "chatLogs", Value: bson.A{
+				bson.D{{Key: "logId", Value: int64(100)}, {Key: "type", Value: int32(2)}, {Key: "attachment", Value: "malformed"}},
+				bson.D{{Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "after gap"}},
+			}},
+		)),
+	)
+	api := testContinuityClient(t, checkpoint, backend)
+	recovered, err := api.CatchUp(t.Context(), 42, 101)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recovered) != 2 {
+		t.Fatalf("recovered events = %d, want 2", len(recovered))
+	}
+	if _, ok := recovered[0].(events.MessageGap); !ok {
+		t.Fatalf("first recovered event = %T, want MessageGap", recovered[0])
+	}
+	second, ok := recovered[1].(events.TextMessage)
+	if !ok || second.LogID != 101 {
+		t.Fatalf("second recovered event = %#v, want log 101 text", recovered[1])
+	}
+	if err := api.CommitEvent(recovered[1]); !errors.Is(err, ErrCommitOrder) {
+		t.Fatalf("later event commit = %v, want ErrCommitOrder", err)
+	}
+	if err := api.CommitEvent(recovered[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := api.CommitEvent(recovered[1]); err != nil {
+		t.Fatal(err)
+	}
+	if !checkpoint.IsCommitted(42, 101) {
+		t.Fatal("ordered catch-up commits did not advance checkpoint")
+	}
+	backend.wait(t)
+}
+
+func TestCatchUpRejectsConflictingValidMessageIdentity(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitMessage(42, 99); err != nil {
+		t.Fatal(err)
+	}
+	backend := newScriptedBackend(t, false,
+		expectRequest("SYNCMSG", checkSyncRequest(42, 99, 100), statusDocument(
+			bson.E{Key: "chatLogs", Value: bson.A{
+				bson.D{{Key: "logId", Value: int64(100)}, {Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "valid"}},
+			}},
+		)),
+	)
+	api := testContinuityClient(t, checkpoint, backend)
+	if _, err := api.CatchUp(t.Context(), 42, 100); !errors.Is(err, events.ErrMalformedEvent) {
+		t.Fatalf("CatchUp error = %v, want malformed identity", err)
+	}
+	if !checkpoint.IsCommitted(42, 99) || checkpoint.IsCommitted(42, 100) {
+		t.Fatal("conflicting identity changed the durable checkpoint")
+	}
+	backend.wait(t)
+}
+
 func TestCatchUpFailsOnNoProgress(t *testing.T) {
 	checkpoint := testCheckpoint(t)
 	if _, err := checkpoint.CommitMessage(42, 100); err != nil {

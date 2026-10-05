@@ -602,6 +602,45 @@ func TestUnrenderedMessageKindsBecomeNoticesAndAreCommitted(t *testing.T) {
 	}
 }
 
+func TestMalformedMessageGapNoticeCommitsOnlyAfterBridgeSuccess(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		result  bridgev2.EventHandlingResult
+		commits int
+	}{
+		{name: "success", result: bridgev2.EventHandlingResultSuccess, commits: 1},
+		{name: "failure", result: bridgev2.EventHandlingResult{Error: errors.New("synthetic conversion failure")}, commits: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			kc, harness := newTestClient(t, nil)
+			harness.results = []bridgev2.EventHandlingResult{tc.result}
+			fake := &fakeKakao{}
+			gap := events.MessageGap{ChatID: testChatID, LogID: 100, AuthorID: testOtherID, SentAt: 1700000000, Type: 2}
+
+			if handled := kc.handleEvent(fake, gap); handled != (tc.commits == 1) {
+				t.Fatalf("message gap handled = %t, want %t", handled, tc.commits == 1)
+			}
+			if got := harness.queuedCount(); got != 1 {
+				t.Fatalf("queued events = %d, want 1", got)
+			}
+			queued := harness.queued[0].(*simplevent.Message[noticeData])
+			converted, err := queued.ConvertMessage(context.Background(), nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if body := convertedBody(t, converted); body.MsgType != event.MsgNotice || body.Body == "" {
+				t.Fatalf("notice content = %+v", body)
+			}
+			if converted.Parts[0].DBMetadata == nil || converted.Parts[0].DBMetadata.(*KakaoMessageMetadata).ConversionGap != "malformed_payload" {
+				t.Fatalf("notice metadata = %#v, want malformed_payload gap", converted.Parts[0].DBMetadata)
+			}
+			if got := len(fake.committed()); got != tc.commits {
+				t.Fatalf("commits = %d, want %d", got, tc.commits)
+			}
+		})
+	}
+}
+
 func TestMetadataEventsAreNotQueuedOrCommitted(t *testing.T) {
 	kc, harness := newTestClient(t, nil)
 	fake := &fakeKakao{}
