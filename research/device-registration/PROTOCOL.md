@@ -336,8 +336,17 @@ on incomplete success objects.
 - Passcode polling uses the server/controller delay but clamps it to a minimum of
   three seconds.
 - QR polling begins three seconds after generation.
-- Later positive QR delays are server-directed; non-positive values fall back to
-  three seconds.
+- On the traced Mac controller, later positive QR delays are server-directed;
+  non-positive values fall back to three seconds.
+- The Android QR controller uses `nextRequestIntervalInSeconds` from the
+  `-150` and `-100` error models for later polls; when that error body is absent
+  it falls back to three seconds. The reviewed Android controller passes the
+  parsed value to its scheduler, but does not establish a positivity check.
+  The clean-room Go decoder therefore applies an explicit safety policy:
+  positive integral JSON and duration-safe values only, rather than
+  reproducing Android JSON `getLong` coercions. A nested interval is accepted
+  only as an explicit compatibility fallback for existing service fixtures; the
+  reviewed Android model evidence places this field at the top level.
 - When result `1` enters device authorization, a delay below one second is replaced
   with three seconds.
 - No exponential backoff, jitter, or fixed retry ceiling was observed in these UI

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -306,6 +307,62 @@ func TestQRLoginSameDeviceAuthCodeUnregisteredPollsWithoutRepeatingStep(t *testi
 	}
 }
 
+func TestQRLoginPersistsServerPollIntervalAcrossDeviceAuthStep(t *testing.T) {
+	backend := newFakeQRBackend(t, `{"status":0,"user":{"userId":42},"accessToken":"access","refreshToken":"refresh","tokenType":"bearer"}`)
+	backend.pollSequence = []qrPollResult{
+		{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: -100}}, DeviceAuthCode: "A1B2", DeviceAuthRemainingSeconds: 30, NextRequestIntervalSeconds: 1, NextRequestIntervalPresent: true},
+		backend.poll,
+	}
+	login := newQRTestLogin(t, backend)
+	login.completeLogin = func(context.Context, int64) (*bridgev2.LoginStep, error) {
+		return &bridgev2.LoginStep{Type: bridgev2.LoginStepTypeComplete}, nil
+	}
+	if _, err := login.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	original := qrPollInterval
+	qrPollInterval = 0
+	t.Cleanup(func() { qrPollInterval = original })
+	if _, err := login.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	if _, err := login.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed < 900*time.Millisecond {
+		t.Fatalf("server poll interval was not retained across device-auth step: %v", elapsed)
+	}
+}
+
+func TestQRLoginUsesServerIntervalForPendingPoll(t *testing.T) {
+	backend := newFakeQRBackend(t, `{"status":0,"user":{"userId":42},"accessToken":"access","refreshToken":"refresh","tokenType":"bearer"}`)
+	backend.pollSequence = []qrPollResult{
+		{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: 14}}, NextRequestIntervalSeconds: 1, NextRequestIntervalPresent: true},
+		backend.poll,
+	}
+	login := newQRTestLogin(t, backend)
+	login.completeLogin = func(context.Context, int64) (*bridgev2.LoginStep, error) {
+		return &bridgev2.LoginStep{Type: bridgev2.LoginStepTypeComplete}, nil
+	}
+	if _, err := login.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	original := qrPollInterval
+	qrPollInterval = 0
+	t.Cleanup(func() { qrPollInterval = original })
+	if _, err := login.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	if _, err := login.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed < 900*time.Millisecond {
+		t.Fatalf("pending server interval was not honored: %v", elapsed)
+	}
+}
+
 func TestQRLoginSameUnregisteredCodeCannotExtendDeadline(t *testing.T) {
 	backend := newFakeQRBackend(t, `{"status":0,"user":{"userId":42},"accessToken":"access","refreshToken":"refresh","tokenType":"bearer"}`)
 	unregistered := func(code string, remaining float64) qrPollResult {
@@ -358,8 +415,7 @@ func TestQRLoginSamePendingCodeExpiresBeforeNextPoll(t *testing.T) {
 		login.mu.Lock()
 		login.deadline = time.Now().Add(20 * time.Millisecond)
 		login.mu.Unlock()
-		qrPollInterval = time.Hour
-		return qrPollResult{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: -150}}}, nil
+		return qrPollResult{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: -150}}, NextRequestIntervalSeconds: 60, NextRequestIntervalPresent: true}, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -378,6 +434,99 @@ func TestQRLoginSamePendingCodeExpiresBeforeNextPoll(t *testing.T) {
 	}
 	if _, statErr := os.Stat(login.statePath); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("expired pending QR profile remains: %v", statErr)
+	}
+}
+
+func TestQRPollDelayRejectsInvalidAndOverflowIntervals(t *testing.T) {
+	for _, seconds := range []int64{0, -1, int64(^uint64(0) >> 1)} {
+		if _, err := qrPollDelay(seconds); err == nil {
+			t.Fatalf("interval %d was accepted", seconds)
+		}
+	}
+	if delay, err := qrPollDelay(1); err != nil || delay != time.Second {
+		t.Fatalf("one-second interval = %v/%v", delay, err)
+	}
+}
+
+func TestQRLoginInvalidServerIntervalFailsAndCleansProfile(t *testing.T) {
+	for _, interval := range []int64{0, int64(^uint64(0) >> 1)} {
+		t.Run(strconv.FormatInt(interval, 10), func(t *testing.T) {
+			backend := newFakeQRBackend(t, `{"status":0,"user":{"userId":42},"accessToken":"access","refreshToken":"refresh","tokenType":"bearer"}`)
+			backend.poll = qrPollResult{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: 14}}, NextRequestIntervalSeconds: interval, NextRequestIntervalPresent: true}
+			login := newQRTestLogin(t, backend)
+			if _, err := login.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			statePath := login.statePath
+			original := qrPollInterval
+			qrPollInterval = 0
+			t.Cleanup(func() { qrPollInterval = original })
+			if _, err := login.Wait(context.Background()); err == nil {
+				t.Fatal("invalid server interval unexpectedly succeeded")
+			}
+			backend.mu.Lock()
+			cancels := backend.cancels
+			backend.mu.Unlock()
+			if cancels != 1 {
+				t.Fatalf("remote cancellations = %d, want 1", cancels)
+			}
+			if _, err := os.Stat(statePath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("invalid interval profile remains: %v", err)
+			}
+		})
+	}
+}
+
+func TestQRLoginCancelInterruptsLongServerPollInterval(t *testing.T) {
+	backend := newFakeQRBackend(t, `{"status":0,"user":{"userId":42},"accessToken":"access","refreshToken":"refresh","tokenType":"bearer"}`)
+	backend.pollStarted = make(chan struct{})
+	backend.pollFn = func(context.Context) (qrPollResult, error) {
+		return qrPollResult{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: 14}}, NextRequestIntervalSeconds: 60, NextRequestIntervalPresent: true}, nil
+	}
+	login := newQRTestLogin(t, backend)
+	if _, err := login.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	original := qrPollInterval
+	qrPollInterval = 0
+	t.Cleanup(func() { qrPollInterval = original })
+	done := make(chan error, 1)
+	t.Cleanup(func() {
+		login.Cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+		}
+	})
+	go func() {
+		_, err := login.Wait(context.Background())
+		done <- err
+		close(done)
+	}()
+	intervalDeadline := time.Now().Add(time.Second)
+	for {
+		login.mu.Lock()
+		pollDelay := login.nextPollDelay
+		login.mu.Unlock()
+		if pollDelay == 60*time.Second {
+			break
+		}
+		if time.Now().After(intervalDeadline) {
+			t.Fatal("server poll interval was not stored before cancellation")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	login.Cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("cancel did not interrupt long server interval")
+	}
+	backend.mu.Lock()
+	cancels := backend.cancels
+	backend.mu.Unlock()
+	if cancels != 1 {
+		t.Fatalf("remote cancellations = %d, want 1", cancels)
 	}
 }
 

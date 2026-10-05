@@ -51,6 +51,8 @@ type qrPollResult struct {
 	Result                     registration.QRPollResult
 	DeviceAuthCode             string
 	DeviceAuthRemainingSeconds float64
+	NextRequestIntervalSeconds int64
+	NextRequestIntervalPresent bool
 }
 
 // macQRPresentationValidator is an explicit clean-room safety policy. The
@@ -110,7 +112,8 @@ func (b qrServiceBackend) Poll(ctx context.Context, req registration.QRLoginRequ
 	if err != nil {
 		return qrPollResult{}, err
 	}
-	return qrPollResult{Result: result, DeviceAuthCode: result.DeviceAuthCode, DeviceAuthRemainingSeconds: result.DeviceAuthRemainingSeconds}, nil
+	interval, present := result.NextRequestIntervalSeconds.Value()
+	return qrPollResult{Result: result, DeviceAuthCode: result.DeviceAuthCode, DeviceAuthRemainingSeconds: result.DeviceAuthRemainingSeconds, NextRequestIntervalSeconds: interval, NextRequestIntervalPresent: present}, nil
 }
 
 func (b qrServiceBackend) Cancel(ctx context.Context, req registration.QRCancelRequest) error {
@@ -207,6 +210,7 @@ type qrLogin struct {
 	keepProfile      bool
 	deviceAuth       bool
 	deviceAuthCode   string
+	nextPollDelay    time.Duration
 	remoteCanceled   bool
 	remoteCanceling  bool
 	remoteCancelDone chan struct{}
@@ -375,6 +379,10 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 		return nil, errors.New("connector: QR wait already active")
 	}
 	backend, identity, qrID, qrData := l.backend, l.identity, l.qrID, l.qrData
+	pollDelay := l.nextPollDelay
+	if pollDelay <= 0 {
+		pollDelay = qrPollInterval
+	}
 	l.waiting = true
 	l.mu.Unlock()
 	if time.Now().After(l.qrDeadline()) {
@@ -407,7 +415,7 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 	}()
 	for {
 		deadline := l.qrDeadline()
-		pollTimer := time.NewTimer(qrPollInterval)
+		pollTimer := time.NewTimer(pollDelay)
 		deadlineTimer := time.NewTimer(time.Until(deadline))
 		select {
 		case <-runCtx.Done():
@@ -468,6 +476,18 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 		if !stillActive {
 			return nil, context.Canceled
 		}
+		if polled.NextRequestIntervalPresent {
+			var intervalErr error
+			pollDelay, intervalErr = qrPollDelay(polled.NextRequestIntervalSeconds)
+			if intervalErr != nil {
+				return nil, l.failQR(ctx, intervalErr)
+			}
+		} else {
+			pollDelay = qrPollInterval
+		}
+		l.mu.Lock()
+		l.nextPollDelay = pollDelay
+		l.mu.Unlock()
 		if time.Now().After(deadline) {
 			l.mu.Lock()
 			l.finished = true
@@ -569,6 +589,13 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 			return nil, l.failQR(ctx, errors.New("connector: QR authorization failed"))
 		}
 	}
+}
+
+func qrPollDelay(seconds int64) (time.Duration, error) {
+	if seconds <= 0 || seconds > int64((time.Duration(1<<63-1))/time.Second) {
+		return 0, errors.New("connector: QR poll interval is invalid")
+	}
+	return time.Duration(seconds) * time.Second, nil
 }
 
 func stopQRTimer(timer *time.Timer) {
