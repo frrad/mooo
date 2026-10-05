@@ -57,14 +57,28 @@ type fakeKakao struct {
 	shutdownWait      <-chan struct{}
 	shutdownEntered   chan struct{}
 	shutdownEnterOnce sync.Once
+	eventsEntered     chan struct{}
+	eventsRelease     <-chan struct{}
+	eventsEnterOnce   sync.Once
 }
 
 func (f *fakeKakao) Connect(ctx context.Context) error { return f.connectErr }
 
 func (f *fakeKakao) Events(ctx context.Context) (<-chan events.Result, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls = append(f.calls, "Events")
+	entered, release := f.eventsEntered, f.eventsRelease
+	f.mu.Unlock()
+	if entered != nil {
+		f.eventsEnterOnce.Do(func() { close(entered) })
+	}
+	if release != nil {
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	return f.stream, nil
 }
 
@@ -672,6 +686,41 @@ func TestBootstrapShutdownTimeoutRetainsCleanupOwner(t *testing.T) {
 	fake.mu.Unlock()
 	if shutdownCalls != 2 {
 		t.Fatalf("shutdown retry calls = %d, want 2", shutdownCalls)
+	}
+}
+
+func TestDisconnectOwnsBootstrapSubscriptionBeforeEventsReturns(t *testing.T) {
+	release := make(chan struct{})
+	eventsEntered := make(chan struct{})
+	fake := &fakeKakao{
+		stream:        make(chan events.Result),
+		eventsEntered: eventsEntered,
+		eventsRelease: release,
+		shutdownWait:  nil,
+	}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	connectDone := make(chan struct{})
+	go func() {
+		kc.Connect(context.Background())
+		close(connectDone)
+	}()
+	select {
+	case <-eventsEntered:
+	case <-time.After(time.Second):
+		t.Fatal("Events did not block")
+	}
+	kc.Disconnect()
+	fake.mu.Lock()
+	shutdownCalls := fake.shutdownCalls
+	fake.mu.Unlock()
+	if shutdownCalls != 1 {
+		t.Fatalf("shutdown calls = %d, want one Disconnect-owned shutdown", shutdownCalls)
+	}
+	close(release)
+	select {
+	case <-connectDone:
+	case <-time.After(time.Second):
+		t.Fatal("Connect did not unwind after Events release")
 	}
 }
 
