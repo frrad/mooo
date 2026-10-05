@@ -143,32 +143,44 @@ func TestTerminalNoticeClosesOwnedCarriageAndRejectsSend(t *testing.T) {
 	}
 }
 
-func TestShutdownJoinsBlockedEventDecoderBeforeReturning(t *testing.T) {
-	raw := make(chan loco.Packet, requestLimit+1)
-	for i := 0; i < cap(raw); i++ {
-		raw <- loco.Packet{Header: loco.Header{Method: "UNKNOWN"}}
+func TestShutdownCancelsBlockedEventDecoder(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+	session := &Session{
+		wire:    &wireConn{c: clientConn},
+		pushes:  make(chan loco.Packet, requestLimit),
+		pending: make(map[uint32]chan requestResult),
 	}
-	session := &Session{pushes: raw}
 	api := &Client{session: session}
 	stream, err := api.Events(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	err = api.Shutdown(ctx)
-	cancel()
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("shutdown with blocked decoder error = %v, want deadline", err)
+	session.startReadLoop()
+	frame, err := (loco.Packet{Header: loco.Header{Method: "UNKNOWN"}}).MarshalBinary(0)
+	if err != nil {
+		t.Fatal(err)
 	}
-	close(raw)
 	go func() {
-		for range stream {
+		for i := 0; i < requestLimit+1; i++ {
+			if _, writeErr := serverConn.Write(frame); writeErr != nil {
+				return
+			}
 		}
 	}()
-	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	deadline := time.After(time.Second)
+	for len(stream) < cap(stream) {
+		select {
+		case <-deadline:
+			t.Fatalf("typed decoder did not fill output: len=%d cap=%d", len(stream), cap(stream))
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := api.Shutdown(ctx); err != nil {
-		t.Fatalf("shutdown after decoder release: %v", err)
+		t.Fatalf("shutdown with blocked decoder: %v", err)
 	}
 }
 
