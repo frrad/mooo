@@ -42,8 +42,10 @@ gone away. With an owner, it invokes `toggleOutSegmentTimeout:false` and then
 branches on the `NWError` completion value. The success branch performs
 cleanup only. Error branches inspect the POSIX error representation; only the
 POSIX code `0x59` (decimal 89) takes the cleanup path, while other POSIX
-codes and non-POSIX errors log and cancel the owner's captured `NWConnection`
-when present.
+codes and non-POSIX errors log and cancel the `NWConnection` read from the
+retained weak-loaded owner at completion time when present. This is a
+completion-time current-connection lookup, not a guarantee that the object is
+the same connection instance used when the send was scheduled.
 The reviewed closure body contains no pending-map lookup, request-tag
 correlation, status write, or completion callback invocation. Pending-map and
 socket-disconnect consumers from the base Objective-C path remain separate
@@ -60,7 +62,8 @@ encryption nil path, connection gate, send scheduling, and timeout argument.
 It records BSON key order/default policy, encryption output, and any server
 response as explicit gaps. Completion vectors cover owner lifetime, success,
 the observed POSIX `0x59`/89 cleanup predicate, neighboring POSIX and
-non-POSIX values, and the other-error connection-cancel branch in
+non-POSIX values, replacement-connection cancellation identity, and the
+other-error connection-cancel branch in
 `rc-q5-push-receipt-nw-completion.json`; they do not invent ACK or retry
 behavior.
 

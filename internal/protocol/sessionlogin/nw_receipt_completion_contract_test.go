@@ -15,13 +15,16 @@ type nwCompletionFixture struct {
 }
 
 type nwCompletionCase struct {
-	Name              string   `json:"name"`
-	OwnerPresent      bool     `json:"owner_present"`
-	ErrorPresent      bool     `json:"error_present"`
-	ErrorDomain       string   `json:"error_domain,omitempty"`
-	ErrorCode         int      `json:"error_code,omitempty"`
-	ConnectionPresent bool     `json:"connection_present"`
-	ExpectedEffects   []string `json:"expected_effects"`
+	Name                 string   `json:"name"`
+	OwnerPresent         bool     `json:"owner_present"`
+	ErrorPresent         bool     `json:"error_present"`
+	ErrorDomain          string   `json:"error_domain,omitempty"`
+	ErrorCode            int      `json:"error_code,omitempty"`
+	ConnectionPresent    bool     `json:"connection_present"`
+	OriginalConnectionID string   `json:"original_connection_id,omitempty"`
+	CurrentConnectionID  string   `json:"current_connection_id,omitempty"`
+	ExpectedCancelID     string   `json:"expected_cancel_id,omitempty"`
+	ExpectedEffects      []string `json:"expected_effects"`
 }
 
 func expectedNWCompletionEffects(c nwCompletionCase) []string {
@@ -38,6 +41,9 @@ func expectedNWCompletionEffects(c nwCompletionCase) []string {
 	effects = append(effects, "error_log")
 	if c.ConnectionPresent {
 		effects = append(effects, "nw_connection_cancel")
+		if c.ExpectedCancelID == "" || c.ExpectedCancelID != c.CurrentConnectionID {
+			return nil
+		}
 	} else {
 		effects = append(effects, "no_connection_cancel")
 	}
@@ -69,6 +75,11 @@ func TestNWReceiptCompletionFixture(t *testing.T) {
 		}
 		if c.ErrorPresent && c.ErrorDomain == "" {
 			t.Fatalf("%s missing error domain", c.Name)
+		}
+		if c.ConnectionPresent && c.ErrorPresent && (c.ErrorDomain != "posix" || c.ErrorCode != 89) {
+			if c.OriginalConnectionID == "" || c.CurrentConnectionID == "" || c.ExpectedCancelID != c.CurrentConnectionID {
+				t.Fatalf("%s cancel identity original=%q current=%q expected=%q", c.Name, c.OriginalConnectionID, c.CurrentConnectionID, c.ExpectedCancelID)
+			}
 		}
 		if got, want := c.ExpectedEffects, expectedNWCompletionEffects(c); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s effects=%v want %v", c.Name, got, want)
