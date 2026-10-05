@@ -1,0 +1,9 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {"name":"nw_send_hint","operation":"nw_send","model":"hint_push_receipt","expected_wire_body":"unresolved","expected_effects":["packet_data","bridge_data","encrypt_packet_data","bridge_encrypted_data","nw_send_default_message_complete","toggle_out_timeout_false"]},
+    {"name":"nw_send_blocksync","operation":"nw_send","model":"block_sync_push_receipt","expected_wire_body":"unresolved","expected_effects":["packet_data","bridge_data","encrypt_packet_data","bridge_encrypted_data","nw_send_default_message_complete","toggle_out_timeout_false"]},
+    {"name":"completion_without_error","operation":"completion","completion_error":"nil","expected_correlation":"unresolved","expected_effects":["send_completion_receives_nw_error_or_nil","pending_correlation_unproven"]},
+    {"name":"completion_with_nw_error","operation":"completion","completion_error":"nw_error","expected_correlation":"unresolved","expected_effects":["send_completion_receives_nw_error_or_nil","pending_correlation_unproven"]}
+  ]
+}
