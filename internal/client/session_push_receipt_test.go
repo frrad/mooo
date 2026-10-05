@@ -469,6 +469,16 @@ func (s *blockedReceiptOwnerSender) SendPushReceipt(any, int64) {
 	<-s.release
 }
 
+type reentrantReceiptOwnerSender struct {
+	session *Session
+	done    chan struct{}
+}
+
+func (s *reentrantReceiptOwnerSender) SendPushReceipt(any, int64) {
+	_ = s.session.Close()
+	close(s.done)
+}
+
 type receiptPingScheduler struct{ cancels, schedules int }
 
 func (s *receiptPingScheduler) Cancel(string, string, any)                  { s.cancels++ }
@@ -593,5 +603,50 @@ func TestSessionShutdownJoinsActiveDownstreamReceiptOwner(t *testing.T) {
 	defer cancel()
 	if err := session.Shutdown(ctx); err != nil {
 		t.Fatalf("shutdown after downstream sender release: %v", err)
+	}
+}
+
+func TestActiveDownstreamReceiptOwnerCanReenterSessionClose(t *testing.T) {
+	queue := &receiptOwnerQueue{}
+	status := &receiptOwnerStatus{value: 3}
+	sender := &reentrantReceiptOwnerSender{done: make(chan struct{})}
+	agent, err := sessionlogin.NewPushReceiptAgentOwner(queue, status, receiptOwnerAccessor{id: 17}, sender)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := newSession(nil)
+	sender.session = session
+	if err := session.BindPushReceipt(agent, func(loco.Packet) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	session.dispatchPushReceipt(loco.Packet{})
+	deadline := time.After(time.Second)
+	for queue.count() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("reentrant downstream receipt owner did not enqueue")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	done := make(chan struct{})
+	go func() {
+		queue.runOne()
+		close(done)
+	}()
+	select {
+	case <-sender.done:
+	case <-time.After(time.Second):
+		t.Fatal("reentrant receipt owner callback deadlocked Session.Close")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("reentrant receipt owner queue did not return")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := session.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown after reentrant close: %v", err)
 	}
 }
