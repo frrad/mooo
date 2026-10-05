@@ -22,8 +22,12 @@ callback, installs it, cancels/releases the previously stored current
 connection, stores the replacement, and starts it on a queue. The failure
 helper `0x100d45de8` cancels the stored receive work item, clears the current
 connection's state handler, cancels/releases that current connection, and
-then either constructs an error and dispatches `0x100d47a3c` or enters the
-fallback path. These are distinct from the callback dispatcher itself.
+then applies the raw guard sequence: fallback must be allowed, the
+immediate-failure predicate must be false, the owner virtual predicate must
+be false, and both owner flags at the observed offsets must be clear. A
+failed guard path converts the NW error, constructs a LocoAgent error, and
+dispatches `0x100d47a3c`; the passing path enters `0x100d47238` fallback.
+These are distinct from the callback dispatcher itself.
 
 The raw state path exposes no pending-request map lookup, request-generation
 comparison, or direct status publication. Base-carriage pending fanout and
@@ -33,11 +37,12 @@ keeps that downstream chain explicitly unresolved.
 ## Synthetic contract
 
 `rc-q5-nw-state-handler.json` uses actual enum case names, owner lifetime,
-current/replacement connection identities, and allow-fallback input. It
-asserts the state-specific ordered effects and exact current-connection
-identity used by setup replacement. Every case marks pending-map/status fanout
-as a gap. The fixture is static and synthetic; it does not activate a runtime
-transport or claim server behavior.
+current/replacement connection identities, allow-fallback input, immediate
+failure, virtual-owner predicate, and both owner flags. It asserts the
+state-specific ordered effects and exact current-connection identity used by
+setup replacement. Every case marks pending-map/status fanout as a gap. The
+fixture is static and synthetic; it does not activate a runtime transport or
+claim server behavior.
 
 ## Provenance
 

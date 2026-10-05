@@ -22,6 +22,10 @@ type nwStateCase struct {
 	CurrentConnectionID          string   `json:"current_connection_id"`
 	ReplacementConnectionPresent bool     `json:"replacement_connection_present"`
 	AllowFallback                bool     `json:"allow_fallback"`
+	ImmediateFailure             bool     `json:"immediate_failure"`
+	OwnerFailurePredicate        bool     `json:"owner_failure_predicate"`
+	OwnerFlagA                   bool     `json:"owner_flag_a"`
+	OwnerFlagB                   bool     `json:"owner_flag_b"`
 	ExpectedCancelID             string   `json:"expected_cancel_id"`
 	Expected                     []string `json:"expected_effects"`
 	PendingGap                   bool     `json:"pending_map_gap"`
@@ -48,9 +52,12 @@ func projectNWState(c nwStateCase) nwStateResult {
 	}
 	switch c.State {
 	case "waiting", "failed":
-		effects = append(effects, "extract_state_error", "handle_connect_failure")
-		if c.AllowFallback {
-			effects = append(effects, "allow_fallback_input")
+		effects = append(effects, "extract_state_error", "cancel_receive_work_item", "clear_state_handler", "cancel_current_connection")
+		failure := !c.AllowFallback || c.ImmediateFailure || c.OwnerFailurePredicate || c.OwnerFlagA || c.OwnerFlagB
+		if failure {
+			effects = append(effects, "convert_nw_error", "construct_locoagent_error", "dispatch_main_queue")
+		} else {
+			effects = append(effects, "fallback_to_v2sl")
 		}
 	case "setup", "preparing":
 		effects = append(effects, "log_state")
@@ -75,7 +82,7 @@ func TestNWStateHandlerFixture(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 10 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 12 {
 		t.Fatalf("header %#v", f)
 	}
 	seen := map[string]bool{}
