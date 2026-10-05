@@ -1057,6 +1057,7 @@ func (s *Session) Close() error {
 		s.stopLifecycle()
 		s.closeReceiveHeaderTimeout()
 		s.closeInSegmentTimeout()
+		s.closePushReceipt()
 		if submitter != nil {
 			submitter.Close()
 		}
