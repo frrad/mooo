@@ -466,6 +466,9 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 				}
 				return nil, errors.New("connector: QR challenge expired")
 			}
+			if errors.Is(err, registration.ErrInvalidQRPollInterval) || errors.Is(err, registration.ErrMissingJSONField) {
+				return nil, l.failQR(ctx, err)
+			}
 			return nil, err
 		}
 		l.mu.Lock()

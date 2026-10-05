@@ -32,6 +32,10 @@ type fakeQRBackend struct {
 	pollSequence []qrPollResult
 }
 
+type acceptQRPresentationValidator struct{}
+
+func (acceptQRPresentationValidator) Validate(registration.QRPresentation) error { return nil }
+
 func (f *fakeQRBackend) Generate(context.Context, registration.QRGenerateRequest) (registration.QRChallenge, error) {
 	return f.challenge, nil
 }
@@ -472,6 +476,66 @@ func TestQRLoginInvalidServerIntervalFailsAndCleansProfile(t *testing.T) {
 			}
 			if _, err := os.Stat(statePath); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("invalid interval profile remains: %v", err)
+			}
+		})
+	}
+}
+
+func TestQRLoginServicePollIntervalErrorCancelsAndCleansProfile(t *testing.T) {
+	for _, pollBody := range []string{
+		`{"status":-150,"nextRequestIntervalInSeconds":0}`,
+		`{"status":-150}`,
+		`{"status":-100,"passcode":"A1B2","remainingSeconds":30}`,
+	} {
+		t.Run(pollBody, func(t *testing.T) {
+			responses := []string{
+				`{"status":0,"url":"https://katalk.kakao.com/talk/account/qrCodeLogin/info.json?id=synthetic-id","remainingSeconds":60}`,
+				pollBody,
+				`{"status":0}`,
+			}
+			doer := staticBodyDoer{responses: &responses}
+			executor, err := registration.NewHTTPExecutor(doer)
+			if err != nil {
+				t.Fatal(err)
+			}
+			service, err := registration.NewQRRegistrationService(executor, acceptQRPresentationValidator{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := t.TempDir()
+			if err := os.Chmod(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			connector := &KakaoConnector{Config: Config{ProfileDir: dir}}
+			connector.qrBackendFactory = func(context.Context, authstate.Identity) (qrBackend, error) {
+				return qrServiceBackend{service: service, executor: executor}, nil
+			}
+			login := &qrLogin{connector: connector, backendFactory: connector.qrBackendFactory}
+			if _, err := login.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			original := qrPollInterval
+			qrPollInterval = 0
+			t.Cleanup(func() { qrPollInterval = original })
+			if _, err := login.Wait(context.Background()); !errors.Is(err, registration.ErrInvalidQRPollInterval) && !errors.Is(err, registration.ErrMissingJSONField) {
+				t.Fatalf("service interval error = %v", err)
+			}
+			if len(responses) != 0 {
+				t.Fatalf("service poll error did not issue bounded cancel: remaining responses=%d", len(responses))
+			}
+			login.mu.Lock()
+			statePath := login.statePath
+			finished := login.finished
+			login.mu.Unlock()
+			if !finished {
+				t.Fatal("service interval error left QR login active")
+			}
+			if _, err := os.Stat(statePath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("service interval error left profile: %v", err)
+			}
+			login.Cancel()
+			if len(responses) != 0 {
+				t.Fatalf("terminal response cleanup was duplicated: remaining responses=%d", len(responses))
 			}
 		})
 	}
