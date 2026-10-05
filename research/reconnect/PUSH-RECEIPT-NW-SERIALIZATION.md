@@ -14,18 +14,20 @@ result to Foundation `Data`, calls inherited `encryptPacketData:`
 `NWConnection.send(content:contentContext:isComplete:completion:)`
 (`0x100d498a0`). The content context is `NWConnection.ContentContext.defaultMessage`
 and `isComplete` is true. After scheduling the send it calls
-`toggleOutSegmentTimeout:false` (`0x100d498dc`). The source proves this
-serialization and transport sequence, but does not prove the bytes produced by
-`packetData`, the encryption output, or any server response.
+`toggleOutSegmentTimeout:false` (`0x100d498dc`). The `packetData` implementation
+is `0x10175a1c0`: it reads `body`, calls `BSONData`, obtains the BSON length,
+sets the header body length, reads header `data`, and appends header bytes
+followed by BSON body bytes to mutable output. The source proves this framing
+order, but does not prove BSON key order, field-presence/default policy,
+encryption output, or any server response.
 
 The request object field inventory remains separate from wire serialization.
 `LocoPushReceipt` inherits from `LocoModel`/`SGJsonObject` and declares
 `method` (`NSString`) and `packetId` (`uint32`). `LocoHintPushReceipt` adds no
 fields. `LocoBlockSyncPushReceipt` adds signed `int32 revision` and
 `plusRevision`. These fields describe the source object available to
-`packetData`; the serialized key order, field-presence policy and defaults, and BSON bytes
-remain unresolved until the `packetData` implementation is independently
-localized.
+`packetData`; the serialized key order and field-presence/default policy remain
+unresolved even though the framing implementation is now localized.
 
 The NW send completion is a Swift `NWConnection.SendCompletion` closure. The
 reviewed body constructs a weak-owner capture and passes it to the send call;
@@ -36,10 +38,10 @@ belong to the base Objective-C path and are kept as a separate explicit gap.
 
 ## Synthetic contract
 
-The fixture checks the observed NW scheduling sequence, the object-field
-inventory, and completion input shape independently. It records wire-body
-serialization and pending-correlation as unresolved fields rather than
-inventing BSON keys, defaults, ACK behavior, or retry behavior.
+The fixture checks the observed NW packet-data framing and send scheduling
+sequence. It records BSON key order/defaults, completion closure behavior, and
+pending correlation as explicit gaps rather than inventing wire fields, ACK
+behavior, or retry behavior.
 
 ## Provenance
 
@@ -47,6 +49,8 @@ inventing BSON keys, defaults, ACK behavior, or retry behavior.
   `reconnect-start-lifecycle/parent-constructor-target.txt`.
 - NW send wrapper and completion: private
   `socket-callbacks/report.txt` and `socket-callbacks/decompile.txt`.
+- `packetData` framing implementation: private Ghidra decompile of
+  `0x10175a1c0` and parity trace for `packetData`.
 - Base comparison path: private `rc-q5-sendpacket-method/report.txt` and
   `rc-q5-sendpacket-method/decompile.txt`.
 - Object hierarchy and fields: private
