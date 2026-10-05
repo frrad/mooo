@@ -38,9 +38,26 @@ hook and must not prepend an unproven host or rewrite the challenge.
 
 The first fresh bridge presentation was rejected by the owned Android client
 (`You cannot use this QR code.`). No scan or authorization was retried. The
-The failure's stage is unresolved: it may be image decoding, scanner route
+failure's stage is unresolved: it may be image decoding, scanner route
 classification, QR-info lookup, or a later account-side policy response. No
 offline decoder differential or complete Android result-handler trace has yet
 isolated the cause. A controlled image comparison and the full scanner-to-info
 request path are required before changing the renderer or claiming payload
 normalization fixes enrollment.
+
+### Official Android presentation and scan path (source audit)
+
+An offline audit of the owned Android 26.8.2 APK traced the relevant chain
+without retaining account values or proprietary source. The scanner accepts a
+decoded string containing `/talk/account/qrCodeLogin/info.json`, extracts the
+literal substring after `/talk/account/qrCodeLogin/info.json?id=`, and sends
+that value to `android/account/qrCodeLogin/info`. A successful info response
+routes to the QR-login approval screen; a general-not-found response reports
+the invalid-QR state, while other server failures surface a service message.
+The official QR display path passes the server URL directly to a ZXing QR
+writer configured with error correction `H`, zero quiet-zone margin, and a
+150dp square bitmap. This establishes a renderer-parity target for a future
+controlled decoder comparison, but it does not establish that error
+correction or image sizing caused the observed rejection. The current bridge
+test therefore verifies raw-payload preservation and leaves the rejection
+stage unresolved pending decoder differential and end-to-end route evidence.
