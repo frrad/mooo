@@ -653,6 +653,20 @@ func TestMetadataEventsAreNotQueuedOrCommitted(t *testing.T) {
 	}
 }
 
+func TestMetadataRemoteEventDoesNotAttemptMessageCommit(t *testing.T) {
+	kc, harness := newTestClient(t, nil)
+	fake := &fakeKakao{}
+	if !kc.handleEvent(fake, events.ChatLeft{ChatID: testChatID, LastTokenID: 12}) {
+		t.Fatal("accepted metadata event was reported unhandled")
+	}
+	if len(harness.queued) != 1 {
+		t.Fatalf("queued events = %d, want one membership update", len(harness.queued))
+	}
+	if got := len(fake.committed()); got != 0 {
+		t.Fatalf("metadata event attempted message commit: %d", got)
+	}
+}
+
 func waitForState(t *testing.T, harness *testHarness, want status.BridgeStateEvent) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
