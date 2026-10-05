@@ -84,6 +84,17 @@ func constructIncomingNotice(model string, body any, hooks incomingNoticeHooks) 
 	return decoded, nil
 }
 
+// receiveIncomingNotice models the caller-owned boundary: constructor errors
+// stop dispatch, while a nil constructor result remains a valid value for the
+// separately traced caller policy.
+func receiveIncomingNotice(model string, body any, header *incomingNoticeHeader, hooks incomingNoticeHooks) error {
+	notice, err := constructIncomingNotice(model, body, hooks)
+	if err != nil {
+		return err
+	}
+	return dispatchIncomingNotice(model, notice, header, hooks)
+}
+
 func dispatchIncomingNotice(model string, notice any, header *incomingNoticeHeader, hooks incomingNoticeHooks) error {
 	if hooks.receipt == nil {
 		return errors.New("missing receipt hook")
@@ -103,6 +114,8 @@ func decodeIncomingBlockSyncFields(input map[string]any, mappings [][2]string) (
 		if !present || value == nil {
 			continue
 		}
+		// Fixture-domain guard: Foundation KVC coercion for other object types
+		// remains untraced; this model accepts only explicit int32 vectors.
 		intValue, ok := value.(int32)
 		if !ok {
 			return nil, errors.New("unsupported non-int32 BLOCKSYNC field")
@@ -195,12 +208,15 @@ func TestIncomingNoticeModelStopsAndPreservesOrdering(t *testing.T) {
 	}
 	nilCase, emptyCase, blockCase := byName["hint_nil_body_stops_before_delegate_or_receipt"], byName["hint_empty_dictionary_constructs_nested_chat_log_from_same_object"], byName["block_sync_nsnull_fields_keep_defaults"]
 	var nilCalls []string
-	_, nilResult := constructIncomingNotice(nilCase.Model, nil, incomingNoticeHooks{
+	nilHeader := &incomingNoticeHeader{Method: "HINT", PacketID: 1}
+	nilResult := receiveIncomingNotice(nilCase.Model, nil, nilHeader, incomingNoticeHooks{
 		super: func(body any) (any, error) {
 			nilCalls = append(nilCalls, "super")
 			return nil, errors.New("NSInternalInconsistencyException")
 		},
-		nested: func(any) error { nilCalls = append(nilCalls, "nested"); return nil },
+		nested:   func(any) error { nilCalls = append(nilCalls, "nested"); return nil },
+		delegate: func(any, *incomingNoticeHeader) { nilCalls = append(nilCalls, "delegate") },
+		receipt:  func(*incomingNoticeHeader, any) { nilCalls = append(nilCalls, "receipt") },
 	})
 	if nilResult == nil || !reflect.DeepEqual(nilCalls, []string{"super"}) {
 		t.Fatalf("nil body calls=%v err=%v", nilCalls, nilResult)
@@ -233,6 +249,18 @@ func TestIncomingNoticeModelStopsAndPreservesOrdering(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(calls, []string{"super", "nested", "delegate", "receipt"}) {
 		t.Fatalf("delegate/receipt order calls=%v err=%v", calls, err)
 	}
+	var nestedErrorCalls []string
+	if err := receiveIncomingNotice(emptyCase.Model, body, header, incomingNoticeHooks{
+		super: func(got any) (any, error) { nestedErrorCalls = append(nestedErrorCalls, "super"); return got, nil },
+		nested: func(any) error {
+			nestedErrorCalls = append(nestedErrorCalls, "nested")
+			return errors.New("nested ChatLog error")
+		},
+		delegate: func(any, *incomingNoticeHeader) { nestedErrorCalls = append(nestedErrorCalls, "delegate") },
+		receipt:  func(*incomingNoticeHeader, any) { nestedErrorCalls = append(nestedErrorCalls, "receipt") },
+	}); err == nil || !reflect.DeepEqual(nestedErrorCalls, []string{"super", "nested"}) {
+		t.Fatalf("nested error continued downstream calls=%v err=%v", nestedErrorCalls, err)
+	}
 	var noDelegateCalls []string
 	notice, err = constructIncomingNotice(blockCase.Model, body, incomingNoticeHooks{
 		super: func(got any) (any, error) { noDelegateCalls = append(noDelegateCalls, "super"); return got, nil },
@@ -251,16 +279,10 @@ func TestIncomingNoticeModelStopsAndPreservesOrdering(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(noDelegateCalls, []string{"super", "receipt"}) {
 		t.Fatalf("missing delegate suppressed receipt calls=%v err=%v", noDelegateCalls, err)
 	}
-	var nilSuperCalls []string
-	nilSuper, err := constructIncomingNotice(emptyCase.Model, body, incomingNoticeHooks{
-		super:  func(any) (any, error) { nilSuperCalls = append(nilSuperCalls, "super"); return nil, nil },
-		nested: func(any) error { nilSuperCalls = append(nilSuperCalls, "nested"); return nil },
-	})
-	if err != nil || nilSuper != nil || !reflect.DeepEqual(nilSuperCalls, []string{"super"}) {
-		t.Fatalf("nil super result continued downstream calls=%v err=%v", nilSuperCalls, err)
-	}
 	var nilNoticeCalls []string
-	if err := dispatchIncomingNotice(emptyCase.Model, nil, header, incomingNoticeHooks{
+	if err := receiveIncomingNotice(emptyCase.Model, body, header, incomingNoticeHooks{
+		super:  func(any) (any, error) { nilNoticeCalls = append(nilNoticeCalls, "super"); return nil, nil },
+		nested: func(any) error { nilNoticeCalls = append(nilNoticeCalls, "nested"); return nil },
 		delegate: func(got any, gotHeader *incomingNoticeHeader) {
 			if got != nil || gotHeader != header {
 				t.Errorf("nil delegate args notice=%p header=%p", got, gotHeader)
@@ -273,7 +295,7 @@ func TestIncomingNoticeModelStopsAndPreservesOrdering(t *testing.T) {
 			}
 			nilNoticeCalls = append(nilNoticeCalls, "receipt")
 		},
-	}); err != nil || !reflect.DeepEqual(nilNoticeCalls, []string{"delegate", "receipt"}) {
+	}); err != nil || !reflect.DeepEqual(nilNoticeCalls, []string{"super", "delegate", "receipt"}) {
 		t.Fatalf("nil initializer result was incorrectly suppressed calls=%v err=%v", nilNoticeCalls, err)
 	}
 }
