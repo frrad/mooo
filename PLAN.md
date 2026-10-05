@@ -126,6 +126,79 @@ through every terminal fan-out path.
 Mapping the serialized ping configuration key and claiming official queue
 timing remain separate evidence gaps.
 
+### Push-receipt transport integration plan
+
+The reviewed manager and carriage-agent owners are intentionally transport
+independent. The existing Session has no receipt callsite: unmatched packets
+leave `dispatchPacket` and enter the raw/typed push streams, while the existing
+asynchronous out-segment submitter is an opt-in writer for already serialized
+payloads. Neither seam can construct or infer a receipt packet yet.
+
+Before binding receipts to Session, approve the source-derived request model and
+eligibility predicate. The integration must then add an opt-in callback at the
+unmatched-push boundary, injected before reader startup. It should receive only
+an eligible, source-modeled push representation and compose the agent owner with
+the manager owner. Session must retain ordinary push delivery and must not
+activate this callback by default.
+
+The adapter must keep receipt sending separate from the existing out-segment
+worker until the receipt packet shape, serialization, callback-tag mapping, and
+completion semantics are approved. The worker currently accepts serialized
+payloads, reports partial/ambiguous write progress, and closes the carriage on
+partial write failure; it has no receipt-specific packet identity or callback
+tag contract. Reusing it prematurely would conflate reviewed receipt admission
+with unresolved packet construction and write completion behavior.
+
+The signed tag derived by the agent owner is an admission/send argument. It
+must be tracked separately from any lower socket-write tag. The base
+`LocoAgent` lower socket path zero-extends the uint32 packet-header ID and
+ignores the signed admission tag; an override exists in `LocoNWAgent`.
+Active carriage transport selection and runtime callback mapping remain
+unresolved, so this plan does not prescribe a wire-tag field.
+
+The current implementation confirms this boundary concretely: `OutSegmentSubmitter`
+accepts only `[]byte`, arms its timeout owner after worker admission, and forwards
+`OutSegmentWriteResult` without any signed tag or packet identity. A blocked write
+is interrupted by `Close`; a partial write or zero-byte-after-progress failure
+terminates the submitter/carriage and is not retryable. These behaviors pass the
+existing race-enabled synthetic worker tests, but they cannot report whether a
+receipt was accepted, written, or acknowledged.
+
+Pending-request correlation is likewise separate. `dispatchPacket` keys waiters
+by method plus packet ID and routes misses as pushes; a negative receipt tag is
+an agent send argument and must never become a Session request ID or pending-map
+key. Any future receipt completion path must define whether it is fire-and-forget
+or correlated before adding entries to the pending maps.
+
+The request path inserts a positive uint32 ID into all three pending maps before
+serialization and submission. A receipt adapter that casts the signed tag back
+to uint32 could produce values outside the bounded request range or accidentally
+reuse a packet ID under a future wider allocator. Receipt admission therefore
+must not add the signed send argument to Session pending maps or use it as a
+request ID. Inbound receipt or push handling remains a separate dispatch path;
+the source does not yet establish an acknowledgement method or wire identity.
+
+Required synthetic integration coverage after request approval:
+
+1. An eligible unmatched push reaches the injected receipt callback while the
+   ordinary push stream remains ordered and usable.
+2. Manager cancellation and scheduling retain the manager instance target,
+   while inline dispatch resolves the current carriage agent instance.
+3. Agent status is reread at execution; non-3 suppresses packet access and
+   sending, and status 3 preserves the uint32 packet identity and signed
+   admission argument at the owner boundary. A separate test must prove the
+   eventual lower socket-tag mapping once its source trace is corrected.
+4. The receipt path never inserts the signed send argument into request
+   correlation. Any unsolicited receipt acknowledgement remains an inbound
+   dispatch concern until an approved method/ID model defines whether it can
+   complete a waiter.
+5. Out-segment partial progress, zero-byte errors, ambiguous failures, close,
+   and bounded shutdown are exercised only after the receipt serialization and
+   completion contract specifies how they map to receipt outcomes.
+
+The manager/agent composition harness is tracked separately in PR138; this plan
+does not authorize Session binding, packet construction, or default activation.
+
 ### Default status/config owner binding proposal
 
 The next reconnect slice is a constructor-bound integration layer for the
