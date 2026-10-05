@@ -88,9 +88,12 @@ complete official-client parity is not a prerequisite for all bridge work.
 
 Read receipts and opt-in historical backfill follow the alpha. Resolve the
 `SYNCMSG` read-side-effect and local watermark discrepancy before enabling either.
-Define persistent conversion-failure handling before release: a failed message
-currently blocks later commits in that chat, so any bounded skip must record an
-explicit gap rather than silently advance the cursor.
+Deterministic typed-photo failures now become persisted notices under their
+original source IDs (PR #181; [policy](conversion-failure-policy.md)). Transient
+transfer or Matrix failures remain uncommitted. Parser failures before a typed
+event still need continuity guards and explicit notices; PR #187 is in review.
+Neither a silent cursor advance nor an indefinite chat block satisfies alpha
+acceptance.
 
 ## Goal and acceptance evidence
 
