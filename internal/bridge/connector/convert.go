@@ -2,7 +2,9 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -15,6 +17,10 @@ import (
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
 )
+
+var photoHTTPClient = http.DefaultClient
+
+var errPhotoTransfer = errors.New("connector: Kakao photo transfer failed")
 
 func placeholderUserName(userID int64) string {
 	return fmt.Sprintf("KakaoTalk user %d", userID)
@@ -41,9 +47,7 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, convertReply)
 	case events.PhotoMessage:
 		chatID, logID := evt.Message.ChatID, evt.Message.LogID
-		return newMessage(kc.messageMeta(chatID, logID, 0, 0), makeMessageID(chatID, logID), noticeData{
-			Body: "A photo was sent that this bridge cannot show yet.", Metadata: newKakaoMessageMetadata(chatID, logID, 0, media.PhotoType, "", 0),
-		}, convertNoticeWithMetadata)
+		return newMessage(kc.messageMeta(chatID, logID, evt.Message.AuthorID, evt.Message.SentAt), makeMessageID(chatID, logID), evt, convertPhoto)
 	case events.UnsupportedMessage:
 		notice := fmt.Sprintf("A KakaoTalk message of unsupported type %d was sent.", evt.Type)
 		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, 0, 0), makeMessageID(evt.ChatID, evt.LogID), noticeData{
@@ -146,4 +150,30 @@ func messageWithMetadata(msgType event.MessageType, body string, metadata *Kakao
 	converted := textMessage(msgType, body)
 	converted.Parts[0].DBMetadata = metadata
 	return converted
+}
+
+func convertPhoto(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.PhotoMessage) (*bridgev2.ConvertedMessage, error) {
+	transferCtx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)
+	defer cancel()
+	data, err := media.DownloadPhoto(transferCtx, photoHTTPClient, msg.Message.Attachment)
+	if err != nil {
+		return nil, errPhotoTransfer
+	}
+	attachment := msg.Message.Attachment
+	filename := "photo.jpg"
+	if attachment.MediaType == "image/png" {
+		filename = "photo.png"
+	}
+	uri, file, err := intent.UploadMedia(transferCtx, portal.MXID, data, filename, attachment.MediaType)
+	if err != nil {
+		return nil, errPhotoTransfer
+	}
+	content := &event.MessageEventContent{MsgType: event.MsgImage, Body: filename, URL: uri, FileName: filename}
+	if file != nil {
+		content.File = file
+	}
+	content.Info = &event.FileInfo{MimeType: attachment.MediaType, Size: len(data), Width: int(attachment.Width), Height: int(attachment.Height)}
+	converted := &bridgev2.ConvertedMessage{Parts: []*bridgev2.ConvertedMessagePart{{Type: event.EventMessage, Content: content}}}
+	converted.Parts[0].DBMetadata = newKakaoMessageMetadata(msg.Message.ChatID, msg.Message.LogID, msg.Message.AuthorID, media.PhotoType, "[image]", 0)
+	return converted, nil
 }

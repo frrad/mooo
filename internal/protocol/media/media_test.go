@@ -104,11 +104,11 @@ func TestDecodeAndDownloadPhotoMessage(t *testing.T) {
 	data := syntheticJPEG(t)
 	sum := sha1.Sum(data)
 	checksum := strings.ToUpper(hex.EncodeToString(sum[:]))
-	attachment := fmt.Sprintf(`{"k":"opaque","w":3,"h":2,"s":%d,"cs":"%s","mt":"image/jpg","url":"https://talk.kakaocdn.net/p/file?token=synthetic","thumbnailUrl":"https://talk.kakaocdn.net/p/thumb?token=synthetic","expire":1}`, len(data), checksum)
-	log, _ := bson.Marshal(bson.D{{Key: "type", Value: PhotoType}, {Key: "logId", Value: int64(99)}, {Key: "attachment", Value: attachment}})
+	attachment := fmt.Sprintf(`{"k":"opaque","w":3,"h":2,"s":%d,"cs":"%s","mt":"image/jpg","url":"https://talk.kakaocdn.net/p/file?token=synthetic","thumbnailUrl":"https://talk.kakaocdn.net/p/thumb?token=synthetic","expire":4102444800}`, len(data), checksum)
+	log, _ := bson.Marshal(bson.D{{Key: "type", Value: PhotoType}, {Key: "logId", Value: int64(99)}, {Key: "authorId", Value: int64(7)}, {Key: "sendAt", Value: int64(1234)}, {Key: "attachment", Value: attachment}})
 	body, _ := bson.Marshal(bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.Raw(log)}})
 	message, err := DecodePhotoMessage(body)
-	if err != nil || message.ChatID != 42 || message.LogID != 99 || message.Attachment.Width != 3 {
+	if err != nil || message.ChatID != 42 || message.LogID != 99 || message.AuthorID != 7 || message.SentAt != 1234 || message.Attachment.Width != 3 {
 		t.Fatalf("message=%#v err=%v", message, err)
 	}
 	client := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -117,6 +117,19 @@ func TestDecodeAndDownloadPhotoMessage(t *testing.T) {
 	downloaded, err := DownloadPhoto(t.Context(), client, message.Attachment)
 	if err != nil || !bytes.Equal(downloaded, data) {
 		t.Fatalf("download bytes=%d err=%v", len(downloaded), err)
+	}
+}
+
+func TestPhotoDownloadRejectsExpiredAttachment(t *testing.T) {
+	data := syntheticJPEG(t)
+	sum := sha1.Sum(data)
+	attachment := PhotoAttachment{Size: int64(len(data)), Checksum: hex.EncodeToString(sum[:]), URL: "https://talk.kakaocdn.net/file", ExpiresAt: 1}
+	client := &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("expired photo must not be requested")
+		return nil, nil
+	})}
+	if _, err := DownloadPhoto(t.Context(), client, attachment); !errors.Is(err, ErrDownload) {
+		t.Fatalf("expired error = %v", err)
 	}
 }
 
