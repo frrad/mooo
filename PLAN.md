@@ -150,12 +150,11 @@ tag contract. Reusing it prematurely would conflate reviewed receipt admission
 with unresolved packet construction and write completion behavior.
 
 The signed tag derived by the agent owner is an admission/send argument. It
-must be tracked separately from any lower socket-write tag until the source
-trace proves that the latter preserves it. Current write-chain evidence shows
-`sendPacket:tag:` loading the packet-header ID before the lower write call,
-while the fixture does not assert the value reaching that call. The adapter
-must therefore leave the lower transport field unresolved and must not
-prescribe a signed-tag wire field from the current static model.
+must be tracked separately from any lower socket-write tag. The base
+`LocoAgent` lower socket path zero-extends the uint32 packet-header ID and
+ignores the signed admission tag; an override exists in `LocoNWAgent`.
+Active carriage transport selection and runtime callback mapping remain
+unresolved, so this plan does not prescribe a wire-tag field.
 
 The current implementation confirms this boundary concretely: `OutSegmentSubmitter`
 accepts only `[]byte`, arms its timeout owner after worker admission, and forwards
