@@ -21,10 +21,13 @@ their implementations.
 The `locoDidKickout:` consumer is a separate downstream chain. Its raw guards
 suppress all later work when `isLoggedIn` is false or `isLoggingOut` is true. For
 an admitted event it reads the reason and three optional user-info fields,
-passes `reason == 1 || reason == 10` as the exact reset boolean to
-`logoutWithResetDatabase:`, and queues a consumer wrapper on the main queue. That wrapper queues a second main-queue block for the final alert projection.
+unconditionally prepares the outer localized message, takes an additional
+reason-zero fallback path, and retains the URL/label pair only when both are
+present. It then passes `reason == 1 || reason == 10` as the exact reset
+boolean to `logoutWithResetDatabase:`, and queues a consumer wrapper on the
+main queue. That wrapper queues a second main-queue block for the final alert projection.
 That queue block (`0x1013ad254`) invokes a distinct projection body
-(`0x1013ad34c`): it localizes fallback strings when optional values are absent,
+(`0x1013ad34c`): it unconditionally localizes the final alert message,
 creates an alert, and uses `beginSheetOnWindow:completionHandler:` when the core
 window exists, otherwise `setHandler:` followed by `runModal`. The raw outer dispatch is at `0x1013ac920`; the wrapper dispatch is at
 `0x1013ad2e0`. It is not the

@@ -1,15 +1,211 @@
 {
   "status": "reviewed-static-unexecuted-runtime",
   "cases": [
-    {"name":"changesvr_logout_with_next_ticket","kind":"changesvr","has_more_ticket_addresses":true,"expected_effects":["clear_carriage_address","check_more_ticket_addresses","move_ticket_address_cursor","send_logout","disconnect_ticket_agent","disconnect_carriage_agent"]},
-    {"name":"changesvr_logout_without_next_ticket","kind":"changesvr","has_more_ticket_addresses":false,"expected_effects":["clear_carriage_address","check_more_ticket_addresses","send_logout","disconnect_ticket_agent","disconnect_carriage_agent"]},
-    {"name":"kickout_logged_out_suppressed","kind":"kickout","logged_in":false,"logging_out":false,"reason_code":10,"expected_effects":[]},
-    {"name":"kickout_logging_out_suppressed","kind":"kickout","logged_in":true,"logging_out":true,"reason_code":10,"expected_effects":[]},
-    {"name":"kickout_reason_1_all_optional_sheet","kind":"kickout","logged_in":true,"reason_code":1,"error_message_present":true,"error_url_present":true,"error_url_label_present":true,"main_window_present":true,"expected_effects":["extract_reason","extract_error_message","extract_error_url","extract_error_url_label","derive_reset_true","logout_with_reset_database","dispatch_consumer_projection","dispatch_alert_projection","include_error_url_label","create_alert","begin_alert_sheet"]},
-    {"name":"kickout_reason_10_all_optional_modal","kind":"kickout","logged_in":true,"reason_code":10,"error_message_present":true,"error_url_present":true,"error_url_label_present":true,"main_window_present":false,"expected_effects":["extract_reason","extract_error_message","extract_error_url","extract_error_url_label","derive_reset_true","logout_with_reset_database","dispatch_consumer_projection","dispatch_alert_projection","include_error_url_label","create_alert","run_alert_modal"]},
-    {"name":"kickout_other_reason_no_optional","kind":"kickout","logged_in":true,"reason_code":7,"main_window_present":true,"expected_effects":["extract_reason","extract_error_message","extract_error_url","extract_error_url_label","derive_reset_false","logout_with_reset_database","dispatch_consumer_projection","dispatch_alert_projection","localize_default_error_message","localize_default_error_url","create_alert","begin_alert_sheet"]},
-    {"name":"kickout_message_only","kind":"kickout","logged_in":true,"reason_code":2,"error_message_present":true,"main_window_present":false,"expected_effects":["extract_reason","extract_error_message","extract_error_url","extract_error_url_label","derive_reset_false","logout_with_reset_database","dispatch_consumer_projection","dispatch_alert_projection","localize_default_error_url","create_alert","run_alert_modal"]},
-    {"name":"kickout_url_and_label_without_message","kind":"kickout","logged_in":true,"reason_code":3,"error_url_present":true,"error_url_label_present":true,"main_window_present":true,"expected_effects":["extract_reason","extract_error_message","extract_error_url","extract_error_url_label","derive_reset_false","logout_with_reset_database","dispatch_consumer_projection","dispatch_alert_projection","localize_default_error_message","include_error_url_label","create_alert","begin_alert_sheet"]},
-    {"name":"kickout_url_without_label","kind":"kickout","logged_in":true,"reason_code":4,"error_url_present":true,"main_window_present":false,"expected_effects":["extract_reason","extract_error_message","extract_error_url","extract_error_url_label","derive_reset_false","logout_with_reset_database","dispatch_consumer_projection","dispatch_alert_projection","localize_default_error_message","create_alert","run_alert_modal"]}
+    {
+      "name": "changesvr_logout_with_next_ticket",
+      "kind": "changesvr",
+      "has_more_ticket_addresses": true,
+      "expected_effects": [
+        "clear_carriage_address",
+        "check_more_ticket_addresses",
+        "move_ticket_address_cursor",
+        "send_logout",
+        "disconnect_ticket_agent",
+        "disconnect_carriage_agent"
+      ]
+    },
+    {
+      "name": "changesvr_logout_without_next_ticket",
+      "kind": "changesvr",
+      "has_more_ticket_addresses": false,
+      "expected_effects": [
+        "clear_carriage_address",
+        "check_more_ticket_addresses",
+        "send_logout",
+        "disconnect_ticket_agent",
+        "disconnect_carriage_agent"
+      ]
+    },
+    {
+      "name": "kickout_logged_out_suppressed",
+      "kind": "kickout",
+      "logged_in": false,
+      "logging_out": false,
+      "reason_code": 10,
+      "expected_effects": []
+    },
+    {
+      "name": "kickout_logging_out_suppressed",
+      "kind": "kickout",
+      "logged_in": true,
+      "logging_out": true,
+      "reason_code": 10,
+      "expected_effects": []
+    },
+    {
+      "name": "kickout_reason_1_all_optional_sheet",
+      "kind": "kickout",
+      "logged_in": true,
+      "reason_code": 1,
+      "error_message_present": true,
+      "error_url_present": true,
+      "error_url_label_present": true,
+      "main_window_present": true,
+      "expected_effects": [
+        "extract_reason",
+        "extract_error_message",
+        "extract_error_url",
+        "extract_error_url_label",
+        "localize_outer_default_message",
+        "include_error_url_label",
+        "derive_reset_true",
+        "logout_with_reset_database",
+        "dispatch_consumer_projection",
+        "dispatch_alert_projection",
+        "localize_alert_message",
+        "create_alert",
+        "begin_alert_sheet"
+      ]
+    },
+    {
+      "name": "kickout_reason_10_all_optional_modal",
+      "kind": "kickout",
+      "logged_in": true,
+      "reason_code": 10,
+      "error_message_present": true,
+      "error_url_present": true,
+      "error_url_label_present": true,
+      "main_window_present": false,
+      "expected_effects": [
+        "extract_reason",
+        "extract_error_message",
+        "extract_error_url",
+        "extract_error_url_label",
+        "localize_outer_default_message",
+        "include_error_url_label",
+        "derive_reset_true",
+        "logout_with_reset_database",
+        "dispatch_consumer_projection",
+        "dispatch_alert_projection",
+        "localize_alert_message",
+        "create_alert",
+        "run_alert_modal"
+      ]
+    },
+    {
+      "name": "kickout_reason_0_default_fallback",
+      "kind": "kickout",
+      "logged_in": true,
+      "reason_code": 0,
+      "main_window_present": false,
+      "expected_effects": [
+        "extract_reason",
+        "extract_error_message",
+        "extract_error_url",
+        "extract_error_url_label",
+        "localize_outer_default_message",
+        "localize_outer_message_fallback",
+        "localize_reason_zero_fallback",
+        "derive_reset_false",
+        "logout_with_reset_database",
+        "dispatch_consumer_projection",
+        "dispatch_alert_projection",
+        "localize_alert_message",
+        "create_alert",
+        "run_alert_modal"
+      ]
+    },
+    {
+      "name": "kickout_other_reason_no_optional",
+      "kind": "kickout",
+      "logged_in": true,
+      "reason_code": 7,
+      "main_window_present": true,
+      "expected_effects": [
+        "extract_reason",
+        "extract_error_message",
+        "extract_error_url",
+        "extract_error_url_label",
+        "localize_outer_default_message",
+        "localize_outer_message_fallback",
+        "derive_reset_false",
+        "logout_with_reset_database",
+        "dispatch_consumer_projection",
+        "dispatch_alert_projection",
+        "localize_alert_message",
+        "create_alert",
+        "begin_alert_sheet"
+      ]
+    },
+    {
+      "name": "kickout_message_only",
+      "kind": "kickout",
+      "logged_in": true,
+      "reason_code": 2,
+      "error_message_present": true,
+      "main_window_present": false,
+      "expected_effects": [
+        "extract_reason",
+        "extract_error_message",
+        "extract_error_url",
+        "extract_error_url_label",
+        "localize_outer_default_message",
+        "derive_reset_false",
+        "logout_with_reset_database",
+        "dispatch_consumer_projection",
+        "dispatch_alert_projection",
+        "localize_alert_message",
+        "create_alert",
+        "run_alert_modal"
+      ]
+    },
+    {
+      "name": "kickout_url_and_label_without_message",
+      "kind": "kickout",
+      "logged_in": true,
+      "reason_code": 3,
+      "error_url_present": true,
+      "error_url_label_present": true,
+      "main_window_present": true,
+      "expected_effects": [
+        "extract_reason",
+        "extract_error_message",
+        "extract_error_url",
+        "extract_error_url_label",
+        "localize_outer_default_message",
+        "localize_outer_message_fallback",
+        "include_error_url_label",
+        "derive_reset_false",
+        "logout_with_reset_database",
+        "dispatch_consumer_projection",
+        "dispatch_alert_projection",
+        "localize_alert_message",
+        "create_alert",
+        "begin_alert_sheet"
+      ]
+    },
+    {
+      "name": "kickout_url_without_label",
+      "kind": "kickout",
+      "logged_in": true,
+      "reason_code": 4,
+      "error_url_present": true,
+      "main_window_present": false,
+      "expected_effects": [
+        "extract_reason",
+        "extract_error_message",
+        "extract_error_url",
+        "extract_error_url_label",
+        "localize_outer_default_message",
+        "localize_outer_message_fallback",
+        "derive_reset_false",
+        "logout_with_reset_database",
+        "dispatch_consumer_projection",
+        "dispatch_alert_projection",
+        "localize_alert_message",
+        "create_alert",
+        "run_alert_modal"
+      ]
+    }
   ]
 }

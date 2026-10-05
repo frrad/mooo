@@ -39,23 +39,23 @@ func expectedDownstreamEffects(tc downstreamTerminalCase) []string {
 	if !tc.LoggedIn || tc.LoggingOut {
 		return []string{}
 	}
-	effects := []string{"extract_reason", "extract_error_message", "extract_error_url", "extract_error_url_label"}
+	effects := []string{"extract_reason", "extract_error_message", "extract_error_url", "extract_error_url_label", "localize_outer_default_message"}
+	if !tc.ErrorMessagePresent {
+		effects = append(effects, "localize_outer_message_fallback")
+	}
+	if tc.ReasonCode == 0 {
+		effects = append(effects, "localize_reason_zero_fallback")
+	}
+	if tc.ErrorURLPresent && tc.ErrorURLLabelPresent {
+		effects = append(effects, "include_error_url_label")
+	}
 	if tc.ReasonCode == 1 || tc.ReasonCode == 10 {
 		effects = append(effects, "derive_reset_true")
 	} else {
 		effects = append(effects, "derive_reset_false")
 	}
 	effects = append(effects, "logout_with_reset_database", "dispatch_consumer_projection", "dispatch_alert_projection")
-	if !tc.ErrorMessagePresent {
-		effects = append(effects, "localize_default_error_message")
-	}
-	if !tc.ErrorURLPresent {
-		effects = append(effects, "localize_default_error_url")
-	}
-	if tc.ErrorURLPresent && tc.ErrorURLLabelPresent {
-		effects = append(effects, "include_error_url_label")
-	}
-	effects = append(effects, "create_alert")
+	effects = append(effects, "localize_alert_message", "create_alert")
 	if tc.MainWindowPresent {
 		effects = append(effects, "begin_alert_sheet")
 	} else {
