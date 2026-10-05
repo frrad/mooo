@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -12,17 +13,14 @@ import (
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
-	bridgematrix "maunium.net/go/mautrix/bridgev2/matrix"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/id"
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
-	"github.com/frrad/mooo/internal/protocol/media"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 )
 
@@ -39,7 +37,6 @@ type kakaoClient interface {
 	MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error)
 	SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error)
 	SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error)
-	SendImage(ctx context.Context, chatID int64, data []byte) (media.SendResult, error)
 	Close() error
 	Shutdown(ctx context.Context) error
 }
@@ -68,7 +65,6 @@ var rateLimitedRecoveryDelays = [...]time.Duration{60 * time.Second, 120 * time.
 var errUnsupportedOpenChatMetadata = errors.New("connector: OpenChat metadata is not supported")
 var errChatInfoMismatch = errors.New("connector: CHATINFO returned a different chat ID")
 var errInvalidMemberRoster = errors.New("connector: MEMLIST returned an invalid member ID")
-var errUnsupportedImageReply = errors.New("connector: image replies are not supported")
 
 func init() {
 	status.BridgeStateHumanErrors.Update(status.BridgeStateErrorMap{
@@ -99,21 +95,26 @@ type KakaoClient struct {
 	queue     func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult
 	sendState func(status.BridgeState)
 
-	mu             sync.Mutex
-	disconnectGate chan struct{}
-	client         kakaoClient
-	cleanup        kakaoClient
-	connecting     bool
-	stopping       bool
-	done           chan struct{}
-	cleanupDone    chan struct{}
-	cleanupBusy    bool
-	connectCancel  context.CancelFunc
-	retryCancel    context.CancelFunc
-	generation     uint64
-	recoveryTry    int
-	wait           func(context.Context, time.Duration) error
-	profiles       map[int64]chatmeta.Member
+	mu                   sync.Mutex
+	disconnectGate       chan struct{}
+	client               kakaoClient
+	cleanup              kakaoClient
+	connecting           bool
+	stopping             bool
+	done                 chan struct{}
+	cleanupDone          chan struct{}
+	cleanupBusy          bool
+	cleanupRetryCancel   context.CancelFunc
+	cleanupRetryID       uint64
+	cleanupRetryAttempts int
+	connectCancel        context.CancelFunc
+	retryCancel          context.CancelFunc
+	retryID              uint64
+	generation           uint64
+	connectingGeneration uint64
+	recoveryTry          int
+	wait                 func(context.Context, time.Duration) error
+	profiles             map[int64]chatmeta.Member
 }
 
 var (
@@ -148,7 +149,7 @@ func (kc *KakaoClient) log() *zerolog.Logger {
 
 func (kc *KakaoClient) Connect(ctx context.Context) {
 	kc.mu.Lock()
-	if kc.client != nil || kc.cleanup != nil || kc.connecting || kc.stopping {
+	if kc.client != nil || kc.cleanup != nil || kc.connecting {
 		kc.mu.Unlock()
 		return
 	}
@@ -156,13 +157,14 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	kc.stopping = false
 	kc.generation++
 	generation := kc.generation
+	kc.connectingGeneration = generation
 	connectCtx, cancel := context.WithCancel(ctx)
 	kc.connectCancel = cancel
 	kc.mu.Unlock()
 	defer func() {
 		cancel()
 		kc.mu.Lock()
-		if kc.generation == generation {
+		if kc.generation == generation || (kc.connecting && kc.connectingGeneration == generation) {
 			kc.connecting = false
 			kc.connectCancel = nil
 		}
@@ -177,15 +179,24 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	c, err := kc.open()
 	if err != nil {
 		kc.log().Err(err).Msg("Failed to open Kakao profile")
-		if !recovering {
-			kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateProfileUnavailable})
-		} else {
-			kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
+		if kc.isCurrent(generation, ctx) {
+			if !recovering {
+				kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateProfileUnavailable})
+			} else {
+				kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
+			}
 		}
 		return
 	}
 	if !kc.isCurrent(generation, ctx) {
-		_ = shutdownKakaoClient(c)
+		kc.mu.Lock()
+		if kc.cleanup == nil {
+			kc.cleanup = c
+			kc.cleanupDone = nil
+			kc.cleanupBusy = false
+		}
+		kc.mu.Unlock()
+		kc.shutdownBootstrap(c, "stale bootstrap", true)
 		return
 	}
 	// Retain the bootstrap owner before any potentially blocking Connect,
@@ -200,10 +211,12 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	if err != nil {
 		kc.shutdownBootstrap(c, "after connect failure", false)
 		kc.log().Err(err).Msg("Failed to connect to KakaoTalk")
-		if recovering && kc.retryAfter(err, generation) {
+		if recovering && retryableRecoveryError(err) && kc.retryAfter(err, generation) {
 			return
 		}
-		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
+		if kc.isCurrent(generation, ctx) {
+			kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
+		}
 		return
 	}
 	done := make(chan struct{})
@@ -216,6 +229,7 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	kc.client = c
 	kc.done = done
 	kc.recoveryTry = 0
+	kc.cleanupRetryAttempts = 0
 	kc.mu.Unlock()
 	kc.sendState(status.BridgeState{StateEvent: status.StateConnected})
 	go kc.run(c, stream, done, generation)
@@ -250,6 +264,8 @@ func (kc *KakaoClient) retryAfter(err error, generation uint64) bool {
 	attempt := kc.recoveryTry
 	kc.recoveryTry++
 	ctx, cancel := context.WithCancel(context.Background())
+	kc.retryID++
+	retryID := kc.retryID
 	kc.retryCancel = cancel
 	wait := kc.wait
 	delay := recoveryDelay(err, attempt)
@@ -257,18 +273,21 @@ func (kc *KakaoClient) retryAfter(err error, generation uint64) bool {
 	go func() {
 		defer func() {
 			kc.mu.Lock()
-			kc.retryCancel = nil
+			if kc.retryID == retryID {
+				kc.retryCancel = nil
+			}
 			kc.mu.Unlock()
 		}()
 		if err := wait(ctx, delay); err != nil {
 			return
 		}
 		kc.mu.Lock()
-		if kc.stopping || kc.generation != generation || kc.client != nil || kc.cleanup != nil {
+		if kc.stopping || kc.generation != generation || kc.client != nil || kc.cleanup != nil || kc.retryID != retryID {
 			kc.mu.Unlock()
 			return
 		}
 		kc.connecting = true
+		kc.connectingGeneration = generation
 		connectCtx, connectCancel := context.WithCancel(ctx)
 		kc.connectCancel = connectCancel
 		kc.mu.Unlock()
@@ -308,10 +327,11 @@ func retryableRecoveryError(err error) bool {
 	if errors.As(err, &statusErr) {
 		return statusErr.Status == -328
 	}
-	// Connect errors from the transport are intentionally the only generic
-	// errors retried by the bridge. Profile-open failures have already been
-	// handled before this function is reached.
-	return true
+	if errors.Is(err, client.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	var networkErr net.Error
+	return errors.As(err, &networkErr)
 }
 
 // shutdownBootstrap releases an owner retained before bootstrap calls. A
@@ -448,24 +468,84 @@ func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generatio
 	kc.mu.Lock()
 	if kc.cleanup == c {
 		kc.cleanupBusy = false
-		close(kc.cleanupDone)
+		if kc.cleanupDone != nil {
+			close(kc.cleanupDone)
+			kc.cleanupDone = nil
+		}
 		if shutdownErr == nil {
 			kc.cleanup = nil
-			kc.cleanupDone = nil
 		}
 	}
 	canRecover := shutdownErr == nil && !kc.stopping && kc.generation == generation
 	kc.mu.Unlock()
 	if shutdownErr != nil {
 		kc.log().Err(shutdownErr).Msg("Failed to close Kakao client before recovery")
+		kc.scheduleCleanupRetry(c, generation, kickedOut)
 		return
 	}
 	if kickedOut {
 		return
 	}
 	if canRecover {
-		kc.retryAfter(errors.New("session ended"), generation)
+		kc.retryAfter(client.ErrClosed, generation)
 	}
+}
+
+// scheduleCleanupRetry keeps a timed-out profile owner attached and permits
+// one later cleanup attempt. No replacement can be opened while this owner is
+// retained; this is deliberately separate from the recovery attempt budget.
+func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, kickedOut bool) {
+	kc.mu.Lock()
+	if kc.cleanup != c || kc.stopping || kc.cleanupRetryCancel != nil || kc.cleanupRetryAttempts >= 1 {
+		kc.mu.Unlock()
+		return
+	}
+	kc.cleanupRetryAttempts++
+	ctx, cancel := context.WithCancel(context.Background())
+	kc.cleanupRetryCancel = cancel
+	kc.cleanupRetryID++
+	retryID := kc.cleanupRetryID
+	wait := kc.wait
+	kc.mu.Unlock()
+	go func() {
+		defer func() {
+			kc.mu.Lock()
+			if kc.cleanupRetryID == retryID {
+				kc.cleanupRetryCancel = nil
+			}
+			kc.mu.Unlock()
+		}()
+		if err := wait(ctx, time.Second); err != nil {
+			return
+		}
+		kc.mu.Lock()
+		if kc.cleanup != c || kc.stopping || kc.cleanupRetryID != retryID {
+			kc.mu.Unlock()
+			return
+		}
+		kc.cleanupBusy = true
+		if kc.cleanupDone == nil {
+			kc.cleanupDone = make(chan struct{})
+		}
+		kc.mu.Unlock()
+		err := c.Shutdown(contextWithDisconnectTimeout())
+		kc.mu.Lock()
+		if kc.cleanup == c {
+			kc.cleanupBusy = false
+			if kc.cleanupDone != nil {
+				close(kc.cleanupDone)
+			}
+			if err == nil {
+				kc.cleanup = nil
+				kc.cleanupDone = nil
+			}
+		}
+		canRecover := err == nil && !kc.stopping && kc.generation == generation
+		kc.mu.Unlock()
+		if canRecover && !kickedOut {
+			kc.retryAfter(client.ErrClosed, generation)
+		}
+	}()
 }
 
 func contextWithDisconnectTimeout() context.Context {
@@ -528,6 +608,12 @@ func (kc *KakaoClient) Disconnect() {
 		kc.retryCancel()
 		kc.retryCancel = nil
 	}
+	kc.retryID++
+	if kc.cleanupRetryCancel != nil {
+		kc.cleanupRetryCancel()
+		kc.cleanupRetryCancel = nil
+	}
+	kc.cleanupRetryID++
 	if kc.connectCancel != nil {
 		kc.connectCancel()
 	}
@@ -542,7 +628,6 @@ func (kc *KakaoClient) Disconnect() {
 	}
 	ownedByOther := c != nil && kc.cleanupBusy
 	kc.stopping = true
-	kc.connecting = false
 	kc.client = nil
 	kc.done = nil
 	if c != nil && !kc.cleanupBusy {
@@ -736,9 +821,6 @@ func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 	if name := chatName(data); name != "" {
 		info.Name = &name
 	}
-	if data.Meta != nil {
-		info.Avatar = avatarFromURL(data.Meta.ImageURL)
-	}
 	if data.Type == "DirectChat" && completeRoster {
 		otherUserID, count := networkid.UserID(""), 0
 		for userID := range members {
@@ -805,21 +887,14 @@ func userInfoForMember(profile chatmeta.Member) *bridgev2.UserInfo {
 		name := profile.Nickname
 		info.Name = &name
 	}
-	if profile.ProfileImageURL != "" {
-		info.Avatar = avatarFromURL(profile.ProfileImageURL)
-	}
 	return info
 }
 
 func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Portal) *event.RoomFeatures {
 	return &event.RoomFeatures{
-		ID:            "com.github.frrad.mooo.capabilities.2026_10_04.photos1",
+		ID:            "com.github.frrad.mooo.capabilities.2026_10_04",
 		MaxTextLength: maxTextLength,
 		Reply:         event.CapLevelPartialSupport,
-		File: event.FileFeatureMap{event.MsgImage: &event.FileFeatures{
-			MimeTypes: map[string]event.CapabilitySupportLevel{"image/jpeg": event.CapLevelPartialSupport, "image/png": event.CapLevelPartialSupport},
-			MaxSize:   media.MaxImageBytes,
-		}},
 	}
 }
 
@@ -827,15 +902,11 @@ func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 // established.
 const maxTextLength = 10000
 
-const matrixImageTransferTimeout = 30 * time.Second
-
-var matrixImageDownloader = downloadMatrixImageBounded
-
 // HandleMatrixMessage sends one plain text message. A failed or ambiguous
 // send is reported to Matrix and never retried.
 func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.MatrixMessage) (*bridgev2.MatrixMessageResponse, error) {
 	switch msg.Content.MsgType {
-	case event.MsgText, event.MsgNotice, event.MsgEmote, event.MsgImage:
+	case event.MsgText, event.MsgNotice, event.MsgEmote:
 	default:
 		return nil, bridgev2.ErrUnsupportedMessageType
 	}
@@ -851,22 +922,6 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	kc.mu.Unlock()
 	if c == nil {
 		return nil, bridgev2.ErrNotLoggedIn
-	}
-	if msg.Content.MsgType == event.MsgImage {
-		if msg.ReplyTo != nil || msg.Content.RelatesTo != nil && msg.Content.RelatesTo.GetReplyTo() != "" {
-			return nil, errUnsupportedImageReply
-		}
-		if msg.Portal == nil || msg.Portal.Bridge == nil {
-			return nil, bridgev2.ErrFailedToGetIntent
-		}
-		if msg.Content.Info != nil && msg.Content.Info.Size > media.MaxImageBytes {
-			return nil, media.ErrInvalidImage
-		}
-		intent, ok := msg.Portal.GetIntentFor(ctx, kc.selfSender(), kc.login, bridgev2.RemoteEventMessage)
-		if !ok {
-			return nil, bridgev2.ErrFailedToGetIntent
-		}
-		return kc.sendMatrixImage(ctx, c, intent, chatID, msg.Content.URL, msg.Content.File)
 	}
 	body := msg.Content.Body
 	if msg.Content.MsgType == event.MsgEmote {
@@ -903,66 +958,6 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 			Metadata:  newKakaoMessageMetadata(chatID, response.LogID, kc.userID, sentType, body, 0),
 		},
 	}, nil
-}
-
-func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c kakaoClient, intent bridgev2.MatrixAPI, chatID int64, uri id.ContentURIString, fileInfo *event.EncryptedFileInfo) (*bridgev2.MatrixMessageResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)
-	defer cancel()
-	data, err := matrixImageDownloader(ctx, intent, uri, fileInfo)
-	if err != nil {
-		return nil, errors.New("download Matrix image failed")
-	}
-	response, err := c.SendImage(ctx, chatID, data)
-	if err != nil {
-		return nil, err
-	}
-	logID, sendAt, err := media.SendResultPosition(response)
-	if err != nil {
-		return nil, err
-	}
-	return &bridgev2.MatrixMessageResponse{DB: &database.Message{ID: makeMessageID(chatID, logID), SenderID: makeUserID(kc.userID), Timestamp: kakaoTime(sendAt), Metadata: newKakaoMessageMetadata(chatID, logID, kc.userID, media.PhotoType, "[image]", 0)}}, nil
-}
-
-func downloadMatrixImageBounded(ctx context.Context, intent bridgev2.MatrixAPI, uri id.ContentURIString, fileInfo *event.EncryptedFileInfo) ([]byte, error) {
-	asIntent, ok := intent.(*bridgematrix.ASIntent)
-	if !ok || asIntent == nil || asIntent.Matrix == nil {
-		return nil, bridgev2.ErrFailedToGetIntent
-	}
-	if fileInfo != nil {
-		uri = fileInfo.URL
-		if err := fileInfo.PrepareForDecryption(); err != nil {
-			return nil, media.ErrInvalidImage
-		}
-	}
-	parsed, err := uri.Parse()
-	if err != nil {
-		return nil, media.ErrInvalidImage
-	}
-	resp, err := asIntent.Matrix.Download(ctx, parsed)
-	if err != nil {
-		return nil, media.ErrInvalidImage
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.ContentLength > media.MaxImageBytes {
-		return nil, media.ErrInvalidImage
-	}
-	reader := io.Reader(resp.Body)
-	var closeReader io.Closer = resp.Body
-	if fileInfo != nil {
-		decryptReader := fileInfo.DecryptStream(resp.Body)
-		reader = decryptReader
-		closeReader = decryptReader
-	}
-	return readBoundedMatrixImage(reader, closeReader)
-}
-
-func readBoundedMatrixImage(reader io.Reader, closer io.Closer) ([]byte, error) {
-	data, readErr := io.ReadAll(io.LimitReader(reader, media.MaxImageBytes+1))
-	closeErr := closer.Close()
-	if readErr != nil || closeErr != nil || len(data) > media.MaxImageBytes {
-		return nil, media.ErrInvalidImage
-	}
-	return data, nil
 }
 
 func (kc *KakaoClient) selfSender() bridgev2.EventSender {

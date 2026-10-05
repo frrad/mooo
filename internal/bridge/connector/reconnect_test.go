@@ -3,6 +3,8 @@ package connector
 import (
 	"context"
 	"errors"
+	"io"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -68,6 +70,123 @@ func TestDisconnectCancelsRecoveryBackoff(t *testing.T) {
 	}
 }
 
+func TestSecondRecoveryBackoffRetainsCancellationOwner(t *testing.T) {
+	first := &fakeKakao{stream: make(chan events.Result)}
+	failed := &fakeKakao{connectErr: io.EOF}
+	var opens atomic.Int32
+	kc, _ := newTestClient(t, func() (kakaoClient, error) {
+		if opens.Add(1) == 1 {
+			return first, nil
+		}
+		return failed, nil
+	})
+	waits := atomic.Int32{}
+	secondWait := make(chan context.Context, 1)
+	kc.wait = func(ctx context.Context, _ time.Duration) error {
+		if waits.Add(1) == 1 {
+			return nil
+		}
+		secondWait <- ctx
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	kc.Connect(context.Background())
+	close(first.stream)
+	var ctx context.Context
+	select {
+	case ctx = <-secondWait:
+	case <-time.After(time.Second):
+		t.Fatal("second recovery backoff did not start")
+	}
+	kc.Disconnect()
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("second recovery backoff lost cancellation owner")
+	}
+}
+
+type closingFake struct {
+	*fakeKakao
+	once sync.Once
+}
+
+func (f *closingFake) Shutdown(ctx context.Context) error {
+	f.once.Do(func() { close(f.stream) })
+	return f.fakeKakao.Shutdown(ctx)
+}
+
+func TestExplicitConnectAfterCleanDisconnectStartsFreshGeneration(t *testing.T) {
+	var opens atomic.Int32
+	kc, _ := newTestClient(t, func() (kakaoClient, error) {
+		opens.Add(1)
+		return &closingFake{fakeKakao: &fakeKakao{stream: make(chan events.Result)}}, nil
+	})
+	kc.Connect(context.Background())
+	kc.Disconnect()
+	kc.mu.Lock()
+	retained := kc.cleanup != nil
+	kc.mu.Unlock()
+	if retained {
+		t.Fatal("clean disconnect retained a cleanup owner")
+	}
+	kc.Connect(context.Background())
+	if got := opens.Load(); got != 2 {
+		t.Fatalf("explicit reconnect opens = %d, want 2", got)
+	}
+	kc.Disconnect()
+}
+
+func TestCleanupTimeoutRetainsOwnerUntilLaterRetry(t *testing.T) {
+	first := &fakeKakao{stream: make(chan events.Result), shutdownFailures: 1}
+	var opens atomic.Int32
+	kc, _ := newTestClient(t, func() (kakaoClient, error) {
+		if opens.Add(1) == 1 {
+			return first, nil
+		}
+		return nil, errors.New("replacement held for cleanup assertion")
+	})
+	kc.wait = func(context.Context, time.Duration) error { return nil }
+	kc.Connect(context.Background())
+	close(first.stream)
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		first.mu.Lock()
+		calls := first.shutdownCalls
+		first.mu.Unlock()
+		kc.mu.Lock()
+		free := kc.cleanup == nil
+		kc.mu.Unlock()
+		if calls == 2 && free {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	first.mu.Lock()
+	calls := first.shutdownCalls
+	first.mu.Unlock()
+	kc.mu.Lock()
+	free := kc.cleanup == nil
+	kc.mu.Unlock()
+	if calls != 2 || !free {
+		t.Fatalf("cleanup calls=%d free=%v", calls, free)
+	}
+	if got := opens.Load(); got != 2 {
+		t.Fatalf("replacement opens = %d after cleanup retry, want 2", got)
+	}
+}
+
+func TestRecoveryAttemptBudgetIsBounded(t *testing.T) {
+	if len(ordinaryRecoveryDelays) != maxRecoveryAttempts || len(rateLimitedRecoveryDelays) != maxRecoveryAttempts {
+		t.Fatalf("recovery policy lengths = %d/%d, want %d", len(ordinaryRecoveryDelays), len(rateLimitedRecoveryDelays), maxRecoveryAttempts)
+	}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return nil, errors.New("unused") })
+	kc.recoveryTry = maxRecoveryAttempts
+	if kc.retryAfter(client.ErrClosed, kc.generation) {
+		t.Fatal("recovery scheduled past the bounded attempt budget")
+	}
+}
+
 func TestRecoveryPolicyRejectsTerminalAndUnknownFailures(t *testing.T) {
 	for i, want := range ordinaryRecoveryDelays {
 		if got := recoveryDelay(errors.New("transport closed"), i); got != want {
@@ -93,6 +212,14 @@ func TestRecoveryPolicyRejectsTerminalAndUnknownFailures(t *testing.T) {
 	}
 	if !retryableRecoveryError(client.StatusError{Command: "LOGINLIST", Status: -328}) {
 		t.Fatal("-328 must retry with bounded delay")
+	}
+	for _, err := range []error{errors.New("catch up chat: delivery failed"), client.ErrProtocol, errors.New("matrix conversion failed")} {
+		if retryableRecoveryError(err) {
+			t.Fatalf("non-transport bootstrap failure %v must not retry", err)
+		}
+	}
+	if !retryableRecoveryError(io.EOF) || !retryableRecoveryError(client.ErrClosed) {
+		t.Fatal("transport/session closure must retry")
 	}
 }
 
