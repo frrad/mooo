@@ -57,14 +57,31 @@ type fakeKakao struct {
 	shutdownWait      <-chan struct{}
 	shutdownEntered   chan struct{}
 	shutdownEnterOnce sync.Once
+	eventsEntered     chan struct{}
+	eventsRelease     <-chan struct{}
+	eventsEnterOnce   sync.Once
+	catchupEntered    chan struct{}
+	catchupRelease    <-chan struct{}
+	catchupEnterOnce  sync.Once
 }
 
 func (f *fakeKakao) Connect(ctx context.Context) error { return f.connectErr }
 
 func (f *fakeKakao) Events(ctx context.Context) (<-chan events.Result, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls = append(f.calls, "Events")
+	entered, release := f.eventsEntered, f.eventsRelease
+	f.mu.Unlock()
+	if entered != nil {
+		f.eventsEnterOnce.Do(func() { close(entered) })
+	}
+	if release != nil {
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	return f.stream, nil
 }
 
@@ -77,9 +94,20 @@ func (f *fakeKakao) ResumeTargets(ctx context.Context) ([]syncmsg.Target, error)
 
 func (f *fakeKakao) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls = append(f.calls, fmt.Sprintf("CatchUp(%d,%d)", chatID, targetMax))
 	result := f.catchUps[chatID]
+	entered, release := f.catchupEntered, f.catchupRelease
+	f.mu.Unlock()
+	if entered != nil {
+		f.catchupEnterOnce.Do(func() { close(entered) })
+	}
+	if release != nil {
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	return result.events, result.err
 }
 
@@ -626,6 +654,127 @@ func TestConnectFailuresAreReportedWithoutRetry(t *testing.T) {
 	}
 	if kc.IsLoggedIn() {
 		t.Fatal("logged in after failed connect")
+	}
+}
+
+func TestConnectFailureUsesShutdownForCleanup(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result), resumeErr: errors.New("bootstrap failed")}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.Connect(context.Background())
+	fake.mu.Lock()
+	shutdownCalls := fake.shutdownCalls
+	closeCalls := fake.closeCalls
+	fake.mu.Unlock()
+	if shutdownCalls != 1 {
+		t.Fatalf("shutdown calls = %d, want one cleanup join", shutdownCalls)
+	}
+	if closeCalls != 1 {
+		t.Fatalf("close calls = %d, want one shutdown-owned close", closeCalls)
+	}
+	if got := harness.lastState(); got.StateEvent != status.StateTransientDisconnect || got.Error != stateConnectFailed {
+		t.Fatalf("connect failure state = %+v", got)
+	}
+}
+
+func TestBootstrapShutdownTimeoutRetainsCleanupOwner(t *testing.T) {
+	fake := &fakeKakao{resumeErr: errors.New("synthetic bootstrap failure"), shutdownFailures: 1}
+	opens := 0
+	kc, _ := newTestClient(t, func() (kakaoClient, error) {
+		opens++
+		return fake, nil
+	})
+	kc.Connect(context.Background())
+	kc.mu.Lock()
+	retained := kc.cleanup == fake
+	kc.mu.Unlock()
+	if !retained {
+		t.Fatal("bootstrap timeout lost cleanup owner")
+	}
+	kc.Connect(context.Background())
+	if opens != 1 {
+		t.Fatalf("Connect reopened profile during cleanup: opens = %d, want 1", opens)
+	}
+	kc.Disconnect()
+	fake.mu.Lock()
+	shutdownCalls := fake.shutdownCalls
+	fake.mu.Unlock()
+	if shutdownCalls != 2 {
+		t.Fatalf("shutdown retry calls = %d, want 2", shutdownCalls)
+	}
+}
+
+func TestDisconnectOwnsBootstrapSubscriptionBeforeEventsReturns(t *testing.T) {
+	release := make(chan struct{})
+	eventsEntered := make(chan struct{})
+	fake := &fakeKakao{
+		stream:        make(chan events.Result),
+		eventsEntered: eventsEntered,
+		eventsRelease: release,
+		shutdownWait:  nil,
+	}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	connectDone := make(chan struct{})
+	go func() {
+		kc.Connect(context.Background())
+		close(connectDone)
+	}()
+	select {
+	case <-eventsEntered:
+	case <-time.After(time.Second):
+		t.Fatal("Events did not block")
+	}
+	kc.Disconnect()
+	fake.mu.Lock()
+	shutdownCalls := fake.shutdownCalls
+	fake.mu.Unlock()
+	if shutdownCalls != 1 {
+		t.Fatalf("shutdown calls = %d, want one Disconnect-owned shutdown", shutdownCalls)
+	}
+	close(release)
+	select {
+	case <-connectDone:
+	case <-time.After(time.Second):
+		t.Fatal("Connect did not unwind after Events release")
+	}
+}
+
+func TestDisconnectDoesNotAdmitReplacementDuringBootstrap(t *testing.T) {
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	fake := &fakeKakao{
+		stream:         make(chan events.Result),
+		resumeTargets:  []syncmsg.Target{{ChatID: testChatID, MaxLogID: 1}},
+		catchupEntered: entered,
+		catchupRelease: release,
+	}
+	opens := 0
+	kc, _ := newTestClient(t, func() (kakaoClient, error) {
+		opens++
+		return fake, nil
+	})
+	connectDone := make(chan struct{})
+	go func() {
+		kc.Connect(context.Background())
+		close(connectDone)
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("bootstrap catch-up did not block")
+	}
+	kc.Disconnect()
+	kc.Connect(context.Background())
+	if opens != 1 {
+		t.Fatalf("replacement opened during old bootstrap: opens=%d, want 1", opens)
+	}
+	close(release)
+	select {
+	case <-connectDone:
+	case <-time.After(time.Second):
+		t.Fatal("old bootstrap did not unwind")
+	}
+	if kc.IsLoggedIn() {
+		t.Fatal("stale bootstrap installed a client after Disconnect")
 	}
 }
 

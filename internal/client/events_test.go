@@ -143,6 +143,87 @@ func TestTerminalNoticeClosesOwnedCarriageAndRejectsSend(t *testing.T) {
 	}
 }
 
+func TestShutdownCancelsBlockedEventDecoder(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := continuity.Open(filepath.Join(dir, "checkpoint"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := acquireProfileLease(filepath.Join(dir, "profile.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = serverConn.Close() }()
+	session := &Session{
+		wire:    &wireConn{c: clientConn},
+		pushes:  make(chan loco.Packet, requestLimit),
+		pending: make(map[uint32]chan requestResult),
+	}
+	api := &Client{session: session, checkpoint: checkpoint, lease: lease}
+	stream, err := api.Events(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.startReadLoop()
+	go func() {
+		for i := int64(1); i <= requestLimit+1; i++ {
+			body, marshalErr := bson.Marshal(bson.D{
+				{Key: "chatId", Value: int64(42)},
+				{Key: "chatLog", Value: bson.D{{Key: "logId", Value: i}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "replay"}}},
+			})
+			if marshalErr != nil {
+				return
+			}
+			frame, marshalErr := (loco.Packet{Header: loco.Header{Method: "MSG"}, Body: body}).MarshalBinary(0)
+			if marshalErr != nil {
+				return
+			}
+			if _, writeErr := serverConn.Write(frame); writeErr != nil {
+				return
+			}
+		}
+	}()
+	deadline := time.After(time.Second)
+	for len(stream) < cap(stream) {
+		select {
+		case <-deadline:
+			t.Fatalf("typed decoder did not fill output: len=%d cap=%d", len(stream), cap(stream))
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := api.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown with blocked decoder: %v", err)
+	}
+	if checkpoint.IsCommitted(42, 1) {
+		t.Fatal("shutdown committed an undelivered event")
+	}
+	otherLease, err := acquireProfileLease(filepath.Join(dir, "profile.lock"))
+	if err != nil {
+		t.Fatalf("profile lease after decoder shutdown: %v", err)
+	}
+	_ = otherLease.Close()
+}
+
+func TestShutdownCancelsIdleEventDecoder(t *testing.T) {
+	session := &Session{pushes: make(chan loco.Packet)}
+	api := &Client{session: session}
+	if _, err := api.Events(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := api.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown with idle decoder: %v", err)
+	}
+}
+
 func TestDecodeEventStreamSuppressesCommittedAndInProcessDuplicates(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o700); err != nil {
@@ -201,6 +282,14 @@ func TestRawPushConsumerPreventsTypedConsumer(t *testing.T) {
 	}
 	if _, err := api.Events(t.Context()); !errors.Is(err, ErrPushConsumerSelected) {
 		t.Fatalf("Events after Pushes error = %v", err)
+	}
+}
+
+func TestEventsRejectsClosedAdmissionAfterSessionLookup(t *testing.T) {
+	api := &Client{session: &Session{pushes: make(chan loco.Packet)}}
+	api.closed = true
+	if _, err := api.Events(context.Background()); !errors.Is(err, ErrClientClosed) {
+		t.Fatalf("Events after closed admission error = %v, want %v", err, ErrClientClosed)
 	}
 }
 
