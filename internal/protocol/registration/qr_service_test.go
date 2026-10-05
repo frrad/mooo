@@ -146,6 +146,10 @@ func TestQRServicePollReturnsExplicitSuccessOrServerError(t *testing.T) {
 	if doer.calls != 1 || result.Kind != QRPollServerError || result.HTTPStatus != 200 || result.ServerError == nil || result.Success != nil || result.ServerError.Status != 14 || result.ServerError.QROutcome() != OutcomePending {
 		t.Fatalf("pending result = %#v calls=%d", result, doer.calls)
 	}
+	interval, present := result.NextRequestIntervalSeconds.Value()
+	if !present || interval != 3 {
+		t.Fatalf("pending interval = %d/%t", interval, present)
+	}
 
 	service, _ = newQRServiceForTest(t, 403, `{"status":20,"reason":"restricted"}`, validator)
 	result, err = service.Poll(context.Background(), syntheticQRLoginRequest())
@@ -154,8 +158,29 @@ func TestQRServicePollReturnsExplicitSuccessOrServerError(t *testing.T) {
 	}
 }
 
-func TestQRServicePollPreservesUnregisteredDevicePasscodeWithoutLeakingIt(t *testing.T) {
+func TestQRServicePollRejectsMalformedServerPollInterval(t *testing.T) {
+	for _, body := range []string{
+		`{"status":-150,"nextRequestIntervalInSeconds":0}`,
+		`{"status":-150,"nextRequestIntervalInSeconds":-1}`,
+		`{"status":-150,"nextRequestIntervalInSeconds":null}`,
+		`{"status":-150,"nextRequestIntervalInSeconds":1.5}`,
+		`{"status":-150,"nextRequestIntervalInSeconds":"3"}`,
+		`{"status":-150,"nextRequestIntervalInSeconds":9223372036854775807}`,
+		`{"status":-150}`,
+	} {
+		service, _ := newQRServiceForTest(t, 200, body, &fakeQRValidator{})
+		if _, err := service.Poll(context.Background(), syntheticQRLoginRequest()); !errors.Is(err, ErrInvalidQRPollInterval) && !errors.Is(err, ErrMissingJSONField) {
+			t.Fatalf("body %s error=%v", body, err)
+		}
+	}
 	service, _ := newQRServiceForTest(t, 200, `{"status":-100,"passcode":"A1B2","remainingSeconds":30}`, &fakeQRValidator{})
+	if _, err := service.Poll(context.Background(), syntheticQRLoginRequest()); !errors.Is(err, ErrMissingJSONField) {
+		t.Fatalf("missing device-auth interval error = %v", err)
+	}
+}
+
+func TestQRServicePollPreservesUnregisteredDevicePasscodeWithoutLeakingIt(t *testing.T) {
+	service, _ := newQRServiceForTest(t, 200, `{"status":-100,"passcode":"A1B2","remainingSeconds":30,"nextRequestIntervalInSeconds":3}`, &fakeQRValidator{})
 	result, err := service.Poll(context.Background(), syntheticQRLoginRequest())
 	if err != nil {
 		t.Fatal(err)
@@ -172,7 +197,7 @@ func TestQRServicePollPreservesUnregisteredDevicePasscodeWithoutLeakingIt(t *tes
 }
 
 func TestQRServicePollReadsNestedDeviceAuthorizationEnvelope(t *testing.T) {
-	service, _ := newQRServiceForTest(t, 200, `{"status":-100,"response":{"passcode":"5678","remainingSeconds":12}}`, &fakeQRValidator{})
+	service, _ := newQRServiceForTest(t, 200, `{"status":-100,"response":{"passcode":"5678","remainingSeconds":12,"nextRequestIntervalInSeconds":4}}`, &fakeQRValidator{})
 	result, err := service.Poll(context.Background(), syntheticQRLoginRequest())
 	if err != nil {
 		t.Fatal(err)
@@ -180,14 +205,34 @@ func TestQRServicePollReadsNestedDeviceAuthorizationEnvelope(t *testing.T) {
 	if result.DeviceAuthCode != "5678" || result.DeviceAuthRemainingSeconds != 12 {
 		t.Fatalf("nested device auth fields = %#v", result)
 	}
+	interval, present := result.NextRequestIntervalSeconds.Value()
+	if !present || interval != 4 {
+		t.Fatalf("nested device auth interval = %d/%t", interval, present)
+	}
 
-	service, _ = newQRServiceForTest(t, 200, `{"status":-100,"passcode":"bad","remainingSeconds":12}`, &fakeQRValidator{})
+	service, _ = newQRServiceForTest(t, 200, `{"status":-100,"passcode":"bad","remainingSeconds":12,"nextRequestIntervalInSeconds":3}`, &fakeQRValidator{})
 	if _, err := service.Poll(context.Background(), syntheticQRLoginRequest()); !errors.Is(err, ErrWrongJSONType) {
 		t.Fatalf("malformed passcode error = %v", err)
 	}
-	service, _ = newQRServiceForTest(t, 200, `{"status":-100,"passcode":"bad","response":{"passcode":"5678","remainingSeconds":12}}`, &fakeQRValidator{})
+	service, _ = newQRServiceForTest(t, 200, `{"status":-100,"passcode":"bad","response":{"passcode":"5678","remainingSeconds":12,"nextRequestIntervalInSeconds":4}}`, &fakeQRValidator{})
 	if _, err := service.Poll(context.Background(), syntheticQRLoginRequest()); !errors.Is(err, ErrWrongJSONType) {
 		t.Fatalf("ambiguous passcode precedence error = %v", err)
+	}
+}
+
+func TestQRServicePollPrefersTopLevelIntervalOverNestedCompatibilityField(t *testing.T) {
+	service, _ := newQRServiceForTest(t, 200, `{"status":-100,"nextRequestIntervalInSeconds":7,"response":{"passcode":"A1B2","remainingSeconds":12,"nextRequestIntervalInSeconds":4}}`, &fakeQRValidator{})
+	result, err := service.Poll(context.Background(), syntheticQRLoginRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	interval, present := result.NextRequestIntervalSeconds.Value()
+	if !present || interval != 7 {
+		t.Fatalf("top-level interval precedence = %d/%t", interval, present)
+	}
+	service, _ = newQRServiceForTest(t, 200, `{"status":-100,"nextRequestIntervalInSeconds":0,"response":{"passcode":"A1B2","remainingSeconds":12,"nextRequestIntervalInSeconds":4}}`, &fakeQRValidator{})
+	if _, err := service.Poll(context.Background(), syntheticQRLoginRequest()); !errors.Is(err, ErrInvalidQRPollInterval) {
+		t.Fatalf("malformed top-level interval was not authoritative: %v", err)
 	}
 }
 
