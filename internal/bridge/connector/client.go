@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +45,14 @@ type kakaoClient interface {
 	Shutdown(ctx context.Context) error
 }
 
+type bootstrapFailure struct {
+	stage string
+	err   error
+}
+
+func (e bootstrapFailure) Error() string { return e.stage + ": " + e.err.Error() }
+func (e bootstrapFailure) Unwrap() error { return e.err }
+
 func openProfileClient(statePath string) (kakaoClient, error) {
 	return client.Open(statePath, nil)
 }
@@ -58,6 +67,12 @@ const (
 )
 
 var terminalDisconnectTimeout = 5 * time.Second
+
+const maxRecoveryAttempts = 5
+const recoveryCleanupTimeout = 5 * time.Second
+
+var ordinaryRecoveryDelays = [...]time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 60 * time.Second}
+var rateLimitedRecoveryDelays = [...]time.Duration{60 * time.Second, 120 * time.Second, 240 * time.Second, 480 * time.Second, 900 * time.Second}
 
 var errUnsupportedOpenChatMetadata = errors.New("connector: OpenChat metadata is not supported")
 var errChatInfoMismatch = errors.New("connector: CHATINFO returned a different chat ID")
@@ -80,8 +95,9 @@ func init() {
 //
 // Inbound message events are handed to the bridge one at a time, in delivery
 // order, and committed to the checkpoint only once the bridge reports them
-// handled. The client never reconnects on its own; a lost session is reported
-// through bridge state and left for an explicit restart.
+// handled. The protocol client never reconnects on its own; recovery is an
+// explicit connector policy that never
+// changes the protocol client's own lifecycle or retries outbound mutations.
 type KakaoClient struct {
 	login  *bridgev2.UserLogin
 	userID int64
@@ -92,15 +108,28 @@ type KakaoClient struct {
 	queue     func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult
 	sendState func(status.BridgeState)
 
-	mu             sync.Mutex
-	disconnectGate chan struct{}
-	client         kakaoClient
-	cleanup        kakaoClient
-	connecting     bool
-	stopping       bool
-	done           chan struct{}
-	cleanupDone    chan struct{}
-	profiles       map[int64]chatmeta.Member
+	mu                   sync.Mutex
+	disconnectGate       chan struct{}
+	client               kakaoClient
+	cleanup              kakaoClient
+	connecting           bool
+	stopping             bool
+	done                 chan struct{}
+	cleanupDone          chan struct{}
+	cleanupBusy          bool
+	cleanupRetryCancel   context.CancelFunc
+	cleanupRetryID       uint64
+	cleanupRetryAttempts int
+	cleanupRetryDone     chan struct{}
+	connectCancel        context.CancelFunc
+	retryCancel          context.CancelFunc
+	retryDone            chan struct{}
+	retryID              uint64
+	generation           uint64
+	connectingGeneration uint64
+	recoveryTry          int
+	wait                 func(context.Context, time.Duration) error
+	profiles             map[int64]chatmeta.Member
 }
 
 var (
@@ -116,6 +145,7 @@ func newKakaoClient(login *bridgev2.UserLogin, userID int64, open func() (kakaoC
 		queue:    login.QueueRemoteEvent,
 		profiles: make(map[int64]chatmeta.Member),
 	}
+	kc.wait = waitForRecovery
 	kc.sendState = func(state status.BridgeState) { kc.stateQueue().Send(state) }
 	return kc
 }
@@ -140,18 +170,48 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	}
 	kc.connecting = true
 	kc.stopping = false
+	kc.generation++
+	generation := kc.generation
+	kc.connectingGeneration = generation
+	connectCtx, cancel := context.WithCancel(ctx)
+	kc.connectCancel = cancel
 	kc.mu.Unlock()
 	defer func() {
+		cancel()
 		kc.mu.Lock()
-		kc.connecting = false
+		if kc.generation == generation || (kc.connecting && kc.connectingGeneration == generation) {
+			kc.connecting = false
+			kc.connectCancel = nil
+		}
 		kc.mu.Unlock()
 	}()
 
 	kc.sendState(status.BridgeState{StateEvent: status.StateConnecting})
+	kc.connectOnce(connectCtx, generation, false)
+}
+
+func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recovering bool) {
 	c, err := kc.open()
 	if err != nil {
 		kc.log().Err(err).Msg("Failed to open Kakao profile")
-		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateProfileUnavailable})
+		if kc.isCurrent(generation, ctx) {
+			if !recovering {
+				kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateProfileUnavailable})
+			} else {
+				kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
+			}
+		}
+		return
+	}
+	if !kc.isCurrent(generation, ctx) {
+		kc.mu.Lock()
+		if kc.cleanup == nil {
+			kc.cleanup = c
+			kc.cleanupDone = nil
+			kc.cleanupBusy = false
+		}
+		kc.mu.Unlock()
+		kc.shutdownBootstrap(c, "stale bootstrap", true)
 		return
 	}
 	// Retain the bootstrap owner before any potentially blocking Connect,
@@ -160,26 +220,144 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	kc.mu.Lock()
 	kc.cleanup = c
 	kc.cleanupDone = nil
+	kc.cleanupBusy = false
 	kc.mu.Unlock()
 	stream, err := kc.connectAndSubscribe(ctx, c)
 	if err != nil {
 		kc.shutdownBootstrap(c, "after connect failure", false)
 		kc.log().Err(err).Msg("Failed to connect to KakaoTalk")
-		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
+		if recovering && retryableRecoveryError(err) && kc.retryAfter(err, generation) {
+			return
+		}
+		if kc.isCurrent(generation, ctx) {
+			kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
+		}
 		return
 	}
 	done := make(chan struct{})
 	kc.mu.Lock()
-	if kc.stopping {
+	if kc.stopping || kc.generation != generation || kc.cleanup != c {
 		kc.mu.Unlock()
 		kc.shutdownBootstrap(c, "stopped client", true)
 		return
 	}
 	kc.client = c
 	kc.done = done
+	kc.recoveryTry = 0
+	kc.cleanupRetryAttempts = 0
 	kc.mu.Unlock()
 	kc.sendState(status.BridgeState{StateEvent: status.StateConnected})
-	go kc.run(c, stream, done)
+	go kc.run(c, stream, done, generation)
+}
+
+func (kc *KakaoClient) isCurrent(generation uint64, ctx context.Context) bool {
+	kc.mu.Lock()
+	defer kc.mu.Unlock()
+	return kc.generation == generation && !kc.stopping && ctx.Err() == nil
+}
+
+func waitForRecovery(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (kc *KakaoClient) retryAfter(err error, generation uint64) bool {
+	if !retryableRecoveryError(err) {
+		return false
+	}
+	kc.mu.Lock()
+	if kc.stopping || kc.generation != generation || kc.recoveryTry >= maxRecoveryAttempts {
+		kc.mu.Unlock()
+		return false
+	}
+	attempt := kc.recoveryTry
+	kc.recoveryTry++
+	ctx, cancel := context.WithCancel(context.Background())
+	kc.retryID++
+	retryID := kc.retryID
+	kc.retryCancel = cancel
+	kc.retryDone = make(chan struct{})
+	retryDone := kc.retryDone
+	wait := kc.wait
+	delay := recoveryDelay(err, attempt)
+	kc.mu.Unlock()
+	go func() {
+		defer func() {
+			close(retryDone)
+			kc.mu.Lock()
+			if kc.retryID == retryID {
+				kc.retryCancel = nil
+				kc.retryDone = nil
+			}
+			kc.mu.Unlock()
+		}()
+		if err := wait(ctx, delay); err != nil {
+			return
+		}
+		kc.mu.Lock()
+		if kc.stopping || kc.generation != generation || kc.client != nil || kc.cleanup != nil || kc.retryID != retryID {
+			kc.mu.Unlock()
+			return
+		}
+		kc.connecting = true
+		kc.connectingGeneration = generation
+		connectCtx, connectCancel := context.WithCancel(ctx)
+		kc.connectCancel = connectCancel
+		kc.mu.Unlock()
+		kc.sendState(status.BridgeState{StateEvent: status.StateConnecting})
+		kc.connectOnce(connectCtx, generation, true)
+		connectCancel()
+		kc.mu.Lock()
+		if kc.generation == generation {
+			kc.connecting = false
+			kc.connectCancel = nil
+		}
+		kc.mu.Unlock()
+	}()
+	return true
+}
+
+func recoveryDelay(err error, attempt int) time.Duration {
+	if attempt < 0 {
+		attempt = 0
+	}
+	if attempt >= maxRecoveryAttempts {
+		attempt = maxRecoveryAttempts - 1
+	}
+	var delays = ordinaryRecoveryDelays[:]
+	var statusErr client.StatusError
+	if errors.As(err, &statusErr) && statusErr.Status == -328 {
+		delays = rateLimitedRecoveryDelays[:]
+	}
+	return delays[attempt]
+}
+
+func retryableRecoveryError(err error) bool {
+	if err == nil || errors.Is(err, client.ErrLogin) || errors.Is(err, client.ErrCredentialRenewal) {
+		return false
+	}
+	var bootstrapErr bootstrapFailure
+	if errors.As(err, &bootstrapErr) {
+		if bootstrapErr.stage == "catch-up" {
+			return false
+		}
+		err = bootstrapErr.err
+	}
+	var statusErr client.StatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.Status == -328
+	}
+	if errors.Is(err, client.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	var networkErr net.Error
+	return errors.As(err, &networkErr)
 }
 
 // shutdownBootstrap releases an owner retained before bootstrap calls. A
@@ -217,12 +395,16 @@ func shutdownKakaoClient(c kakaoClient) error {
 // called the session buffers pushes, so nothing live is lost meanwhile.
 func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (<-chan events.Result, error) {
 	if err := c.Connect(ctx); err != nil {
-		return nil, err
+		return nil, bootstrapFailure{stage: "connect", err: err}
 	}
 	if err := kc.catchUp(ctx, c); err != nil {
-		return nil, err
+		return nil, bootstrapFailure{stage: "catch-up", err: err}
 	}
-	return c.Events(ctx)
+	stream, err := c.Events(ctx)
+	if err != nil {
+		return nil, bootstrapFailure{stage: "events", err: err}
+	}
+	return stream, nil
 }
 
 // catchUp bridges and commits, in order, the messages each previously
@@ -256,8 +438,7 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 // run consumes the typed event stream until the session ends. It is the only
 // goroutine that queues remote events or commits, which preserves the
 // client's per-chat commit order.
-func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan struct{}) {
-	defer close(done)
+func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan struct{}, generation uint64) {
 	kickedOut := false
 	changeServer := false
 	for result := range stream {
@@ -291,6 +472,120 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	default:
 		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDisconnected})
 	}
+	kc.sessionEnded(c, done, generation, kickedOut, changeServer)
+}
+
+func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generation uint64, kickedOut, changeServer bool) {
+	close(done)
+	kc.mu.Lock()
+	if kc.generation != generation || kc.client != c {
+		kc.mu.Unlock()
+		return
+	}
+	stopping := kc.stopping
+	kc.client = nil
+	kc.done = nil
+	if !stopping {
+		kc.cleanup = c
+		kc.cleanupDone = make(chan struct{})
+		kc.cleanupBusy = true
+	}
+	kc.mu.Unlock()
+	if stopping {
+		return
+	}
+	shutdownErr := shutdownWithRecoveryTimeout(c)
+	kc.mu.Lock()
+	if kc.cleanup == c {
+		kc.cleanupBusy = false
+		if kc.cleanupDone != nil {
+			close(kc.cleanupDone)
+			kc.cleanupDone = nil
+		}
+		if shutdownErr == nil {
+			kc.cleanup = nil
+		}
+	}
+	canRecover := shutdownErr == nil && !kc.stopping && kc.generation == generation
+	kc.mu.Unlock()
+	if shutdownErr != nil {
+		kc.log().Err(shutdownErr).Msg("Failed to close Kakao client before recovery")
+		kc.scheduleCleanupRetry(c, generation, kickedOut)
+		return
+	}
+	if kickedOut {
+		return
+	}
+	if canRecover {
+		kc.retryAfter(client.ErrClosed, generation)
+	}
+}
+
+// scheduleCleanupRetry keeps a timed-out profile owner attached and permits
+// one later cleanup attempt. No replacement can be opened while this owner is
+// retained; this is deliberately separate from the recovery attempt budget.
+func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, kickedOut bool) {
+	kc.mu.Lock()
+	if kc.cleanup != c || kc.stopping || kc.cleanupRetryCancel != nil || kc.cleanupRetryAttempts >= 1 {
+		kc.mu.Unlock()
+		return
+	}
+	kc.cleanupRetryAttempts++
+	ctx, cancel := context.WithCancel(context.Background())
+	kc.cleanupRetryCancel = cancel
+	kc.cleanupRetryDone = make(chan struct{})
+	cleanupRetryDone := kc.cleanupRetryDone
+	kc.cleanupRetryID++
+	retryID := kc.cleanupRetryID
+	wait := kc.wait
+	kc.mu.Unlock()
+	go func() {
+		defer func() {
+			close(cleanupRetryDone)
+			kc.mu.Lock()
+			if kc.cleanupRetryID == retryID {
+				kc.cleanupRetryCancel = nil
+				kc.cleanupRetryDone = nil
+			}
+			kc.mu.Unlock()
+		}()
+		if err := wait(ctx, time.Second); err != nil {
+			return
+		}
+		kc.mu.Lock()
+		if kc.cleanup != c || kc.stopping || kc.cleanupRetryID != retryID {
+			kc.mu.Unlock()
+			return
+		}
+		kc.cleanupBusy = true
+		if kc.cleanupDone == nil {
+			kc.cleanupDone = make(chan struct{})
+		}
+		kc.mu.Unlock()
+		err := shutdownWithRecoveryTimeout(c)
+		kc.mu.Lock()
+		if kc.cleanup == c {
+			kc.cleanupBusy = false
+			if kc.cleanupDone != nil {
+				close(kc.cleanupDone)
+				kc.cleanupDone = nil
+			}
+			if err == nil {
+				kc.cleanup = nil
+			}
+		}
+		canRecover := err == nil && !kc.stopping && kc.generation == generation
+		kc.mu.Unlock()
+		if canRecover && !kickedOut {
+			kc.retryAfter(client.ErrClosed, generation)
+		}
+	}()
+}
+
+func shutdownWithRecoveryTimeout(c kakaoClient) error {
+	ctx, cancel := context.WithTimeout(context.Background(), recoveryCleanupTimeout)
+	defer cancel()
+	return c.Shutdown(ctx)
 }
 
 func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
@@ -341,21 +636,77 @@ func (kc *KakaoClient) Disconnect() {
 		return
 	}
 	kc.mu.Lock()
+	var retryDone chan struct{}
+	if kc.retryCancel != nil {
+		kc.retryCancel()
+		kc.retryCancel = nil
+		retryDone = kc.retryDone
+		kc.retryDone = nil
+	}
+	kc.retryID++
+	if kc.cleanupRetryCancel != nil {
+		kc.cleanupRetryCancel()
+		kc.cleanupRetryCancel = nil
+	}
+	cleanupRetryDone := kc.cleanupRetryDone
+	kc.cleanupRetryDone = nil
+	kc.cleanupRetryID++
+	if kc.connectCancel != nil {
+		kc.connectCancel()
+	}
+	kc.generation++
 	c := kc.client
 	done := kc.done
 	if c == nil {
 		c = kc.cleanup
-		done = kc.cleanupDone
+		// cleanupDone belongs to the cleanup owner and is not the session
+		// event-loop completion signal. A retained owner is retried directly.
+		done = nil
 	}
+	ownedByOther := c != nil && kc.cleanupBusy
 	kc.stopping = true
 	kc.client = nil
 	kc.done = nil
+	if c != nil && !kc.cleanupBusy {
+		kc.cleanupBusy = true
+		if kc.cleanupDone == nil {
+			kc.cleanupDone = make(chan struct{})
+		}
+	}
 	if c != nil {
 		kc.cleanup = c
-		kc.cleanupDone = done
 	}
 	kc.mu.Unlock()
+	joinWorkers := func() bool {
+		for _, worker := range []chan struct{}{retryDone, cleanupRetryDone} {
+			if worker == nil {
+				continue
+			}
+			select {
+			case <-worker:
+			case <-ctx.Done():
+				return false
+			}
+		}
+		return true
+	}
 	if c == nil {
+		joinWorkers()
+		return
+	}
+	// A recovery cleanup already owns Shutdown. Wait for it, then release the
+	// lease without opening a replacement behind its back.
+	kc.mu.Lock()
+	busy := ownedByOther && kc.cleanupBusy && kc.cleanup == c
+	cleanupDone := kc.cleanupDone
+	kc.mu.Unlock()
+	if busy && cleanupDone != nil {
+		select {
+		case <-cleanupDone:
+		case <-ctx.Done():
+			return
+		}
+		joinWorkers()
 		return
 	}
 	err := c.Shutdown(ctx)
@@ -381,14 +732,29 @@ func (kc *KakaoClient) Disconnect() {
 	}
 	if err != nil {
 		kc.log().Err(err).Msg("Failed to close Kakao client")
+		kc.mu.Lock()
+		if kc.cleanup == c {
+			kc.cleanupBusy = false
+			if kc.cleanupDone != nil {
+				close(kc.cleanupDone)
+				kc.cleanupDone = nil
+			}
+		}
+		kc.mu.Unlock()
+		joinWorkers()
 		return
 	}
 	kc.mu.Lock()
 	if kc.cleanup == c {
+		kc.cleanupBusy = false
+		if kc.cleanupDone != nil {
+			close(kc.cleanupDone)
+		}
 		kc.cleanup = nil
 		kc.cleanupDone = nil
 	}
 	kc.mu.Unlock()
+	joinWorkers()
 }
 
 func (kc *KakaoClient) IsLoggedIn() bool {

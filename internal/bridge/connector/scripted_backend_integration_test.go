@@ -26,6 +26,7 @@ type observedClient struct {
 	kakaoClient
 	mu          sync.Mutex
 	eventsCalls int
+	committed   []int64
 }
 
 func (c *observedClient) Events(ctx context.Context) (<-chan events.Result, error) {
@@ -35,10 +36,25 @@ func (c *observedClient) Events(ctx context.Context) (<-chan events.Result, erro
 	return c.kakaoClient.Events(ctx)
 }
 
+func (c *observedClient) CommitEvent(evt events.Event) error {
+	if _, logID, ok := events.MessagePosition(evt); ok {
+		c.mu.Lock()
+		c.committed = append(c.committed, logID)
+		c.mu.Unlock()
+	}
+	return c.kakaoClient.CommitEvent(evt)
+}
+
 func (c *observedClient) subscriptions() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.eventsCalls
+}
+
+func (c *observedClient) committedIDs() []int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]int64(nil), c.committed...)
 }
 
 func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T) {
@@ -58,6 +74,7 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	}
 	firstClient := &observedClient{kakaoClient: firstRaw}
 	kakao1, harness1 := newTestClient(t, func() (kakaoClient, error) { return firstClient, nil })
+	t.Cleanup(kakao1.Disconnect)
 	harness1.results = []bridgev2.EventHandlingResult{bridgev2.EventHandlingResultFailed}
 	kakao1.Connect(context.Background())
 	if got := harness1.lastState(); got.StateEvent != status.StateTransientDisconnect || got.Error != stateConnectFailed {
@@ -86,6 +103,7 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	}
 	secondClient := &observedClient{kakaoClient: secondRaw}
 	kakao2, harness2 := newTestClient(t, func() (kakaoClient, error) { return secondClient, nil })
+	t.Cleanup(kakao2.Disconnect)
 	kakao2.Connect(context.Background())
 	if got := secondClient.subscriptions(); got != 1 {
 		for _, backend := range secondBackends {
@@ -118,9 +136,9 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	if *writes != 1 {
 		t.Fatalf("ambiguous outbound WRITE count = %d, want 1", *writes)
 	}
-	if err := secondRaw.Shutdown(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	// Stop the connector supervisor before releasing the underlying session.
+	// Closing only the raw client would schedule recovery beyond this test.
+	kakao2.Disconnect()
 	waitBackends(t, secondBackends)
 	reloaded, err = continuity.Open(statePath + ".continuity")
 	if err != nil {
@@ -135,6 +153,95 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	}
 	if err := reopenedClient.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestScriptedBackendAutomaticRecoveryReleasesLeaseBeforeReopen(t *testing.T) {
+	statePath := newIntegrationProfile(t)
+	checkpoint, err := continuity.Open(statePath + ".continuity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkpoint.CommitMessage(testChatID, 1); err != nil {
+		t.Fatal(err)
+	}
+	outage := make(chan struct{})
+	firstDialers, firstBackends, firstWrites := scriptedScenarioWithIDs(t, 2, outage, true, 2, 3, false)
+	firstRaw, err := client.OpenWithTestDialers(statePath, nil, firstDialers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := make(chan struct{})
+	secondDialers, secondBackends, _ := scriptedScenarioWithIDs(t, 3, live, false, 3, 4, true)
+	var openMu sync.Mutex
+	var opened int
+	var clients []*observedClient
+	kc, harness := newTestClient(t, func() (kakaoClient, error) {
+		openMu.Lock()
+		defer openMu.Unlock()
+		opened++
+		var raw *client.Client
+		var openErr error
+		switch opened {
+		case 1:
+			raw = firstRaw
+		case 2:
+			raw, openErr = client.OpenWithTestDialers(statePath, nil, secondDialers)
+		default:
+			return nil, fmt.Errorf("unexpected automatic recovery open %d", opened)
+		}
+		if openErr != nil {
+			return nil, openErr
+		}
+		observed := &observedClient{kakaoClient: raw}
+		clients = append(clients, observed)
+		return observed, nil
+	})
+	kc.wait = func(context.Context, time.Duration) error { return nil }
+	kc.Connect(context.Background())
+	waitFor(t, func() bool {
+		openMu.Lock()
+		defer openMu.Unlock()
+		return len(clients) == 1 && clients[0].subscriptions() == 1
+	})
+	// The first outage accepts a WRITE and then drops the carriage. Recovery
+	// must shut down this owner before the second OpenWithTestDialers acquires
+	// the lease, and it must never resend that ambiguous mutation.
+	close(outage)
+	waitFor(t, func() bool { return harness.queuedCount() >= 1 })
+	if _, err := kc.HandleMatrixMessage(context.Background(), matrixMessage(event.MsgText, "accepted then dropped")); err == nil {
+		t.Fatal("ambiguous outbound unexpectedly succeeded")
+	}
+	if *firstWrites != 1 {
+		t.Fatalf("automatic outage WRITE count = %d, want 1", *firstWrites)
+	}
+	waitFor(t, func() bool {
+		openMu.Lock()
+		defer openMu.Unlock()
+		return opened == 2 && len(clients) == 2 && clients[1].subscriptions() == 1
+	})
+	ids := clients[1].committedIDs()
+	if len(ids) != 1 || ids[0] != 3 {
+		t.Fatalf("automatic catch-up commits = %v, want [3] before live subscription", ids)
+	}
+	replayed, err := continuity.Open(statePath + ".continuity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayed.IsCommitted(testChatID, 3) || replayed.IsCommitted(testChatID, 4) {
+		t.Fatal("automatic catch-up did not commit log 3 before live log 4")
+	}
+	close(live)
+	waitFor(t, func() bool { return harness.queuedCount() >= 3 })
+	if got := clients[1].committedIDs(); len(got) != 2 || got[1] != 4 {
+		t.Fatalf("automatic live commit order = %v, want [3 4]", got)
+	}
+	kc.Disconnect()
+	waitBackends(t, firstBackends)
+	for i, backend := range secondBackends {
+		if backendErr := backend.Wait(2 * time.Second); backendErr != nil {
+			t.Fatalf("second backend %d: %v", i, backendErr)
+		}
 	}
 }
 
@@ -156,6 +263,10 @@ func newIntegrationProfile(t *testing.T) string {
 }
 
 func scriptedScenario(t *testing.T, maxLogID int64, trigger <-chan struct{}, withWrite bool) (client.TestDialers, []*testloco.Backend, *int) {
+	return scriptedScenarioWithIDs(t, maxLogID, trigger, withWrite, 2, 3, true)
+}
+
+func scriptedScenarioWithIDs(t *testing.T, maxLogID int64, trigger <-chan struct{}, withWrite bool, replayLogID, liveLogID int64, pushLive bool) (client.TestDialers, []*testloco.Backend, *int) {
 	t.Helper()
 	booking, err := testloco.NewBackend(false, requestStep("GETCONF", bson.D{{Key: "status", Value: int32(0)}, {Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}}, {Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}}}))
 	if err != nil {
@@ -166,16 +277,19 @@ func scriptedScenario(t *testing.T, maxLogID int64, trigger <-chan struct{}, wit
 		t.Fatal(err)
 	}
 	loginReply := bson.D{{Key: "status", Value: int32(0)}, {Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: testChatID}, {Key: "l", Value: bson.D{{Key: "chatId", Value: testChatID}, {Key: "logId", Value: maxLogID}}}}}}, {Key: "eof", Value: true}, {Key: "lastTokenId", Value: int64(10)}, {Key: "lbk", Value: int32(1)}}
-	syncReply := bson.D{{Key: "status", Value: int32(0)}, {Key: "chatLogs", Value: bson.A{bson.D{{Key: "logId", Value: int64(2)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "replay"}}}}}
+	syncReply := bson.D{{Key: "status", Value: int32(0)}, {Key: "chatLogs", Value: bson.A{bson.D{{Key: "logId", Value: replayLogID}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "replay"}}}}}
 	steps := []testloco.Step{requestStep("LOGINLIST", loginReply), requestStep("SYNCMSG", syncReply)}
 	writes := new(int)
 	if trigger == nil {
 		steps = append(steps, holdStep())
-	} else {
-		steps = append(steps, pushAfter(trigger, "MSG", bson.D{{Key: "chatId", Value: testChatID}, {Key: "chatLog", Value: bson.D{{Key: "logId", Value: int64(3)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "live"}}}}))
+	} else if pushLive {
+		steps = append(steps, pushAfter(trigger, "MSG", bson.D{{Key: "chatId", Value: testChatID}, {Key: "chatLog", Value: bson.D{{Key: "logId", Value: liveLogID}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "live"}}}}))
 		if withWrite {
 			steps = append(steps, writeDropStep(writes))
 		}
+		steps = append(steps, holdStep())
+	} else if withWrite {
+		steps = append(steps, writeDropStep(writes))
 		steps = append(steps, holdStep())
 	}
 	carriage, err := testloco.NewBackend(true, steps...)
