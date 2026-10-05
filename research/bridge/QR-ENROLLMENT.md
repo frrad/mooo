@@ -21,6 +21,8 @@ enrollment (approval, device authorization, credential persistence, and
 restart resume) still requires live validation. The probe used an authorized
 owned lab environment and did not import official-client credentials.
 
+### Earlier container/native scan observations
+
 Two separate fresh-profile Android observations followed the structural probe.
 The first used a disposable container installation with an empty profile
 directory; the QR delivered to its Matrix management room was imported through
@@ -118,7 +120,8 @@ hook and must not prepend an unproven host or rewrite the challenge.
 ### Default Low-renderer trial (2026-10-05 UTC)
 
 The controlled 2026-10-05 UTC native bridge trial used the default framework
-Low renderer and a fresh client-owned profile. It ran source commit
+Low renderer and a fresh client-owned profile. The owned Android target was
+KakaoTalk 26.8.2 (version code 29260820). It ran source commit
 `8cbda07ecf338b6bfa1d99aaae85e4f495ecbcda` (binary SHA-256
 `1853902cdb5fc3efd44f3d4e80c5956757690f1d867a1c3ca9fb672dbc6f47e8`). The
 Matrix PNG was 512x512; offline
