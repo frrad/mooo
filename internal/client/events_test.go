@@ -285,6 +285,14 @@ func TestRawPushConsumerPreventsTypedConsumer(t *testing.T) {
 	}
 }
 
+func TestEventsRejectsClosedAdmissionAfterSessionLookup(t *testing.T) {
+	api := &Client{session: &Session{pushes: make(chan loco.Packet)}}
+	api.closed = true
+	if _, err := api.Events(context.Background()); !errors.Is(err, ErrClientClosed) {
+		t.Fatalf("Events after closed admission error = %v, want %v", err, ErrClientClosed)
+	}
+}
+
 func TestRawPushConsumerLeavesTerminalShutdownToCaller(t *testing.T) {
 	raw := make(chan loco.Packet, 1)
 	session := &Session{pushes: raw}
