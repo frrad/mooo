@@ -1,0 +1,21 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {
+      "name": "changesvr_logout_with_next_ticket",
+      "expected_effects": ["clear_carriage_address", "check_more_ticket_addresses", "move_ticket_address_cursor", "send_logout", "disconnect_ticket_agent", "disconnect_carriage_agent"]
+    },
+    {
+      "name": "changesvr_logout_without_next_ticket",
+      "expected_effects": ["clear_carriage_address", "check_more_ticket_addresses", "send_logout", "disconnect_ticket_agent", "disconnect_carriage_agent"]
+    },
+    {
+      "name": "kickout_reason_10_with_optional_fields",
+      "expected_effects": ["extract_reason", "extract_optional_error_fields", "derive_reset_true", "logout_with_reset_database", "dispatch_main_queue", "insert_reason_code", "insert_err_msg", "insert_err_url", "insert_err_url_label", "create_error_type_36", "post_kicked_out_notification"]
+    },
+    {
+      "name": "kickout_other_reason_without_optional_fields",
+      "expected_effects": ["extract_reason", "derive_reset_false", "logout_with_reset_database", "dispatch_main_queue", "insert_reason_code", "create_error_type_36", "post_kicked_out_notification"]
+    }
+  ]
+}
