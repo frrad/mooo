@@ -1,0 +1,8 @@
+{
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {"name":"negative_receipt_tag","owner_status":3,"tag":-17,"expected_effects":["read_packet_data","encrypt_packet_data","read_socket","read_packet_header","read_packet_id","write_data_timeout_minus_one_tag_unchanged","toggle_out_segment_timeout_true"]},
+    {"name":"positive_ordinary_tag","owner_status":3,"tag":42,"expected_effects":["read_packet_data","encrypt_packet_data","read_socket","read_packet_header","read_packet_id","write_data_timeout_minus_one_tag_unchanged","toggle_out_segment_timeout_true"]},
+    {"name":"receipt_status_suppressed","owner_status":2,"tag":-17,"expected_effects":["owner_status_gate_suppresses_packet_access"]}
+  ]
+}
