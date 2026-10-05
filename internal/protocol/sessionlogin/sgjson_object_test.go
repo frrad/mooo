@@ -2,6 +2,7 @@ package sessionlogin
 
 import (
 	"errors"
+	"math"
 	"reflect"
 	"testing"
 )
@@ -50,6 +51,20 @@ func TestProjectSGJSONObjectSourceFixtureCases(t *testing.T) {
 				t.Fatalf("projection=%#v want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestProjectSGJSONObjectPreservesDirectNumericProtocolResults(t *testing.T) {
+	negativeZero := math.Copysign(0, -1)
+	for _, value := range []float64{1.5, negativeZero} {
+		got, err := ProjectSGJSONObject(syntheticSGJSON{value: value})
+		if err != nil {
+			t.Fatal(err)
+		}
+		projected, ok := got.(float64)
+		if !ok || projected != value || math.Signbit(projected) != math.Signbit(value) {
+			t.Fatalf("direct numeric result=%#v want %#v", got, value)
+		}
 	}
 }
 
