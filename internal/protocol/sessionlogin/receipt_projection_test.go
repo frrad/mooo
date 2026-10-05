@@ -3,6 +3,7 @@ package sessionlogin
 import (
 	"errors"
 	"math"
+	"reflect"
 	"testing"
 
 	"github.com/frrad/mooo/internal/protocol/loco"
@@ -209,31 +210,57 @@ func TestProjectIncomingReceiptBodyPreservesHeaderIdentityThroughBuilder(t *test
 }
 
 func TestProjectIncomingReceiptBodyBuildsBSONForFoundationScalarRevisions(t *testing.T) {
-	input := IncomingReceiptInput{
-		Header: loco.Header{PacketID: 0xfeedbeef, Method: "BLOCKSYNC"},
-		Method: "BLOCKSYNC",
-		Body:   map[string]any{"r": true, "pr": 4294967297.75},
-	}
-	body, err := ProjectIncomingReceiptBody(input)
-	if err != nil {
-		t.Fatalf("projection error=%v", err)
-	}
-	wire, err := BuildReceiptPacket(ReceiptPacket{PacketID: input.Header.PacketID, Method: input.Method, Body: body}, 64)
-	if err != nil {
-		t.Fatalf("packet build error=%v", err)
-	}
-	raw := bson.Raw(wire[loco.HeaderSize:])
-	for _, tc := range []struct {
-		key  string
-		want int32
+	cases := []struct {
+		name string
+		body map[string]any
+		r    int32
+		pr   int32
 	}{
-		{key: "r", want: 1},
-		{key: "pr", want: 1},
-	} {
-		value := raw.Lookup(tc.key)
-		if value.Type != bson.TypeInt32 || value.Int32() != tc.want {
-			t.Fatalf("%s=%v/%d, want BSON int32(%d)", tc.key, value.Type, value.Int32(), tc.want)
-		}
+		{name: "bool and positive double", body: map[string]any{"r": true, "pr": 4294967297.75}, r: 1, pr: 1},
+		{name: "negative fraction and infinities", body: map[string]any{"r": -2.5, "pr": math.Inf(1)}, r: -2, pr: -1},
+		{name: "negative infinity and NaN", body: map[string]any{"r": math.Inf(-1), "pr": math.NaN()}, r: 0, pr: 0},
+		{name: "source overrides invalid destination", body: map[string]any{"r": true, "revision": "stale", "pr": -2.5, "plusRevision": []byte{1}}, r: 1, pr: -2},
+		{name: "null source preserves bool and double destination", body: map[string]any{"r": SGJSONNull{}, "revision": true, "pr": SGJSONNull{}, "plusRevision": -2.5}, r: 1, pr: -2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			before := make(map[string]any, len(tc.body))
+			for key, value := range tc.body {
+				before[key] = value
+			}
+			input := IncomingReceiptInput{Header: loco.Header{PacketID: 0xfeedbeef, Method: "BLOCKSYNC"}, Method: "BLOCKSYNC", Body: tc.body}
+			body, err := ProjectIncomingReceiptBody(input)
+			if err != nil {
+				t.Fatalf("projection error=%v", err)
+			}
+			// DeepEqual deliberately treats NaN values as unequal; the NaN
+			// case is checked for output below and the other cases prove that
+			// projection leaves the caller-owned map untouched.
+			if tc.name != "negative infinity and NaN" && !reflect.DeepEqual(tc.body, before) {
+				t.Fatalf("projection mutated input: got=%#v before=%#v", tc.body, before)
+			}
+			wire, err := BuildReceiptPacket(ReceiptPacket{PacketID: input.Header.PacketID, Method: input.Method, Body: body}, 64)
+			if err != nil {
+				t.Fatalf("packet build error=%v", err)
+			}
+			raw := bson.Raw(wire[loco.HeaderSize:])
+			for _, field := range []struct {
+				key  string
+				want int32
+			}{
+				{key: "r", want: tc.r},
+				{key: "pr", want: tc.pr},
+			} {
+				value := raw.Lookup(field.key)
+				if value.Type != bson.TypeInt32 || value.Int32() != field.want {
+					t.Fatalf("%s=%v/%d, want BSON int32(%d)", field.key, value.Type, value.Int32(), field.want)
+				}
+			}
+			header, err := loco.ParseHeader(wire, 64)
+			if err != nil || header.PacketID != input.Header.PacketID || header.Method != input.Method {
+				t.Fatalf("header=%+v err=%v, want packet ID/method preserved", header, err)
+			}
+		})
 	}
 }
 

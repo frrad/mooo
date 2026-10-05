@@ -30,8 +30,10 @@ type IncomingReceiptInput struct {
 // projection: unrelated nested fields and complete eligibility are outside
 // this boundary. HINT accepts an allocated empty dictionary. BLOCKSYNC
 // revision fields default to signed int32 zero when absent or represented by
-// SGJSONNull. The approved platform-bounded NSNumber int64 wrapper preserves
-// the low 32 bits as a signed int32; other NSNumber/string coercions remain
+// SGJSONNull. Decoder-produced bool, signed integer, and finite/nonfinite
+// double values use the approved platform-bounded Foundation Ti conversion:
+// signed values truncate to int32 low-word storage, while bool and double
+// values follow the captured KVC conversion. Strings and other objects remain
 // outside this boundary.
 func ProjectIncomingReceiptBody(input IncomingReceiptInput) (ReceiptBody, error) {
 	if input.Method != "HINT" && input.Method != "BLOCKSYNC" {
