@@ -37,15 +37,28 @@ fields. `LocoBlockSyncPushReceipt` adds signed `int32 revision` and
 unresolved even though the framing implementation is now localized.
 
 The inherited `JSONObject` implementation at `0x101355b04` begins from the
-superclass JSON object and makes a mutable dictionary. Its raw class reference
-at `0x102113298` resolves to the static `LocoPushReceipt` class; the method
-enumerates that class's declared properties and calls `removeObjectForKey:`
-(`0x101901660`) for each property name. It then enumerates
-`nameMappingDictionary` and applies the mapping block through keyed lookup and
-keyed assignment. This proves a static base-class removal plus name-mapping
-phase, not direct insertion of HINT/BLOCKSYNC fields. Exact mapping contents,
-subclass property contribution, BSON key order, and default/omission policy
-remain unresolved.
+superclass JSON object and makes a mutable dictionary only when that object is
+an `NSDictionary`; the non-dictionary branch returns the superclass result
+unchanged. Its raw class reference at `0x102113298` resolves to the static
+`LocoPushReceipt` class. The mutable path enumerates that class's declared
+properties and calls `removeObjectForKey:` (`0x101901660`) for each property
+name. It then enumerates `nameMappingDictionary` and applies the mapping block
+through keyed lookup and keyed assignment. The mapping block receives the
+mapping key as its first object argument and the mapping value as its second:
+it looks up the second (source) key, skips absent sources, skips assignment for
+`NSNull`, and removes a present source key in either case; otherwise it writes
+the value under the first (destination) key and removes the source key. It does
+not write `nil` for an absent source.
+
+`LocoBlockSyncPushReceipt` overrides `nameMappingDictionary` at
+`0x1016bb150` with a static two-entry dictionary. The private constant-data
+receipt decodes its destination keys as `pr` and `r`, with source keys
+`plusRevision` and `revision`, respectively. Therefore the observed mapping
+phase renames those two fields to the short keys and removes their source
+spellings. This proves static base-class removal plus subclass mapping behavior,
+including its missing and `NSNull` guards; it does not yet prove the complete
+superclass JSON property contribution, HINT defaults, BSON key order, or final
+field omission policy.
 
 The NW send completion is a Swift `NWConnection.SendCompletion` closure at
 `0x100d4a840`. Its body weak-loads the owner and returns when that owner has
@@ -70,8 +83,11 @@ Framing cases derive the header body length, mutable-data capacity
 results; they cover zero-length omission and a deliberately different second
 conversion. NW cases then model only the wrapper's packet-data result guard,
 encryption nil path, connection gate, send scheduling, and timeout argument.
-The JSON-object projection remains an explicit gap until the static mapping
-dictionary and subclass path are traced.
+The JSON-object projection fixture remains an explicit gap for the untraced
+superclass property contribution and final BSON policy. The observed mapping
+phase is bounded separately: dictionary versus non-dictionary input, absent
+source, `NSNull` source, and ordinary source-to-destination rename are distinct
+cases and must not be collapsed into a generic field-copy operation.
 It records BSON key order/default policy, encryption output, and any server
 response as explicit gaps. Completion vectors cover owner lifetime, success,
 the observed POSIX `0x59`/89 cleanup predicate, neighboring POSIX and
@@ -97,3 +113,6 @@ behavior.
 - Object hierarchy and fields: private
   `reconnect-conf-model/otool-objc.txt` and `receipt-request-model/report.txt`.
 - Pending/disconnect boundary: private `reconnect-pending-consumers/trace.txt`.
+- JSON projection and mapping guards: private `nw-push-receipt-methods/decompile.txt`,
+  `nw-push-receipt-block/decompile.txt`, and the constant-data extraction under
+  `nw-name-map/` (including the private `0x101f71678` memory receipt).
