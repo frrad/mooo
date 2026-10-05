@@ -44,6 +44,29 @@ or phone UI action was performed. This validates crypto initialization and
 persistence only; it does not establish Matrix room E2EE or encrypted
 Kakao-to-Matrix messaging.
 
+## Existing mapped portal: outbound encrypted text
+
+On 2026-10-05 (UTC), bridge source revision
+`1bf6c2dec6b96f61b4b56b8b61218142fa86bda7` was built with the pure-Go
+`goolm` backend and resumed against the same operator-owned profile and
+persistent bridge database used by the preceding validation. The existing
+mapped direct portal was configured for `m.megolm.v1.aes-sha2` by the
+configured appservice bot. A bounded companion client synchronized the mapped
+room, encrypted one fresh text fixture, and sent one event. The homeserver
+returned an encrypted event; the bridge decrypted it successfully and
+persisted the corresponding outbound message with source type `1`, positive
+chat/log metadata, and the database message count advancing from 8 to 9. The
+one encrypted Matrix-to-Kakao text write was acknowledged with positive source
+IDs and persisted under the same Matrix event ID.
+
+The bridge and companion both stopped cleanly. A read-only check of the owned
+B Android AVD showed Kakao `MainActivity`, the owned profile on `Friends`, the
+existing self-chat in `ChatRoomHolderActivity`, and the exact fixture text in
+that chat. This validates one existing-portal encrypted text path through
+Megolm decryption, bridge persistence, Kakao write acknowledgement, and
+phone-side display. It does not claim inbound encrypted Kakao-to-Matrix text,
+encrypted media, replies, reactions, groups, or restart/recovery acceptance.
+
 ## Fresh QR enrollment: failed acceptance attempt
 
 On 2026-10-04, a fresh container installation with an empty profile directory
