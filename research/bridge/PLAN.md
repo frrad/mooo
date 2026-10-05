@@ -235,7 +235,9 @@ and full official-client parity remain outside this alpha goal.
 - [x] Reactions in both directions, with checked aggregate-to-per-sender
       reconciliation, replay-safe revisions, and explicit Matrix failure
       handling (PR #179). Live direct/group acceptance remains outstanding; the
-      Docker heart probe returned a Kakao mutation error and was not retried.
+      Docker heart probe produced the connector's generic mutation failure; the
+      retained evidence cannot distinguish server rejection from transport or
+      another ambiguous outcome, and it was not retried.
 
 ### B2: chat metadata (protocol research first)
 
