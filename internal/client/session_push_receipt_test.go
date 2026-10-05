@@ -31,6 +31,18 @@ type blockedReceiptSender struct {
 	release chan struct{}
 }
 
+type blockedReceiptCloser struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (s *blockedReceiptCloser) Send(any) error { return nil }
+
+func (s *blockedReceiptCloser) Close() {
+	close(s.entered)
+	<-s.release
+}
+
 func (s *blockedReceiptSender) Send(any) error {
 	close(s.started)
 	<-s.release
@@ -50,6 +62,25 @@ func (s *receiptSenderSpy) Close() {
 	s.mu.Lock()
 	s.closed = true
 	s.mu.Unlock()
+}
+
+func waitReceiptSenderClosed(t *testing.T, sender *receiptSenderSpy) {
+	t.Helper()
+	deadline := time.After(time.Second)
+	for {
+		sender.mu.Lock()
+		closed := sender.closed
+		sender.mu.Unlock()
+		if closed {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("receipt binding closer did not finish")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
 }
 
 func TestSessionPushReceiptBindingFiltersUnmatchedPushes(t *testing.T) {
@@ -101,12 +132,7 @@ func TestSessionPushReceiptBindingFiltersUnmatchedPushes(t *testing.T) {
 		t.Fatalf("ordinary push stream length = %d, want 4", got)
 	}
 	_ = session.Close()
-	sender.mu.Lock()
-	closed := sender.closed
-	sender.mu.Unlock()
-	if !closed {
-		t.Fatal("session close did not invalidate receipt binding")
-	}
+	waitReceiptSenderClosed(t, sender)
 }
 
 func TestSessionRejectsPushReceiptBindingAfterReaderStarts(t *testing.T) {
@@ -144,12 +170,7 @@ func TestPushReceiptBindingNilWireCloseInvalidatesOwner(t *testing.T) {
 	if err := session.Close(); err != nil {
 		t.Fatal(err)
 	}
-	sender.mu.Lock()
-	closed := sender.closed
-	sender.mu.Unlock()
-	if !closed {
-		t.Fatal("nil-wire session close did not invalidate receipt binding")
-	}
+	waitReceiptSenderClosed(t, sender)
 }
 
 func TestPushReceiptBindingCloseDoesNotWaitForBlockedSender(t *testing.T) {
@@ -180,6 +201,32 @@ func TestPushReceiptBindingCloseDoesNotWaitForBlockedSender(t *testing.T) {
 	}
 	close(sender.release)
 	<-dispatchDone
+}
+
+func TestReceiptCloserHonorsShutdownBudget(t *testing.T) {
+	session := &Session{}
+	closer := &blockedReceiptCloser{entered: make(chan struct{}), release: make(chan struct{})}
+	if err := session.BindPushReceipt(closer, func(loco.Packet) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- session.Shutdown(ctx) }()
+	select {
+	case <-closer.entered:
+	case <-time.After(time.Second):
+		close(closer.release)
+		t.Fatal("receipt closer did not start")
+	}
+	select {
+	case <-done:
+		close(closer.release)
+	case <-time.After(100 * time.Millisecond):
+		close(closer.release)
+		<-done
+		t.Fatal("injected receipt Close exceeded shutdown context budget")
+	}
 }
 
 func TestEligibleReceiptCallbackCanCloseRealWireSession(t *testing.T) {

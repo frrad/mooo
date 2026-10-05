@@ -100,23 +100,26 @@ func EligiblePushReceiptPacket(packet loco.Packet) bool {
 type pushReceiptCloser interface{ Close() }
 
 type pushReceiptBinding struct {
-	mu       sync.Mutex
-	sender   PushReceiptSender
-	eligible func(loco.Packet) bool
-	closed   bool
-	jobs     chan loco.Packet
-	stop     chan struct{}
-	stopOnce sync.Once
-	done     chan struct{}
+	mu         sync.Mutex
+	sender     PushReceiptSender
+	eligible   func(loco.Packet) bool
+	closed     bool
+	jobs       chan loco.Packet
+	stop       chan struct{}
+	stopOnce   sync.Once
+	done       chan struct{}
+	closerDone chan struct{}
+	closerOnce sync.Once
 }
 
 func newPushReceiptBinding(sender PushReceiptSender, eligible func(loco.Packet) bool) *pushReceiptBinding {
 	b := &pushReceiptBinding{
-		sender:   sender,
-		eligible: eligible,
-		jobs:     make(chan loco.Packet, requestLimit),
-		stop:     make(chan struct{}),
-		done:     make(chan struct{}),
+		sender:     sender,
+		eligible:   eligible,
+		jobs:       make(chan loco.Packet, requestLimit),
+		stop:       make(chan struct{}),
+		done:       make(chan struct{}),
+		closerDone: make(chan struct{}),
 	}
 	go b.run()
 	return b
@@ -180,14 +183,29 @@ func (b *pushReceiptBinding) close() {
 	sender := b.sender
 	b.mu.Unlock()
 	b.stopOnce.Do(func() { close(b.stop) })
-	if closer, ok := sender.(pushReceiptCloser); ok {
-		closer.Close()
-	}
+	b.closerOnce.Do(func() {
+		closer, ok := sender.(pushReceiptCloser)
+		if !ok {
+			close(b.closerDone)
+			return
+		}
+		go func() {
+			closer.Close()
+			close(b.closerDone)
+		}()
+	})
 }
 
 func (b *pushReceiptBinding) wait(ctx context.Context) error {
+	if err := waitFor(ctx, b.done); err != nil {
+		return err
+	}
+	return waitFor(ctx, b.closerDone)
+}
+
+func waitFor(ctx context.Context, done <-chan struct{}) error {
 	select {
-	case <-b.done:
+	case <-done:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
