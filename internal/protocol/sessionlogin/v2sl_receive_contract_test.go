@@ -44,7 +44,11 @@ type v2slReceiveProjection struct {
 
 func projectV2SLReceive(c v2slReceiveCase) v2slReceiveProjection {
 	if !c.CryptoPresent {
-		return v2slReceiveProjection{SupplyPresent: c.InputPresent, SupplyIdentity: c.InputIdentity, Effects: []string{"supply_raw_without_decrypt"}}
+		identity := ""
+		if c.InputPresent {
+			identity = c.InputIdentity
+		}
+		return v2slReceiveProjection{SupplyPresent: c.InputPresent, SupplyIdentity: identity, Effects: []string{"supply_raw_without_decrypt"}}
 	}
 	cipherLength := c.InputLength - 28 // Fixtures are bounded to N >= 28; source guard is untraced.
 	ivOffset, ivLength := uint64(0), uint64(12)
@@ -77,7 +81,7 @@ func TestV2SLReceiveContract(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 4 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 5 {
 		t.Fatalf("fixture header=%#v", f)
 	}
 	seen := map[string]bool{}

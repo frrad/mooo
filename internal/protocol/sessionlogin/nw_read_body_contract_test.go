@@ -18,6 +18,7 @@ type nwReadBodyCase struct {
 	Name                        string   `json:"name"`
 	OwnerPresent                bool     `json:"owner_present"`
 	Connection                  bool     `json:"connection_present"`
+	CurrentConnectionPresent    bool     `json:"current_connection_present"`
 	Length                      uint64   `json:"length"`
 	Completion                  string   `json:"completion"` // none, data, or error
 	ErrorKind                   string   `json:"error_kind"` // posix or other
@@ -37,21 +38,66 @@ type nwReadBodyProjection struct {
 }
 
 func projectNWReadBody(c nwReadBodyCase) nwReadBodyProjection {
-	if !c.OwnerPresent || !c.Connection {
+	if !c.OwnerPresent {
 		return nwReadBodyProjection{Effects: []string{}}
 	}
 	minimum := uint64(1)
-	effects := []string{"toggle_out_segment_timeout_true", "receive_minimum_length_1", "receive_maximum_length_input"}
+	effects := []string{}
+	if c.Connection {
+		effects = append(effects, "toggle_in_segment_timeout_true")
+		if c.Length&(uint64(1)<<63) != 0 {
+			return nwReadBodyProjection{Effects: effects}
+		}
+		effects = append(effects, "receive_minimum_length_1", "receive_maximum_length_input")
+	}
 	switch c.Completion {
 	case "data":
-		return nwReadBodyProjection{ReceiveMinimum: &minimum, ReceiveMaximum: &c.Length, Effects: append(effects, "toggle_in_segment_timeout_false", "bridge_data_to_nsdata", "did_read_body", "read_header")}
+		return nwReadBodyProjection{ReceiveMinimum: func() *uint64 {
+			if c.Connection {
+				return &minimum
+			}
+			return nil
+		}(), ReceiveMaximum: func() *uint64 {
+			if c.Connection {
+				return &c.Length
+			}
+			return nil
+		}(), Effects: append(effects, "toggle_in_segment_timeout_false", "bridge_data_to_nsdata", "did_read_body", "read_header")}
 	case "error":
 		if c.ErrorKind == "posix" && c.ErrorCode == 89 {
 			return nwReadBodyProjection{ReceiveMinimum: &minimum, ReceiveMaximum: &c.Length, Effects: effects}
 		}
-		return nwReadBodyProjection{ReceiveMinimum: &minimum, ReceiveMaximum: &c.Length, CancelledConnection: c.CurrentConnectionIdentity, Effects: append(effects, "log_read_body_error", "cancel_current_connection")}
+		effects = append(effects, "log_read_body_error")
+		if c.CurrentConnectionPresent {
+			effects = append(effects, "cancel_current_connection")
+		}
+		cancelled := ""
+		if c.CurrentConnectionPresent {
+			cancelled = c.CurrentConnectionIdentity
+		}
+		return nwReadBodyProjection{ReceiveMinimum: func() *uint64 {
+			if c.Connection {
+				return &minimum
+			}
+			return nil
+		}(), ReceiveMaximum: func() *uint64 {
+			if c.Connection {
+				return &c.Length
+			}
+			return nil
+		}(), CancelledConnection: cancelled, Effects: effects}
 	default:
-		return nwReadBodyProjection{ReceiveMinimum: &minimum, ReceiveMaximum: &c.Length, Effects: effects}
+		return nwReadBodyProjection{ReceiveMinimum: func() *uint64 {
+			if c.Connection {
+				return &minimum
+			}
+			return nil
+		}(), ReceiveMaximum: func() *uint64 {
+			if c.Connection {
+				return &c.Length
+			}
+			return nil
+		}(), Effects: effects}
 	}
 }
 
@@ -66,7 +112,7 @@ func TestNWReadBodyContract(t *testing.T) {
 	if err := d.Decode(&f); err != nil {
 		t.Fatal(err)
 	}
-	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 6 {
+	if f.Status != "reviewed-static-unexecuted-runtime" || len(f.Cases) != 8 {
 		t.Fatalf("fixture header=%#v", f)
 	}
 	seen := map[string]bool{}
@@ -75,9 +121,6 @@ func TestNWReadBodyContract(t *testing.T) {
 			t.Fatalf("duplicate/empty case %q", c.Name)
 		}
 		seen[c.Name] = true
-		if c.Connection && c.Length == 0 {
-			t.Fatalf("connection case must derive a receive maximum: %s", c.Name)
-		}
 		p := projectNWReadBody(c)
 		if !reflect.DeepEqual(p.Effects, c.Expected) || !reflect.DeepEqual(p.ReceiveMinimum, c.ExpectedReceiveMinimum) ||
 			!reflect.DeepEqual(p.ReceiveMaximum, c.ExpectedReceiveMaximum) || p.CancelledConnection != c.ExpectedCancelledConnection {

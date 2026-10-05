@@ -95,6 +95,26 @@
         "invoke_decrypt_gcm",
         "supply_decrypt_result"
       ]
+    },
+    {
+      "name": "plain_absent_input_supplies_nil_identity",
+      "crypto_present": false,
+      "input_present": false,
+      "input_identity": "stale-should-not-leak",
+      "input_length": 0,
+      "decrypt_result_present": true,
+      "crypto_result_identity": "unused",
+      "expected_supply_present": false,
+      "expected_supply_identity": "",
+      "expected_iv_offset": null,
+      "expected_iv_length": null,
+      "expected_cipher_offset": null,
+      "expected_cipher_length": null,
+      "expected_tag_offset": null,
+      "expected_tag_length": null,
+      "expected_effects": [
+        "supply_raw_without_decrypt"
+      ]
     }
   ]
 }

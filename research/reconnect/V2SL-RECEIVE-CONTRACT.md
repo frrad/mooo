@@ -46,12 +46,15 @@ The selected manager transport is `LocoNWAgent`, whose `readHeader` and
 the current `connection` ivar at callback time. A missing owner or connection
 returns before scheduling a receive. With a connection it enables the outgoing
 segment timeout and calls `NWConnection.receive` with minimum length 1 and
-maximum length equal to the requested input length.
+maximum length equal to the requested input length. The raw helper tests the signed high bit of that length after enabling the timeout; a set high bit traps before the receive call. There is no zero-length guard in this slice.
 
 For a data completion, the closure disables the incoming segment timeout,
 bridges the received Data to NSData, calls `didReadBody:`, then calls
 `readHeader`. For an error completion, POSIX code 0x59 skips the log/cancel
-branch. Other errors log the read-body failure and cancel the current
+branch. If the callback owner remains but the scheduling connection has already
+been cleared, data completion still performs its data/header callbacks; error
+completion logs but only cancels when a current callback-time connection is
+present. Other errors log the read-body failure and cancel the current
 connection loaded from the owner at callback time; a replacement connection
 therefore changes the cancellation identity. This closure has no observed
 pending-map or status publication effect, so those downstream consumers remain

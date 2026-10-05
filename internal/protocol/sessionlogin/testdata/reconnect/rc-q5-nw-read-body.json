@@ -1,11 +1,151 @@
 {
   "status": "reviewed-static-unexecuted-runtime",
   "cases": [
-    {"name":"missing_connection_does_not_schedule_receive","owner_present":true,"connection_present":false,"length":64,"completion":"none","error_kind":"","error_code":0,"current_connection_identity":"","expected_receive_minimum":null,"expected_receive_maximum":null,"expected_cancelled_connection":"","expected":[]},
-    {"name":"receive_uses_one_to_requested_length","owner_present":true,"connection_present":true,"length":64,"completion":"none","error_kind":"","error_code":0,"current_connection_identity":"conn-a","expected_receive_minimum":1,"expected_receive_maximum":64,"expected_cancelled_connection":"","expected":["toggle_out_segment_timeout_true","receive_minimum_length_1","receive_maximum_length_input"]},
-    {"name":"data_completion_bridges_and_reads_header","owner_present":true,"connection_present":true,"length":35,"completion":"data","error_kind":"","error_code":0,"current_connection_identity":"conn-a","expected_receive_minimum":1,"expected_receive_maximum":35,"expected_cancelled_connection":"","expected":["toggle_out_segment_timeout_true","receive_minimum_length_1","receive_maximum_length_input","toggle_in_segment_timeout_false","bridge_data_to_nsdata","did_read_body","read_header"]},
-    {"name":"posix_89_completion_skips_log_and_cancel","owner_present":true,"connection_present":true,"length":35,"completion":"error","error_kind":"posix","error_code":89,"current_connection_identity":"conn-a","expected_receive_minimum":1,"expected_receive_maximum":35,"expected_cancelled_connection":"","expected":["toggle_out_segment_timeout_true","receive_minimum_length_1","receive_maximum_length_input"]},
-    {"name":"other_error_logs_and_cancels_current_connection","owner_present":true,"connection_present":true,"length":35,"completion":"error","error_kind":"posix","error_code":54,"current_connection_identity":"replacement-current","expected_receive_minimum":1,"expected_receive_maximum":35,"expected_cancelled_connection":"replacement-current","expected":["toggle_out_segment_timeout_true","receive_minimum_length_1","receive_maximum_length_input","log_read_body_error","cancel_current_connection"]},
-    {"name":"weak_owner_release_suppresses_completion_work","owner_present":false,"connection_present":true,"length":35,"completion":"data","error_kind":"","error_code":0,"current_connection_identity":"conn-a","expected_receive_minimum":null,"expected_receive_maximum":null,"expected_cancelled_connection":"","expected":[]}
+    {
+      "name": "missing_connection_does_not_schedule_receive",
+      "owner_present": true,
+      "connection_present": false,
+      "length": 64,
+      "completion": "none",
+      "error_kind": "",
+      "error_code": 0,
+      "current_connection_identity": "",
+      "expected_receive_minimum": null,
+      "expected_receive_maximum": null,
+      "expected_cancelled_connection": "",
+      "expected": [],
+      "current_connection_present": false
+    },
+    {
+      "name": "receive_uses_one_to_requested_length",
+      "owner_present": true,
+      "connection_present": true,
+      "length": 64,
+      "completion": "none",
+      "error_kind": "",
+      "error_code": 0,
+      "current_connection_identity": "conn-a",
+      "expected_receive_minimum": 1,
+      "expected_receive_maximum": 64,
+      "expected_cancelled_connection": "",
+      "expected": [
+        "toggle_in_segment_timeout_true",
+        "receive_minimum_length_1",
+        "receive_maximum_length_input"
+      ],
+      "current_connection_present": true
+    },
+    {
+      "name": "data_completion_bridges_and_reads_header",
+      "owner_present": true,
+      "connection_present": true,
+      "length": 35,
+      "completion": "data",
+      "error_kind": "",
+      "error_code": 0,
+      "current_connection_identity": "conn-a",
+      "expected_receive_minimum": 1,
+      "expected_receive_maximum": 35,
+      "expected_cancelled_connection": "",
+      "expected": [
+        "toggle_in_segment_timeout_true",
+        "receive_minimum_length_1",
+        "receive_maximum_length_input",
+        "toggle_in_segment_timeout_false",
+        "bridge_data_to_nsdata",
+        "did_read_body",
+        "read_header"
+      ],
+      "current_connection_present": true
+    },
+    {
+      "name": "posix_89_completion_skips_log_and_cancel",
+      "owner_present": true,
+      "connection_present": true,
+      "length": 35,
+      "completion": "error",
+      "error_kind": "posix",
+      "error_code": 89,
+      "current_connection_identity": "conn-a",
+      "expected_receive_minimum": 1,
+      "expected_receive_maximum": 35,
+      "expected_cancelled_connection": "",
+      "expected": [
+        "toggle_in_segment_timeout_true",
+        "receive_minimum_length_1",
+        "receive_maximum_length_input"
+      ],
+      "current_connection_present": true
+    },
+    {
+      "name": "other_error_logs_and_cancels_current_connection",
+      "owner_present": true,
+      "connection_present": true,
+      "length": 35,
+      "completion": "error",
+      "error_kind": "posix",
+      "error_code": 54,
+      "current_connection_identity": "replacement-current",
+      "expected_receive_minimum": 1,
+      "expected_receive_maximum": 35,
+      "expected_cancelled_connection": "replacement-current",
+      "expected": [
+        "toggle_in_segment_timeout_true",
+        "receive_minimum_length_1",
+        "receive_maximum_length_input",
+        "log_read_body_error",
+        "cancel_current_connection"
+      ],
+      "current_connection_present": true
+    },
+    {
+      "name": "weak_owner_release_suppresses_completion_work",
+      "owner_present": false,
+      "connection_present": true,
+      "length": 35,
+      "completion": "data",
+      "error_kind": "",
+      "error_code": 0,
+      "current_connection_identity": "conn-a",
+      "expected_receive_minimum": null,
+      "expected_receive_maximum": null,
+      "expected_cancelled_connection": "",
+      "expected": [],
+      "current_connection_present": true
+    },
+    {
+      "name": "error_after_current_connection_cleared_logs_without_cancel",
+      "owner_present": true,
+      "connection_present": false,
+      "length": 35,
+      "completion": "error",
+      "error_kind": "posix",
+      "error_code": 54,
+      "current_connection_present": false,
+      "current_connection_identity": "",
+      "expected_receive_minimum": null,
+      "expected_receive_maximum": null,
+      "expected_cancelled_connection": "",
+      "expected": [
+        "log_read_body_error"
+      ]
+    },
+    {
+      "name": "signed_length_high_bit_toggles_then_traps_before_receive",
+      "owner_present": true,
+      "connection_present": true,
+      "length": 9223372036854775808,
+      "completion": "none",
+      "error_kind": "",
+      "error_code": 0,
+      "current_connection_present": true,
+      "current_connection_identity": "conn-a",
+      "expected_receive_minimum": null,
+      "expected_receive_maximum": null,
+      "expected_cancelled_connection": "",
+      "expected": [
+        "toggle_in_segment_timeout_true"
+      ]
+    }
   ]
 }
