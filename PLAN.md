@@ -142,12 +142,20 @@ the manager owner. Session must retain ordinary push delivery and must not
 activate this callback by default.
 
 The adapter must keep receipt sending separate from the existing out-segment
-worker until the receipt packet shape, serialization, negative-tag callback, and
+worker until the receipt packet shape, serialization, callback-tag mapping, and
 completion semantics are approved. The worker currently accepts serialized
 payloads, reports partial/ambiguous write progress, and closes the carriage on
 partial write failure; it has no receipt-specific packet identity or callback
 tag contract. Reusing it prematurely would conflate reviewed receipt admission
 with unresolved packet construction and write completion behavior.
+
+The signed tag derived by the agent owner is an admission/send argument. It
+must be tracked separately from any lower socket-write tag until the source
+trace proves that the latter preserves it. Current write-chain evidence shows
+`sendPacket:tag:` loading the packet-header ID before the lower write call,
+while the fixture does not assert the value reaching that call. The adapter
+must therefore leave the lower transport field unresolved and must not
+prescribe a signed-tag wire field from the current static model.
 
 The current implementation confirms this boundary concretely: `OutSegmentSubmitter`
 accepts only `[]byte`, arms its timeout owner after worker admission, and forwards
@@ -166,11 +174,10 @@ or correlated before adding entries to the pending maps.
 The request path inserts a positive uint32 ID into all three pending maps before
 serialization and submission. A receipt adapter that casts the signed tag back
 to uint32 could produce values outside the bounded request range or accidentally
-reuse a packet ID under a future wider allocator; the adapter must carry the
-signed tag as a separate field and must not call `Request`, `requestRaw`, or
-`dispatchPacket` for receipt sends. Existing wrong-method/same-ID tests show the
-ordinary correlation boundary is method-sensitive, but they do not establish a
-receipt acknowledgement method or wire identity.
+reuse a packet ID under a future wider allocator. Receipt admission therefore
+must not add the signed send argument to Session pending maps or use it as a
+request ID. Inbound receipt or push handling remains a separate dispatch path;
+the source does not yet establish an acknowledgement method or wire identity.
 
 Required synthetic integration coverage after request approval:
 
@@ -179,10 +186,13 @@ Required synthetic integration coverage after request approval:
 2. Manager cancellation and scheduling retain the manager instance target,
    while inline dispatch resolves the current carriage agent instance.
 3. Agent status is reread at execution; non-3 suppresses packet access and
-   sending, and status 3 preserves uint32 packet identity and the signed tag.
-4. The receipt path never inserts a negative tag into request correlation and
-   never treats an unsolicited receipt acknowledgement as an ordinary waiter
-   completion without an approved method/ID model.
+   sending, and status 3 preserves the uint32 packet identity and signed
+   admission argument at the owner boundary. A separate test must prove the
+   eventual lower socket-tag mapping once its source trace is corrected.
+4. The receipt path never inserts the signed send argument into request
+   correlation. Any unsolicited receipt acknowledgement remains an inbound
+   dispatch concern until an approved method/ID model defines whether it can
+   complete a waiter.
 5. Out-segment partial progress, zero-byte errors, ambiguous failures, close,
    and bounded shutdown are exercised only after the receipt serialization and
    completion contract specifies how they map to receipt outcomes.
