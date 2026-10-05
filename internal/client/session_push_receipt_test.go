@@ -76,7 +76,7 @@ func TestSessionPushReceiptBindingFiltersUnmatchedPushes(t *testing.T) {
 	if got := len(session.Pushes()); got != 4 {
 		t.Fatalf("ordinary push stream length = %d, want 4", got)
 	}
-	session.Close()
+	_ = session.Close()
 	sender.mu.Lock()
 	closed := sender.closed
 	sender.mu.Unlock()
