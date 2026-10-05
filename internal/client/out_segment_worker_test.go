@@ -114,12 +114,26 @@ func (c *clientOutClock) AfterFunc(_ time.Duration, fn func()) sessionlogin.OutS
 	return t
 }
 
-type clientOutQueue struct{ work []func() }
+type clientOutQueue struct {
+	mu   sync.Mutex
+	work []func()
+}
 
-func (q *clientOutQueue) Enqueue(fn func()) { q.work = append(q.work, fn) }
+func (q *clientOutQueue) Enqueue(fn func()) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.work = append(q.work, fn)
+}
+func (q *clientOutQueue) len() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.work)
+}
 func (q *clientOutQueue) runNext() {
+	q.mu.Lock()
 	fn := q.work[0]
 	q.work = q.work[1:]
+	q.mu.Unlock()
 	fn()
 }
 
@@ -163,8 +177,8 @@ func TestSessionWriteRequestUsesOptInOutSegmentSubmissionBoundary(t *testing.T) 
 	case <-time.After(time.Second):
 		t.Fatal("writeRequest did not return after async submission")
 	}
-	if len(queue.work) != 1 {
-		t.Fatalf("queued owner work=%d want 1", len(queue.work))
+	if queue.len() != 1 {
+		t.Fatalf("queued owner work=%d want 1", queue.len())
 	}
 	queue.runNext()
 	if len(clock.timers) != 1 {
@@ -193,8 +207,8 @@ func TestSessionWriteRequestUsesOptInOutSegmentSubmissionBoundary(t *testing.T) 
 	case <-time.After(time.Second):
 		t.Fatal("write completion not forwarded")
 	}
-	if len(queue.work) != 1 {
-		t.Fatalf("queued callback disable=%d want 1", len(queue.work))
+	if queue.len() != 1 {
+		t.Fatalf("queued callback disable=%d want 1", queue.len())
 	}
 	queue.runNext()
 	if !clock.timers[0].stopped {
@@ -247,8 +261,8 @@ func TestSessionWriteRequestContinuesWhenOutSegmentTimeoutIsDisabled(t *testing.
 	case <-time.After(time.Second):
 		t.Fatal("completion not forwarded")
 	}
-	if len(queue.work) != 0 || len(clock.timers) != 0 {
-		t.Fatalf("disabled timer queued=%d timers=%d", len(queue.work), len(clock.timers))
+	if queue.len() != 0 || len(clock.timers) != 0 {
+		t.Fatalf("disabled timer queued=%d timers=%d", queue.len(), len(clock.timers))
 	}
 	submitter.Close()
 }
@@ -281,8 +295,8 @@ func TestSessionOutSegmentWorkerSerializesQueuedSubmissions(t *testing.T) {
 	if err := session.writeRequest(context.Background(), wire, 10, "TWO", nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(queue.work) != 2 {
-		t.Fatalf("queued owner work=%d want 2", len(queue.work))
+	if queue.len() != 2 {
+		t.Fatalf("queued owner work=%d want 2", queue.len())
 	}
 	queue.runNext()
 	queue.runNext()
@@ -337,7 +351,7 @@ func TestSessionOutSegmentCompleteWriteCancellationKeepsCarriage(t *testing.T) {
 	if err := session.writeRequest(ctx, wire, 11, "PING", nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(queue.work) == 0 {
+	if queue.len() == 0 {
 		t.Fatal("missing enable queue work")
 	}
 	queue.runNext()
@@ -349,7 +363,7 @@ func TestSessionOutSegmentCompleteWriteCancellationKeepsCarriage(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("canceled completion missing")
 	}
-	for len(queue.work) > 0 {
+	for queue.len() > 0 {
 		queue.runNext()
 	}
 	session.mu.Lock()
@@ -391,8 +405,8 @@ func TestSessionOutSegmentQueuedCancellationKeepsCarriageReusable(t *testing.T) 
 	if err := session.writeRequest(secondCtx, wire, 21, "TWO", nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(queue.work) != 2 {
-		t.Fatalf("queued owner work=%d want 2", len(queue.work))
+	if queue.len() != 2 {
+		t.Fatalf("queued owner work=%d want 2", queue.len())
 	}
 	queue.runNext()
 	queue.runNext()
@@ -427,7 +441,7 @@ func TestSessionOutSegmentQueuedCancellationKeepsCarriageReusable(t *testing.T) 
 	if !first.Complete || first.Err != nil || second.Err == nil || second.Ambiguous {
 		t.Fatalf("results first=%+v second=%+v", first, second)
 	}
-	for len(queue.work) > 0 {
+	for queue.len() > 0 {
 		queue.runNext()
 	}
 	session.mu.Lock()
@@ -451,7 +465,7 @@ func TestSessionOutSegmentQueuedCancellationKeepsCarriageReusable(t *testing.T) 
 	case <-time.After(time.Second):
 		t.Fatal("reused completion missing")
 	}
-	for len(queue.work) > 0 {
+	for queue.len() > 0 {
 		queue.runNext()
 	}
 	submitter.Close()
@@ -478,8 +492,8 @@ func TestSessionRequestZeroByteWriteErrorResolvesPendingRequest(t *testing.T) {
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("request error=%v, want zero-byte write error", err)
 	}
-	if len(queue.work) != 2 {
-		t.Fatalf("queued owner work=%d want 2 (enable and async failure disable)", len(queue.work))
+	if queue.len() != 2 {
+		t.Fatalf("queued owner work=%d want 2 (enable and async failure disable)", queue.len())
 	}
 	queue.runNext()
 	queue.runNext()
@@ -506,8 +520,10 @@ func TestSessionOutSegmentPartialProgressDisablesBeforeTerminalWrite(t *testing.
 	if err := session.writeRequest(context.Background(), wire, 30, "PING", make([]byte, 128)); err != nil {
 		t.Fatal(err)
 	}
-	if len(queue.work) != 1 {
-		t.Fatalf("queued owner work=%d want enable", len(queue.work))
+	// The writer may already have queued its progress disable. The enable
+	// remains first in the FIFO, regardless of when the worker is scheduled.
+	if queue.len() < 1 {
+		t.Fatalf("queued owner work=%d want at least enable", queue.len())
 	}
 	queue.runNext()
 	select {
@@ -518,8 +534,8 @@ func TestSessionOutSegmentPartialProgressDisablesBeforeTerminalWrite(t *testing.
 	case <-time.After(time.Second):
 		t.Fatal("partial progress callback missing")
 	}
-	if len(queue.work) != 1 {
-		t.Fatalf("queued owner work=%d want progress disable", len(queue.work))
+	if queue.len() != 1 {
+		t.Fatalf("queued owner work=%d want progress disable", queue.len())
 	}
 	queue.runNext()
 	if len(clock.timers) != 1 || !clock.timers[0].stopped {
