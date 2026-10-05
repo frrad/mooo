@@ -81,14 +81,15 @@ type v2SLPrimitiveTrace struct {
 
 // observedV2SLPrimitiveState records the reviewed control-flow boundary. The
 // primitive stops at context creation failure; once a context exists, later
-// low-level statuses do not short-circuit the sequence.
+// low-level statuses do not short-circuit the sequence. The two initialization
+// calls and IV-length control are separate stages intentionally.
 func observedV2SLPrimitiveState(trace *v2SLPrimitiveTrace, tag []byte) []byte {
 	trace.effects = append(trace.effects, "context")
 	trace.steps = append(trace.steps, "context")
 	if !trace.contextCreated {
 		return nil
 	}
-	for i, step := range []string{"init", "iv", "update", "final", "get-tag"} {
+	for i, step := range []string{"init-cipher", "set-iv-length", "init-key-iv", "update", "final", "get-tag"} {
 		trace.steps = append(trace.steps, step)
 		trace.effects = append(trace.effects, step)
 		if i < len(trace.statuses) {
@@ -106,8 +107,14 @@ func observedV2SLDecryptState(trace *v2SLPrimitiveTrace, plaintext []byte) []byt
 	if !trace.contextCreated {
 		return nil
 	}
-	trace.steps = append(trace.steps, "decrypt-update", "set-tag", "decrypt-final")
-	trace.effects = append(trace.effects, "decrypt-update", "set-tag", "decrypt-final", "free")
+	for i, step := range []string{"init-cipher", "set-iv-length", "init-key-iv", "decrypt-update", "set-tag", "decrypt-final"} {
+		trace.steps = append(trace.steps, step)
+		trace.effects = append(trace.effects, step)
+		if i < len(trace.statuses) {
+			trace.seenStatuses = append(trace.seenStatuses, trace.statuses[i])
+		}
+	}
+	trace.effects = append(trace.effects, "free")
 	trace.freed = true
 	trace.effects = append(trace.effects, "predicate")
 	if trace.finalCode < 1 {
@@ -223,11 +230,11 @@ func TestV2SLPrimitiveFailureStateAndIgnoredStatuses(t *testing.T) {
 	if got := observedV2SLPrimitiveState(failed, tag); got != nil || !bytes.Equal(tag, bytes.Repeat([]byte{0xa5}, v2SLTagSize)) || !reflect.DeepEqual(failed.steps, []string{"context"}) {
 		t.Fatalf("context failure state: output=%x tag=%x steps=%v", got, tag, failed.steps)
 	}
-	active := &v2SLPrimitiveTrace{contextCreated: true, statuses: []int{-1, 0, -1, 0, -1}}
-	if got := observedV2SLPrimitiveState(active, tag); !bytes.Equal(got, []byte("ciphertext")) || !reflect.DeepEqual(active.steps, []string{"context", "init", "iv", "update", "final", "get-tag"}) || !reflect.DeepEqual(active.seenStatuses, active.statuses) || !active.freed {
+	active := &v2SLPrimitiveTrace{contextCreated: true, statuses: []int{-1, 0, -1, 0, -1, 0}}
+	if got := observedV2SLPrimitiveState(active, tag); !bytes.Equal(got, []byte("ciphertext")) || !reflect.DeepEqual(active.steps, []string{"context", "init-cipher", "set-iv-length", "init-key-iv", "update", "final", "get-tag"}) || !reflect.DeepEqual(active.seenStatuses, active.statuses) || !active.freed {
 		t.Fatalf("post-context state: output=%x steps=%v", got, active.steps)
 	}
-	if !reflect.DeepEqual(active.effects, []string{"context", "init", "iv", "update", "final", "get-tag", "free"}) {
+	if !reflect.DeepEqual(active.effects, []string{"context", "init-cipher", "set-iv-length", "init-key-iv", "update", "final", "get-tag", "free"}) {
 		t.Fatalf("encryption effects = %v", active.effects)
 	}
 	noContext := &v2SLPrimitiveTrace{contextCreated: false, finalCode: 1}
@@ -235,17 +242,20 @@ func TestV2SLPrimitiveFailureStateAndIgnoredStatuses(t *testing.T) {
 		t.Fatalf("context failure decrypt state: output=%q freed=%v", got, noContext.freed)
 	}
 	for _, code := range []int{-1, 0, 1, 2} {
-		trace := &v2SLPrimitiveTrace{contextCreated: true, finalCode: code}
+		trace := &v2SLPrimitiveTrace{contextCreated: true, finalCode: code, statuses: []int{0, -1, 0, -1, 0, -1}}
 		got := observedV2SLDecryptState(trace, []byte("plaintext"))
 		if (code < 1) != (got == nil) || !trace.freed {
 			t.Fatalf("final code %d: output=%q freed=%v", code, got, trace.freed)
 		}
-		wantEffects := []string{"context", "decrypt-update", "set-tag", "decrypt-final", "free", "predicate"}
+		wantEffects := []string{"context", "init-cipher", "set-iv-length", "init-key-iv", "decrypt-update", "set-tag", "decrypt-final", "free", "predicate"}
 		if code >= 1 {
 			wantEffects = append(wantEffects, "publish")
 		}
 		if !reflect.DeepEqual(trace.effects, wantEffects) {
 			t.Fatalf("final code %d effects = %v", code, trace.effects)
+		}
+		if !reflect.DeepEqual(trace.seenStatuses, trace.statuses) {
+			t.Fatalf("final code %d statuses = %v", code, trace.seenStatuses)
 		}
 	}
 }

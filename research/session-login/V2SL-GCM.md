@@ -53,7 +53,10 @@ authenticated application data, and a caller must reject it before interpreting
 plaintext. On the reviewed path, the low-level operation statuses after context
 creation are not individually branched on before tag collection; this is an
 observed source behavior, not a recommendation to accept partially initialized
-results. A context-creation failure stops before those operations. Decryption
+results. The ordered stages are cipher initialization, IV-length control,
+key/IV initialization, optional associated-data update, plaintext update,
+finalization, tag collection, and context cleanup. A context-creation failure
+stops before those operations. Decryption
 returns no plaintext after context or authentication failure, including after
 its cleanup path when a context was created. A context-creation failure returns
 before context cleanup.
