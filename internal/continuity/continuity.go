@@ -13,11 +13,15 @@ import (
 	"sync"
 )
 
-const Version uint32 = 4
+const Version uint32 = 5
 
 const (
-	previousVersion uint32 = 3
-	oldestVersion   uint32 = 2
+	// Version 4 recorded read watermarks after every SYNCMSG, including
+	// catch-up pages whose server-side read effect is unproven. Migration
+	// discards them; the cost is at most one repeated acknowledgement.
+	unprovenReadVersion uint32 = 4
+	previousVersion     uint32 = 3
+	oldestVersion       uint32 = 2
 )
 
 var (
@@ -53,9 +57,10 @@ type HistoryGap struct {
 	ToLogID   int64 `json:"to_log_id"`
 }
 
-// ReadWatermark is the highest server read position durably observed for one
-// chat. It is independent from ChatCursor: receiving/processing a message is
-// not the same operation as acknowledging that it was read.
+// ReadWatermark is the highest position this client explicitly acknowledged
+// as read for one chat. It is independent from ChatCursor: receiving or
+// processing a message is not the same operation as acknowledging that it was
+// read.
 type ReadWatermark struct {
 	ChatID    int64 `json:"chat_id"`
 	Watermark int64 `json:"watermark"`
@@ -266,7 +271,7 @@ func (s *Store) CommitMessage(chatID, logID int64) (bool, error) {
 	return advanced, err
 }
 
-// ReadWatermark returns the durable server read position for one chat. A
+// ReadWatermark returns the durable read acknowledgement for one chat. A
 // missing or invalid chat ID has no recorded watermark and returns zero.
 func (s *Store) ReadWatermark(chatID int64) int64 {
 	if s == nil || chatID <= 0 {
@@ -281,7 +286,7 @@ func (s *Store) ReadWatermark(chatID int64) int64 {
 	return s.data.ReadWatermarks[index].Watermark
 }
 
-// CommitReadWatermark advances one chat's durable server read position.
+// CommitReadWatermark advances one chat's durable read acknowledgement.
 // Recommitting an older/equal watermark is an idempotent no-op.
 func (s *Store) CommitReadWatermark(chatID, watermark int64) (bool, error) {
 	if chatID <= 0 || watermark <= 0 {
@@ -458,6 +463,14 @@ func read(path string) (Checkpoint, bool, error) {
 		return Checkpoint{}, false, ErrCorrupt
 	}
 	migrated := false
+	if data.Version == unprovenReadVersion {
+		if data.ReadWatermarks == nil {
+			return Checkpoint{}, false, ErrCorrupt
+		}
+		data.ReadWatermarks = []ReadWatermark{}
+		data.Version = Version
+		migrated = true
+	}
 	if data.Version == oldestVersion || data.Version == previousVersion {
 		if data.LastTokenID < 0 || data.LBK < 0 || data.Chats == nil || data.KnownChats == nil {
 			return Checkpoint{}, false, ErrCorrupt

@@ -160,21 +160,20 @@ For the current account, a positive unread count is recomputed or cleared;
 reaching the last log clears mention/reply state only within that positive-unread
 branch. Joined/archive refresh follows independently of the member-helper gates.
 The exact count predicate and effect order are specified in
-[`read-state/DECUNREAD.md`](read-state/DECUNREAD.md). The pure
-`internal/protocol/readstate` reducer and synthetic vectors model these planned
-effects, but the client does not yet apply them to a durable room/member store.
-DECUNREAD never advances the message checkpoint or the explicit local read
-watermark checkpoint.
+[`read-state/DECUNREAD.md`](read-state/DECUNREAD.md). The bridge uses
+only the notice's chat, user and watermark for Matrix receipts and keeps no
+room/member unread store, so the earlier pure reducer was deleted
+([bridge policy](bridge/read-receipt-policy.md)). DECUNREAD never advances the
+message checkpoint or the explicit local read watermark checkpoint.
 
 `NOTIREAD` is a distinct automatic response in the official inbound-message
 path, not sufficient evidence of an explicit user mark-read action. After an
 accepted `MSG` callback and an existing room lookup, the official client sends
 `NOTIREAD` with int64 chat ID, link ID, and message-log watermark, plus the
 room's boolean notification-read value and the message service ID. The clean-room
-client does not yet emit it automatically. Its request/response model and generic
-session transport have synthetic coverage, including disconnect without replay;
-the accepted-message/room-state consumer and live acknowledgement semantics
-remain open. The explicit `CHATONROOM` lifecycle also remains under review. Static tracing
+client does not emit it, and its unused request model was deleted; the
+accepted-message/room-state consumer and live acknowledgement semantics remain
+open ([bridge policy](bridge/read-receipt-policy.md)). The explicit `CHATONROOM` lifecycle also remains under review. Static tracing
 of the Mac client's explicit `markAsRead` and read-all entry points routes those
 operations through `SYNCMSG`; no separate mark-read LOCO request was found.
 `CHATOFF` in this path is local room teardown, and no distinct `CHATOFF` wire

@@ -77,7 +77,7 @@ func (b *scriptedBackend) wait(t *testing.T) {
 
 func holdBackendOpen() backendStep {
 	return func(server *wireConn) error {
-		_, err := server.read()
+		_, err := server.readRequest()
 		if err != nil {
 			return nil
 		}
@@ -87,7 +87,7 @@ func holdBackendOpen() backendStep {
 
 func expectRequest(method string, check func(bson.Raw) error, reply bson.D) backendStep {
 	return func(server *wireConn) error {
-		request, err := server.read()
+		request, err := server.readRequest()
 		if err != nil {
 			return err
 		}
@@ -120,7 +120,7 @@ func pushAfter(trigger <-chan struct{}, method string, body bson.D) backendStep 
 
 func disconnectAfterRequest(method string, count *int) backendStep {
 	return func(server *wireConn) error {
-		request, err := server.read()
+		request, err := server.readRequest()
 		if err != nil {
 			return err
 		}
@@ -544,7 +544,7 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	imageData := syntheticClientJPEG(t)
 	completeLog := mustBSON(bson.D{{Key: "type", Value: int32(2)}, {Key: "chatId", Value: chatID}, {Key: "logId", Value: int64(103)}})
 	mediaBackend := newScriptedBackend(t, true, func(server *wireConn) error {
-		request, err := server.read()
+		request, err := server.readRequest()
 		if err != nil {
 			return err
 		}
@@ -800,7 +800,7 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 	shipRequests := 0
 	releaseMain := make(chan struct{})
 	mainBackend := newScriptedBackend(t, true, func(server *wireConn) error {
-		request, err := server.read()
+		request, err := server.readRequest()
 		if err != nil {
 			return err
 		}
@@ -818,7 +818,7 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 	})
 	postRequests := 0
 	mediaBackend := newScriptedBackend(t, true, func(server *wireConn) error {
-		request, err := server.read()
+		request, err := server.readRequest()
 		if err != nil {
 			return err
 		}
@@ -885,4 +885,11 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 	if shipRequests != 1 || postRequests != 1 || mediaDials != 1 {
 		t.Fatalf("SHIP=%d POST=%d media dials=%d, want one each", shipRequests, postRequests, mediaDials)
 	}
+}
+
+// readRequest reads a request the client sent to a test server. The BSON
+// shadow compares bodies received from Kakao, so harness reads of mooo's own
+// requests bypass it.
+func (w *wireConn) readRequest() (loco.Packet, error) {
+	return w.readUnshadowed(nil, bodyProgressCallbacks{})
 }

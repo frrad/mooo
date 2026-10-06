@@ -47,5 +47,7 @@ separate phase after the first differential and uses a fresh target.
 Synthetic evidence must cover request fields, `cnt=0` paging, response failure,
 local watermark commit ordering, restart suppression of an already persisted
 watermark, and no-progress detection. It cannot establish the server-side read
-effect. Until the controlled differential is complete, bridge read receipts
-and opt-in backfill remain disabled acceptance gaps.
+effect. Until the controlled differential is complete, opt-in backfill remains
+a disabled acceptance gap. Read receipts no longer depend on it: since
+checkpoint v5, catch-up does not record a read acknowledgement
+([policy](read-receipt-policy.md)).

@@ -53,14 +53,13 @@ delivery remains a separate operation from this automatic acknowledgement.
 
 ## Conformance consequence
 
-The synthetic response test in
-`internal/protocol/notiread/notiread_test.go` uses a response with a negative
-status and an optional notification-read value, then asserts that the one-shot
-transport returns the response bytes unchanged. This is a characterization
-test: the current transport boundary already passes, but the test protects
-the first-party-observed absence of a status interpretation at this layer.
-It intentionally does not invent a success predicate, response-key contract,
-or post-disconnect callback result.
+A synthetic response test formerly in
+`internal/protocol/notiread/notiread_test.go` (deleted 2026-10-05 with the
+unused model) characterized this boundary: a response with a negative status
+and an optional notification-read value passed through the one-shot transport
+unchanged. Any future implementation should restore that characterization
+without inventing a success predicate, response-key contract, or
+post-disconnect callback result.
 
 ## Provenance and confidence
 

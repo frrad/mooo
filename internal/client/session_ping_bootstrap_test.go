@@ -133,7 +133,7 @@ func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
 			bson.E{Key: "lbk", Value: int32(2)},
 		)),
 		func(server *wireConn) error {
-			request, err := server.read()
+			request, err := server.readRequest()
 			if err != nil {
 				return err
 			}
@@ -235,7 +235,7 @@ func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.
 					return err
 				}
 			}
-			ping, err := server.read()
+			ping, err := server.readRequest()
 			if err != nil {
 				return err
 			}
@@ -249,7 +249,7 @@ func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.
 			if err := writeBackendPacket(server, ping.Header.PacketID, "PING", mustBSON(bson.D{{Key: "status", Value: int32(0)}})); err != nil {
 				return err
 			}
-			lchat, err := server.read()
+			lchat, err := server.readRequest()
 			if err != nil {
 				return err
 			}
