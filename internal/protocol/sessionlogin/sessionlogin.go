@@ -24,7 +24,6 @@ type LoginListRequest struct {
 	Revision    int32
 	DType       int32
 	PCST        int32
-	RP          []byte
 	BG          bool
 	ChatIDs     []int64
 	MaxIDs      []int64

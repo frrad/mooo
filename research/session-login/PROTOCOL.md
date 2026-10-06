@@ -141,12 +141,17 @@ The final command is `LOGINLIST`, using the existing LOCO framed BSON transport.
 | `revision` | int32 | Protocol/config revision |
 | `dtype` | int32 | Device type |
 | `pcst` | int32 | PC status |
-| `rp` | binary | Resume/presence blob |
 | `bg` | boolean | Background flag |
 | `chatIds` | array<int64> | Chat-list resume IDs |
 | `maxIds` | array<int64> | Corresponding per-chat maximum IDs |
 | `lastTokenId` | int64 | Chat-list cursor |
 | `lbk` | int32 | Last blind-token cursor |
+
+There is no `rp` field. The macOS 26.8.0 LOGINLIST builder has no `rp`
+property, and no `rp` value or constant was found in the builder path
+(SL-BIN-041). An earlier version of this table listed `rp` as a binary
+"resume/presence blob"; that row, and the fixed 6-byte value mooo sent until
+2026-10-05, had only public prior-art provenance and are withdrawn.
 
 All scalar fields are set. `chatIds` and `maxIds` are positional pairs and must
 have equal length. Empty arrays are valid. Static evidence proves that `sKey` is

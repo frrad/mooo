@@ -42,10 +42,10 @@ func TestMarshalBSONPreservesWidthsAndOmitsUnsetObjects(t *testing.T) {
 	}
 }
 
-func TestMarshalBSONArraysUseInt64AndRPUsesBinary(t *testing.T) {
+func TestMarshalBSONArraysUseInt64AndOmitRP(t *testing.T) {
 	req := LoginListRequest{
 		AppVer: "26.8.0", OS: "mac", Lang: "en", DUUID: "invented-device",
-		OAuthToken: "synthetic-token", MCCMNC: "00101", RP: []byte{1, 2},
+		OAuthToken: "synthetic-token", MCCMNC: "00101",
 		ChatIDs: []int64{7}, MaxIDs: []int64{8},
 	}
 	wire, err := req.MarshalBSON()
@@ -57,7 +57,7 @@ func TestMarshalBSONArraysUseInt64AndRPUsesBinary(t *testing.T) {
 	if len(chat) != 1 || chat[0].Type != bson.TypeInt64 {
 		t.Fatalf("chatIds = %#v", chat)
 	}
-	if value := raw.Lookup("rp"); value.Type != bson.TypeBinary {
-		t.Fatalf("rp type = %v", value.Type)
+	if value := raw.Lookup("rp"); value.Type != 0 {
+		t.Fatalf("rp unexpectedly encoded as %v", value.Type)
 	}
 }

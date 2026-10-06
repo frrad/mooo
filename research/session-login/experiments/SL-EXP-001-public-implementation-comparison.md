@@ -60,3 +60,7 @@ No private or runtime artifacts were created.
 
 Use current-client static and synthetic serializer evidence to settle every public
 conflict before implementing a fixed profile.
+
+Settled 2026-10-05 (SL-BIN-041): the current macOS LOGINLIST builder has no
+`rp` field. mooo had shipped a fixed 6-byte `rp` with no first-party
+provenance; it was removed so the request matches the official field set.
