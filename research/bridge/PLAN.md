@@ -3,6 +3,9 @@
 Status: active work plan, updated 2026-10-05. Framework decision:
 [ADR 0003](../../docs/adr/0003-bridge-on-mautrix-bridgev2.md).
 
+Live validation still owed by this plan is tracked by ID in
+[`../LIVE-DEBT.md`](../LIVE-DEBT.md).
+
 ## Goals
 
 - Bridge one or more operator-owned Kakao profiles into Matrix as a puppeting
@@ -201,7 +204,7 @@ and full official-client parity remain outside this alpha goal.
       every `SYNCMSG`, including `cnt=0` recovery, so `MarkRead` could skip
       positions the server still showed unread. Checkpoint v5 records it only
       after `MarkRead` and discards v4 values ([policy](read-receipt-policy.md)).
-- [ ] `cnt=0` read side effect: confirm with the A/B test in
+- [ ] (LV-10) `cnt=0` read side effect: confirm with the A/B test in
       [`syncmsg-read-side-effect-procedure.md`](syncmsg-read-side-effect-procedure.md)
       whether catch-up marks recovered messages read on the server. This now
       gates catch-up/backfill policy only, not read receipts.
@@ -220,7 +223,7 @@ and full official-client parity remain outside this alpha goal.
       check-key algorithm and complete success-field parity remain unresolved;
       the URL allowlist is an explicit clean-room safety policy and does not
       claim official-client parity.
-- [ ] Live-validate fresh bridge enrollment, device-authorization code,
+- [ ] (LV-1, LV-2) Live-validate fresh bridge enrollment, device-authorization code,
       expiry/cancellation, and restart resume with the owned disposable
       account. The first bridge-native scan on 2026-10-04 displayed a QR in
       Matrix, but Android rejected it before approval. No fresh credentials
@@ -235,14 +238,14 @@ and full official-client parity remain outside this alpha goal.
       transfer deadlines, and persisted photo source metadata. Optional inbound
       author/timestamp fields have synthetic parser coverage; live encoding
       remains an explicit gap. Image replies are rejected.
-- [ ] Live-validate direct/group photo transfers, Matrix room E2EE media, and
+- [ ] (LV-7) Live-validate direct/group photo transfers, Matrix room E2EE media, and
       author/timestamp attribution. The Docker attachment probe covered
       encrypted media transport in an unencrypted portal only.
 - [x] Inbound reply conversion with chat-scoped source message IDs.
 - [x] Outbound replies with persisted source metadata, explicit missing-source
       rejection, chat/receiver guards, UTF-16-bounded previews, and single-attempt
       sends. Synthetic connector and SQLite round-trip tests pass (PR #164).
-- [ ] Live-validate outbound replies, including reply after bridge restart. The
+- [ ] (LV-6) Live-validate outbound replies, including reply after bridge restart. The
       Docker synthetic-target probe was rejected before Kakao mutation.
 - [x] Reactions in both directions, with checked aggregate-to-per-sender
       reconciliation, replay-safe revisions, and explicit Matrix failure
@@ -254,7 +257,7 @@ and full official-client parity remain outside this alpha goal.
 
 ### B2: chat metadata (protocol research first)
 
-- [ ] Ghidra-first dossiers for chat info, member lists, member profiles, and
+- [ ] (RV-4, RV-5) Ghidra-first dossiers for chat info, member lists, member profiles, and
       friend/contact sync, following the parity rules in `AGENTS.md`. Chat
       info, members, and member lists are traced in
       [`chat-metadata.md`](../chat-metadata.md); friend/contact sync and the
@@ -265,7 +268,7 @@ and full official-client parity remain outside this alpha goal.
 - [x] Initial portal names and member profiles/rosters from existing client APIs
       (PR #162). Complete versus partial membership is explicit; unrequested
       profiles and invalid IDs are rejected.
-- [ ] Live-validate initial metadata in direct and group portals.
+- [ ] (LV-4, LV-5) Live-validate initial metadata in direct and group portals.
 - [x] Portal and ghost avatars, plus updates to existing portal metadata (PR #173).
       HTTPS CDN policy, byte bounds, and redacted failures are synthetic-tested;
       direct/group live validation remains outstanding.
@@ -299,7 +302,7 @@ The implemented supervisor and its bounded policy are documented in
       validations; live recovery and operator tooling remain open.
 - [x] Recorded live restart resume/catch-up validation for previously committed
       chats on 2026-09-30.
-- [ ] Extend controlled owned-account resume/catch-up validation to automatic
+- [ ] (LV-9) Extend controlled owned-account resume/catch-up validation to automatic
       reconnect, terminal events, delivery failures, and cleanup timeouts.
       Synthetic regressions cover these paths; live acceptance remains open.
 - [ ] Opt-in, bounded backfill with an explicit read-side-effect policy.
@@ -320,7 +323,7 @@ The implemented supervisor and its bounded policy are documented in
       a bounded existing-profile text/media resume and one restart are recorded
       in [direct messaging validation](DIRECT-MESSAGING-VALIDATION.md); full
       messaging deployment acceptance remains separate.
-- [ ] Validate both required deployment targets: standard Matrix appservice
+- [ ] (LV-13, LV-14) Validate both required deployment targets: standard Matrix appservice
       installation and separate Beeper self-hosting.
 
 ## Open questions
