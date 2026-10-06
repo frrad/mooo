@@ -35,25 +35,3 @@ func TestProfileForConfirmedRoutes(t *testing.T) {
 		t.Fatal("unknown route received guessed profile")
 	}
 }
-
-func TestPasswordCheckSucceeded(t *testing.T) {
-	tests := []struct {
-		name   string
-		http   int
-		result *PasswordCheckResponse
-		want   bool
-	}{
-		{"accepted", 200, &PasswordCheckResponse{StatusPresent: true, Status: 0}, true},
-		{"wrong HTTP status", 201, &PasswordCheckResponse{StatusPresent: true, Status: 0}, false},
-		{"missing response", 200, nil, false},
-		{"missing status", 200, &PasswordCheckResponse{}, false},
-		{"nonzero status", 200, &PasswordCheckResponse{StatusPresent: true, Status: 1}, false},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := PasswordCheckSucceeded(test.http, test.result); got != test.want {
-				t.Fatalf("PasswordCheckSucceeded() = %v, want %v", got, test.want)
-			}
-		})
-	}
-}

@@ -127,11 +127,26 @@ behaviour those fixtures describe.
 
 - [x] Record the policy in `AGENTS.md` and `research/parity-fixtures.md`, and add
       the `internal/testpolicy` lint with a shrink-only allowlist.
-- [ ] Move fixtures to `research/fixtures/` with `provenance`, delete the
-      model-only tests, and empty the allowlist.
-- [ ] Delete or connect the test-only production code. Read receipts
-      (`readstate`, `notiread`) are being connected to the bridge separately;
-      push delivery receipts need a product decision.
+- [x] Delete the 45 model-only tests and empty the allowlist.
+- [x] Delete test-only production code with no planned consumer: the
+      pre-QR passcode registration state machine and coordinator, the
+      sessionlogin ping-intent, ping-status, status-handler, send-order,
+      reconnect-policy, in-segment-timeout, and token cursor/helper/observer
+      models, the CHGMETA/CHGCHATST/CHGMCMETA reducers, and `loco.Parser`.
+- [ ] Move fixtures to `research/fixtures/` with `provenance`.
+- [x] Read receipts: the bridge now drives `MarkRead` and `DECUNREAD`
+      directly; `readstate` and `notiread` were deleted (#232).
+- [ ] Connect or delete the remaining test-only code (`deadcode -tags=goolm
+      ./...`). Each is a real capability that production never binds:
+  - Push delivery receipts: `Session.BindPushReceipt`, the sessionlogin
+    `push_receipt_*` owners, `receipt_*` builders, `sgjson_object`,
+    `foundation_ti`, and the client out-segment worker/submitter. Needs a
+    product decision.
+  - Receive-header timeout: `sessionlogin.NewReceiveHeaderTimeoutOwner` and
+    its effects planner. Session has the controller seam, but production
+    never installs one, so no hung-read timeout is active.
+  - Connection recovery: `sessionlogin.ReduceRecovery`, `EndpointCache`, and
+    `InvalidateMatchingFailure`.
 - [ ] Run fixtures with a production equivalent (BSON decoding, events, receive
       path, LOCO framing) through the real code; land each difference as a
       failing test, then fix it or record a deviation.

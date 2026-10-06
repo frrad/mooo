@@ -52,8 +52,6 @@ type boundedReader struct {
 	remaining int
 }
 
-type contextMarkerKey struct{}
-
 func (r *boundedReader) Read(p []byte) (int, error) {
 	if r.remaining == 0 {
 		return 0, io.EOF
@@ -67,52 +65,6 @@ func (r *boundedReader) Read(p []byte) (int, error) {
 	}
 	r.remaining -= n
 	return n, nil
-}
-
-func TestHTTPExecutorExecutesExactlyOnceAndReturnsStatusBodyOnly(t *testing.T) {
-	form, err := BuildQRPasswordCheckRequest(QRPasswordCheckRequest{Password: "synthetic password"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.WithValue(context.Background(), contextMarkerKey{}, "marker")
-	responseBody := &trackingBody{reader: strings.NewReader(`{"status":0}`)}
-	doer := &fakeHTTPDoer{fn: func(request *http.Request) (*http.Response, error) {
-		if request.Context() != ctx {
-			t.Fatal("executor did not preserve request context")
-		}
-		if request.Method != "POST" || request.Header.Get("Content-Type") != RegistrationFormContentType {
-			t.Fatalf("request = %s headers=%#v", request.Method, request.Header)
-		}
-		body, err := io.ReadAll(request.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(body) != string(form.Body) {
-			t.Fatalf("request body = %q, want %q", body, form.Body)
-		}
-		return &http.Response{StatusCode: 500, Header: http.Header{"Set-Cookie": []string{"must-not-escape"}}, Body: responseBody}, nil
-	}}
-	executor, err := NewHTTPExecutor(doer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response, err := executor.ExecuteForm(ctx, form)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if doer.calls != 1 || !responseBody.closed {
-		t.Fatalf("calls=%d closed=%v", doer.calls, responseBody.closed)
-	}
-	if response.StatusCode != 500 || string(response.Body) != `{"status":0}` {
-		t.Fatalf("response = %#v", response)
-	}
-	response.Body[0] = 'X'
-	if responseBody.closed == false {
-		t.Fatal("body was not closed")
-	}
-	if strings.Contains(response.String(), `{"status":0}`) {
-		t.Fatal("response String leaked body")
-	}
 }
 
 func TestHTTPExecutorBodyReadSizeAndCloseFailures(t *testing.T) {
