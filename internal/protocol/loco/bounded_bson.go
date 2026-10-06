@@ -238,13 +238,6 @@ func spendBSONWork(options BSONDecodeOptions, work *int) error {
 	return nil
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func skipObservedValue(src []byte, pos int, typ byte) (int, error) {
 	readN := func(n int) (int, error) {
 		if n < 0 || n > len(src)-pos {

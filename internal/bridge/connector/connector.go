@@ -15,6 +15,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/database"
 
 	"github.com/frrad/mooo/internal/authstate"
+	"github.com/frrad/mooo/internal/client"
 )
 
 //go:embed example-config.yaml
@@ -25,10 +26,25 @@ type Config struct {
 	// ProfileDir holds operator-created Kakao profiles. Each profile is a
 	// private auth-state file plus its lock and continuity siblings.
 	ProfileDir string `yaml:"profile_dir"`
+
+	// BSONShadow configures the shadow comparison of every incoming LOCO body
+	// against the source-compatible observed decoder.
+	BSONShadow BSONShadowConfig `yaml:"bson_shadow"`
+}
+
+// BSONShadowConfig is the bridge-facing form of client.BSONShadowConfig.
+type BSONShadowConfig struct {
+	// Mode is "off", "log" or "panic"; empty means log. Panic lets any remote
+	// sender who can cause a discrepancy crash the bridge.
+	Mode string `yaml:"mode"`
+	// DumpDir optionally receives private raw-body dumps (mode 0700 required).
+	DumpDir string `yaml:"dump_dir"`
 }
 
 func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "profile_dir")
+	helper.Copy(up.Str, "bson_shadow", "mode")
+	helper.Copy(up.Str, "bson_shadow", "dump_dir")
 }
 
 // ErrUnsafeEventDelivery reports a bridge configuration under which
@@ -71,6 +87,46 @@ func (kc *KakaoConnector) Start(ctx context.Context) error {
 	if !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
 		return errors.New("connector: profile_dir must be a directory accessible only by its owner")
 	}
+	return kc.configureBSONShadow()
+}
+
+// configureBSONShadow validates the shadow settings and installs them
+// process-wide, reporting discrepancies through the bridge logger. Events are
+// log-safe; raw bodies only ever go to the private dump directory.
+func (kc *KakaoConnector) configureBSONShadow() error {
+	mode, err := client.ParseBSONShadowMode(kc.Config.BSONShadow.Mode)
+	if err != nil {
+		return fmt.Errorf("connector: network.bson_shadow.mode: %w", err)
+	}
+	if dir := kc.Config.BSONShadow.DumpDir; dir != "" {
+		info, err := os.Stat(dir)
+		if err != nil {
+			return fmt.Errorf("connector: network.bson_shadow.dump_dir: %w", err)
+		}
+		if !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
+			return errors.New("connector: network.bson_shadow.dump_dir must be a directory accessible only by its owner")
+		}
+	}
+	log := kc.Bridge.Log.With().Str("component", "bson_shadow").Logger()
+	client.SetBSONShadow(client.BSONShadowConfig{
+		Mode:    mode,
+		DumpDir: kc.Config.BSONShadow.DumpDir,
+		Report: func(event client.BSONShadowEvent) {
+			entry := log.Warn().
+				Str("method", event.Method).
+				Uint32("packet_id", event.PacketID).
+				Int("body_len", event.BodyLen).
+				Str("body_sha256", event.BodySHA256).
+				Interface("discrepancies", event.Discrepancies)
+			if event.DumpPath != "" {
+				entry = entry.Str("dump_path", event.DumpPath)
+			}
+			if event.DumpErr != nil {
+				entry = entry.AnErr("dump_error", event.DumpErr)
+			}
+			entry.Msg("BSON shadow decoder disagrees with production decoder")
+		},
+	})
 	return nil
 }
 

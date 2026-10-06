@@ -1,7 +1,9 @@
 # Bounded BSON validation API
 
-Status: opt-in implementation preparation. This package is not wired into
-`Packet`, `Session`, or the default incoming push path.
+Status: used only as a shadow decoder. Production callers keep decoding with
+mongo-driver; `internal/protocol/bsonshadow` decodes every incoming body with
+both and reports differences (see "Shadow comparison" below). The observed
+decoder never changes what callers receive.
 
 The official `dictionaryWithBSONData:` cursor starts after the four-byte BSON
 document prefix and does not use the declared document length. The source
@@ -87,3 +89,41 @@ separate decisions.
 Provenance is the private decoder receipt for IMP `0x1017eb434` and cursor
 helper `0x10164bb54`, with the public bounded source contract in
 `PACKET-DATA-DECODER-CONTRACT.md`.
+
+## Shadow comparison
+
+`wireConn.readWithHeaderObserverAndProgress` is the single point every
+incoming LOCO packet passes through (session read loop, the synchronous login
+handshake and media connections). For each BSON body it runs
+`bsonshadow.Compare`, which decodes the body with mongo-driver (as `bson.D`,
+collapsed with struct-decoding semantics: a later duplicate key, including a
+null, replaces an earlier one) and with `DecodeObservedBSON`, then reports
+every field-level difference. Kinds: `mongo-rejects`, `official-rejects`,
+`shadow-bounds`, `official-partial`, `official-dropped-invalid-utf8`,
+`official-ignores-type`, `mongo-only`, `official-only`, `null-overwrites`,
+`string-nul-truncated`, `type-differs`, `value-differs`, `array-length`.
+
+The only case not reported is a mongo null or undefined for a key the official
+result lacks: struct decoding gives that field its zero value, the same
+observable state as an absent key. Key order inside a document is not
+compared because the official result is an unordered dictionary; array order
+is compared.
+
+Reports are log-safe: paths, kinds and value descriptors (type and length),
+never values. Keys that do not look like protocol field names are replaced by
+a short hash. Raw bodies are written only to an explicitly configured private
+dump directory (0700, files 0600), one JSON file per distinct body, with enough
+data (method, header, body hex) to reproduce the comparison in isolation.
+Turning a dump into a committed fixture requires manual sanitization.
+
+Modes are `off`, `log` and `panic`. Test binaries default to `panic`, the lab
+CLI defaults to `panic`, and the bridge defaults to `log`
+(`network.bson_shadow.mode`). Panic is not used in the bridge because any
+remote sender able to trigger a discrepancy could otherwise crash it.
+`MOOO_BSON_SHADOW` overrides the default mode. Bodies above 1 MiB are skipped
+and counted.
+
+Test harnesses that decode mooo's own outgoing requests bypass the shadow: the
+first suite run flagged the LOGINLIST request's binary `rp` field, which the
+official decoder recognizes but never assigns. That is mooo's request, not
+server data, so it is out of scope for the comparison.

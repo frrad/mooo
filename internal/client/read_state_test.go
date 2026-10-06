@@ -98,7 +98,7 @@ func TestClientMarkReadSerializesDuplicateWatermarks(t *testing.T) {
 	firstRequest := make(chan struct{})
 	allowFirstResponse := make(chan struct{})
 	backend := newScriptedBackend(t, false, func(server *wireConn) error {
-		request, err := server.read()
+		request, err := server.readRequest()
 		if err != nil {
 			return err
 		}

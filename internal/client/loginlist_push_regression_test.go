@@ -25,7 +25,7 @@ func TestConnectSessionPreservesMessagesBeforeLoginListReply(t *testing.T) {
 	)))
 	keepOpen := make(chan struct{})
 	carriage := newScriptedBackend(t, true, func(server *wireConn) error {
-		request, err := server.read()
+		request, err := server.readRequest()
 		if err != nil {
 			return err
 		}
