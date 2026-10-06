@@ -3,3 +3,15 @@
 # ".continuity" files the client keeps beside it. The directory must be
 # accessible only by the bridge's user (mode 0700).
 profile_dir: ./profiles
+
+# Shadow comparison of every incoming LOCO body. Production decoding is
+# unchanged; a second, source-compatible decoder reads the same bytes and any
+# difference in the data callers would see is reported.
+bson_shadow:
+    # off, log or panic. Empty means log. Do not use panic in production: any
+    # sender who can trigger a discrepancy could then crash the bridge.
+    mode: ""
+    # Optional private directory (mode 0700) for raw-body dumps that allow an
+    # isolated reproduction. Dumps contain private message content; never
+    # commit or share them unsanitized.
+    dump_dir: ""
