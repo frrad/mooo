@@ -358,10 +358,6 @@ func connectSession(ctx context.Context, state authstate.State) (*Session, error
 	return connectSessionWithResumeOptions(ctx, state, continuity.Checkpoint{Version: continuity.Version}, productionSessionDialers(), pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout})
 }
 
-func connectSessionWithDialers(ctx context.Context, state authstate.State, dialers sessionDialers) (*Session, error) {
-	return connectSessionWithResume(ctx, state, continuity.Checkpoint{Version: continuity.Version}, dialers)
-}
-
 func connectSessionWithResume(ctx context.Context, state authstate.State, resume continuity.Checkpoint, dialers sessionDialers) (*Session, error) {
 	return connectSessionWithResumeOptions(ctx, state, resume, dialers, pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout})
 }
@@ -631,10 +627,6 @@ func (s *Session) allocateRequestIDLocked() (uint32, error) {
 			return 0, ErrProtocol
 		}
 	}
-}
-
-func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, command string, body []byte) error {
-	return s.writeRequestWithResult(ctx, wire, id, command, body, nil)
 }
 
 func (s *Session) writeRequestWithResult(ctx context.Context, wire *wireConn, id uint32, command string, body []byte, onResult func(sessionlogin.OutSegmentWriteResult)) error {
@@ -1002,17 +994,6 @@ func (s *Session) bodyProgressCallbacks() bodyProgressCallbacks {
 		partial:  func() { _, _ = owner.Toggle(0); _, _ = owner.Toggle(1) },
 		complete: func() { _, _ = owner.Toggle(0) },
 	}
-}
-
-func (s *Session) readLoop() {
-	s.mu.Lock()
-	if s.readLoopStarted {
-		s.mu.Unlock()
-		return
-	}
-	s.readLoopStarted = true
-	s.mu.Unlock()
-	s.readLoopBody()
 }
 
 func (s *Session) startReadLoop() {
@@ -1643,25 +1624,6 @@ func setLoginTarget(targets *[]continuity.ChatTarget, target continuity.ChatTarg
 		}
 	}
 	*targets = append(*targets, target)
-}
-
-func parseChatPage(page bson.Raw) ([]bson.Raw, bool, int64, int64, error) {
-	chats, eof, err := parseChatPageContent(page)
-	if err != nil {
-		return nil, false, 0, 0, err
-	}
-	if eof {
-		return chats, true, 0, 0, nil
-	}
-	lastTokenID, err := bsonInt64(page, "lastTokenId")
-	if err != nil {
-		return nil, false, 0, 0, ErrProtocol
-	}
-	lastChatID, err := bsonInt64(page, "lastChatId")
-	if err != nil {
-		return nil, false, 0, 0, ErrProtocol
-	}
-	return chats, false, lastTokenID, lastChatID, nil
 }
 
 func parseChatPageContent(page bson.Raw) ([]bson.Raw, bool, error) {

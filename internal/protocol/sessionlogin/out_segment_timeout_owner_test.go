@@ -1,6 +1,9 @@
 package sessionlogin
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -341,4 +344,33 @@ func TestOutSegmentTimeoutOwnerCanonicalToggleVectors(t *testing.T) {
 			}
 		})
 	}
+}
+
+type writeCallbackContract struct {
+	Cases []writeCallbackCase `json:"cases"`
+}
+
+type writeCallbackCase struct {
+	Name                    string   `json:"name"`
+	Callback                string   `json:"callback"`
+	TimeoutAdmissionSeconds float64  `json:"timeout_admission_seconds"`
+	TimeoutExecutionSeconds float64  `json:"timeout_execution_seconds"`
+	EnableByte              int      `json:"enable_byte"`
+	ExpectedScheduledDelay  *float64 `json:"expected_scheduled_delay_seconds"`
+	ExpectedEffects         []string `json:"expected_effects"`
+}
+
+func loadWriteCallbackContract(path string) (writeCallbackContract, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return writeCallbackContract{}, err
+	}
+	var contract writeCallbackContract
+	if err := json.Unmarshal(body, &contract); err != nil {
+		return contract, err
+	}
+	if len(contract.Cases) == 0 {
+		return contract, fmt.Errorf("no cases in %s", path)
+	}
+	return contract, nil
 }

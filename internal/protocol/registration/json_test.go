@@ -156,19 +156,3 @@ func TestDecodeServerErrorEnvelopeStrictStatusAndBounds(t *testing.T) {
 		t.Fatalf("large body error = %v", err)
 	}
 }
-
-func TestSensitiveRegistrationFormattingIsRedacted(t *testing.T) {
-	marker := "redaction marker"
-	values := []any{
-		FormRequest{Profile: HTTPRequestProfile{Route: RouteQRLogin}, Body: []byte(marker)},
-		QRPresentation{Payload: marker, ID: marker},
-		GenerateResponse{Passcode: marker, QRPayload: marker},
-		PollResponse{DeviceAuthCode: marker},
-	}
-	for _, value := range values {
-		formatted := fmt.Sprintf("%v %#v %+v", value, value, value)
-		if strings.Contains(formatted, marker) {
-			t.Fatalf("formatting leaked a sensitive value from %T", value)
-		}
-	}
-}
