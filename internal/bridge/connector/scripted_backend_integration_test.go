@@ -268,14 +268,6 @@ func scriptedScenario(t *testing.T, maxLogID int64, trigger <-chan struct{}, wit
 
 func scriptedScenarioWithIDs(t *testing.T, maxLogID int64, trigger <-chan struct{}, withWrite bool, replayLogID, liveLogID int64, pushLive bool) (client.TestDialers, []*testloco.Backend, *int) {
 	t.Helper()
-	booking, err := testloco.NewBackend(false, requestStep("GETCONF", bson.D{{Key: "status", Value: int32(0)}, {Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}}, {Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}}}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	checkin, err := testloco.NewBackend(false, requestStep("CHECKIN", bson.D{{Key: "status", Value: int32(0)}, {Key: "host", Value: "carriage.invalid"}, {Key: "port", Value: int32(995)}}))
-	if err != nil {
-		t.Fatal(err)
-	}
 	loginReply := bson.D{{Key: "status", Value: int32(0)}, {Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: testChatID}, {Key: "l", Value: bson.D{{Key: "chatId", Value: testChatID}, {Key: "logId", Value: maxLogID}}}}}}, {Key: "eof", Value: true}, {Key: "lastTokenId", Value: int64(10)}, {Key: "lbk", Value: int32(1)}}
 	syncReply := bson.D{{Key: "status", Value: int32(0)}, {Key: "chatLogs", Value: bson.A{bson.D{{Key: "logId", Value: replayLogID}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "replay"}}}}}
 	steps := []testloco.Step{requestStep("LOGINLIST", loginReply), requestStep("SYNCMSG", syncReply)}
@@ -291,6 +283,22 @@ func scriptedScenarioWithIDs(t *testing.T, maxLogID int64, trigger <-chan struct
 	} else if withWrite {
 		steps = append(steps, writeDropStep(writes))
 		steps = append(steps, holdStep())
+	}
+	dialers, backends := scriptedDialers(t, steps...)
+	return dialers, backends, writes
+}
+
+// scriptedDialers serves booking and checkin and runs steps on the secure
+// carriage.
+func scriptedDialers(t *testing.T, steps ...testloco.Step) (client.TestDialers, []*testloco.Backend) {
+	t.Helper()
+	booking, err := testloco.NewBackend(false, requestStep("GETCONF", bson.D{{Key: "status", Value: int32(0)}, {Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}}, {Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkin, err := testloco.NewBackend(false, requestStep("CHECKIN", bson.D{{Key: "status", Value: int32(0)}, {Key: "host", Value: "carriage.invalid"}, {Key: "port", Value: int32(995)}}))
+	if err != nil {
+		t.Fatal(err)
 	}
 	carriage, err := testloco.NewBackend(true, steps...)
 	if err != nil {
@@ -316,7 +324,7 @@ func scriptedScenarioWithIDs(t *testing.T, maxLogID int64, trigger <-chan struct
 		}
 		return client.TestConnection{Conn: carriage.Endpoint.Client, Secure: carriage.Endpoint.ClientSecure}, nil
 	}}
-	return dialers, []*testloco.Backend{booking, checkin, carriage}, writes
+	return dialers, []*testloco.Backend{booking, checkin, carriage}
 }
 
 func requestStep(method string, reply bson.D) testloco.Step {

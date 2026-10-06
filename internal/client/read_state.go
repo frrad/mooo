@@ -21,7 +21,8 @@ func (s *Session) MarkRead(ctx context.Context, chatID, watermark int64) (syncms
 }
 
 // MarkRead persists a successful read acknowledgement so a restarted client
-// does not send the same watermark again. Calls for one checkpoint are
+// does not send the same watermark again. Only MarkRead writes this
+// checkpoint; catch-up SYNCMSG pages never suppress an acknowledgement. Calls for one checkpoint are
 // serialized per Client so the check/request/commit sequence is atomic. Open's
 // profile lease ensures that only one Client owns a profile across processes.
 func (c *Client) MarkRead(ctx context.Context, chatID, watermark int64) (syncmsg.Response, error) {
