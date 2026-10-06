@@ -1268,7 +1268,17 @@ func (w *wireConn) readWithHeaderObserver(observe func(loco.Header)) (loco.Packe
 	return w.readWithHeaderObserverAndProgress(observe, bodyProgressCallbacks{})
 }
 
+// readWithHeaderObserverAndProgress is the single point every incoming LOCO
+// packet passes through, so the BSON shadow comparison runs here.
 func (w *wireConn) readWithHeaderObserverAndProgress(observe func(loco.Header), progress bodyProgressCallbacks) (loco.Packet, error) {
+	packet, err := w.readUnshadowed(observe, progress)
+	if err == nil {
+		shadowDecode(packet)
+	}
+	return packet, err
+}
+
+func (w *wireConn) readUnshadowed(observe func(loco.Header), progress bodyProgressCallbacks) (loco.Packet, error) {
 	// Plain transport retains the reviewed header-before-body boundary. Exact
 	// reads naturally preserve split headers/bodies and leave any coalesced
 	// following frame for the next call.

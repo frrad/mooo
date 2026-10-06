@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/frrad/mooo/internal/protocol/loco"
-	"github.com/frrad/mooo/internal/protocol/notiread"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -78,33 +77,6 @@ func TestSessionCloseFailsPendingRequestThroughReaderTeardown(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("pending request was not failed by reader teardown")
 	}
-}
-
-func TestNotiReadDisconnectFailsOnceWithoutReplay(t *testing.T) {
-	requests := 0
-	backend := newScriptedBackend(t, false, disconnectAfterRequest("NOTIREAD", &requests))
-	session := &Session{
-		wire:    backend.client,
-		nextID:  100000000,
-		pushes:  make(chan loco.Packet, 1),
-		pending: make(map[uint32]chan requestResult),
-	}
-	go session.readLoop()
-
-	body, err := (notiread.Request{
-		ChatID: 42, LinkID: 7, Watermark: 99, NotiRead: true, ServiceID: 3,
-	}).MarshalBSON()
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = session.Request(context.Background(), notiread.Command, body)
-	if err == nil {
-		t.Fatal("NOTIREAD unexpectedly succeeded after disconnect")
-	}
-	if requests != 1 {
-		t.Fatalf("NOTIREAD requests = %d, want one request without replay", requests)
-	}
-	backend.wait(t)
 }
 
 func TestSessionResponseRemovesPendingCallback(t *testing.T) {

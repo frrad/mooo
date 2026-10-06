@@ -11,6 +11,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/bridgeconfig"
 
 	"github.com/frrad/mooo/internal/authstate"
+	"github.com/frrad/mooo/internal/client"
 )
 
 func TestEventDeliveryMustBeInline(t *testing.T) {
@@ -57,6 +58,44 @@ func TestStartRequiresPrivateProfileDir(t *testing.T) {
 	buffered.Bridge.Config.PortalEventBuffer = 64
 	if err := buffered.Start(context.Background()); !errors.Is(err, ErrUnsafeEventDelivery) {
 		t.Fatalf("buffered bridge config error = %v", err)
+	}
+}
+
+func TestStartValidatesBSONShadowConfig(t *testing.T) {
+	t.Cleanup(func() { client.SetBSONShadow(client.BSONShadowConfig{}) })
+	profiles := t.TempDir()
+	if err := os.Chmod(profiles, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	newConnector := func(shadow BSONShadowConfig) *KakaoConnector {
+		return &KakaoConnector{
+			Bridge: &bridgev2.Bridge{Config: &bridgeconfig.BridgeConfig{PortalEventBuffer: 0}},
+			Config: Config{ProfileDir: profiles, BSONShadow: shadow},
+		}
+	}
+
+	if err := newConnector(BSONShadowConfig{Mode: "loud"}).Start(context.Background()); err == nil {
+		t.Fatal("unknown shadow mode accepted")
+	}
+
+	shared := t.TempDir()
+	if err := os.Chmod(shared, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := newConnector(BSONShadowConfig{Mode: "log", DumpDir: shared}).Start(context.Background()); err == nil {
+		t.Fatal("group/world-accessible dump dir accepted")
+	}
+
+	if err := newConnector(BSONShadowConfig{Mode: "log", DumpDir: filepath.Join(profiles, "missing")}).Start(context.Background()); err == nil {
+		t.Fatal("missing dump dir accepted")
+	}
+
+	private := t.TempDir()
+	if err := os.Chmod(private, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := newConnector(BSONShadowConfig{Mode: "log", DumpDir: private}).Start(context.Background()); err != nil {
+		t.Fatalf("valid shadow config rejected: %v", err)
 	}
 }
 

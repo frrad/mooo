@@ -42,6 +42,7 @@ type kakaoClient interface {
 	SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error)
 	SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error)
 	SendImage(ctx context.Context, chatID int64, data []byte) (media.SendResult, error)
+	MarkRead(ctx context.Context, chatID, watermark int64) (syncmsg.Response, error)
 	Close() error
 	Shutdown(ctx context.Context) error
 }
@@ -694,6 +695,9 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		}
 		return true
 	}
+	if notice, ok := evt.(events.ReadStateChanged); ok {
+		return kc.handleReadState(notice)
+	}
 	remote := kc.remoteEventFor(evt)
 	if remote == nil {
 		kc.log().Debug().Str("kind", string(evt.Kind())).Msg("Ignoring Kakao event not bridged yet")
@@ -1068,11 +1072,12 @@ func userInfoForMember(profile chatmeta.Member) *bridgev2.UserInfo {
 
 func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Portal) *event.RoomFeatures {
 	return &event.RoomFeatures{
-		ID:               "com.github.frrad.mooo.capabilities.2026_10_04.photos1.reactions1",
+		ID:               "com.github.frrad.mooo.capabilities.2026_10_05.photos1.reactions1.receipts1",
 		MaxTextLength:    maxTextLength,
 		Reply:            event.CapLevelPartialSupport,
 		Reaction:         event.CapLevelPartialSupport,
 		ReactionCount:    1,
+		ReadReceipts:     true,
 		AllowedReactions: []string{"❤️", "👍", "✅", "😆", "😮", "😢"},
 		File: event.FileFeatureMap{event.MsgImage: &event.FileFeatures{
 			MimeTypes: map[string]event.CapabilitySupportLevel{"image/jpeg": event.CapLevelPartialSupport, "image/png": event.CapLevelPartialSupport},

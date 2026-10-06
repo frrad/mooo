@@ -135,10 +135,10 @@ behaviour those fixtures describe.
       models, the CHGMETA/CHGCHATST/CHGMCMETA reducers, and `loco.Parser`.
 - [x] Move fixtures to `research/fixtures/` with `provenance`, enforced by
       `internal/testpolicy`.
+- [x] Read receipts: the bridge now drives `MarkRead` and `DECUNREAD`
+      directly; `readstate` and `notiread` were deleted (#232).
 - [ ] Connect or delete the remaining test-only code (`deadcode -tags=goolm
       ./...`). Each is a real capability that production never binds:
-  - Read receipts (`readstate`, `notiread`): being connected to the bridge
-    separately.
   - Push delivery receipts: `Session.BindPushReceipt`, the sessionlogin
     `push_receipt_*` owners, `receipt_*` builders, `sgjson_object`,
     `foundation_ti`, and the client out-segment worker/submitter. Needs a
