@@ -92,4 +92,4 @@ handling.
 - Body setter dispatch `0x10190cf60` resolves to `setBody:`.
 - Synthetic cases, including raw BSON hex, uint64 input-length arithmetic,
   duplicate-key replacement, and expected cursor widths, are in
-  `internal/protocol/sessionlogin/testdata/reconnect/rc-q5-packet-data-decoder.json`.
+  `research/fixtures/reconnect/rc-q5-packet-data-decoder.json`.

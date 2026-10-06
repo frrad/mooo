@@ -3,7 +3,7 @@
 Status: reviewed static source and framework behavior; runtime delivery and
 outer exception handling remain unexecuted. Client build: macOS KakaoTalk
 26.8.0. The synthetic contract is in
-`internal/protocol/sessionlogin/testdata/reconnect/rc-q5-incoming-push-notices.json`.
+`research/fixtures/reconnect/rc-q5-incoming-push-notices.json`.
 
 ## Observed chain
 

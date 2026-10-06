@@ -1,0 +1,74 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-02",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/session-login/EVIDENCE.md"
+  },
+  "schema": "session-login-token-dirty-v1",
+  "status": "observed model dirty path; durable consumer unresolved",
+  "vectors": [
+    {
+      "name": "new model initialization registers changed object",
+      "initialization": "non_database",
+      "field": "lastTokenId",
+      "expect": ["initialization_defaults", "dirty_true", "nest_registration"],
+      "execution": "observed"
+    },
+    {
+      "name": "observer event with changed blind token records old value",
+      "initialization": "non_database",
+      "field": "lastBlindToken",
+      "old": 7,
+      "incoming": 8,
+      "expect": ["observer_event_input", "old_value_recorded", "dirty_true", "nest_registration"],
+      "execution": "observed"
+    },
+    {
+      "name": "observer event with equal token has no changed field delta",
+      "initialization": "non_database",
+      "field": "lastTokenId",
+      "old": 42,
+      "incoming": 42,
+      "expect": ["observer_event_input", "no_changed_field_delta"],
+      "execution": "observed"
+    },
+    {
+      "name": "database-loaded observer event re-registers changed object",
+      "initialization": "database",
+      "field": "lastTokenId",
+      "old": 41,
+      "incoming": 42,
+      "expect": ["observer_event_input", "old_value_recorded", "dirty_true", "nest_registration"],
+      "execution": "observed"
+    },
+    {
+      "name": "automatic notification delivery policy remains unresolved",
+      "initialization": "database",
+      "field": "lastTokenId",
+      "old": 41,
+      "incoming": 42,
+      "expect": ["setter_notification_delivery_unresolved"],
+      "execution": "unresolved"
+    },
+    {
+      "name": "dirty transaction save and commit result",
+      "initialization": "non_database",
+      "field": "lastTokenId",
+      "old": 41,
+      "incoming": 42,
+      "expect": ["save_order_unresolved", "commit_result_unresolved", "storage_error_unresolved"],
+      "execution": "unresolved"
+    },
+    {
+      "name": "exception rollback and rethrow",
+      "initialization": "non_database",
+      "field": "lastTokenId",
+      "old": 41,
+      "incoming": 42,
+      "expect": ["revert_changed_objects", "rollback", "clear_changed_registry", "rethrow", "token_mapping_unresolved"],
+      "execution": "observed_generic"
+    }
+  ]
+}

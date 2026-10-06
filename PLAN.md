@@ -133,7 +133,8 @@ behaviour those fixtures describe.
       sessionlogin ping-intent, ping-status, status-handler, send-order,
       reconnect-policy, in-segment-timeout, and token cursor/helper/observer
       models, the CHGMETA/CHGCHATST/CHGMCMETA reducers, and `loco.Parser`.
-- [ ] Move fixtures to `research/fixtures/` with `provenance`.
+- [x] Move fixtures to `research/fixtures/` with `provenance`, enforced by
+      `internal/testpolicy`.
 - [ ] Connect or delete the remaining test-only code (`deadcode -tags=goolm
       ./...`). Each is a real capability that production never binds:
   - Read receipts (`readstate`, `notiread`): being connected to the bridge

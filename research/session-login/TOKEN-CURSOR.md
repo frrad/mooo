@@ -29,7 +29,7 @@ that caller policy is a queued design boundary, not an observed durable write.
 
 ## Synthetic vectors
 
-The vectors in `internal/protocol/sessionlogin/testdata/token-cursor-unresolved.json`
+The vectors in `research/fixtures/session-login/token-cursor-unresolved.json`
 cover strict signed comparisons across negative and nonnegative pure-domain
 values, the observed negative-current/zero-incoming assertion branch, independent
 token widths, and the unresolved durable-policy branch. Wire

@@ -1,0 +1,307 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-02",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/SECURE-FRAMING.md"
+  },
+  "status": "reviewed-static-unexecuted-runtime",
+  "question": "RC-Q5",
+  "cases": [
+    {
+      "name": "crypto header zero loops header",
+      "crypto_present": true,
+      "read_tag": 0,
+      "prefix_value": 0,
+      "expected": [
+        "header_read_length_4",
+        "header_timeout_minus_one",
+        "header_tag_zero",
+        "header_prefix_zero",
+        "read_header_again"
+      ]
+    },
+    {
+      "name": "crypto header nonzero enters body",
+      "crypto_present": true,
+      "read_tag": 0,
+      "prefix_value": 1,
+      "expected": [
+        "header_read_length_4",
+        "header_timeout_minus_one",
+        "header_tag_zero",
+        "header_prefix_nonzero",
+        "read_body_length"
+      ]
+    },
+    {
+      "name": "plain header supplies producer",
+      "crypto_present": false,
+      "read_tag": 0,
+      "expected": [
+        "header_read_length_22",
+        "header_timeout_minus_one",
+        "header_tag_zero",
+        "supply_raw_data"
+      ]
+    },
+    {
+      "name": "body crypto decrypts before producer",
+      "crypto_present": true,
+      "read_tag": 1,
+      "expected": [
+        "route_body",
+        "decrypt_accumulated",
+        "supply_raw_data"
+      ]
+    },
+    {
+      "name": "body plain supplies producer",
+      "crypto_present": false,
+      "read_tag": 1,
+      "expected": [
+        "route_body",
+        "supply_raw_data"
+      ]
+    },
+    {
+      "name": "other tag routes body",
+      "crypto_present": true,
+      "read_tag": 2,
+      "expected": [
+        "route_body",
+        "decrypt_accumulated",
+        "supply_raw_data"
+      ]
+    },
+    {
+      "name": "producer header disarm precedes complete packet",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 30,
+      "body_length": 8,
+      "current_header_present": false,
+      "delegate_supports_header": true,
+      "delegate_supports_packet": true,
+      "timeout_identity_matches": true,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "decode_packet_id_u32",
+        "decode_status_u16",
+        "decode_method_utf8_11",
+        "decode_body_type_u8",
+        "decode_body_length_u32",
+        "header_callback_if_supported",
+        "conditional_timeout_disarm_after_header",
+        "complete_packet_callback_after_body"
+      ],
+      "delegate_is_agent": true,
+      "expected_buffered_bytes": 0,
+      "expected_current_header_present": false,
+      "expected_consumer_bytes_needed": 0
+    },
+    {
+      "name": "producer existing header waits for complete body",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 22,
+      "body_length": 8,
+      "current_header_present": true,
+      "delegate_supports_packet": true,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "producer_return_remaining_bytes"
+      ],
+      "expected_buffered_bytes": 22,
+      "expected_consumer_bytes_needed": 8
+    },
+    {
+      "name": "producer split body remains buffered",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 25,
+      "body_length": 8,
+      "current_header_present": true,
+      "delegate_supports_packet": true,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "producer_return_remaining_bytes"
+      ],
+      "expected_buffered_bytes": 25,
+      "expected_consumer_bytes_needed": 5
+    },
+    {
+      "name": "producer loops over two complete frames",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 60,
+      "body_length": 8,
+      "current_header_present": false,
+      "delegate_supports_header": true,
+      "delegate_supports_packet": true,
+      "timeout_identity_matches": false,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "decode_packet_id_u32",
+        "decode_status_u16",
+        "decode_method_utf8_11",
+        "decode_body_type_u8",
+        "decode_body_length_u32",
+        "header_callback_if_supported",
+        "complete_packet_callback_after_body",
+        "decode_packet_id_u32",
+        "decode_status_u16",
+        "decode_method_utf8_11",
+        "decode_body_type_u8",
+        "decode_body_length_u32",
+        "header_callback_if_supported",
+        "complete_packet_callback_after_body"
+      ],
+      "body_lengths": [
+        8,
+        8
+      ],
+      "expected_buffered_bytes": 0,
+      "expected_current_header_present": false,
+      "expected_consumer_bytes_needed": 0
+    },
+    {
+      "name": "producer header callback absent delegate",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 30,
+      "body_length": 8,
+      "current_header_present": false,
+      "delegate_supports_header": false,
+      "delegate_supports_packet": true,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "decode_packet_id_u32",
+        "decode_status_u16",
+        "decode_method_utf8_11",
+        "decode_body_type_u8",
+        "decode_body_length_u32",
+        "complete_packet_callback_after_body"
+      ],
+      "expected_buffered_bytes": 0,
+      "expected_current_header_present": false,
+      "expected_consumer_bytes_needed": 0
+    },
+    {
+      "name": "producer packet callback absent delegate",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 30,
+      "body_length": 8,
+      "current_header_present": false,
+      "delegate_supports_header": true,
+      "delegate_supports_packet": false,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "decode_packet_id_u32",
+        "decode_status_u16",
+        "decode_method_utf8_11",
+        "decode_body_type_u8",
+        "decode_body_length_u32",
+        "header_callback_if_supported"
+      ],
+      "expected_buffered_bytes": 0,
+      "expected_current_header_present": false,
+      "expected_consumer_bytes_needed": 0
+    },
+    {
+      "name": "producer below minimum retains partial buffer",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 10,
+      "body_length": 8,
+      "current_header_present": false,
+      "delegate_supports_header": true,
+      "delegate_supports_packet": true,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "buffer_retained_below_minimum",
+        "producer_return_zero_below_minimum"
+      ],
+      "expected_buffered_bytes": 10,
+      "expected_consumer_bytes_needed": 12
+    },
+    {
+      "name": "producer existing header completes body",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 30,
+      "body_length": 8,
+      "current_header_present": true,
+      "delegate_supports_packet": true,
+      "expected_buffered_bytes": 0,
+      "expected_consumer_bytes_needed": 0,
+      "expected_current_header_present": false,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "complete_packet_callback_after_body"
+      ]
+    },
+    {
+      "name": "producer identity match wrong delegate does not disarm",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 30,
+      "body_length": 8,
+      "current_header_present": false,
+      "delegate_supports_header": true,
+      "delegate_supports_packet": true,
+      "delegate_is_agent": false,
+      "timeout_identity_matches": true,
+      "expected_buffered_bytes": 0,
+      "expected_consumer_bytes_needed": 0,
+      "expected_current_header_present": false,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "decode_packet_id_u32",
+        "decode_status_u16",
+        "decode_method_utf8_11",
+        "decode_body_type_u8",
+        "decode_body_length_u32",
+        "header_callback_if_supported",
+        "complete_packet_callback_after_body"
+      ]
+    },
+    {
+      "name": "producer empty body frame",
+      "crypto_present": false,
+      "read_tag": 1,
+      "accumulated_bytes": 22,
+      "body_lengths": [
+        0
+      ],
+      "current_header_present": false,
+      "delegate_supports_header": true,
+      "delegate_supports_packet": true,
+      "expected_buffered_bytes": 0,
+      "expected_consumer_bytes_needed": 0,
+      "expected_current_header_present": false,
+      "expected": [
+        "route_body",
+        "supply_raw_data",
+        "decode_packet_id_u32",
+        "decode_status_u16",
+        "decode_method_utf8_11",
+        "decode_body_type_u8",
+        "decode_body_length_u32",
+        "header_callback_if_supported",
+        "complete_packet_callback_after_body"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-04",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/PUSH-RECEIPT-NW-SERIALIZATION.md"
+  },
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {"name":"zero_body_packet_data","operation":"packet_data","body_length":0,"first_bson":"","header_data":"484452","expected_header_body_length":0,"expected_capacity":22,"expected_packet_data":"484452","expected_effects":["read_body","first_bson_data","set_header_body_length","read_header_data","read_header_body_length_for_capacity","allocate_mutable_data","append_header_data","check_bson_length","skip_body_append_zero_length"]},
+    {"name":"nonzero_packet_data_second_conversion","operation":"packet_data","body_length":12,"first_bson":"000102030405060708090a0b","second_bson":"0c0d0e0f1011121314151617","header_data":"484452","expected_header_body_length":12,"expected_capacity":34,"expected_packet_data":"4844520c0d0e0f1011121314151617","expected_effects":["read_body","first_bson_data","set_header_body_length","read_header_data","read_header_body_length_for_capacity","allocate_mutable_data","append_header_data","check_bson_length","reread_body","second_bson_data","append_bson_body_data"]},
+    {"name":"packet_data_second_conversion_differs","operation":"packet_data","body_length":4,"first_bson":"00010203","second_bson":"aabbccdd","header_data":"484452","expected_header_body_length":4,"expected_capacity":26,"expected_packet_data":"484452aabbccdd","expected_effects":["read_body","first_bson_data","set_header_body_length","read_header_data","read_header_body_length_for_capacity","allocate_mutable_data","append_header_data","check_bson_length","reread_body","second_bson_data","append_bson_body_data"]},
+    {"name":"packet_data_nil_returns","operation":"nw_send","body_length":0,"packet_data_present":false,"encrypted_data_present":false,"connection_present":true,"expected_effects":["packet_data_nil_return"]},
+    {"name":"zero_length_body_encrypted_send","operation":"nw_send","body_length":0,"packet_data_present":true,"encrypted_data_present":true,"connection_present":true,"expected_effects":["packet_data","bridge_packet_data_to_foundation_data","encrypt_packet_data","bridge_encrypted_data","nw_send_default_message_complete","toggle_out_timeout_true"]},
+    {"name":"nonzero_body_encrypted_send","operation":"nw_send","body_length":12,"packet_data_present":true,"encrypted_data_present":true,"connection_present":true,"expected_effects":["packet_data","bridge_packet_data_to_foundation_data","encrypt_packet_data","bridge_encrypted_data","nw_send_default_message_complete","toggle_out_timeout_true"]},
+    {"name":"encryption_nil_connection_send","operation":"nw_send","body_length":12,"packet_data_present":true,"encrypted_data_present":false,"connection_present":true,"expected_effects":["packet_data","bridge_packet_data_to_foundation_data","encrypt_packet_data","encrypted_data_nil_path","nw_send_default_message_complete","toggle_out_timeout_true"]},
+    {"name":"nonzero_body_without_connection","operation":"nw_send","body_length":12,"packet_data_present":true,"encrypted_data_present":true,"connection_present":false,"expected_effects":["packet_data","bridge_packet_data_to_foundation_data","encrypt_packet_data","bridge_encrypted_data","toggle_out_timeout_true"]}
+  ]
+}

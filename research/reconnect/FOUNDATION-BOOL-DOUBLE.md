@@ -32,7 +32,7 @@ with ObjC type `d`. These are captured platform outcomes, not a proposed
 portable cast implementation.
 
 The synthetic vectors are in
-`internal/protocol/sessionlogin/testdata/reconnect/rc-q5-foundation-bool-double.json`.
+`research/fixtures/reconnect/rc-q5-foundation-bool-double.json`.
 The test parses the captured bool/double input domains and uses explicit
 out-of-range golden cases; it intentionally does not present a generic
 floating-point conversion routine. Private provenance is

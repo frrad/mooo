@@ -1,0 +1,220 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-04",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/PUSH-RECEIPT-NW-SERIALIZATION.md"
+  },
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {
+      "name": "non_dictionary_returns_super_result",
+      "input_kind": "non_dictionary",
+      "expected": null,
+      "effects": [
+        "return_super_result_unchanged"
+      ],
+      "opaque_input": "opaque-superclass-value",
+      "expected_opaque": "opaque-superclass-value"
+    },
+    {
+      "name": "missing_source_skips_assignment_and_removal",
+      "input_kind": "dictionary",
+      "input": {
+        "keep": "v"
+      },
+      "mappings": [
+        [
+          "dst",
+          "src"
+        ]
+      ],
+      "expected": {
+        "keep": "v"
+      },
+      "effects": [
+        "mutable_dictionary",
+        "source_lookup_absent",
+        "skip_assignment",
+        "no_source_removal"
+      ]
+    },
+    {
+      "name": "nsnull_source_removes_without_assignment",
+      "input_kind": "dictionary",
+      "input": {
+        "src": null,
+        "keep": "v"
+      },
+      "mappings": [
+        [
+          "dst",
+          "src"
+        ]
+      ],
+      "expected": {
+        "keep": "v"
+      },
+      "effects": [
+        "mutable_dictionary",
+        "source_lookup_present",
+        "nsnull_guard",
+        "remove_source"
+      ]
+    },
+    {
+      "name": "ordinary_source_renames_and_removes",
+      "input_kind": "dictionary",
+      "input": {
+        "src": "v",
+        "keep": "k"
+      },
+      "mappings": [
+        [
+          "dst",
+          "src"
+        ]
+      ],
+      "expected": {
+        "dst": "v",
+        "keep": "k"
+      },
+      "effects": [
+        "mutable_dictionary",
+        "source_lookup_present",
+        "assign_destination",
+        "remove_source"
+      ]
+    },
+    {
+      "name": "identity_mapping_assigns_then_removes",
+      "input_kind": "dictionary",
+      "input": {
+        "src": "v"
+      },
+      "mappings": [
+        [
+          "src",
+          "src"
+        ]
+      ],
+      "expected": {},
+      "effects": [
+        "mutable_dictionary",
+        "source_lookup_present",
+        "assign_destination",
+        "remove_source"
+      ]
+    },
+    {
+      "name": "block_sync_pair_zero_values_and_base_removal",
+      "input_kind": "dictionary",
+      "input": {
+        "method": "M",
+        "packetId": "7",
+        "revision": "0",
+        "plusRevision": "0",
+        "keep": "k"
+      },
+      "base_remove": [
+        "method",
+        "packetId"
+      ],
+      "mappings": [
+        [
+          "pr",
+          "plusRevision"
+        ],
+        [
+          "r",
+          "revision"
+        ]
+      ],
+      "expected": {
+        "pr": "0",
+        "r": "0",
+        "keep": "k"
+      },
+      "effects": [
+        "mutable_dictionary",
+        "remove_static_property",
+        "remove_static_property",
+        "source_lookup_present",
+        "assign_destination",
+        "remove_source",
+        "source_lookup_present",
+        "assign_destination",
+        "remove_source"
+      ]
+    },
+    {
+      "name": "block_sync_pair_nonzero_values_and_base_removal",
+      "input_kind": "dictionary",
+      "input": {
+        "method": "M",
+        "packetId": "7",
+        "revision": "42",
+        "plusRevision": "99",
+        "keep": "k"
+      },
+      "base_remove": [
+        "method",
+        "packetId"
+      ],
+      "mappings": [
+        [
+          "pr",
+          "plusRevision"
+        ],
+        [
+          "r",
+          "revision"
+        ]
+      ],
+      "expected": {
+        "pr": "99",
+        "r": "42",
+        "keep": "k"
+      },
+      "effects": [
+        "mutable_dictionary",
+        "remove_static_property",
+        "remove_static_property",
+        "source_lookup_present",
+        "assign_destination",
+        "remove_source",
+        "source_lookup_present",
+        "assign_destination",
+        "remove_source"
+      ]
+    },
+    {
+      "name": "base_removal_makes_mapping_source_absent",
+      "input_kind": "dictionary",
+      "input": {
+        "method": "M",
+        "plusRevision": "99"
+      },
+      "base_remove": [
+        "method",
+        "plusRevision"
+      ],
+      "mappings": [
+        [
+          "pr",
+          "plusRevision"
+        ]
+      ],
+      "expected": {},
+      "effects": [
+        "mutable_dictionary",
+        "remove_static_property",
+        "remove_static_property",
+        "source_lookup_absent",
+        "skip_assignment",
+        "no_source_removal"
+      ]
+    }
+  ]
+}
