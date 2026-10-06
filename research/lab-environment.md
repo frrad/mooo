@@ -12,8 +12,9 @@
 - Device profile: Pixel 7
 - Build fingerprint at creation:
   `google/sdk_gphone64_arm64/emu64a:15/AE3A.240806.036/12592187:user/release-keys`
-- State: boots successfully; official Play Store is present; Google sign-in and
-  KakaoTalk installation are pending interactive account setup.
+- State: boots successfully; official Play Store is present. Google sign-in,
+  KakaoTalk installation, and the disposable test account were completed during
+  Phase 1 (see `../PLAN.md`).
 
 The AVD itself lives in the user's Android configuration outside this repository.
 Do not copy emulator userdata into Git.

@@ -22,6 +22,8 @@ non-sensitive experiment identifier.
 
 ## Current documents
 
+- `LIVE-DEBT.md` is the consolidated ledger of live owned-account validation,
+  official-client tracing, and lab-harness work still owed.
 - `prior-art.md` surveys public protocol and bridge work.
 - `client-inventory.md` records sanitized client baselines.
 - `reversing-strategy.md` selects the primary target and defines the first analysis

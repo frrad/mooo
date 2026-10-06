@@ -59,6 +59,10 @@ reproducible research before bridge features.
   consumers, and failure behavior. Do not infer parity from a request constructor
   or one successful live path; record any untraced layer as an explicit gap.
 - Separate observed facts from hypotheses and implementation decisions.
+- Do not run live experiments while implementing. Record each live check or
+  official-client trace a change still needs as a row in
+  [`research/LIVE-DEBT.md`](research/LIVE-DEBT.md) in the same pull request; the
+  maintainer runs that ledger in the lab.
 - Do not copy decompiled source or proprietary assets into the implementation.
   Document behavior in an implementation-neutral specification first.
 - This project is explicitly allowed to publish exact protocol behavior, storage

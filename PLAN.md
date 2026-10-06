@@ -3,6 +3,9 @@
 This is the working plan. Findings can reorder it; each phase should leave behind
 sanitized, reproducible evidence.
 
+Outstanding live validation, official-client tracing, and lab-harness work is
+consolidated in [`research/LIVE-DEBT.md`](research/LIVE-DEBT.md).
+
 ## Phase 0 — foundation
 
 - [x] Choose Go, a public MIT-licensed repository, and a modular architecture.
