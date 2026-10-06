@@ -363,14 +363,6 @@ type messagePosition struct {
 
 const observedPositionLimit = 4096
 
-func decodeEventStreamWithContinuity(raw <-chan loco.Packet, output chan<- events.Result, checkpoint *continuity.Store, delivered func(int64, int64)) {
-	decodeEventStreamWithTerminal(raw, output, checkpoint, delivered, nil)
-}
-
-func decodeEventStreamWithTerminal(raw <-chan loco.Packet, output chan<- events.Result, checkpoint *continuity.Store, delivered func(int64, int64), terminal func()) {
-	decodeEventStreamWithTerminalStop(raw, output, checkpoint, delivered, terminal, nil)
-}
-
 func decodeEventStreamWithTerminalStop(raw <-chan loco.Packet, output chan<- events.Result, checkpoint *continuity.Store, delivered func(int64, int64), terminal func(), stop <-chan struct{}) {
 	defer close(output)
 	seen := make(map[messagePosition]struct{})

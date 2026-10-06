@@ -22,13 +22,6 @@ func (realtimeTimer) AfterFunc(delay time.Duration, callback func()) timerHandle
 	return time.AfterFunc(delay, callback)
 }
 
-// newRealtimePingTimerOwner supplies the Go relative-clock adapter to callers
-// that have already selected an interval. It does not choose bootstrap or
-// configuration policy.
-func newRealtimePingTimerOwner(interval time.Duration, callback func()) *pingTimerOwner {
-	return newPingTimerOwner(realtimeTimer{}, interval, callback)
-}
-
 // pingTimerOwner owns one replaceable relative timer. It has no bootstrap
 // policy and is only armed by completed Session requests through the existing
 // lifecycleScheduler seam.

@@ -37,7 +37,7 @@ delivery can occur after submission, and this source does not establish a
 stronger wall-clock ordering between the two queues.
 
 The synthetic characterization fixture is
-`internal/protocol/sessionlogin/testdata/reconnect/rc-q5-cocoa-async-write.json`.
+`research/fixtures/reconnect/rc-q5-cocoa-async-write.json`.
 It keeps submission, internal-socket, and delegate events as separate ordered
 streams so an implementation cannot pass by collapsing queue work into a
 synchronous write. Runtime execution and lower-level socket error policy remain

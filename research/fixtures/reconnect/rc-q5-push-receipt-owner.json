@@ -1,0 +1,14 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-04",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/PUSH-RECEIPT-OWNER.md"
+  },
+  "status": "reviewed-static-unexecuted-runtime",
+  "evidence": ["RC-BIN-033"],
+  "cases": [
+    {"name":"agent_present_enqueues_cancel_sends_then_enqueues_schedule","agent_present":true,"ping_interval_seconds":12.5,"expected_schedule_delay_seconds":12.5,"cancel_target":"manager_request_owner","inline_target":"carriage_agent","schedule_target":"manager_request_owner","cancel_selector":"sendPingRequest:","schedule_selector":"sendPingRequest:","cancel_object_nil":true,"schedule_object_nil":true,"expect":["enqueue_cancel_ping","inline_push_receipt","enqueue_schedule_ping"]}
+  ]
+}

@@ -8,4 +8,4 @@ A status other than `3` at execution time therefore takes the producer's failure
 
 This establishes the source of the status input, not the external meaning of numeric status values. The relationship between the manager's status-change callback and the agent's status byte is also separate: manager-side status effects do not substitute for the agent status read used by packet production.
 
-Evidence: RC-BIN-026 in `EVIDENCE.md`; synthetic vectors are in `internal/protocol/sessionlogin/testdata/reconnect/rc-q5-agent-status-gate.json`.
+Evidence: RC-BIN-026 in `EVIDENCE.md`; synthetic vectors are in `research/fixtures/reconnect/rc-q5-agent-status-gate.json`.

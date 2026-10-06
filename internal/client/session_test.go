@@ -14,24 +14,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func TestParseChatPageEOF(t *testing.T) {
-	chat, err := bson.Marshal(bson.D{{Key: "chatId", Value: int64(7)}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	page, err := bson.Marshal(bson.D{
-		{Key: "chatDatas", Value: bson.A{bson.Raw(chat)}},
-		{Key: "eof", Value: true},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	chats, eof, token, chatID, err := parseChatPage(page)
-	if err != nil || !eof || token != 0 || chatID != 0 || len(chats) != 1 {
-		t.Fatalf("parseChatPage = (%d, %t, %d, %d, %v)", len(chats), eof, token, chatID, err)
-	}
-}
-
 func TestSessionBackgroundReaderDispatchesIdlePushAndResponse(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	s := &Session{
@@ -100,22 +82,6 @@ func TestSessionBackgroundReaderDispatchesIdlePushAndResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = serverConn.Close()
-}
-
-func TestParseChatPageCursor(t *testing.T) {
-	page, err := bson.Marshal(bson.D{
-		{Key: "chatDatas", Value: bson.A{}},
-		{Key: "eof", Value: false},
-		{Key: "lastTokenId", Value: int64(11)},
-		{Key: "lastChatId", Value: int64(13)},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, eof, token, chatID, err := parseChatPage(page)
-	if err != nil || eof || token != 11 || chatID != 13 {
-		t.Fatalf("parseChatPage = (_, %t, %d, %d, %v)", eof, token, chatID, err)
-	}
 }
 
 func TestUpdateLoginCursorCapturesInventoryAndDeletion(t *testing.T) {

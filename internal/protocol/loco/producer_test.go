@@ -157,11 +157,12 @@ func TestProducerExecutesReviewedSecureFramingProducerVectors(t *testing.T) {
 		Expected        []string `json:"expected"`
 	}
 	var fixture struct {
-		Status   string       `json:"status"`
-		Question string       `json:"question"`
-		Cases    []vectorCase `json:"cases"`
+		Provenance json.RawMessage `json:"provenance"`
+		Status     string          `json:"status"`
+		Question   string          `json:"question"`
+		Cases      []vectorCase    `json:"cases"`
 	}
-	file, err := os.Open(filepath.Join("..", "sessionlogin", "testdata", "reconnect", "rc-q5-secure-framing.json"))
+	file, err := os.Open(filepath.Join("..", "..", "..", "research", "fixtures", "reconnect", "rc-q5-secure-framing.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

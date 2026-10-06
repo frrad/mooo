@@ -252,57 +252,38 @@ func TestClientMarkReadDisconnectDoesNotPersistOrRetry(t *testing.T) {
 	backend.wait(t)
 }
 
-func TestClientSyncMessagesRecordsObservedServerReadSideEffect(t *testing.T) {
+func TestClientSyncMessagesCatchUpDoesNotSuppressLaterMarkRead(t *testing.T) {
 	checkpoint := testCheckpoint(t)
-	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", nil, statusDocument(
-		bson.E{Key: "chatLogs", Value: bson.A{}},
-	)))
+	var counts []int32
+	recordCount := func(raw bson.Raw) error {
+		count, err := raw.LookupErr("cnt")
+		if err != nil || count.Type != bson.TypeInt32 {
+			return errors.New("cnt is not int32")
+		}
+		counts = append(counts, count.Int32())
+		return nil
+	}
+	backend := newScriptedBackend(t, false,
+		expectRequest("SYNCMSG", recordCount, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})),
+		expectRequest("SYNCMSG", recordCount, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})),
+	)
 	api := testContinuityClient(t, checkpoint, backend)
-	_, err := api.SyncMessages(context.Background(), syncmsg.Request{
-		ChatID: 42, Cur: 98, Max: 99, Count: 1,
-	})
-	if err != nil {
+	// Catch-up declares zero held messages. Whether that marks the interval
+	// read on the server is unproven, so it must not record an acknowledgement.
+	if _, err := api.SyncMessages(context.Background(), syncmsg.Request{ChatID: 42, Cur: 90, Max: 99, Count: 0}); err != nil {
 		t.Fatal(err)
-	}
-	if got := checkpoint.ReadWatermark(42); got != 99 {
-		t.Fatalf("SYNCMSG read watermark = %d, want 99", got)
-	}
-	backend.wait(t)
-}
-
-func TestClientSyncMessagesFailureDoesNotRecordReadSideEffect(t *testing.T) {
-	checkpoint := testCheckpoint(t)
-	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", nil,
-		bson.D{{Key: "status", Value: int32(-321)}},
-	))
-	api := testContinuityClient(t, checkpoint, backend)
-	_, err := api.SyncMessages(context.Background(), syncmsg.Request{
-		ChatID: 42, Cur: 98, Max: 99, Count: 1,
-	})
-	if err == nil {
-		t.Fatal("SYNCMSG unexpectedly succeeded")
 	}
 	if got := checkpoint.ReadWatermark(42); got != 0 {
-		t.Fatalf("failed SYNCMSG read watermark = %d, want zero", got)
+		t.Fatalf("catch-up recorded read acknowledgement %d, want none", got)
 	}
-	backend.wait(t)
-}
-
-func TestClientSyncMessagesDoesNotRegressReadWatermark(t *testing.T) {
-	checkpoint := testCheckpoint(t)
-	if _, err := checkpoint.CommitReadWatermark(42, 100); err != nil {
+	if _, err := api.MarkRead(context.Background(), 42, 99); err != nil {
 		t.Fatal(err)
 	}
-	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", nil, statusDocument(
-		bson.E{Key: "chatLogs", Value: bson.A{}},
-	)))
-	api := testContinuityClient(t, checkpoint, backend)
-	_, err := api.SyncMessages(context.Background(), syncmsg.Request{ChatID: 42, Cur: 98, Max: 99, Count: 1})
-	if err != nil {
-		t.Fatal(err)
+	if len(counts) != 2 || counts[0] != 0 || counts[1] != 1 {
+		t.Fatalf("SYNCMSG cnt sequence = %v, want [0 1]", counts)
 	}
-	if got := checkpoint.ReadWatermark(42); got != 100 {
-		t.Fatalf("read watermark = %d, want existing higher value 100", got)
+	if got := checkpoint.ReadWatermark(42); got != 99 {
+		t.Fatalf("read acknowledgement after MarkRead = %d, want 99", got)
 	}
 	backend.wait(t)
 }

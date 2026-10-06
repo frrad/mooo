@@ -75,14 +75,12 @@ commit and read-watermark persistence must remain separate transactions.
 
 ## Test handoff
 
-`internal/protocol/notiread/notiread_test.go` encodes the five-field request
-shape, BSON widths, the no-implicit-retry/failure contract, and raw response
-pass-through as synthetic tests. The response test is a passing
-characterization test: it protects the observed absence of status
-interpretation without inventing a success predicate. The implementation
-stage must keep automatic notification-read state separate from application
-message commits; disconnect callback fan-out and response status semantics
-remain explicit follow-up gaps.
+A synthetic request model and characterization tests existed in
+`internal/protocol/notiread`. They were deleted on 2026-10-05 because no
+production path sends `NOTIREAD` ([bridge policy](bridge/read-receipt-policy.md)).
+Any future implementation must keep automatic notification-read state separate
+from application message commits; disconnect callback fan-out and response
+status semantics remain explicit follow-up gaps.
 
 ## Provenance
 

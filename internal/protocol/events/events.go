@@ -287,42 +287,6 @@ type ChatStatusChanged struct {
 func (ChatStatusChanged) Kind() Kind { return KindChatStatusChanged }
 func (ChatStatusChanged) isEvent()   {}
 
-// ChatStatusState is the pure reducer input/output for a room's status
-// metadata. Persistence, database lookup, and downstream effects remain
-// outside this package.
-type ChatStatusState struct {
-	RoomExists bool
-	Revision   int64
-	ExtraInfo  bson.D
-}
-
-type ChatStatusTransition struct {
-	State   ChatStatusState
-	Applied bool
-}
-
-// ReduceChatStatus applies a strictly newer status to an existing room. The
-// status BSON is copied, and existing cs/csr fields are replaced rather than
-// duplicated; unrelated ExtraInfo fields are preserved in order.
-func ReduceChatStatus(state ChatStatusState, change ChatStatusChanged) ChatStatusTransition {
-	if !state.RoomExists || change.Revision <= state.Revision || len(change.Status) == 0 {
-		return ChatStatusTransition{State: state}
-	}
-	status := append(bson.Raw(nil), change.Status...)
-	extra := make(bson.D, 0, len(state.ExtraInfo)+2)
-	for _, field := range state.ExtraInfo {
-		if field.Key == "cs" || field.Key == "csr" {
-			continue
-		}
-		extra = append(extra, field)
-	}
-	extra = append(extra, bson.E{Key: "cs", Value: status}, bson.E{Key: "csr", Value: change.Revision})
-	return ChatStatusTransition{
-		State:   ChatStatusState{RoomExists: state.RoomExists, Revision: change.Revision, ExtraInfo: extra},
-		Applied: true,
-	}
-}
-
 // ChatMetaChanged carries the proven CHGMETA fields without interpreting the
 // numeric subtype or applying metadata persistence/lifecycle effects.
 type ChatMetaChanged struct {
@@ -337,43 +301,6 @@ type ChatMetaChanged struct {
 func (ChatMetaChanged) Kind() Kind { return KindChatMetaChanged }
 func (ChatMetaChanged) isEvent()   {}
 
-// ChatMetaState contains the room facts needed by the bounded CHGMETA
-// transition contract. It deliberately excludes persistence and downstream
-// service implementations.
-type ChatMetaState struct {
-	RoomExists         bool
-	OpenChatBotEnabled bool
-	OpenLinkRevision   *int64
-	TeamChat           bool
-}
-
-// ChatMetaTransition reports the proven effects selected by ReduceChatMeta.
-// The caller remains responsible for applying the generic metadata merge and
-// for invoking the selected downstream operations.
-type ChatMetaTransition struct {
-	Applied         bool
-	OpenLinkUpdated bool
-	CalendarSynced  bool
-}
-
-// ReduceChatMeta applies the room and subtype gates established by the public
-// CHGMETA specification. Numeric subtype values remain opaque protocol data;
-// this reducer only reports the corresponding proven gates.
-func ReduceChatMeta(state ChatMetaState, change ChatMetaChanged) ChatMetaTransition {
-	if !state.RoomExists {
-		return ChatMetaTransition{}
-	}
-	result := ChatMetaTransition{Applied: true}
-	if change.Type == 14 && state.OpenChatBotEnabled && state.OpenLinkRevision != nil &&
-		change.Revision > *state.OpenLinkRevision {
-		result.OpenLinkUpdated = true
-	}
-	if state.TeamChat && (change.Type == 3 || change.Type == 15) {
-		result.CalendarSynced = true
-	}
-	return result
-}
-
 // ChatMCMetaChanged carries the decoder-proven MCM fields without interpreting
 // type labels or applying room/revision effects.
 type ChatMCMetaChanged struct {
@@ -387,69 +314,6 @@ type ChatMCMetaChanged struct {
 
 func (ChatMCMetaChanged) Kind() Kind { return KindChatMCMetaChanged }
 func (ChatMCMetaChanged) isEvent()   {}
-
-// ChatMCMetaState contains the room and shared-context values required by the
-// bounded CHGMCMETA transition contract. Persistence and downstream effect
-// execution remain outside this package.
-type ChatMCMetaState struct {
-	RoomExists     bool
-	GlobalRevision int32
-	Name           string
-	Favorite       bool
-	ImageURL       string
-	FullImageURL   string
-	Hidden         bool
-	Category       string
-	Pin            int64
-}
-
-// ChatMCMetaTransition is the pure result of applying one CHGMCMETA notice.
-type ChatMCMetaTransition struct {
-	State             ChatMCMetaState
-	Applied           bool
-	Unpin             bool
-	UnpinInAllFolders bool
-}
-
-// ReduceChatMCMeta routes proven field labels before applying the independent
-// strictly-newer global revision gate. Hidden rooms always select the pin and
-// unpin cleanup effects, including for stale or unknown notices.
-func ReduceChatMCMeta(state ChatMCMetaState, change ChatMCMetaChanged) ChatMCMetaTransition {
-	result := ChatMCMetaTransition{State: state}
-	if !state.RoomExists {
-		return result
-	}
-
-	knownRoute := true
-	switch change.Type {
-	case "name":
-		result.State.Name = change.Content
-	case "favorite":
-		result.State.Favorite = change.Content == "true"
-	case "imagePath":
-		result.State.ImageURL = change.ImageURL
-		result.State.FullImageURL = change.FullImageURL
-	case "chat_hide":
-		result.State.Hidden = change.Content == "true"
-	case "chat_category":
-		result.State.Category = change.Content
-	default:
-		knownRoute = false
-	}
-
-	revisionAdvanced := false
-	if change.Revision > state.GlobalRevision {
-		result.State.GlobalRevision = change.Revision
-		revisionAdvanced = true
-	}
-	if result.State.Hidden {
-		result.State.Pin = -1
-		result.Unpin = true
-		result.UnpinInAllFolders = true
-	}
-	result.Applied = knownRoute || revisionAdvanced || result.Unpin || result.UnpinInAllFolders
-	return result
-}
 
 // Decode turns one unsolicited packet into a typed event. Unknown packet
 // methods and unsupported message types remain observable without exposing raw

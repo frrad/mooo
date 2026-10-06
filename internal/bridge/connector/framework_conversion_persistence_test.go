@@ -376,7 +376,10 @@ func runFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T, gap eve
 }
 
 func newFrameworkConversionBridge(ctx context.Context, raw *dbutil.Database, intent bridgev2.MatrixAPI) (*bridgev2.Bridge, error) {
-	matrix := &frameworkPersistenceMatrixConnector{intent: intent}
+	return newFrameworkBridge(ctx, raw, &frameworkPersistenceMatrixConnector{intent: intent})
+}
+
+func newFrameworkBridge(ctx context.Context, raw *dbutil.Database, matrix bridgev2.MatrixConnector) (*bridgev2.Bridge, error) {
 	bridge := bridgev2.NewBridge(networkid.BridgeID("test"), raw, zerolog.Nop(), nil, matrix, &frameworkPersistenceNetworkConnector{}, func(*bridgev2.Bridge) bridgev2.CommandProcessor { return nil })
 	bridge.BackgroundCtx = context.Background()
 	if err := bridge.DB.Upgrade(ctx); err != nil {

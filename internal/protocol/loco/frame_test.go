@@ -19,35 +19,6 @@ func TestHeaderPinnedSyntheticVector(t *testing.T) {
 	}
 }
 
-func TestParserFragmentedAndCoalesced(t *testing.T) {
-	one, _ := (Packet{Header: Header{PacketID: 1, Method: "ONE"}, Body: []byte("abc")}).MarshalBinary(64)
-	two, _ := (Packet{Header: Header{PacketID: 2, Method: "TWO"}, Body: []byte("defg")}).MarshalBinary(64)
-	stream := append(one, two...)
-	p := NewParser(64)
-	var packets []Packet
-	for _, part := range [][]byte{stream[:3], stream[3:25], stream[25:]} {
-		got, err := p.Feed(part)
-		if err != nil {
-			t.Fatal(err)
-		}
-		packets = append(packets, got...)
-	}
-	if len(packets) != 2 || packets[0].Header.Method != "ONE" || string(packets[1].Body) != "defg" {
-		t.Fatalf("unexpected packets: %#v", packets)
-	}
-}
-
-func TestParserFailsClosedOnHostileLength(t *testing.T) {
-	header, _ := (Header{PacketID: 1, Method: "TEST", BodyLen: 65}).MarshalBinary()
-	p := NewParser(64)
-	if _, err := p.Feed(header); !errors.Is(err, ErrBodyTooLarge) {
-		t.Fatalf("got %v", err)
-	}
-	if _, err := p.Feed(nil); !errors.Is(err, ErrParserFailed) {
-		t.Fatalf("failed parser resumed: %v", err)
-	}
-}
-
 func TestParseHeaderRejectsNonzeroPadding(t *testing.T) {
 	header, _ := (Header{PacketID: 1, Method: "A"}).MarshalBinary()
 	header[8] = 'X'

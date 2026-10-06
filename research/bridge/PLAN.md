@@ -40,7 +40,7 @@ distinguish implemented behavior from planned integrations.
 | Reactions | Kakao pushes aggregate counts (`CHGLOGMETA`). PR #179 reconciles per-sender Matrix reactions from `ReactionMembers` / `MiniReactionDetails` with checked add/remove operations, database postconditions, replay-safe revision persistence, and explicit lookup/failure handling. Outbound failure categories and the no-retry rule are documented in [`reaction-failure-policy.md`](reaction-failure-policy.md). Live acceptance remains open. |
 | Own messages | Messages written by the logged-in account on another device are sent through double puppeting. |
 | Connection | The bridge decides when to reconnect. Kakao gives it no reconnect of its own. Retries use exponential backoff and then run a bounded `CatchUp`. A dropped connection is reported as a transient disconnect; `KICKOUT` is reported as logged out or bad credentials. |
-| Read state | Matrix read receipts go to `MarkRead`. `DECUNREAD` becomes ghost read receipts. Catch-up and backfill use `SYNCMSG`, which can mark messages read on the server, so both are bounded and backfill is opt-in. |
+| Read state | Matrix read receipts go to `MarkRead`. `DECUNREAD` becomes ghost read receipts, or a double-puppet receipt for the user's own watermark ([policy](read-receipt-policy.md)). `NOTIREAD` is not sent. Catch-up and backfill use `SYNCMSG`, which can mark messages read on the server, so both are bounded and backfill is opt-in. |
 | Chat metadata | The connector uses `ChatInfo`, `MemberList`, and requested `Members` profiles for initial names and membership. Complete and partial rosters remain distinct; unsupported OpenChat links fail explicitly. Avatars and membership updates are implemented (PR #173), with live encoding and parity gaps ([dossier](../chat-metadata.md)). Friend/contact sync remains separate. |
 
 ## Current baseline and execution order
@@ -95,8 +95,9 @@ across disconnect/restart, and a reproducible single-user deployment. Each featu
 needs a source-derived client contract and appropriate synthetic/live validation;
 complete official-client parity is not a prerequisite for all bridge work.
 
-Read receipts and opt-in historical backfill follow the alpha. Resolve the
-`SYNCMSG` read-side-effect and local watermark discrepancy before enabling either.
+Read receipts are implemented ([policy](read-receipt-policy.md)); live
+validation is pending. Opt-in historical backfill follows the alpha. Resolve
+the `SYNCMSG` `cnt=0` read side effect before enabling backfill.
 Deterministic typed-photo failures now become persisted notices under their
 original source IDs (PR #181; [policy](conversion-failure-policy.md)). Transient
 transfer or Matrix failures remain uncommitted. Parser failures with validated source identities now become explicit notices;
@@ -196,11 +197,14 @@ and full official-client parity remain outside this alpha goal.
       number of messages the client already holds in the range, so the server
       returned nothing. Catch-up now sends `cnt=0`; validated live (two offline
       messages recovered in order before a live one). Regression-tested.
-- [ ] Read-state follow-up: the client records a local read watermark after
-      every `SYNCMSG`, including `cnt=0` recovery, which one run suggests does
-      not mark messages read. Confirm with an A/B test before B4 read receipts
-      rely on that watermark; see
-      [`syncmsg-read-side-effect-procedure.md`](syncmsg-read-side-effect-procedure.md).
+- [x] Read-state decoupling: the client recorded its read watermark after
+      every `SYNCMSG`, including `cnt=0` recovery, so `MarkRead` could skip
+      positions the server still showed unread. Checkpoint v5 records it only
+      after `MarkRead` and discards v4 values ([policy](read-receipt-policy.md)).
+- [ ] `cnt=0` read side effect: confirm with the A/B test in
+      [`syncmsg-read-side-effect-procedure.md`](syncmsg-read-side-effect-procedure.md)
+      whether catch-up marks recovered messages read on the server. This now
+      gates catch-up/backfill policy only, not read receipts.
 - [x] Exercise the connector through the reusable scripted protocol backend
       in `internal/testsupport/loco` (PR #163): failed catch-up aborts before
       live subscription, fresh-process replay precedes live messages, ambiguous
@@ -307,7 +311,10 @@ The implemented supervisor and its bounded policy are documented in
       against the existing bridge database. This scope covers initialization
       and persistence only; it does not prove Matrix room E2EE or encrypted
       message/media delivery.
-- [ ] Read receipts in both directions, once the read-state dossier settles.
+- [x] Read receipts in both directions ([policy](read-receipt-policy.md)).
+      Connector tests cover ghost and self receipts, ignored notices, one
+      `MarkRead` per receipt, checkpoint suppression, and failure without
+      retry. Live owned-account validation is pending.
 - [x] Docker image, example configuration, and documentation with no operator
       values (PR #170). Authenticated appservice startup/restart smoke passed;
       a bounded existing-profile text/media resume and one restart are recorded
@@ -327,4 +334,8 @@ The implemented supervisor and its bounded policy are documented in
 - How should aggregate reaction updates reconcile with per-sender Matrix
   reactions when the detail lookup fails or disagrees?
 - Does receiving a message through the bridge change any read-state
-  expectations on the primary device?
+  expectations on the primary device? The official client sends `NOTIREAD`
+  after each inbound `MSG`; the bridge does not, because its server meaning
+  and its effect on the primary device's notifications are untraced. One
+  2026-09-30 run suggested a live `MSG` already clears the sender's unread
+  marker without it.

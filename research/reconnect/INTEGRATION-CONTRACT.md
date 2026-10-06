@@ -7,10 +7,11 @@ client starts a keep-alive timer or owns a PING supervisor.
 
 ## Boundary
 
-The pure planner in `internal/protocol/sessionlogin/ping_intents.go` returns
-ordered intents. A future session supervisor should own the target-specific
+The ping-intent planner that once lived in `internal/protocol/sessionlogin`
+was removed because production never called it; the ordering it encoded is
+specified in this document. A future session supervisor should own the target-specific
 delayed invocation, cancellation handle, ordinary request dispatch, and
-completion callback. The planner must remain independent of sockets, timers,
+completion callback. Any planner must remain independent of sockets, timers,
 goroutines, and durable state.
 
 The current `client.Session.Request` allocates a pending request, writes one

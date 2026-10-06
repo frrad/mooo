@@ -1,0 +1,221 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-04",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/FOUNDATION-BOOL-DOUBLE.md"
+  },
+  "status": "reviewed-platform-bounded-synthetic",
+  "platform": "macOS 26.6.2 (25G83 arm64)",
+  "cases": [
+    {
+      "name": "bool_false",
+      "input_kind": "NSNumber-bool",
+      "input": "false",
+      "input_class": "__NSCFBoolean",
+      "input_objc_type": "c",
+      "expected_value": 0
+    },
+    {
+      "name": "bool_true",
+      "input_kind": "NSNumber-bool",
+      "input": "true",
+      "input_class": "__NSCFBoolean",
+      "input_objc_type": "c",
+      "expected_value": 1
+    },
+    {
+      "name": "double_negative_fraction",
+      "input_kind": "NSNumber-double",
+      "input": "-3.75",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": -3
+    },
+    {
+      "name": "double_positive_fraction",
+      "input_kind": "NSNumber-double",
+      "input": "3.75",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 3
+    },
+    {
+      "name": "double_int32_max",
+      "input_kind": "NSNumber-double",
+      "input": "2147483647.0",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 2147483647
+    },
+    {
+      "name": "double_above_int32",
+      "input_kind": "NSNumber-double",
+      "input": "2147483648.0",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": -2147483648
+    },
+    {
+      "name": "double_positive_huge",
+      "input_kind": "NSNumber-double",
+      "input": "1e40",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": -1
+    },
+    {
+      "name": "double_negative_huge",
+      "input_kind": "NSNumber-double",
+      "input": "-1e40",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 0
+    },
+    {
+      "name": "double_positive_infinity",
+      "input_kind": "NSNumber-double",
+      "input": "+Inf",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": -1
+    },
+    {
+      "name": "double_nan",
+      "input_kind": "NSNumber-double",
+      "input": "NaN",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 0
+    },
+    {
+      "name": "double_negative_zero",
+      "input_kind": "NSNumber-double",
+      "input": "-0.0",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 0
+    },
+    {
+      "name": "double_two32_minus_fraction",
+      "input_kind": "NSNumber-double",
+      "input": "4294967295.5",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": -1
+    },
+    {
+      "name": "double_two32_plus_fraction",
+      "input_kind": "NSNumber-double",
+      "input": "4294967296.5",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 0
+    },
+    {
+      "name": "double_negative_two32_minus_fraction",
+      "input_kind": "NSNumber-double",
+      "input": "-4294967296.5",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 0
+    },
+    {
+      "name": "double_negative_two32_plus_fraction",
+      "input_kind": "NSNumber-double",
+      "input": "-4294967295.5",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 1
+    },
+    {
+      "name": "double_two63",
+      "input_kind": "NSNumber-double",
+      "input": "9223372036854775808.0",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": -1
+    },
+    {
+      "name": "double_negative_two63",
+      "input_kind": "NSNumber-double",
+      "input": "-9223372036854775808.0",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 0
+    },
+    {
+      "name": "double_signed_nan",
+      "input_kind": "NSNumber-double",
+      "input": "-NaN",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 0
+    },
+    {
+      "name": "double_negative_infinity",
+      "input_kind": "NSNumber-double",
+      "input": "-Inf",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 0
+    },
+    {
+      "name": "double_two63_nearest_below",
+      "input_kind": "NSNumber-double",
+      "input": "9223372036854774784",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": -1024
+    },
+    {
+      "name": "double_negative_two63_nearest_below",
+      "input_kind": "NSNumber-double",
+      "input": "-9223372036854774784",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 1024
+    },
+    {
+      "name": "double_two32_plus_fraction_far",
+      "input_kind": "NSNumber-double",
+      "input": "4294967297.75",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 1
+    },
+    {
+      "name": "double_negative_two32_plus_fraction_far",
+      "input_kind": "NSNumber-double",
+      "input": "-4294967297.75",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": -1
+    },
+    {
+      "name": "double_positive_subnormal",
+      "input_kind": "NSNumber-double",
+      "input": "5e-324",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 0
+    },
+    {
+      "name": "double_negative_subnormal",
+      "input_kind": "NSNumber-double",
+      "input": "-5e-324",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": 0
+    },
+    {
+      "name": "double_two63_clamped_positive",
+      "input_kind": "NSNumber-double",
+      "input": "9223372036854775808.0",
+      "input_class": "__NSCFNumber",
+      "input_objc_type": "d",
+      "expected_value": -1
+    }
+  ]
+}

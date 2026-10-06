@@ -1,0 +1,98 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-02",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/PROTOCOL.md"
+  },
+  "questions": [
+    "RC-Q4",
+    "RC-Q5"
+  ],
+  "evidence": [
+    "RC-BIN-001"
+  ],
+  "status": "unexecuted",
+  "cases": [
+    {
+      "name": "receive-header timeout predicate accepts nonnegative signed tags",
+      "kind": "timeout-predicate",
+      "cases": [
+        {
+          "tag": 0,
+          "configured_timeout_seconds": 20,
+          "arm": true
+        },
+        {
+          "tag": 42,
+          "configured_timeout_seconds": 20,
+          "arm": true
+        },
+        {
+          "tag": -1,
+          "configured_timeout_seconds": 20,
+          "arm": false
+        },
+        {
+          "tag": 42,
+          "configured_timeout_seconds": 0,
+          "arm": false
+        }
+      ],
+      "evidence": [
+        "RC-BIN-001"
+      ]
+    },
+    {
+      "name": "recovered coordinator and manager initializer values",
+      "kind": "configuration",
+      "ping_interval_fallback_seconds": 180,
+      "connect_timeout_seconds": 15,
+      "receive_header_timeout_seconds": 20,
+      "in_segment_timeout_seconds": 10,
+      "out_segment_timeout_seconds": 10,
+      "remaining_gaps": [
+        "timer lifecycle",
+        "traffic reset",
+        "idle timeout scope"
+      ],
+      "evidence": [
+        "RC-BIN-001"
+      ]
+    },
+    {
+      "name": "ping interval fallback boundary",
+      "kind": "configuration",
+      "cases": [
+        {
+          "configured_seconds": 0,
+          "stored_seconds": 180
+        },
+        {
+          "configured_seconds": -1,
+          "stored_seconds": 180
+        },
+        {
+          "configured_seconds": 1,
+          "stored_seconds": 1
+        },
+        {
+          "configured_seconds": 179,
+          "stored_seconds": 179
+        },
+        {
+          "configured_seconds": 180,
+          "stored_seconds": 180
+        },
+        {
+          "configured_seconds": 181,
+          "stored_seconds": 181
+        }
+      ],
+      "evidence": [
+        "RC-BIN-001"
+      ]
+    }
+  ]
+}

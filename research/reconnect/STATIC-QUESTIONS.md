@@ -99,7 +99,7 @@ Two kinds of vector, chosen by what the answer is about:
 
 **Policy vectors** for pure decisions (backoff delays, status routing, trigger
 admission, `KICKOUT` reason handling, route-cache decisions). They live as
-JSON under `internal/protocol/sessionlogin/testdata/reconnect/` and are run
+JSON under `research/fixtures/reconnect/` and are run
 by a table-driven test against a pure function or the existing reducer. No
 clock, no network. Example for question 6:
 

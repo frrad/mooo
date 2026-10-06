@@ -1,0 +1,262 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-04",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/PUSH-RECEIPT-NW-SERIALIZATION.md"
+  },
+  "status": "reviewed-static-synthetic",
+  "cases": [
+    {
+      "name": "dynamic_properties_stop_before_sgjsonobject",
+      "subclass_properties": [
+        "child"
+      ],
+      "superclass_properties": [
+        "base"
+      ],
+      "values": [
+        {
+          "name": "child",
+          "kind": "scalar",
+          "scalar_result": "child-value"
+        },
+        {
+          "name": "base",
+          "kind": "scalar",
+          "scalar_result": "0"
+        }
+      ],
+      "expected_properties": [
+        "child",
+        "base"
+      ],
+      "expected": {
+        "child": {
+          "kind": "scalar",
+          "value": "child-value"
+        },
+        "base": {
+          "kind": "scalar",
+          "value": "0"
+        }
+      },
+      "expected_getter_calls": [
+        "child",
+        "base"
+      ]
+    },
+    {
+      "name": "nil_and_nsnull_are_distinct_from_ordinary_string",
+      "values": [
+        {
+          "name": "nil_value",
+          "kind": "nil"
+        },
+        {
+          "name": "explicit_nsnull",
+          "kind": "nsnull"
+        },
+        {
+          "name": "ordinary",
+          "kind": "scalar",
+          "scalar_result": "NSNull"
+        }
+      ],
+      "expected_properties": [
+        "nil_value",
+        "explicit_nsnull",
+        "ordinary"
+      ],
+      "expected": {
+        "nil_value": {
+          "kind": "nsnull",
+          "value": "NSNull"
+        },
+        "explicit_nsnull": {
+          "kind": "nsnull",
+          "value": "NSNull"
+        },
+        "ordinary": {
+          "kind": "scalar",
+          "value": "NSNull"
+        }
+      },
+      "subclass_properties": [
+        "nil_value",
+        "explicit_nsnull",
+        "ordinary"
+      ],
+      "expected_getter_calls": [
+        "nil_value",
+        "explicit_nsnull",
+        "ordinary"
+      ]
+    },
+    {
+      "name": "sgjson_precedes_number_array_when_both_protocols_present",
+      "values": [
+        {
+          "name": "nested",
+          "kind": "object",
+          "conforms_json": true,
+          "conforms_number_array": true,
+          "json_object_result": "json-result",
+          "number_array_result": "array-result"
+        }
+      ],
+      "expected_properties": [
+        "nested"
+      ],
+      "expected": {
+        "nested": {
+          "kind": "json",
+          "value": "json-result"
+        }
+      },
+      "subclass_properties": [
+        "nested"
+      ],
+      "expected_getter_calls": [
+        "nested"
+      ]
+    },
+    {
+      "name": "number_array_uses_number_array_projection",
+      "values": [
+        {
+          "name": "numbers",
+          "kind": "array",
+          "conforms_number_array": true,
+          "number_array_result": "[0,-1,4294967295]"
+        }
+      ],
+      "expected_properties": [
+        "numbers"
+      ],
+      "expected": {
+        "numbers": {
+          "kind": "number_array",
+          "value": "[0,-1,4294967295]"
+        }
+      },
+      "subclass_properties": [
+        "numbers"
+      ],
+      "expected_getter_calls": [
+        "numbers"
+      ]
+    },
+    {
+      "name": "ordinary_scalar_zero_is_retained",
+      "values": [
+        {
+          "name": "zero",
+          "kind": "scalar",
+          "scalar_result": "0"
+        }
+      ],
+      "expected_properties": [
+        "zero"
+      ],
+      "expected": {
+        "zero": {
+          "kind": "scalar",
+          "value": "0"
+        }
+      },
+      "subclass_properties": [
+        "zero"
+      ],
+      "expected_getter_calls": [
+        "zero"
+      ]
+    },
+    {
+      "name": "undeclared_and_sgjsonobject_properties_are_ignored",
+      "subclass_properties": [
+        "child"
+      ],
+      "superclass_properties": [],
+      "values": [
+        {
+          "name": "child",
+          "kind": "scalar",
+          "scalar_result": "kept"
+        },
+        {
+          "name": "undeclared",
+          "kind": "scalar",
+          "scalar_result": "ignored"
+        },
+        {
+          "name": "sgjsonobject_base",
+          "kind": "scalar",
+          "scalar_result": "ignored"
+        }
+      ],
+      "expected_properties": [
+        "child"
+      ],
+      "expected": {
+        "child": {
+          "kind": "scalar",
+          "value": "kept"
+        }
+      },
+      "expected_getter_calls": [
+        "child"
+      ]
+    },
+    {
+      "name": "missing_kvc_value_becomes_nsnull",
+      "subclass_properties": [
+        "missing"
+      ],
+      "superclass_properties": [],
+      "values": [],
+      "expected_properties": [
+        "missing"
+      ],
+      "expected_getter_calls": [
+        "missing"
+      ],
+      "expected": {
+        "missing": {
+          "kind": "nsnull",
+          "value": "NSNull"
+        }
+      }
+    },
+    {
+      "name": "duplicate_property_reads_each_getter",
+      "subclass_properties": [
+        "dup",
+        "dup"
+      ],
+      "superclass_properties": [],
+      "values": [
+        {
+          "name": "dup",
+          "kind": "scalar",
+          "scalar_result": "value"
+        }
+      ],
+      "expected_properties": [
+        "dup",
+        "dup"
+      ],
+      "expected_getter_calls": [
+        "dup",
+        "dup"
+      ],
+      "expected": {
+        "dup": {
+          "kind": "scalar",
+          "value": "value"
+        }
+      }
+    }
+  ]
+}

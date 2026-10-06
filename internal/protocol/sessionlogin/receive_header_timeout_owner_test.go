@@ -1,6 +1,9 @@
 package sessionlogin
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -203,7 +206,7 @@ func TestReceiveHeaderTimeoutOwnerGatesDisableAtAdmission(t *testing.T) {
 }
 
 func TestReceiveHeaderTimeoutOwnerUsesCanonicalTimeoutVectors(t *testing.T) {
-	vectors, err := loadReceiveHeaderTimeoutContract(filepath.Join("testdata", "reconnect", "rc-q5-timeout-contract.json"))
+	vectors, err := loadReceiveHeaderTimeoutContract(filepath.Join("..", "..", "..", "research", "fixtures", "reconnect", "rc-q5-timeout-contract.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +268,7 @@ func TestReceiveHeaderTimeoutOwnerUsesCanonicalTimeoutVectors(t *testing.T) {
 }
 
 func TestReceiveHeaderTimeoutOwnerCanonicalDisableCancelsOnlyMatchingTag(t *testing.T) {
-	vectors, err := loadReceiveHeaderTimeoutContract(filepath.Join("testdata", "reconnect", "rc-q5-timeout-contract.json"))
+	vectors, err := loadReceiveHeaderTimeoutContract(filepath.Join("..", "..", "..", "research", "fixtures", "reconnect", "rc-q5-timeout-contract.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,4 +362,50 @@ func TestReceiveHeaderTimeoutOwnerCanceledQueuedZeroTagCannotReplay(t *testing.T
 	if len(clock.timers) != 1 {
 		t.Fatalf("replayed canceled zero-tag queue scheduled timers=%d", len(clock.timers))
 	}
+}
+
+type receiveHeaderTimeoutContract struct {
+	Status    string                     `json:"status"`
+	Questions []string                   `json:"questions"`
+	Cases     []receiveHeaderTimeoutCase `json:"cases"`
+}
+type receiveHeaderTimeoutCase struct {
+	Name                    string   `json:"name"`
+	Kind                    string   `json:"kind"`
+	Evidence                []string `json:"evidence"`
+	TimeoutSeconds          *float64 `json:"timeout_seconds"`
+	ExecutionTimeoutSeconds *float64 `json:"execution_timeout_seconds"`
+	HandlerPresent          *bool    `json:"handler_present"`
+	OldStatus               *int8    `json:"old_status"`
+	NewStatus               *int8    `json:"new_status"`
+	Tag                     *int64   `json:"tag"`
+	Enable                  *bool    `json:"enable"`
+	EnableByte              *uint8   `json:"enable_byte"`
+	PacketID                *uint32  `json:"packet_id"`
+	ExpectedTag             *int64   `json:"expected_tag"`
+	PacketMethod            *string  `json:"packet_method"`
+	ExpectedUniqueID        *string  `json:"expected_unique_id"`
+	StoredUniqueID          *string  `json:"stored_unique_id"`
+	IncomingUniqueID        *string  `json:"incoming_unique_id"`
+	ProducerStatus          *uint8   `json:"producer_status"`
+	CompletionPresent       *bool    `json:"completion_present"`
+	Expect                  []string `json:"expect"`
+	RemainingGaps           []string `json:"remaining_gaps"`
+}
+
+var knownReceiveHeaderTimeoutEffect = map[string]bool{"read_timeout": true, "check_tag_nonnegative": true, "queue_main": true, "no_enqueue": true, "reread_timeout": true, "perform_selector_after_delay_0": true, "perform_selector_after_delay_7": true, "owner_target": true, "fire_selector": true, "wrapped_tag": true, "cancel_previous_perform": true, "write_status_byte_zero": true, "set_status_zero": true, "invoke_status_handler_old_new_error": true, "no_status_handler": true, "cancel_owner_delayed_work": true, "enumerate_pending": true, "completion_nil": true, "error_domain_locoagent": true, "error_code_minus_one": true, "error_userinfo_nil": true, "lookup_unsigned_packet_id": true, "compare_stored_string_to_incoming_unique_id": true, "derive_request_tag": true, "derive_request_tag_identity": true, "disable_timeout": true, "comparison_false": true, "no_timeout_action": true, "register_completion_by_unique_id": true, "store_unique_id_by_packet_id": true, "send_packet": true, "arm_timeout": true, "forward_error": true, "no_timeout_arm": true, "no_callback": true, "construct_unique_id": true}
+
+func loadReceiveHeaderTimeoutContract(path string) (receiveHeaderTimeoutContract, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return receiveHeaderTimeoutContract{}, err
+	}
+	var v receiveHeaderTimeoutContract
+	if err := json.Unmarshal(body, &v); err != nil {
+		return v, err
+	}
+	if len(v.Cases) == 0 {
+		return v, fmt.Errorf("no cases in %s", path)
+	}
+	return v, nil
 }

@@ -106,86 +106,6 @@ func BuildQRGenerateRequest(request QRGenerateRequest) (FormRequest, error) {
 	return buildFormRequest(RouteQRGenerate, values)
 }
 
-// PasscodeGenerateRequest covers the directly evidenced passcode-generation
-// body. Its response/status and authorization sequencing remain out of scope.
-type PasscodeGenerateRequest struct {
-	Email     string
-	Password  string
-	Permanent bool
-	Device    FullDevice
-}
-
-// BuildPasscodeGenerateRequest validates and encodes one passcode generation
-// request. Permanent remains a JSON Boolean.
-func BuildPasscodeGenerateRequest(request PasscodeGenerateRequest) (FormRequest, error) {
-	if err := validateRequiredFormString(request.Email); err != nil {
-		return FormRequest{}, err
-	}
-	if err := validateRequiredFormString(request.Password); err != nil {
-		return FormRequest{}, err
-	}
-	if err := request.Device.validate(); err != nil {
-		return FormRequest{}, err
-	}
-	values := map[string]any{
-		"device":    fullDeviceJSONValue(request.Device),
-		"email":     request.Email,
-		"password":  request.Password,
-		"permanent": request.Permanent,
-	}
-	return buildFormRequest(RoutePasscodeGenerate, values)
-}
-
-// PasscodeRegisterRequest is the reviewed passcode device-registration body.
-// Whether/when this operation follows generation is intentionally out of
-// scope; this type only encodes the established request shape.
-type PasscodeRegisterRequest struct {
-	Email    string
-	Password string
-	Device   UUIDOnlyDevice
-}
-
-func BuildPasscodeRegisterRequest(request PasscodeRegisterRequest) (FormRequest, error) {
-	if err := validateRequiredFormString(request.Email); err != nil {
-		return FormRequest{}, err
-	}
-	if err := validateRequiredFormString(request.Password); err != nil {
-		return FormRequest{}, err
-	}
-	if err := request.Device.validate(); err != nil {
-		return FormRequest{}, err
-	}
-	return buildFormRequest(RoutePasscodeRegister, map[string]any{
-		"device":   uuidOnlyDeviceJSONValue(request.Device),
-		"email":    request.Email,
-		"password": request.Password,
-	})
-}
-
-// PasscodeCancelRequest is the reviewed passcode cancellation body.
-type PasscodeCancelRequest struct {
-	Email    string
-	Password string
-	Device   UUIDOnlyDevice
-}
-
-func BuildPasscodeCancelRequest(request PasscodeCancelRequest) (FormRequest, error) {
-	if err := validateRequiredFormString(request.Email); err != nil {
-		return FormRequest{}, err
-	}
-	if err := validateRequiredFormString(request.Password); err != nil {
-		return FormRequest{}, err
-	}
-	if err := request.Device.validate(); err != nil {
-		return FormRequest{}, err
-	}
-	return buildFormRequest(RoutePasscodeCancel, map[string]any{
-		"device":   uuidOnlyDeviceJSONValue(request.Device),
-		"email":    request.Email,
-		"password": request.Password,
-	})
-}
-
 // QRCancelRequest is the reviewed QR cancellation body.
 type QRCancelRequest struct {
 	ID     string
@@ -222,21 +142,6 @@ func BuildQRLoginRequest(request QRLoginRequest) (FormRequest, error) {
 	return buildFormRequest(RouteQRLogin, map[string]any{
 		"device": uuidOnlyDeviceJSONValue(request.Device),
 		"id":     request.ID,
-	})
-}
-
-// QRPasswordCheckRequest is the reviewed password-only QR-family body. Its
-// ownership in the larger registration state machine remains unresolved.
-type QRPasswordCheckRequest struct {
-	Password string
-}
-
-func BuildQRPasswordCheckRequest(request QRPasswordCheckRequest) (FormRequest, error) {
-	if err := validateRequiredFormString(request.Password); err != nil {
-		return FormRequest{}, err
-	}
-	return buildFormRequest(RouteQRPasswordCheck, map[string]any{
-		"password": request.Password,
 	})
 }
 

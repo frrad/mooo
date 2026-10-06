@@ -12,8 +12,9 @@ import (
 )
 
 type receiptJSONMappingProjectionFixture struct {
-	Status string                             `json:"status"`
-	Cases  []receiptJSONMappingProjectionCase `json:"cases"`
+	Provenance json.RawMessage                    `json:"provenance"`
+	Status     string                             `json:"status"`
+	Cases      []receiptJSONMappingProjectionCase `json:"cases"`
 }
 
 type receiptJSONMappingProjectionCase struct {
@@ -29,7 +30,7 @@ type receiptJSONMappingProjectionCase struct {
 }
 
 func TestReceiptJSONMappingFixture(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-push-receipt-json-mapping.json"))
+	body, err := os.ReadFile(filepath.Join("..", "..", "..", "research", "fixtures", "reconnect", "rc-q5-push-receipt-json-mapping.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

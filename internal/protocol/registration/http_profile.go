@@ -71,18 +71,3 @@ func ProfileFor(route Route) (HTTPRequestProfile, bool) {
 	}
 	return profile, true
 }
-
-// PasswordCheckResponse is the semantic response subset needed by the
-// password-check predicate. StatusPresent represents dictionary key presence,
-// including an explicit zero value.
-type PasswordCheckResponse struct {
-	StatusPresent bool
-	Status        int32
-}
-
-// PasswordCheckSucceeded applies the reviewed response predicate: HTTP 200, a
-// response dictionary, an integer status, and status zero. It intentionally
-// does not accept arbitrary JSON values or infer success from missing fields.
-func PasswordCheckSucceeded(httpStatus int, response *PasswordCheckResponse) bool {
-	return httpStatus == 200 && response != nil && response.StatusPresent && response.Status == 0
-}
