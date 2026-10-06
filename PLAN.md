@@ -133,7 +133,8 @@ behaviour those fixtures describe.
       sessionlogin ping-intent, ping-status, status-handler, send-order,
       reconnect-policy, in-segment-timeout, and token cursor/helper/observer
       models, the CHGMETA/CHGCHATST/CHGMCMETA reducers, and `loco.Parser`.
-- [ ] Move fixtures to `research/fixtures/` with `provenance`.
+- [x] Move fixtures to `research/fixtures/` with `provenance`, enforced by
+      `internal/testpolicy`.
 - [x] Read receipts: the bridge now drives `MarkRead` and `DECUNREAD`
       directly; `readstate` and `notiread` were deleted (#232).
 - [ ] Connect or delete the remaining test-only code (`deadcode -tags=goolm

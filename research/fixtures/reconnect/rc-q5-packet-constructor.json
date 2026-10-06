@@ -1,0 +1,113 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-04",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/EVIDENCE.md"
+  },
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {
+      "name": "body_identity_and_header_defaults",
+      "super_init_ok": true,
+      "packet_id": 17,
+      "method": "HINT",
+      "body_identity": "body-a",
+      "expected_returned": true,
+      "expected_body_identity": "body-a",
+      "expected_header": {
+        "packet_id": 17,
+        "status_code": 0,
+        "method": "HINT",
+        "body_type": 0,
+        "body_length": 0
+      },
+      "expected_effects": [
+        "store_body",
+        "init_header_with_defaults",
+        "store_header"
+      ],
+      "body_present": true,
+      "header_init_ok": true
+    },
+    {
+      "name": "max_unsigned_packet_id",
+      "super_init_ok": true,
+      "packet_id": 4294967295,
+      "method": "BLOCKSYNC",
+      "body_identity": "body-b",
+      "expected_returned": true,
+      "expected_body_identity": "body-b",
+      "expected_header": {
+        "packet_id": 4294967295,
+        "status_code": 0,
+        "method": "BLOCKSYNC",
+        "body_type": 0,
+        "body_length": 0
+      },
+      "expected_effects": [
+        "store_body",
+        "init_header_with_defaults",
+        "store_header"
+      ],
+      "body_present": true,
+      "header_init_ok": true
+    },
+    {
+      "name": "nil_body_discards_stale_identity",
+      "super_init_ok": true,
+      "packet_id": 0,
+      "method": "HINT",
+      "body_identity": "stale-body",
+      "expected_returned": true,
+      "expected_body_identity": "",
+      "expected_header": {
+        "packet_id": 0,
+        "status_code": 0,
+        "method": "HINT",
+        "body_type": 0,
+        "body_length": 0
+      },
+      "expected_effects": [
+        "store_body_nil",
+        "init_header_with_defaults",
+        "store_header"
+      ],
+      "body_present": false,
+      "header_init_ok": true
+    },
+    {
+      "name": "nil_header_result_still_stores_packet",
+      "super_init_ok": true,
+      "packet_id": 0,
+      "method": "HINT",
+      "body_identity": "stale-header-body",
+      "expected_returned": true,
+      "expected_body_identity": "",
+      "expected_header": null,
+      "expected_effects": [
+        "store_body_nil",
+        "init_header_with_defaults",
+        "store_header_nil"
+      ],
+      "body_present": false,
+      "header_init_ok": false
+    },
+    {
+      "name": "super_init_failure_returns_nil",
+      "super_init_ok": false,
+      "packet_id": 17,
+      "method": "HINT",
+      "body_identity": "body-not-stored",
+      "expected_returned": false,
+      "expected_body_identity": "",
+      "expected_header": null,
+      "expected_effects": [
+        "super_init_returns_nil"
+      ],
+      "body_present": true,
+      "header_init_ok": true
+    }
+  ]
+}

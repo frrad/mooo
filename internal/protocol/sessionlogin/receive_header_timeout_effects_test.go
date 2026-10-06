@@ -89,7 +89,7 @@ func TestPlanReceiveHeaderTimeoutRejectsMissingOwner(t *testing.T) {
 }
 
 func TestPlanReceiveHeaderTimeoutApprovedVectors(t *testing.T) {
-	vectors, err := loadReceiveHeaderTimeoutContract(filepath.Join("testdata", "reconnect", "rc-q5-timeout-contract.json"))
+	vectors, err := loadReceiveHeaderTimeoutContract(filepath.Join("..", "..", "..", "research", "fixtures", "reconnect", "rc-q5-timeout-contract.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

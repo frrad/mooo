@@ -1,0 +1,30 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-04",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/EVIDENCE.md"
+  },
+  "status": "reviewed-static-object-field-inventory-unexecuted-runtime",
+  "cases": [
+    {
+      "name": "hint_object_fields",
+      "model": "hint_push_receipt",
+      "expected_object_fields": [
+        "method",
+        "packetId"
+      ]
+    },
+    {
+      "name": "block_sync_object_fields",
+      "model": "block_sync_push_receipt",
+      "expected_object_fields": [
+        "method",
+        "packetId",
+        "revision",
+        "plusRevision"
+      ]
+    }
+  ]
+}

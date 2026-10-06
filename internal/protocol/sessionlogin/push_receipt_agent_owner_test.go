@@ -44,7 +44,7 @@ func (s *agentReceiptSender) SendPushReceipt(_ any, tag int64) {
 }
 
 func TestPushReceiptAgentOwnerConsumesApprovedFixture(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join("testdata", "reconnect", "rc-q5-push-receipt.json"))
+	body, err := os.ReadFile(filepath.Join("..", "..", "..", "research", "fixtures", "reconnect", "rc-q5-push-receipt.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

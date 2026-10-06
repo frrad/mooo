@@ -74,7 +74,7 @@ The synthetic vector test records the input class and Objective-C type for all
 and the seven `alloc/initWithLong:` signed-64-bit cases. It is
 `internal/protocol/sessionlogin/foundation_int32_kvc_contract_test.go`, with
 inputs in
-`internal/protocol/sessionlogin/testdata/reconnect/rc-q5-foundation-int32-kvc.json`.
+`research/fixtures/reconnect/rc-q5-foundation-int32-kvc.json`.
 The vector test is an implementation-neutral replay of the captured outcomes,
 not a replacement for Foundation. The private source provenance is the local
 `foundation-int32-kvc/probe.m` and `result.txt` receipt, including the

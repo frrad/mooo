@@ -80,12 +80,11 @@ reference client changes.
 - **Inputs are synthetic.** No account data, identifiers, captured traffic, or
   copied proprietary code, as everywhere else in this repository.
 
-## Migrating existing fixtures
+## Existing fixtures
 
-Fixtures written before this rule carry a free-form `status` string such as
-`reviewed-static-unexecuted-runtime` and were consumed by model-only tests.
-Migration moves each one to `research/fixtures/`, adds `provenance` (`static`
-for all of them today), deletes its model-only test, and, where production
-code exists, replaces it with a test against that code. The files still
-awaiting migration are listed in
-`internal/testpolicy/testdata/model-only-allowlist.txt`; the list only shrinks.
+The fixtures written before this rule now live under `research/fixtures/` with
+`static` provenance; their original free-form `status` strings (for example
+`reviewed-static-unexecuted-runtime`) are kept as research notes. None has been
+executed against the official client yet. `internal/testpolicy` checks that
+every file under `research/fixtures/` carries a well-formed `provenance` whose
+`doc` exists.

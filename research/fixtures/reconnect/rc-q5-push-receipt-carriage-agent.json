@@ -1,0 +1,15 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-04",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/PUSH-RECEIPT-CARRIAGE-AGENT.md"
+  },
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {"name":"receipt_reads_current_carriage_agent","operation":"receipt_send","current_agent_identity":"carriage-agent-current","callback_arg_identity":"carriage-agent-current","expected_current_identity":"carriage-agent-current","concrete_class":"LocoNWAgent","expected_effects":["read_current_carriage_agent","dynamic_send_push_receipt"]},
+    {"name":"connect_constructs_and_stores_new_agent","operation":"connect_set","current_agent_identity":"carriage-agent-old","new_agent_identity":"carriage-agent-new","callback_arg_identity":"carriage-agent-new","expected_current_identity":"carriage-agent-new","concrete_class":"LocoNWAgent","expected_effects":["construct_carriage_agent","disable_fallback","set_carriage_agent","install_status_handler","set_manager_status","connect_agent"]},
+    {"name":"factory_selects_manager_carriage_class","operation":"factory_selection","concrete_class":"LocoNWAgent","expected_effects":["factory_select_loco_nw_agent"]}
+  ]
+}

@@ -288,7 +288,7 @@ func TestOutSegmentTimeoutOwnerRepeatedEnableAndCloseInvalidateQueuedWork(t *tes
 }
 
 func TestOutSegmentTimeoutOwnerCanonicalToggleVectors(t *testing.T) {
-	contract, err := loadWriteCallbackContract(filepath.Join("testdata", "reconnect", "rc-q5-write-callbacks.json"))
+	contract, err := loadWriteCallbackContract(filepath.Join("..", "..", "..", "research", "fixtures", "reconnect", "rc-q5-write-callbacks.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

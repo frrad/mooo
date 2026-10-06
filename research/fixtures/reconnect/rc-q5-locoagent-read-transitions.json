@@ -1,0 +1,26 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-02",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/IN-SEGMENT-TIMEOUT.md"
+  },
+  "status": "reviewed-static-unexecuted-runtime",
+  "evidence": ["RC-BIN-031"],
+  "cases": [
+    {"name":"header_crypto","kind":"header_request","crypto_present":true,"tag":0,"expect":["socket_read_length_4","socket_read_timeout_minus_one","socket_read_tag_zero"]},
+    {"name":"header_plain","kind":"header_request","crypto_present":false,"tag":0,"expect":["socket_read_length_22","socket_read_timeout_minus_one","socket_read_tag_zero"]},
+    {"name":"header_length_zero_loops_header","kind":"header_result","crypto_present":true,"header_length":0,"expect":["header_zero_read_header"]},
+    {"name":"header_length_nonzero_requests_body","kind":"header_result","crypto_present":true,"header_length":12,"expect":["header_nonzero_read_body"]},
+    {"name":"body_request_uses_length_timeout_tag_and_timer_order","kind":"body_request","body_length":12,"expected_read_length":12,"expect":["body_request_length","body_request_timeout_minus_one","body_request_tag_one","body_request_enable_timer_after_schedule"]},
+    {"name":"partial_header_tag_zero","kind":"partial_callback","tag":0,"expect":["partial_timer_unchanged"]},
+    {"name":"partial_body_tag_one_resets_timer","kind":"partial_callback","tag":1,"expect":["partial_timer_disable","partial_timer_enable"]},
+    {"name":"partial_body_tag_two_resets_timer","kind":"partial_callback","tag":2,"expect":["partial_timer_disable","partial_timer_enable"]},
+    {"name":"complete_header_tag_zero","kind":"complete_callback","tag":0,"expect":["complete_header_delivery"]},
+    {"name":"complete_body_tag_one","kind":"complete_callback","tag":1,"expect":["complete_timer_disable","complete_body_delivery","complete_read_header"]},
+    {"name":"complete_body_tag_two","kind":"complete_callback","tag":2,"expect":["complete_timer_disable","complete_body_delivery","complete_read_header"]},
+    {"name":"body_crypto_decrypts_before_supply","kind":"body_delivery","crypto_present":true,"expect":["decrypt_then_supply_raw"]},
+    {"name":"body_plain_supplies_original","kind":"body_delivery","crypto_present":false,"expect":["supply_raw_without_decrypt"]}
+  ]
+}

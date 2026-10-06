@@ -1,0 +1,73 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-04",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/PUSH-RECEIPT-WRITE-CHAIN.md"
+  },
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {
+      "name": "negative_receipt_caller_tag_ignored",
+      "owner_status": 3,
+      "caller_tag": -17,
+      "packet_id": 17,
+      "expected_write_tag": 17,
+      "expected_effects": [
+        "read_packet_data",
+        "encrypt_packet_data",
+        "read_socket",
+        "read_packet_header",
+        "read_packet_id",
+        "derive_write_tag_from_packet_id",
+        "write_data_timeout_minus_one",
+        "toggle_out_segment_timeout_true"
+      ]
+    },
+    {
+      "name": "positive_ordinary_caller_tag_ignored",
+      "owner_status": 3,
+      "caller_tag": 42,
+      "packet_id": 17,
+      "expected_write_tag": 17,
+      "expected_effects": [
+        "read_packet_data",
+        "encrypt_packet_data",
+        "read_socket",
+        "read_packet_header",
+        "read_packet_id",
+        "derive_write_tag_from_packet_id",
+        "write_data_timeout_minus_one",
+        "toggle_out_segment_timeout_true"
+      ]
+    },
+    {
+      "name": "max_packet_id_zero_extension",
+      "owner_status": 3,
+      "caller_tag": 42,
+      "packet_id": 4294967295,
+      "expected_write_tag": 4294967295,
+      "expected_effects": [
+        "read_packet_data",
+        "encrypt_packet_data",
+        "read_socket",
+        "read_packet_header",
+        "read_packet_id",
+        "derive_write_tag_from_packet_id",
+        "write_data_timeout_minus_one",
+        "toggle_out_segment_timeout_true"
+      ]
+    },
+    {
+      "name": "receipt_status_suppressed",
+      "owner_status": 2,
+      "caller_tag": -17,
+      "packet_id": 17,
+      "expected_write_tag": 0,
+      "expected_effects": [
+        "owner_status_gate_suppresses_packet_access"
+      ]
+    }
+  ]
+}

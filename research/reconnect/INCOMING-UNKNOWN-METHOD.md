@@ -38,7 +38,7 @@ receipt constructor accept that nil notice is modeled separately in the typed
 notice contract and is not generalized to outer exception handling.
 
 The synthetic fixture is
-`internal/protocol/sessionlogin/testdata/reconnect/rc-q5-incoming-unknown-method.json`.
+`research/fixtures/reconnect/rc-q5-incoming-unknown-method.json`.
 It records only the absent lookup, nil-safe constructor path, exact selector
 derivation, and conditional selector gate; it does not activate a runtime
 notice dispatcher or receipt transport.

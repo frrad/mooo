@@ -1,0 +1,106 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-04",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/INCOMING-PUSH-NOTICES.md"
+  },
+  "status": "reviewed-static-source-unexecuted-runtime",
+  "source": {
+    "packet_producer": "0x101774064",
+    "default_receive_handler": "0x10152049c",
+    "push_notice_init_with_packet": "0x10166b338",
+    "loco_model_init_with_json_object": "0x10167beb0",
+    "sg_json_object_init_with_json_object": "SGJsonKit+0x350c",
+    "block_sync_name_mapping_dictionary": "0x101350748"
+  },
+  "cases": [
+    {
+      "name": "hint_nil_body_stops_before_delegate_or_receipt",
+      "model": "hint",
+      "body": "nil",
+      "expected_effects": [
+        "method_lookup",
+        "construct_notice",
+        "read_packet_body",
+        "loco_model_passes_nil_to_super",
+        "sgjson_raises_nil_json_exception",
+        "stop_before_nested_chat_log_delegate_or_receipt"
+      ]
+    },
+    {
+      "name": "hint_empty_dictionary_constructs_nested_chat_log_from_same_object",
+      "model": "hint",
+      "body": "empty_dictionary",
+      "expected_effects": [
+        "method_lookup",
+        "construct_notice",
+        "read_packet_body",
+        "sgjson_dictionary",
+        "missing_and_nsnull_fields_keep_defaults",
+        "hint_super_init_succeeds",
+        "construct_nested_chat_log_with_same_json_object",
+        "delegate_hint_notice",
+        "construct_receipt",
+        "send_receipt"
+      ]
+    },
+    {
+      "name": "block_sync_nsnull_fields_keep_defaults",
+      "model": "block_sync",
+      "body": "dictionary_with_nsnull_fields",
+      "mapping_input": {"r": null, "pr": null},
+      "mapping_expected": {},
+      "decoded_expected": {"revision": 0, "plusRevision": 0},
+      "expected_effects": [
+        "method_lookup",
+        "construct_notice",
+        "read_packet_body",
+        "sgjson_dictionary",
+        "nsnull_fields_skipped",
+        "signed_int32_fields_remain_zero_defaults",
+        "delegate_block_sync_notice",
+        "construct_receipt",
+        "send_receipt"
+      ]
+    },
+    {
+      "name": "block_sync_typed_signed_int32_mapping",
+      "model": "block_sync",
+      "body": "dictionary_with_typed_int32_fields",
+      "input_fields": {"r": -2147483648, "pr": 2147483647},
+      "expected_fields": {"revision": -2147483648, "plusRevision": 2147483647},
+      "decoded_expected": {"revision": -2147483648, "plusRevision": 2147483647},
+      "expected_effects": [
+        "method_lookup",
+        "construct_notice",
+        "read_packet_body",
+        "mapping_source_r_to_destination_revision",
+        "mapping_source_pr_to_destination_plusRevision",
+        "remove_source_r_before_continue",
+        "remove_source_pr_before_continue",
+        "delegate_block_sync_notice",
+        "construct_receipt",
+        "send_receipt"
+      ]
+    }
+  ],
+  "block_sync_mapping": [
+    ["dl", "unblockIds"],
+    ["f", "isFull"],
+    ["l", "blockIds"],
+    ["pdl", "plusUnblockIds"],
+    ["pf", "plusIsFull"],
+    ["pl", "plusBlockIds"],
+    ["pr", "plusRevision"],
+    ["pts", "plusBlockTypes"],
+    ["r", "revision"],
+    ["ts", "blockTypes"]
+  ],
+  "gaps": [
+    "Foundation_KVC_numeric_coercion_is_not_claimed; vectors use explicit signed_int32 inputs",
+    "outer_exception_catch_or_disconnect_policy_is_not_traced",
+    "runtime_method_dispatch_and_receipt_transport_are_not_activated_by_this_fixture"
+  ]
+}

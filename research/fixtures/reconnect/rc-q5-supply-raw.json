@@ -1,0 +1,250 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-04",
+    "method": "Binary analysis of the official client; expected outputs derived by reading code, not by executing it",
+    "doc": "research/reconnect/EVIDENCE.md"
+  },
+  "status": "reviewed-static-unexecuted-runtime",
+  "cases": [
+    {
+      "name": "short_buffer_waits_for_header",
+      "initial_buffer_length": 0,
+      "append_length": 21,
+      "current_header_present": false,
+      "header_init_present": false,
+      "body_length": 0,
+      "packet_init_present": false,
+      "header_delegate_present": true,
+      "packet_delegate_present": true,
+      "expected_return": 0,
+      "expected_remaining": 21,
+      "expected_effects": [
+        "append_data"
+      ],
+      "expected_packet_data_present": false,
+      "expected_packet_data_by_frame": [],
+      "frames": [],
+      "expected_current_header": false,
+      "expected_frame_input_exhausted": false
+    },
+    {
+      "name": "header_body_incomplete_returns_remaining",
+      "initial_buffer_length": 0,
+      "append_length": 30,
+      "current_header_present": false,
+      "header_init_present": true,
+      "body_length": 16,
+      "packet_init_present": false,
+      "header_delegate_present": true,
+      "packet_delegate_present": true,
+      "expected_return": 8,
+      "expected_remaining": 30,
+      "expected_effects": [
+        "append_data",
+        "init_header_from_buffer",
+        "set_current_header",
+        "produce_packet_header"
+      ],
+      "expected_packet_data_present": false,
+      "expected_packet_data_by_frame": [],
+      "frames": [],
+      "expected_current_header": true,
+      "expected_frame_input_exhausted": false
+    },
+    {
+      "name": "zero_body_packet_consumes_header",
+      "initial_buffer_length": 0,
+      "append_length": 22,
+      "current_header_present": false,
+      "header_init_present": true,
+      "body_length": 0,
+      "packet_init_present": true,
+      "header_delegate_present": true,
+      "packet_delegate_present": true,
+      "expected_return": 0,
+      "expected_remaining": 0,
+      "expected_effects": [
+        "append_data",
+        "init_header_from_buffer",
+        "set_current_header",
+        "produce_packet_header",
+        "clear_current_header",
+        "init_packet_data",
+        "consume_packet_bytes",
+        "produce_packet"
+      ],
+      "expected_packet_data_present": true,
+      "expected_packet_data_by_frame": [
+        true
+      ],
+      "frames": [],
+      "expected_current_header": false,
+      "expected_frame_input_exhausted": false
+    },
+    {
+      "name": "packet_init_nil_still_consumes_and_dispatches",
+      "initial_buffer_length": 0,
+      "append_length": 22,
+      "current_header_present": false,
+      "header_init_present": true,
+      "body_length": 0,
+      "packet_init_present": false,
+      "header_delegate_present": true,
+      "packet_delegate_present": true,
+      "expected_return": 0,
+      "expected_remaining": 0,
+      "expected_effects": [
+        "append_data",
+        "init_header_from_buffer",
+        "set_current_header",
+        "produce_packet_header",
+        "clear_current_header",
+        "init_packet_data",
+        "consume_packet_bytes",
+        "produce_packet"
+      ],
+      "expected_packet_data_present": false,
+      "expected_packet_data_by_frame": [
+        false
+      ],
+      "frames": [],
+      "expected_current_header": false,
+      "expected_frame_input_exhausted": false
+    },
+    {
+      "name": "header_init_nil_uses_nil_header_body_zero",
+      "initial_buffer_length": 0,
+      "append_length": 22,
+      "current_header_present": false,
+      "header_init_present": false,
+      "body_length": 99,
+      "packet_init_present": true,
+      "header_delegate_present": false,
+      "packet_delegate_present": false,
+      "expected_return": 0,
+      "expected_remaining": 0,
+      "expected_effects": [
+        "append_data",
+        "init_header_from_buffer",
+        "set_current_header",
+        "clear_current_header",
+        "init_packet_data",
+        "consume_packet_bytes"
+      ],
+      "expected_packet_data_present": true,
+      "expected_packet_data_by_frame": [
+        true
+      ],
+      "frames": [],
+      "expected_current_header": false,
+      "expected_frame_input_exhausted": false
+    },
+    {
+      "name": "existing_header_partial_waits_for_body",
+      "initial_buffer_length": 22,
+      "append_length": 0,
+      "current_header_present": true,
+      "header_init_present": true,
+      "body_length": 10,
+      "packet_init_present": true,
+      "header_delegate_present": true,
+      "packet_delegate_present": true,
+      "expected_return": 10,
+      "expected_remaining": 22,
+      "expected_effects": [
+        "append_data"
+      ],
+      "expected_packet_data_present": false,
+      "expected_packet_data_by_frame": [],
+      "frames": [],
+      "expected_current_header": true,
+      "expected_frame_input_exhausted": false
+    },
+    {
+      "name": "two_complete_packets_loop_and_dispatches_each",
+      "initial_buffer_length": 0,
+      "append_length": 44,
+      "current_header_present": false,
+      "header_init_present": true,
+      "body_length": 0,
+      "packet_init_present": true,
+      "header_delegate_present": true,
+      "packet_delegate_present": true,
+      "expected_return": 0,
+      "expected_remaining": 0,
+      "expected_effects": [
+        "append_data",
+        "init_header_from_buffer",
+        "set_current_header",
+        "produce_packet_header",
+        "clear_current_header",
+        "init_packet_data",
+        "consume_packet_bytes",
+        "produce_packet",
+        "init_header_from_buffer",
+        "set_current_header",
+        "produce_packet_header",
+        "clear_current_header",
+        "init_packet_data",
+        "consume_packet_bytes",
+        "produce_packet"
+      ],
+      "expected_packet_data_present": false,
+      "expected_packet_data_by_frame": [
+        true,
+        false
+      ],
+      "frames": [
+        {
+          "header_init_present": true,
+          "body_length": 0,
+          "packet_init_present": true
+        },
+        {
+          "header_init_present": true,
+          "body_length": 0,
+          "packet_init_present": false
+        }
+      ],
+      "expected_current_header": false,
+      "expected_frame_input_exhausted": false
+    },
+    {
+      "name": "trailing_frame_requires_explicit_description",
+      "initial_buffer_length": 0,
+      "append_length": 44,
+      "current_header_present": false,
+      "header_init_present": true,
+      "body_length": 0,
+      "packet_init_present": true,
+      "header_delegate_present": false,
+      "packet_delegate_present": false,
+      "frames": [
+        {
+          "header_init_present": true,
+          "body_length": 0,
+          "packet_init_present": true
+        }
+      ],
+      "expected_return": 0,
+      "expected_remaining": 22,
+      "expected_packet_data_present": true,
+      "expected_packet_data_by_frame": [
+        true
+      ],
+      "expected_current_header": false,
+      "expected_frame_input_exhausted": true,
+      "expected_effects": [
+        "append_data",
+        "init_header_from_buffer",
+        "set_current_header",
+        "clear_current_header",
+        "init_packet_data",
+        "consume_packet_bytes",
+        "frame_input_exhausted"
+      ]
+    }
+  ]
+}
