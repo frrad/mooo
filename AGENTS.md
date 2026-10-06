@@ -86,6 +86,21 @@ reproducible research before bridge features.
   stable public API exists, and private code under `internal/`.
 - Write tests for protocol parsers and state machines using synthetic or thoroughly
   sanitized fixtures.
+- Tests under `internal/` must exercise production code. A parity test feeds a
+  fixture's inputs to the real mooo code path and compares the result with the
+  official client's expected outputs. Never write a model of the official client
+  inside a `_test.go` file and present it as coverage; `internal/testpolicy`
+  rejects test files that reference no production code. Follow
+  [`research/parity-fixtures.md`](research/parity-fixtures.md) for fixture
+  location, the `provenance` object, and deliberate deviations.
+- Claim parity with the official client only against fixtures whose provenance
+  is `executed` (a lab harness ran the official client's code) or `observed`
+  (a controlled owned-account experiment). Statically derived fixtures are leads.
+- When a fixture shows mooo differing from the official client, write the
+  failing test first, then fix mooo or record the deviation in the fixture.
+- Do not add production code that only tests call. A research finding with no
+  consuming code path stays in `research/` as a document and fixture until the
+  code that needs it lands.
 - Whenever a bug is discovered in production or during a live owned-account
   experiment, add a regression test that reproduces the failure and protects the
   fix before considering the bug resolved.

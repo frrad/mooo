@@ -47,6 +47,14 @@ scenarios cover:
 All data is synthetic and account-independent. No endpoint, credential, media
 URL, device identifier, or message from a live profile is used as a fixture.
 
+## Parity tests
+
+Tests that compare mooo with the official client follow
+[`parity-fixtures.md`](parity-fixtures.md): a shared fixture with explicit
+provenance, consumed by production code in CI and by a lab harness against the
+official client. `internal/testpolicy` rejects test files under `internal/` that
+reference no production code.
+
 ## Other layers
 
 - Protocol package tests pin framing, encryption, BSON/JSON widths, validation,

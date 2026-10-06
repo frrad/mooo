@@ -103,28 +103,40 @@ Execution through first text send/receive follows
 
 ### Durable parity implementation pipeline
 
-Small parity slices move through one repeatable sequence: an approved public
-specification and synthetic characterization tests are reviewed first; an
-implementation agent then writes an independent reducer or decoder against
-that contract; the branch runs the repository checks and is squash-merged only
-after CI reports it mergeable. The CHGMETA slice is complete through its
-bounded effect-selection reducer gates. CHGMCMETA tracing and the chat-metadata API remain
-separate follow-up work, while persistence, failure behavior, and other
-unresolved effects stay outside this slice until their contracts are reviewed.
+Parity work follows [`research/parity-fixtures.md`](research/parity-fixtures.md).
+A slice starts from a traced official-client chain and a synthetic fixture under
+`research/fixtures/` with explicit provenance. If mooo already has the code path,
+a CI test feeds the fixture to that production code, red first when it differs,
+and the branch fixes mooo or records a deliberate deviation. If mooo has no code
+path yet, the slice ends at the research document and fixture: no Go model of
+the official client and no test-only production code. Parity is claimed only
+against `executed` or `observed` fixtures; a lab harness upgrades `static`
+fixtures by running the official client's own code on the same inputs.
 
-The reconnect owner is progressing through the same boundary. The current
-feature branch has a deterministic, injected relative timer owner with
-generation invalidation and terminal shutdown, exercised through the real
-Session completion seam. The production Session binds that owner before the
-first LOGINLIST request; LOGINLIST/LCHATLIST use the single reader's
-correlated raw-request path, which schedules before page interpretation and
-buffers unsolicited packets until bootstrap handoff. Tests cover empty-BSON
-PING delivery during the completion-to-next-request gap, bounded cancellation,
-and failed-bootstrap cleanup. Remaining runtime work is explicit: cover
-push-receipt cancellation/scheduling and preserve shutdown generation guards
-through every terminal fan-out path.
-Mapping the serialized ping configuration key and claiming official queue
-timing remain separate evidence gaps.
+The CHGMETA slice, the reconnect owner, and the push-receipt work below predate
+this rule. Their status text is historical and is being reconciled with the
+code during the migration below.
+
+### Parity test migration
+
+Audit of `main` at 94dc92e (2026-10-05): 45 test files checked self-contained
+models against fixtures without calling mooo, and about 25 non-test files were
+reachable only from tests (`deadcode -tags=goolm ./...`). The production
+receive path decodes BSON with mongo-driver and implements none of the decoder
+behaviour those fixtures describe.
+
+- [x] Record the policy in `AGENTS.md` and `research/parity-fixtures.md`, and add
+      the `internal/testpolicy` lint with a shrink-only allowlist.
+- [ ] Move fixtures to `research/fixtures/` with `provenance`, delete the
+      model-only tests, and empty the allowlist.
+- [ ] Delete or connect the test-only production code. Read receipts
+      (`readstate`, `notiread`) are being connected to the bridge separately;
+      push delivery receipts need a product decision.
+- [ ] Run fixtures with a production equivalent (BSON decoding, events, receive
+      path, LOCO framing) through the real code; land each difference as a
+      failing test, then fix it or record a deviation.
+- [ ] Build the first lab harness for the official BSON dictionary decoder and
+      upgrade its invalid-UTF-8 fixture to `executed`.
 
 ### Push-receipt transport integration plan
 
