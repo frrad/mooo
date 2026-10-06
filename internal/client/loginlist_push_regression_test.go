@@ -32,6 +32,9 @@ func TestConnectSessionPreservesMessagesBeforeLoginListReply(t *testing.T) {
 		if request.Header.Method != "LOGINLIST" {
 			return fmt.Errorf("method = %q, want LOGINLIST", request.Header.Method)
 		}
+		if err := checkLoginListFieldSet(request.Body); err != nil {
+			return err
+		}
 		for i := 0; i < 70; i++ {
 			body := mustBSON(bson.D{
 				{Key: "chatId", Value: int64(7)},
@@ -107,4 +110,28 @@ func TestConnectSessionPreservesMessagesBeforeLoginListReply(t *testing.T) {
 		t.Fatalf("unexpected extra packet %q", packet.Header.Method)
 	default:
 	}
+}
+
+// officialLoginListFields is the LOGINLIST field set of the macOS client's
+// request builder. It has no `rp`: the official builder has no such property
+// (frrad/kakao LOGINLIST rp/BSON binary note, macOS 26.8.0), and the value
+// mooo used to send had only prior-art provenance. sKey is unset and omitted.
+var officialLoginListFields = []string{
+	"appVer", "os", "lang", "duuid", "oauthToken", "ntype", "MCCMNC",
+	"revision", "dtype", "pcst", "bg", "chatIds", "maxIds", "lastTokenId", "lbk",
+}
+
+func checkLoginListFieldSet(body []byte) error {
+	elements, err := bson.Raw(body).Elements()
+	if err != nil {
+		return err
+	}
+	got := make([]string, len(elements))
+	for i, element := range elements {
+		got[i] = element.Key()
+	}
+	if fmt.Sprint(got) != fmt.Sprint(officialLoginListFields) {
+		return fmt.Errorf("LOGINLIST fields = %v, want %v", got, officialLoginListFields)
+	}
+	return nil
 }

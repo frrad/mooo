@@ -464,7 +464,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	loginBody, err := (sessionlogin.LoginListRequest{
 		AppVer: state.Identity.Metadata.AppVersion, OS: "mac", Lang: "en", DUUID: wireUUID,
 		OAuthToken: state.Credentials.AccessToken, NType: 0, MCCMNC: "99999", Revision: 0,
-		DType: 2, PCST: 0, RP: []byte{0, 0, 0xff, 0xff, 0, 0}, BG: false,
+		DType: 2, PCST: 0, BG: false,
 		ChatIDs: chatIDs, MaxIDs: maxIDs, LastTokenID: resume.LastTokenID, LBK: resume.LBK,
 	}).MarshalBSON()
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 
 // loginListDocument is deliberately separate from the semantic request. The
 // reviewed serializer omits nil object-valued properties, including sKey.
+// There is no `rp`: the official builder has no such property.
 // Fixed-width Go integer types preserve the observed BSON widths.
 type loginListDocument struct {
 	AppVer      string  `bson:"appVer"`
@@ -20,7 +21,6 @@ type loginListDocument struct {
 	Revision    int32   `bson:"revision"`
 	DType       int32   `bson:"dtype"`
 	PCST        int32   `bson:"pcst"`
-	RP          []byte  `bson:"rp,omitempty"`
 	BG          bool    `bson:"bg"`
 	ChatIDs     []int64 `bson:"chatIds"`
 	MaxIDs      []int64 `bson:"maxIds"`
@@ -43,7 +43,7 @@ func (r LoginListRequest) MarshalBSON() ([]byte, error) {
 	doc := loginListDocument{
 		AppVer: r.AppVer, OS: r.OS, Lang: r.Lang, DUUID: r.DUUID,
 		OAuthToken: r.OAuthToken, NType: r.NType, MCCMNC: r.MCCMNC,
-		Revision: r.Revision, DType: r.DType, PCST: r.PCST, RP: r.RP,
+		Revision: r.Revision, DType: r.DType, PCST: r.PCST,
 		BG: r.BG, ChatIDs: chatIDs, MaxIDs: maxIDs,
 		LastTokenID: r.LastTokenID, LBK: r.LBK,
 	}

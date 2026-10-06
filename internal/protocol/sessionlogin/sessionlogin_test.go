@@ -18,7 +18,6 @@ func TestLoginListRequestValidationAndWireTypes(t *testing.T) {
 		Revision:    int32(8),
 		DType:       int32(9),
 		PCST:        int32(10),
-		RP:          []byte{1, 2},
 		BG:          true,
 		ChatIDs:     []int64{11, 12},
 		MaxIDs:      []int64{21, 22},
