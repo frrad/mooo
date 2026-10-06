@@ -116,6 +116,17 @@ dump directory (0700, files 0600), one JSON file per distinct body, with enough
 data (method, header, body hex) to reproduce the comparison in isolation.
 Turning a dump into a committed fixture requires manual sanitization.
 
+Scope of the comparison: the observed decoder models only the macOS client's
+LOCO dictionary decoder. That client also ships other structured-data readers
+(a JSON layer, a separate general-purpose BSON library, and VoIP signaling
+accessors), and which incoming methods, if any, route through them has not
+been traced. `official-ignores-type` and similar kinds therefore mean "the
+LOCO dictionary decoder would not surface this", not "the official client
+never reads this type". If a method is later shown to use another reader,
+its discrepancies must be reinterpreted or the shadow scoped per method.
+(Source: frrad/kakao research note on LOGINLIST `rp` and BSON binary, macOS
+26.8.0, static trace.)
+
 Modes are `off`, `log` and `panic`. Test binaries default to `panic`, the lab
 CLI defaults to `panic`, and the bridge defaults to `log`
 (`network.bson_shadow.mode`). Panic is not used in the bridge because any
