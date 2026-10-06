@@ -151,6 +151,12 @@ behaviour those fixtures describe.
 - [ ] Run fixtures with a production equivalent (BSON decoding, events, receive
       path, LOCO framing) through the real code; land each difference as a
       failing test, then fix it or record a deviation.
+- [ ] Decide how the production receive path handles the six
+      invalid-UTF-8 dictionary cases where mongo-driver differs from the
+      official client (see
+      [`INVALID-UTF8-DICTIONARY.md`](research/reconnect/INVALID-UTF8-DICTIONARY.md)):
+      adopt the official behaviour, or record each as a deliberate deviation.
+      `bsonshadow` already reports them at runtime.
 - [ ] Build the first lab harness for the official BSON dictionary decoder and
       upgrade its invalid-UTF-8 fixture to `executed`.
 
