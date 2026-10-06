@@ -39,7 +39,10 @@ func (s *Session) SyncMessages(ctx context.Context, request syncmsg.Request) (sy
 	return response, nil
 }
 
-// SyncMessages performs one page through the client's existing session.
+// SyncMessages performs one page through the client's existing session. It
+// does not record a read acknowledgement: whether a catch-up page (cnt=0)
+// changes the server's read state is unproven, and recording one would make
+// MarkRead skip positions the server may still show as unread.
 func (c *Client) SyncMessages(ctx context.Context, request syncmsg.Request) (syncmsg.Response, error) {
 	if c == nil || ctx == nil {
 		return syncmsg.Response{}, ErrProtocol
@@ -50,25 +53,7 @@ func (c *Client) SyncMessages(ctx context.Context, request syncmsg.Request) (syn
 	if err != nil {
 		return syncmsg.Response{}, err
 	}
-	response, err := session.SyncMessages(ctx, request)
-	if err != nil {
-		return syncmsg.Response{}, err
-	}
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return syncmsg.Response{}, ErrClientClosed
-	}
-	checkpoint := c.checkpoint
-	endPersistence := c.beginPersistenceLocked()
-	c.mu.Unlock()
-	defer endPersistence()
-	if checkpoint != nil {
-		if _, err := checkpoint.CommitReadWatermark(request.ChatID, request.Max); err != nil {
-			return syncmsg.Response{}, err
-		}
-	}
-	return response, nil
+	return session.SyncMessages(ctx, request)
 }
 
 // InitialSyncTargets returns each synchronized chat's current last-log ceiling.

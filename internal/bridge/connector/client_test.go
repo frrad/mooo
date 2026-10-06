@@ -57,6 +57,7 @@ type fakeKakao struct {
 	replies           []sentReply
 	sendResp          chat.WriteResponse
 	sendErr           error
+	marks             [][2]int64
 	imageResp         media.SendResult
 	imageErr          error
 	imageData         []byte
@@ -167,6 +168,19 @@ func (f *fakeKakao) SendText(ctx context.Context, chatID int64, message string) 
 	defer f.mu.Unlock()
 	f.sends = append(f.sends, sentText{chatID: chatID, message: message})
 	return f.sendResp, f.sendErr
+}
+
+func (f *fakeKakao) MarkRead(ctx context.Context, chatID, watermark int64) (syncmsg.Response, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.marks = append(f.marks, [2]int64{chatID, watermark})
+	return syncmsg.Response{}, nil
+}
+
+func (f *fakeKakao) markReads() [][2]int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([][2]int64(nil), f.marks...)
 }
 
 func (f *fakeKakao) SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error) {
@@ -645,10 +659,13 @@ func TestMetadataEventsAreNotQueuedOrCommitted(t *testing.T) {
 	kc, harness := newTestClient(t, nil)
 	fake := &fakeKakao{}
 
-	kc.handleEvent(fake, events.ReadStateChanged{ChatID: testChatID, UserID: testOtherID, Watermark: 11})
 	kc.handleEvent(fake, events.UnknownPacket{Method: "SOMETHING"})
-
-	if len(harness.queued) != 0 || len(fake.committed()) != 0 {
+	if len(harness.queued) != 0 {
+		t.Fatalf("unknown packet queued %d remote events", len(harness.queued))
+	}
+	// A read notice becomes a receipt, which carries no message position.
+	kc.handleEvent(fake, events.ReadStateChanged{ChatID: testChatID, UserID: testOtherID, Watermark: 11})
+	if len(harness.queued) != 1 || harness.queued[0].GetType() != bridgev2.RemoteEventReadReceipt || len(fake.committed()) != 0 {
 		t.Fatalf("queued %d, committed %d", len(harness.queued), len(fake.committed()))
 	}
 }
@@ -1147,7 +1164,7 @@ func TestOutboundEmoteIsPrefixed(t *testing.T) {
 func TestCapabilitiesAdvertisePartialReplies(t *testing.T) {
 	kc := connectedClient(t, &fakeKakao{})
 	features := kc.GetCapabilities(context.Background(), nil)
-	if features.Reply != event.CapLevelPartialSupport || features.ID != "com.github.frrad.mooo.capabilities.2026_10_04.photos1.reactions1" || features.Reaction != event.CapLevelPartialSupport || features.ReactionCount != 1 {
+	if features.Reply != event.CapLevelPartialSupport || features.ID != "com.github.frrad.mooo.capabilities.2026_10_05.photos1.reactions1.receipts1" || features.Reaction != event.CapLevelPartialSupport || features.ReactionCount != 1 || !features.ReadReceipts {
 		t.Fatalf("capabilities = %+v", features)
 	}
 }

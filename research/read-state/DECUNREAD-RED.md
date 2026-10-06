@@ -1,5 +1,10 @@
 # DECUNREAD reducer contract
 
+> The Go reducer this contract specified (`internal/protocol/readstate`) was
+> deleted on 2026-10-05: the bridge uses only the notice's chat, user and
+> watermark ([bridge policy](../bridge/read-receipt-policy.md)). The contract
+> remains the specification for any future room/member unread store.
+
 The clean-room reducer accepts a copied durable room/member snapshot, one decoded
 `DECUNREAD` notice, and the selected unread-query result. It returns a planned
 snapshot plus ordered typed effects. It does not persist state, issue requests,

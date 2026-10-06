@@ -67,7 +67,7 @@ func TestStorePersistsSortedResumeBoundary(t *testing.T) {
 
 func TestStoreRejectsUnknownVersionAndUnsafeMode(t *testing.T) {
 	path := testPath(t)
-	if err := os.WriteFile(path, []byte(`{"version":5,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[]}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"version":6,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Open(path); !errors.Is(err, ErrVersionMismatch) {
@@ -101,7 +101,7 @@ func TestOpenMigratesVersionTwoCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(contents) == "" || !strings.Contains(string(contents), `"version":4`) || !strings.Contains(string(contents), `"history_gaps":[]`) || !strings.Contains(string(contents), `"read_watermarks":[]`) {
+	if string(contents) == "" || !strings.Contains(string(contents), `"version":5`) || !strings.Contains(string(contents), `"history_gaps":[]`) || !strings.Contains(string(contents), `"read_watermarks":[]`) {
 		t.Fatalf("migration was not persisted: %s", contents)
 	}
 }
@@ -123,8 +123,33 @@ func TestOpenMigratesVersionThreeCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(contents), `"version":4`) || !strings.Contains(string(contents), `"read_watermarks":[]`) {
+	if !strings.Contains(string(contents), `"version":5`) || !strings.Contains(string(contents), `"read_watermarks":[]`) {
 		t.Fatalf("v3 migration was not persisted: %s", contents)
+	}
+}
+
+func TestOpenMigratesVersionFourCheckpointDiscardingUnprovenReadWatermarks(t *testing.T) {
+	path := testPath(t)
+	if err := os.WriteFile(path, []byte(`{"version":4,"clean_shutdown":true,"last_token_id":9,"lbk":3,"chats":[{"chat_id":42,"max_log_id":100}],"known_chats":[{"chat_id":42,"max_log_id":105}],"history_gaps":[],"read_watermarks":[{"chat_id":42,"watermark":105}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := store.Snapshot()
+	if got.Version != Version || !store.IsCommitted(42, 100) || len(got.KnownChats) != 1 || got.LastTokenID != 9 {
+		t.Fatalf("migrated checkpoint = %#v", got)
+	}
+	if watermark := store.ReadWatermark(42); watermark != 0 {
+		t.Fatalf("migrated read watermark = %d, want discarded", watermark)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), `"version":5`) || !strings.Contains(string(contents), `"read_watermarks":[]`) {
+		t.Fatalf("v4 migration was not persisted: %s", contents)
 	}
 }
 
@@ -183,9 +208,9 @@ func TestReadWatermarkRejectsInvalidInputs(t *testing.T) {
 
 	path := testPath(t)
 	for _, contents := range []string{
-		`{"version":4,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[{"chat_id":0,"watermark":1}]}`,
-		`{"version":4,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[{"chat_id":2,"watermark":0}]}`,
-		`{"version":4,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[{"chat_id":3,"watermark":2},{"chat_id":3,"watermark":4}]}`,
+		`{"version":5,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[{"chat_id":0,"watermark":1}]}`,
+		`{"version":5,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[{"chat_id":2,"watermark":0}]}`,
+		`{"version":5,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[{"chat_id":3,"watermark":2},{"chat_id":3,"watermark":4}]}`,
 	} {
 		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 			t.Fatal(err)
