@@ -196,3 +196,12 @@ receipt reuse, duplicate gallery controls, private stdin preservation, and
 transient XML failures. The shared text launcher passed on A's owned chat.
 The full A/B evidence and remaining group scope are in
 [direct messaging validation](bridge/DIRECT-MESSAGING-VALIDATION.md).
+
+## Encrypted Matrix acceptance
+
+Use the reusable Go [Matrix lab companion](matrix-lab.md) with a stable private
+crypto device and exclusive send receipts. Track new harness failures there and
+add regressions before considering them resolved. The owned A/B direct-room
+[text, photo and restart acceptance evidence](bridge/ENCRYPTED-ROOM-VALIDATION.md)
+checks the production bridge with the pinned SDK; changing the emulators' login
+state is unnecessary for this test.

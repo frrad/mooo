@@ -407,3 +407,14 @@ preparation and follow
 [the E2E maintenance contract](research/e2e-tooling.md) whenever startup, login,
 or navigation encounters a new edge case. Add a sanitized regression and improve
 the shared helper before resuming the experiment.
+
+### Encrypted direct-room acceptance (2026-10-07)
+
+Owned A/B text and photos passed both directions in an encrypted Matrix portal,
+including exact decrypted inbound PNG bytes and offline catch-up once after a
+normal bridge restart with retained keys. See
+[`ENCRYPTED-ROOM-VALIDATION.md`](research/bridge/ENCRYPTED-ROOM-VALIDATION.md).
+The reusable `cmd/mooo-matrix-lab` companion records the harness parsing/login
+edge cases and prevents automatic repeat sends. Remaining acceptance includes
+key rotation/missing-key recovery/trust transitions, encrypted replies and
+reactions, Beeper deployment, and groups (third owned participant pending).
