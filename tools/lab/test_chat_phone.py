@@ -3,7 +3,7 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from chat_phone import clickable_label, send_text, photo_send, send_sticker
+from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album
 
 
 def frame(body):
@@ -65,6 +65,24 @@ class ChatTests(unittest.TestCase):
             p = FakePhone([chat()])
             with self.assertRaises(ValueError):
                 send_sticker(p, 'owned peer', Path(d) / 'missing-preview.json')
+            self.assertEqual(p.calls, [])
+
+    def test_album_requires_collage_count_and_exact_send_bounds(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = chat()
+            ET.SubElement(root, 'node', {'resource-id': 'com.kakao.talk:id/send_bundle_checkbox', 'checked': 'true', 'bounds': '[0,0][20,20]'})
+            for y in [40, 80]:
+                ET.SubElement(root, 'node', {'resource-id': 'com.kakao.talk:id/send_button', 'clickable': 'true', 'content-desc': '2 Selected, Send', 'bounds': '[0,' + str(y) + '][20,' + str(y + 20) + ']'})
+            p = FakePhone([root])
+            receipt = Path(d) / 'album.json'
+            self.assertEqual(send_album(p, 'owned peer', '[0,40][20,60]', 2, receipt), 'selected-album-submitted-once')
+            self.assertEqual(len(p.calls), 1)
+            with self.assertRaises(ValueError):
+                send_album(p, 'owned peer', '[0,40][20,60]', 2, receipt)
+            root.find("node[@resource-id='com.kakao.talk:id/send_bundle_checkbox']").set('checked', 'false')
+            p = FakePhone([root])
+            with self.assertRaises(ValueError):
+                send_album(p, 'owned peer', '[0,40][20,60]', 2, Path(d) / 'other.json')
             self.assertEqual(p.calls, [])
 
     def test_gallery_duplicate_send_fails_without_explicit_bounds(self):

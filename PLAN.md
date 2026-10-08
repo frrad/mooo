@@ -427,3 +427,16 @@ animated WebP passed encrypted attachment verification and restart uniqueness;
 synthetic GIF and official executed codec vectors exercise production code.
 See [research/stickers.md](research/stickers.md). Sound/composition, outbound
 stickers, paid-pack behavior and Matrix client animation playback remain gaps.
+
+### MultiPhoto acceptance and LargeVideo/LargeFile gaps (2026-10-08)
+
+Inbound URL-based MultiPhoto (27) passed owned emulator emission, encrypted Matrix
+exact media bytes, two-part ordering, offline catch-up, live delivery and restart
+uniqueness. Missing-part upserts prevent partial delivery from being mistaken for
+a complete duplicate; shared send-album tooling has guarded durable receipts.
+See [research/multi-large-media.md](research/multi-large-media.md). LargeVideo (28)
+needs an eligible owned sender/resource fixture: the current video attempt emitted
+3 and the account UI offered subscriptions. LargeFile (29) is skipped when not
+live-testable, as the maintainer permits; the normal Android file policy does not
+select LARGE. Do not retag another type and call it E2E coverage. Resource-only
+albums, full official storage parity and outbound albums remain gaps.
