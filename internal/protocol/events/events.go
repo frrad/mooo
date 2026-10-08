@@ -14,6 +14,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -620,7 +621,7 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 		return nil, ErrMalformedEvent
 	}
 	switch messageType {
-	case 1:
+	case messagetype.Text:
 		messageValue, err := chatLog.LookupErr("message")
 		if err != nil {
 			// Accept the write-side field name for compatible synthetic backends.
@@ -639,7 +640,7 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 			return nil, ErrMalformedEvent
 		}
 		return PhotoMessage{Message: photo}, nil
-	case 12, 20:
+	case messagetype.Sticker, messagetype.AnimatedSticker:
 		value, err := requiredString(chatLog, "attachment")
 		if err != nil {
 			return nil, ErrMalformedEvent

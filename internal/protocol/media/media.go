@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -25,7 +26,7 @@ const (
 	ShipCommand     = "SHIP"
 	PostCommand     = "POST"
 	CompleteCommand = "COMPLETE"
-	PhotoType       = int32(2)
+	PhotoType       = messagetype.Photo
 	MaxImageBytes   = 16 << 20
 )
 
