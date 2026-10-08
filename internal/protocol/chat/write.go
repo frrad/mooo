@@ -6,12 +6,13 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 const (
 	WriteCommand = "WRITE"
-	TextType     = int32(1)
+	TextType     = messagetype.Text
 )
 
 var (

@@ -21,6 +21,7 @@ than failures. Their raw BSON is deliberately not exposed by the typed layer.
   link ID, and bounded source preview.
 - `PhotoMessage`: the validated type-2 photo metadata used by the bounded media
   downloader.
+- `StickerMessage`: types 12/20 and validated inbound resource metadata.
 - `UnsupportedMessage`: chat ID, log ID, and numeric message type.
 - `ReactionChanged`: aggregate reaction items and the server revision from
   reaction metadata changes.
@@ -57,3 +58,6 @@ boundary validation and any distinct server acknowledgement command remain open.
 
 All automated fixtures are synthetic. Live message content and identifiers are
 not stored in the repository.
+
+The [official message-type inventory](message-types.md) names supported and
+unsupported values and flags without expanding payload support.

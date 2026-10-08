@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 const (
-	ReplyType            = int32(26)
+	ReplyType            = messagetype.Reply
 	maxReplyPreviewUTF16 = 100
 )
 
