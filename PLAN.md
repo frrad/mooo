@@ -396,3 +396,11 @@ Execution follows [`research/bridge/PLAN.md`](research/bridge/PLAN.md).
 - Where are device credentials generated and stored, and how are they revoked?
 - Which parts of transport and payloads are encrypted independently of TLS?
 - What server-visible properties distinguish official secondary devices?
+
+## E2E tooling maintenance
+
+Use the shared emulator launcher with private configuration for owned A/B
+preparation and follow
+[the E2E maintenance contract](research/e2e-tooling.md) whenever startup, login,
+or navigation encounters a new edge case. Add a sanitized regression and improve
+the shared helper before resuming the experiment.
