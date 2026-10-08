@@ -10,7 +10,8 @@ import (
 	"strings"
 )
 
-// downloadResource serves the bounded ordinary video/file paths. Callers
+// downloadResource serves bounded ordinary media. An empty checksum is used
+// only for observed audio attachments which do not carry one. Callers
 // separately validate their metadata and expiry units before fetching.
 func downloadResource(ctx context.Context, client *http.Client, rawURL string, size int64, checksum string) ([]byte, error) {
 	if ctx == nil || client == nil || ctx.Err() != nil {
@@ -59,7 +60,7 @@ func downloadResource(ctx context.Context, client *http.Client, rawURL string, s
 		return nil, ErrInvalidAttachment
 	}
 	sum := sha1.Sum(data)
-	if !strings.EqualFold(hex.EncodeToString(sum[:]), checksum) {
+	if checksum != "" && !strings.EqualFold(hex.EncodeToString(sum[:]), checksum) {
 		return nil, ErrChecksumMismatch
 	}
 	return data, nil

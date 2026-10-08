@@ -1,10 +1,11 @@
 import tempfile
 import hashlib
 import unittest
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file
+from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file, send_audio, ensure_silent_emulator
 
 
 def frame(body):
@@ -103,6 +104,48 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(len(p.calls), 1)
             with self.assertRaises(ValueError):
                 send_selected_media(p, 'owned peer', '[0,40][20,60]', receipt, 'video')
+
+    def test_audio_host_input_guard_fails_closed(self):
+        class EmulatorPhone(FakePhone):
+            def adb(self, *args, text=None):
+                return b'mooo-lab\nOK\n'
+        p = EmulatorPhone([])
+        line = '/sdk/qemu-system-aarch64 -avd mooo-lab -no-audio'
+        with patch('chat_phone.subprocess.check_output', return_value=line):
+            ensure_silent_emulator(p)
+        for output in ['', line + ' -allow-host-audio', line + '\n' + line]:
+            with patch('chat_phone.subprocess.check_output', return_value=output):
+                with self.assertRaises(ValueError):
+                    ensure_silent_emulator(p)
+
+    def test_audio_stops_without_dumping_animated_recording(self):
+        initial = chat()
+        ET.SubElement(initial, 'node', {'resource-id': 'com.kakao.talk:id/media_send_layout', 'bounds': '[0,20][20,40]'})
+        sheet = frame('<node resource-id="com.kakao.talk:id/handle_container" bounds="[0,100][40,120]"/>')
+        menu = frame('<node clickable="true" bounds="[0,40][20,60]"><node text="Voice Memo"/></node>')
+        idle = frame('<node text="Voice Memo"/><node resource-id="com.kakao.talk:id/record_control" bounds="[0,60][20,80]"/>')
+        stopped = frame('<node text="Voice Memo"/><node resource-id="com.kakao.talk:id/play" bounds="[0,0][20,20]"/><node resource-id="com.kakao.talk:id/send" bounds="[0,80][20,100]"/>')
+        with tempfile.TemporaryDirectory() as d:
+            receipt = Path(d) / 'audio.json'
+            class AudioPhone(FakePhone):
+                recording = False
+                def dump(self):
+                    if self.recording:
+                        raise AssertionError('idle dump while recorder animated')
+                    return super().dump()
+                def adb(self, *args, text=None):
+                    if args == ('shell', 'input', 'tap', '10', '70'):
+                        if not receipt.exists():
+                            raise AssertionError('recording without receipt')
+                        self.recording = not self.recording
+                    return super().adb(*args, text=text)
+            p = AudioPhone([initial, sheet, menu, idle, stopped, chat()])
+            with patch('chat_phone.ensure_silent_emulator'), patch('chat_phone.time.sleep'):
+                self.assertEqual(send_audio(p, 'owned peer', 3, receipt), 'silent-audio-submitted-once')
+            self.assertFalse(p.recording)
+            self.assertEqual(sum(a == ('shell', 'input', 'tap', '10', '70') for a, _ in p.calls), 2)
+            with self.assertRaises(ValueError):
+                send_audio(p, 'owned peer', 3, receipt)
 
     def file_frames(self, duplicate=False):
         initial = chat()

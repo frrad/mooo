@@ -278,3 +278,16 @@ filename must appear in the owned chat within four dumps. Returning to chat alon
 is insufficient, as observed with an unconfirmed binary fixture. Preserve its
 receipt; never retry automatically. The SDK decrypt expectation can also check
 `filename` for native `m.file` messages.
+
+
+`send-audio` takes private stdin peer, seconds (integer 1–10), and receipt. Start
+in the exact owned chat with an empty composer and microphone permission already
+granted. The script verifies the owned emulator process lacks host-audio input,
+opens Voice Memo, rejects an existing recording, and reserves a durable receipt
+before starting. It stops using the validated control coordinates after the
+bounded interval, without an idle-waiting UI dump during recorder animation.
+Only a stopped preview with Play and Send is submitted. The modal hides underlying
+chat accessibility; recipient verification occurs before opening it. Returning
+to that same owned chat confirms submission, while actual received audio is
+checked independently. Any uncertain attempt keeps its receipt and is never
+automatically repeated. Unknown permission screens stop the script.

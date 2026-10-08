@@ -51,6 +51,9 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 	case events.FileMessage:
 		f := evt.Message
 		return newMessage(kc.messageMeta(f.ChatID, f.LogID, f.AuthorID, f.SentAt), makeMessageID(f.ChatID, f.LogID), evt, convertFile)
+	case events.AudioMessage:
+		a := evt.Message
+		return newMessage(kc.messageMeta(a.ChatID, a.LogID, a.AuthorID, a.SentAt), makeMessageID(a.ChatID, a.LogID), evt, convertAudio)
 	case events.VideoMessage:
 		a := evt.Message
 		return newMessage(kc.messageMeta(a.ChatID, a.LogID, a.AuthorID, a.SentAt), makeMessageID(a.ChatID, a.LogID), evt, convertVideo)
