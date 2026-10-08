@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
@@ -1034,5 +1037,59 @@ func TestQRLoginResumeUsesLoadUserLoginAndPrivateProfile(t *testing.T) {
 	}
 	if login.Client == nil {
 		t.Fatal("LoadUserLogin did not restore a client")
+	}
+}
+
+// Exercise decoding through the real service: the interval error is returned
+// before qrPollResult exists, so fake-result interval tests cannot cover it.
+func TestQRLoginServicePollShapeFailureCancelsAndCleans(t *testing.T) {
+	original := qrPollInterval
+	qrPollInterval = 0
+	t.Cleanup(func() { qrPollInterval = original })
+	for _, tc := range []struct {
+		name, body string
+		want       error
+	}{
+		{"invalid interval", `{"status":-150,"nextRequestIntervalInSeconds":0}`, registration.ErrInvalidQRPollInterval},
+		{"missing interval", `{"status":-150}`, registration.ErrMissingJSONField},
+		{"missing authorization code", `{"status":-100,"nextRequestIntervalInSeconds":3}`, registration.ErrMissingJSONField},
+		{"wrong status type", `{"status":"pending"}`, registration.ErrWrongJSONType},
+		{"invalid JSON", `{`, registration.ErrInvalidJSONResponse},
+		{"invalid code type", `{"status":-100,"nextRequestIntervalInSeconds":3,"response":{"passcode":1234}}`, registration.ErrWrongJSONType},
+		{"invalid authorization lifetime", `{"status":-100,"nextRequestIntervalInSeconds":3,"remainingSeconds":0,"response":{"passcode":"A1B2"}}`, registration.ErrInvalidQRDelay},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			responses := []string{`{"status":0,"url":"/talk/account/qrCodeLogin/info.json?id=synthetic","remainingSeconds":60}`, tc.body, `{"status":0}`}
+			executor, err := registration.NewHTTPExecutor(staticBodyDoer{responses: &responses})
+			if err != nil {
+				t.Fatal(err)
+			}
+			service, err := registration.NewQRRegistrationService(executor, macQRPresentationValidator{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			login := newQRTestLogin(t, nil)
+			login.backendFactory = func(context.Context, authstate.Identity) (qrBackend, error) {
+				return qrServiceBackend{service: service, executor: executor}, nil
+			}
+			var logs bytes.Buffer
+			logger := zerolog.New(&logs).Level(zerolog.DebugLevel)
+			ctx := logger.WithContext(context.Background())
+			if _, err := login.Start(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := login.Wait(ctx); !errors.Is(err, tc.want) {
+				t.Fatalf("poll error = %v, want %v", err, tc.want)
+			}
+			if !strings.Contains(logs.String(), "remaining_seconds") || strings.Contains(logs.String(), "synthetic") || strings.Contains(logs.String(), "A1B2") {
+				t.Fatal("QR diagnostics missing lifetime or exposing challenge/code")
+			}
+			if !login.finished || !login.remoteCanceled || len(responses) != 0 {
+				t.Fatalf("terminal poll left active challenge: finished=%v canceled=%v unused=%d", login.finished, login.remoteCanceled, len(responses))
+			}
+			if _, err := os.Stat(login.statePath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("unenrolled profile remains: %v", err)
+			}
+		})
 	}
 }
