@@ -10,7 +10,7 @@ import (
 // Naming a recovered value must not enable an unsupported payload or remove flags.
 func TestNamedUnsupportedMessageTypesPreserveIdentity(t *testing.T) {
 	for _, typ := range []int32{
-		messagetype.Video, messagetype.Audio, messagetype.File,
+		messagetype.Audio, messagetype.File,
 		messagetype.Contact, messagetype.Location,
 		messagetype.AnimatedEmoticon, messagetype.Spritecon, messagetype.AnimatedStickerEx,
 		messagetype.Vote, messagetype.Mvoip, messagetype.Universal,

@@ -21,6 +21,9 @@ than failures. Their raw BSON is deliberately not exposed by the typed layer.
   link ID, and bounded source preview.
 - `PhotoMessage`: the validated type-2 photo metadata used by the bounded media
   downloader.
+- `VideoMessage`: observed ordinary type-3 direct-URL MP4; bounded native Matrix
+  video conversion with seconds-to-milliseconds duration. Resource-only and
+  high-quality selection remain explicit gaps.
 - `MultiPhotoMessage`: type-27 ordered photo arrays, bounded URL-based resources.
 - `StickerMessage`: types 12/20 and validated inbound resource metadata.
 - `UnsupportedMessage`: chat ID, log ID, and numeric message type.

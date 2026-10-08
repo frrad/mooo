@@ -1,0 +1,19 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-08",
+    "method": "Owned A sent one generated three-second H.264 clip to B; scoped B MSG probe and independent resource download.",
+    "doc": "research/video.md"
+  },
+  "attachment": {
+    "tk": "synthetic-video-token",
+    "url": "https://talk.kakaocdn.net/synthetic/video.mp4",
+    "expire": 4102444800,
+    "cs": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "s": 146274,
+    "d": 3,
+    "w": 320,
+    "h": 240
+  }
+}
