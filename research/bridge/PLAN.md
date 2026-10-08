@@ -220,16 +220,15 @@ and full official-client parity remain outside this alpha goal.
       check-key algorithm and complete success-field parity remain unresolved;
       the URL allowlist is an explicit clean-room safety policy and does not
       claim official-client parity.
-- [ ] Live-validate fresh bridge enrollment, device-authorization code,
-      expiry/cancellation, and restart resume with the owned disposable
-      account. The first bridge-native scan on 2026-10-04 displayed a QR in
-      Matrix, but Android rejected it before approval. No fresh credentials
-      were installed. PR #221 records a fresh default Low-renderer trial with
-      exact selected-image identity and payload equality; Android rejected it,
-      and the failing stage and underlying cause remain unknown. No QR-info
-      endpoint conclusion is established from this run, and the corrective
-      regression remains open;
-      see [deployment validation](DEPLOYMENT-VALIDATION.md).
+- [x] Live-validate fresh bridge enrollment, persistent device authorization,
+      secure credential persistence, and restart resume. The 2026-10-07 owned B
+      trial passed through the actual Matrix QR command and default renderer;
+      see [QR enrollment evidence](QR-ENROLLMENT.md). A reached approval but
+      reported an explicit secondary-device protection restriction; no retry.
+      Earlier invalid-QR trials remain unexplained, rather than attributed to
+      rendering. The failed A challenge expired and its profile was cleaned up.
+- [ ] Live-validate explicit operator cancellation and other approval variants;
+      expiry/cancellation have synthetic regression coverage.
 - [x] Bounded photos in both directions (PR #167): authenticated Matrix
       streaming download with encrypted-media validation, Kakao upload/download,
       transfer deadlines, and persisted photo source metadata. Optional inbound

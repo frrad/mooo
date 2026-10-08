@@ -45,6 +45,9 @@ def classify(xml):
         return "unknown"
     if "com.kakao.talk:id/chat_room_root" in ids:
         return "chat-visible"
+    if {"com.kakao.talk.finder:id/finder_nav_host_fragment",
+            "com.kakao.talk.finder:id/input_focus"} <= ids:
+        return "finder-visible"
     # Both navigation labels plus Kakao-owned nodes are required. This is a
     # readiness hint, not proof of server authentication or message delivery.
     if "com.kakao.talk:id/sliding_tabs" in ids and "Friends" in labels:

@@ -15,6 +15,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/rs/zerolog"
+
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 
@@ -113,6 +115,9 @@ func (b qrServiceBackend) Poll(ctx context.Context, req registration.QRLoginRequ
 		return qrPollResult{}, err
 	}
 	interval, present := result.NextRequestIntervalSeconds.Value()
+	if result.ServerError != nil {
+		zerolog.Ctx(ctx).Debug().Int64("status", result.ServerError.Status).Int64("next_poll_seconds", interval).Msg("Kakao QR approval pending or rejected")
+	}
 	return qrPollResult{Result: result, DeviceAuthCode: result.DeviceAuthCode, DeviceAuthRemainingSeconds: result.DeviceAuthRemainingSeconds, NextRequestIntervalSeconds: interval, NextRequestIntervalPresent: present}, nil
 }
 
@@ -321,6 +326,7 @@ func (l *qrLogin) Start(ctx context.Context) (*bridgev2.LoginStep, error) {
 		}
 		return nil, err
 	}
+	zerolog.Ctx(ctx).Debug().Float64("remaining_seconds", challenge.RemainingSeconds).Msg("Kakao QR challenge generated")
 	l.mu.Lock()
 	l.deadline, l.keepProfile = deadline, true
 	finished = l.finished
@@ -465,6 +471,18 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 					l.cleanupUnenrolledProfile()
 				}
 				return nil, errors.New("connector: QR challenge expired")
+			}
+			// The command framework discards the login when Wait returns an
+			// error. Decoder failures occur before a typed poll result exists;
+			// close their challenge just like invalid typed response fields.
+			if errors.Is(err, registration.ErrInvalidQRPollInterval) ||
+				errors.Is(err, registration.ErrMissingJSONField) ||
+				errors.Is(err, registration.ErrWrongJSONType) ||
+				errors.Is(err, registration.ErrInvalidJSONResponse) ||
+				errors.Is(err, registration.ErrInvalidQRDelay) ||
+				errors.Is(err, registration.ErrJSONBodyTooLarge) ||
+				errors.Is(err, registration.ErrJSONFieldTooLarge) {
+				return nil, l.failQR(ctx, err)
 			}
 			return nil, err
 		}

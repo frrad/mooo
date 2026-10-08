@@ -181,3 +181,56 @@ that `Low` caused the Android rejection: the recovered failed image decoded
 correctly and preserved its payload. The current bridge test therefore
 verifies raw-payload preservation while the post-decode rejection path remains
 pending controlled info-response observation.
+
+
+## Fresh bridge-native enrollment passed (2026-10-07 America/Los_Angeles)
+
+A controlled trial used the actual bridgev2 management command `login qr`,
+a fresh client-owned identity, an isolated empty bridge database/profile directory,
+and the owned Android 26.8.2 client on Android 15. The framework's default
+Low/512px QR renderer and unmodified server payload were used. The scanner was
+prepared before generation; the bridge recorded the generation lifetime and
+numeric poll status/interval without logging identifiers, codes, or credentials.
+
+- Both owned phones accepted fresh QR images and reached the approval screen.
+  Account A's persistent-PC approval then produced an explicit secondary-device
+  user-protection restriction. No further A attempt was made. Its 58-second
+  challenge expired and the unenrolled profile was removed.
+- Account B selected the exact framework PNG approximately 10 seconds after
+  the management command. The local and selected device file bytes matched,
+  and a unique one-file folder avoided stale thumbnail selection. Its generated
+  challenge lifetime was 58 seconds.
+- B's approval screen appeared asynchronously after the scan. Persistent
+  `Verify with my PC` approval progressed to server status `-100`; the
+  bridge displayed the device-authorization code in the management room.
+- The phone's versioned `login_pass_code_layout`, `edit_text`, and
+  `btn_confirm` controls were used after a title-only check ran before the
+  verification form was ready.
+  The code was delivered through ADB stdin, verified against the field in memory,
+  and submitted once. No code was retained in the lab files.
+- The real bridge completion path installed credentials, persisted one
+  `user_login`, and reached `CONNECTED`. After a clean stop, the same database
+  and profile reached `CONNECTED` again without another QR generation. The
+  bridge was stopped afterward; the successful profile/database remain private.
+
+Confidence: observed for the fresh B enrollment, persistence, and one restart
+path. The run used base revision `34cd770` plus the poll-cleanup and redacted
+diagnostic changes in this PR. No renderer change, imported official credential, or new
+check-key parameter was required. This does not explain the earlier invalid-QR
+trials, establish acceptance for restricted accounts, or validate messaging,
+revocation, operator cancellation, or every approval variant. A's current
+restriction is an account-policy blocker; do not retry it in a loop.
+
+The shared phone helpers are `research/emu.sh qr-approve a|b`, `qr-code a|b`,
+and `qr-finish a|b`; see [the lab workflow](../e2e-tooling.md). They enforce explicit authorization,
+the exact client version, bounded waits, persistent PC verification, and
+stdin-only code handling. `qr-finish` closes the observed success dialog
+without opening device management; it was exercised on the successful B trial.
+Generation and exact fresh-image selection remain caller-owned. Synthetic regressions cover asynchronous approval, the title-free
+form guard, account restriction, invalid QR, timeouts, and failed code entry.
+
+A separate production regression reproduced malformed poll responses leaving
+`Wait` unfinished with an active challenge. The bridge now routes terminal
+response-shape errors through cancellation and removes the unenrolled profile
+only after cancellation succeeds. The test uses the real registration service
+and HTTP executor, rather than a fake typed poll result.
