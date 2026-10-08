@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -175,11 +176,12 @@ type ReactionItem struct {
 }
 
 type ReactionChanged struct {
-	ChatID   int64
-	LinkID   int64
-	LogID    int64
-	Revision int64
-	Items    []ReactionItem
+	MetadataType int32
+	ChatID       int64
+	LinkID       int64
+	LogID        int64
+	Revision     int64
+	Items        []ReactionItem
 }
 
 func (ReactionChanged) Kind() Kind { return KindReactionChanged }
@@ -669,7 +671,7 @@ func decodeLogMeta(body []byte) (Event, error) {
 	if err != nil || metaType <= 0 || metaType > int64(^uint32(0)>>1) {
 		return nil, ErrMalformedEvent
 	}
-	if metaType != 2 {
+	if metaType != 1 && metaType != 2 {
 		return UnsupportedLogMeta{ChatID: chatID, LogID: logID, Type: int32(metaType)}, nil
 	}
 	revision, err := requiredInt64(raw, "revision")
@@ -683,6 +685,28 @@ func decodeLogMeta(body []byte) (Event, error) {
 	content, err := requiredString(raw, "content")
 	if err != nil {
 		return nil, ErrMalformedEvent
+	}
+	if metaType == 1 {
+		// Legacy pushes carry selection-keyed counts, not the type-2 rx
+		// aggregate item IDs. Actors still come from the members lookup;
+		// extra.my/userId describes one change, not the complete roster.
+		var counts map[string]*int64
+		if err := decodeSingleJSON(content, &counts); err != nil || counts == nil {
+			return nil, ErrMalformedEvent
+		}
+		keys := make([]string, 0, len(counts))
+		for key, count := range counts {
+			if len(key) != 1 || key[0] < '1' || key[0] > '6' || count == nil || *count < 0 {
+				return nil, ErrMalformedEvent
+			}
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		items := make([]ReactionItem, 0, len(keys))
+		for _, key := range keys {
+			items = append(items, ReactionItem{ID: key, Kind: 1, Count: *counts[key]})
+		}
+		return ReactionChanged{MetadataType: 1, ChatID: chatID, LinkID: linkID, LogID: logID, Revision: revision, Items: items}, nil
 	}
 	var payload struct {
 		Reactions []struct {
@@ -702,7 +726,7 @@ func decodeLogMeta(body []byte) (Event, error) {
 		}
 		items = append(items, ReactionItem{ID: item.ID, Kind: item.Kind, Count: item.Count, Alt: item.Alt})
 	}
-	return ReactionChanged{ChatID: chatID, LinkID: linkID, LogID: logID, Revision: revision, Items: items}, nil
+	return ReactionChanged{MetadataType: 2, ChatID: chatID, LinkID: linkID, LogID: logID, Revision: revision, Items: items}, nil
 }
 
 func messageEnvelope(raw bson.Raw) (int64, int64, int32, bson.Raw, error) {

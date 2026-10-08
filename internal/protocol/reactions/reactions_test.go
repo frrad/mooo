@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 )
@@ -154,6 +155,38 @@ func TestRequestValidationAndResponse(t *testing.T) {
 	}
 	if _, err := DecodeResponse([]byte(`{}`)); !errors.Is(err, ErrInvalidResponse) {
 		t.Fatalf("missing status error = %v", err)
+	}
+}
+
+func TestObservedBooleanMutationResult(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/owned-ab-result.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var observed struct {
+		Response        json.RawMessage
+		HTTPStatus      int  `json:"http_status"`
+		ExpectedSuccess bool `json:"expected_success"`
+	}
+	if err := json.Unmarshal(fixture, &observed); err != nil {
+		t.Fatal(err)
+	}
+	if observed.HTTPStatus != http.StatusOK || !observed.ExpectedSuccess {
+		t.Fatal("invalid observed fixture")
+	}
+	response, err := DecodeResponse(observed.Response)
+	if err != nil || response.Status != 0 {
+		t.Fatalf("response=%#v err=%v", response, err)
+	}
+	for _, body := range []string{`{"result":false}`, `{"status":-1,"result":true}`, `{"status":0,"result":false}`} {
+		if _, err := DecodeResponse([]byte(body)); !errors.Is(err, ErrRejected) {
+			t.Fatalf("%s: %v", body, err)
+		}
+	}
+	for _, body := range []string{`{"result":null}`, `{"result":"true"}`, `{"result":1}`, `{"result":true}{}`} {
+		if _, err := DecodeResponse([]byte(body)); !errors.Is(err, ErrInvalidResponse) {
+			t.Fatalf("%s: %v", body, err)
+		}
 	}
 }
 

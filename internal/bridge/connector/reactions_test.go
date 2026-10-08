@@ -32,6 +32,103 @@ type reactionTestBackend struct {
 	memberCalls int
 	requests    []reactions.Request
 	mutationErr error
+	mini        reactions.DetailsResponse
+	miniErr     error
+}
+
+func (b *reactionTestBackend) MiniReactionDetails(context.Context, int64, int64, int64) (reactions.DetailsResponse, error) {
+	return b.mini, b.miniErr
+}
+
+func TestObservedMiniReactionAttribution(t *testing.T) {
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{Revision: 2, Members: map[reactions.Type][]int64{reactions.Heart: {1000}}}, mini: reactions.DetailsResponse{Details: []reactions.Detail{{Kind: 2, ReactionID: "synthetic_021", UserIDs: []int64{42}}}}}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
+	change := events.ReactionChanged{MetadataType: 2, ChatID: testChatID, LogID: 99, Revision: 9, Items: []events.ReactionItem{{Kind: 2, ID: "synthetic_021", Count: 1, Alt: map[string]string{"ko": "synthetic label"}}}}
+	remote, err := kc.reactionRemote(context.Background(), backend, change)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sync := remote.(*kakaoReactionSync)
+	rs := sync.Reactions.Users[makeUserID(42)].Reactions
+	if len(rs) != 1 || rs[0].EmojiID != "kakao:mini:synthetic_021" || rs[0].Emoji != "synthetic label" || !sync.IncludesMini {
+		t.Fatalf("%#v", rs)
+	}
+	if len(sync.Reactions.Users[makeUserID(1000)].Reactions) != 1 {
+		t.Fatal("legacy state lost")
+	}
+	backend.mini.Details[0].UserIDs = []int64{42, 43}
+	if _, err = kc.reactionRemote(context.Background(), backend, change); err == nil {
+		t.Fatal("aggregate/detail disagreement accepted")
+	}
+	backend.mini.Details = []reactions.Detail{}
+	change.Items = nil
+	remote, err = kc.reactionRemote(context.Background(), backend, change)
+	if err != nil || len(remote.(*kakaoReactionSync).Reactions.Users) != 1 {
+		t.Fatalf("empty mini state: %v", err)
+	}
+	backend.members = reactions.MembersResponse{Revision: 0, Fields: map[string]json.RawMessage{"revision": []byte(`0`)}}
+	backend.mini.Details = []reactions.Detail{{Kind: 2, ReactionID: "synthetic_021", UserIDs: []int64{42}}}
+	change.Items = []events.ReactionItem{{Kind: 2, ID: "synthetic_021", Count: 1}}
+	if _, err := kc.reactionRemote(context.Background(), backend, change); err != nil {
+		t.Fatalf("observed empty legacy roster: %v", err)
+	}
+	kc.reactionRevisions[reactionRevisionCacheKey(events.ReactionChanged{ChatID: change.ChatID, LogID: change.LogID})] = 12
+	if _, err := kc.reactionRemote(context.Background(), backend, change); err == nil {
+		t.Fatal("mini snapshot rolled back newer legacy state")
+	}
+}
+
+func TestMiniRevisionsAndRemovalScope(t *testing.T) {
+	ctx := context.Background()
+	kc, _, login, old, raw := newFrameworkReactionFixture(t, &frameworkReactionIntent{})
+	defer func() { _ = raw.RawDB.Close() }()
+	legacy := events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 100}
+	mini := events.ReactionChanged{MetadataType: 2, ChatID: testChatID, LogID: 99, Revision: 2}
+	if err := kc.persistReactionRevision(ctx, legacy, 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := kc.persistReactionRevision(ctx, mini, 2); err != nil {
+		t.Fatal(err)
+	}
+	reopened := newKakaoClient(login, testSelfID, nil)
+	for _, tc := range []struct {
+		change events.ReactionChanged
+		want   int64
+	}{{legacy, 100}, {mini, 2}} {
+		got, err := reopened.storedReactionRevision(ctx, tc.change)
+		if err != nil || got != tc.want {
+			t.Fatalf("revision=%d err=%v", got, err)
+		}
+	}
+	old.EmojiID = "kakao:mini:synthetic"
+	old.MXID = "$mini"
+	if err := login.Bridge.DB.Reaction.Upsert(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	sync := &kakaoReactionSync{ReactionSync: simplevent.ReactionSync{EventMeta: simplevent.EventMeta{PortalKey: old.Room}, TargetMessage: old.MessageID, Reactions: &bridgev2.ReactionSyncData{Users: map[networkid.UserID]*bridgev2.ReactionSyncUser{}, HasAllUsers: true}}}
+	planned, err := kc.reactionDeliveryEvents(ctx, sync)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range planned {
+		if r.(*simplevent.Reaction).EmojiID == old.EmojiID {
+			t.Fatal("legacy-only update removed mini reaction")
+		}
+	}
+	sync.IncludesMini = true
+	planned, err = kc.reactionDeliveryEvents(ctx, sync)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, r := range planned {
+		if r.(*simplevent.Reaction).EmojiID == old.EmojiID && r.GetType() == bridgev2.RemoteEventReactionRemove {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("empty confirmed mini roster did not remove mini reaction")
+	}
 }
 
 type frameworkReactionIntent struct {

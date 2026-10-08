@@ -1,0 +1,12 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2 / API 35; mooo Mac-class secondary request",
+    "date": "2026-10-07",
+    "method": "Single owned A/B direct-room mutation; private HTTP response capture and rendered official phone reaction",
+    "doc": "research/bridge/REACTION-COMPATIBILITY.md"
+  },
+  "http_status": 200,
+  "response": {"result": true},
+  "expected_success": true
+}

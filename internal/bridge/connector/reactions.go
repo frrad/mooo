@@ -321,7 +321,7 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 		return nil, errReactionRevision
 	}
 	for _, item := range change.Items {
-		if item.Kind != 1 {
+		if item.Kind != 1 && (change.MetadataType != 2 || item.Kind != 2) {
 			return nil, errReactionUnsupported
 		}
 	}
@@ -345,12 +345,49 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 	if err != nil {
 		return nil, err
 	}
-	if members.Revision < change.Revision || members.Revision < stored {
+	if change.MetadataType != 2 && (members.Revision < change.Revision || members.Revision < stored) {
 		return nil, errReactionRevision
 	}
+	if change.MetadataType == 2 {
+		legacyChange := change
+		legacyChange.MetadataType = 1
+		legacyStored, err := kc.storedReactionRevision(ctx, legacyChange)
+		if err != nil {
+			return nil, err
+		}
+		if members.Revision < legacyStored {
+			return nil, errReactionRevision
+		}
+	}
 	users, err := reactionSyncUsers(members, kc.userID, kc.login.ID)
+	// A message with only mini reactions has no legacy revision yet. The
+	// observed members response is exactly {"revision":0}; it is an empty
+	// legacy roster, not an invalid mini revision or an attribution failure.
+	if change.MetadataType == 2 && members.Revision == 0 && len(members.Members) == 0 && len(members.Fields) == 1 {
+		if raw, ok := members.Fields["revision"]; ok && string(raw) == "0" {
+			users = make(map[networkid.UserID]*bridgev2.ReactionSyncUser)
+			err = nil
+		}
+	}
 	if err != nil {
 		return nil, err
+	}
+	appliedRevision := members.Revision
+	if change.MetadataType == 2 {
+		miniAPI, ok := c.(interface {
+			MiniReactionDetails(context.Context, int64, int64, int64) (reactions.DetailsResponse, error)
+		})
+		if !ok {
+			return nil, errReactionUnsupported
+		}
+		mini, err := miniAPI.MiniReactionDetails(ctx, change.ChatID, change.LinkID, change.LogID)
+		if err != nil {
+			return nil, err
+		}
+		if err := addMiniReactionUsers(users, mini, change, kc.userID, kc.login.ID); err != nil {
+			return nil, err
+		}
+		appliedRevision = change.Revision
 	}
 	return &kakaoReactionSync{ReactionSync: simplevent.ReactionSync{
 		EventMeta: simplevent.EventMeta{
@@ -363,7 +400,7 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 		},
 		TargetMessage: makeMessageID(change.ChatID, change.LogID),
 		Reactions:     &bridgev2.ReactionSyncData{Users: users, HasAllUsers: true},
-	}, AppliedRevision: members.Revision}, nil
+	}, AppliedRevision: appliedRevision, IncludesMini: change.MetadataType == 2}, nil
 }
 
 // reactionDeliveryEvents expands an authoritative aggregate into individual
@@ -444,7 +481,7 @@ func (kc *KakaoClient) reactionDeliveryEvents(ctx context.Context, sync *kakaoRe
 	}
 	if sync.Reactions.HasAllUsers {
 		for _, old := range existing {
-			if _, known := legacyReactionEmojiID(old.EmojiID); !known {
+			if _, known := legacyReactionEmojiID(old.EmojiID); !known && (!sync.IncludesMini || !strings.HasPrefix(string(old.EmojiID), "kakao:mini:")) {
 				continue
 			}
 			if _, stillPresent := existingByKey[reactionKey{old.SenderID, old.EmojiID}]; !stillPresent {
@@ -471,6 +508,7 @@ func legacyReactionEmojiID(value networkid.EmojiID) (reactions.Type, bool) {
 type kakaoReactionSync struct {
 	simplevent.ReactionSync
 	AppliedRevision int64
+	IncludesMini    bool
 }
 
 func (kc *KakaoClient) reportReactionFailure(change events.ReactionChanged, err error) bool {
@@ -596,7 +634,7 @@ func legacyReactionByType(typeID reactions.Type) struct {
 }
 
 func (kc *KakaoClient) storedReactionRevision(ctx context.Context, change events.ReactionChanged) (int64, error) {
-	key := string(makeMessageID(change.ChatID, change.LogID))
+	key := reactionRevisionCacheKey(change)
 	kc.reactionMu.Lock()
 	cached := kc.reactionRevisions[key]
 	kc.reactionMu.Unlock()
@@ -609,12 +647,12 @@ func (kc *KakaoClient) storedReactionRevision(ctx context.Context, change events
 	}
 	switch metadata := msg.Metadata.(type) {
 	case *KakaoMessageMetadata:
-		if metadata != nil && metadata.ReactionRevision > cached {
-			return metadata.ReactionRevision, nil
+		if metadata != nil && reactionMetadataRevision(metadata, change) > cached {
+			return reactionMetadataRevision(metadata, change), nil
 		}
 	case KakaoMessageMetadata:
-		if metadata.ReactionRevision > cached {
-			return metadata.ReactionRevision, nil
+		if reactionMetadataRevision(metadata, change) > cached {
+			return reactionMetadataRevision(metadata, change), nil
 		}
 	}
 	return cached, nil
@@ -624,7 +662,7 @@ func (kc *KakaoClient) persistReactionRevision(ctx context.Context, change event
 	if appliedRevision <= 0 {
 		return errReactionRevision
 	}
-	key := string(makeMessageID(change.ChatID, change.LogID))
+	key := reactionRevisionCacheKey(change)
 	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
 		kc.reactionMu.Lock()
 		if appliedRevision > kc.reactionRevisions[key] {
@@ -646,10 +684,14 @@ func (kc *KakaoClient) persistReactionRevision(ctx context.Context, change event
 			return errReactionRevision
 		}
 	}
-	if appliedRevision <= metadata.ReactionRevision {
+	if appliedRevision <= reactionMetadataRevision(metadata, change) {
 		return nil
 	}
-	metadata.ReactionRevision = appliedRevision
+	if change.MetadataType == 2 {
+		metadata.MiniReactionRevision = appliedRevision
+	} else {
+		metadata.ReactionRevision = appliedRevision
+	}
 	if err := kc.login.Bridge.DB.Message.Update(ctx, msg); err != nil {
 		return err
 	}
@@ -659,4 +701,27 @@ func (kc *KakaoClient) persistReactionRevision(ctx context.Context, change event
 	}
 	kc.reactionMu.Unlock()
 	return nil
+}
+
+func reactionRevisionCacheKey(change events.ReactionChanged) string {
+	key := string(makeMessageID(change.ChatID, change.LogID))
+	if change.MetadataType == 2 {
+		key += ":mini"
+	}
+	return key
+}
+func reactionMetadataRevision(value any, change events.ReactionChanged) int64 {
+	var meta KakaoMessageMetadata
+	switch v := value.(type) {
+	case KakaoMessageMetadata:
+		meta = v
+	case *KakaoMessageMetadata:
+		if v != nil {
+			meta = *v
+		}
+	}
+	if change.MetadataType == 2 {
+		return meta.MiniReactionRevision
+	}
+	return meta.ReactionRevision
 }
