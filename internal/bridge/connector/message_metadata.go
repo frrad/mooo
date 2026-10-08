@@ -32,7 +32,8 @@ type KakaoMessageMetadata struct {
 	// ReactionRevision is the latest positive members revision successfully
 	// applied to this message. It is persisted to prevent stale replay after a
 	// restart from destructively replacing newer reaction state.
-	ReactionRevision int64 `json:"reaction_revision,omitempty"`
+	ReactionRevision     int64 `json:"reaction_revision,omitempty"`
+	MiniReactionRevision int64 `json:"mini_reaction_revision,omitempty"`
 }
 
 func (m KakaoMessageMetadata) String() string {

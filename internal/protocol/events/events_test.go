@@ -120,6 +120,36 @@ func TestDecodeReactionChanged(t *testing.T) {
 	}
 }
 
+func TestObservedLegacyReactionCountMap(t *testing.T) {
+	for _, content := range []string{`{"2":1}`, `{}`} {
+		event, err := Decode(packet(t, "CHGLOGMETA", bson.D{
+			{Key: "chatId", Value: int64(42)}, {Key: "logId", Value: int64(99)},
+			{Key: "type", Value: int32(1)}, {Key: "revision", Value: int64(3)},
+			{Key: "linkId", Value: nil}, {Key: "content", Value: content},
+			{Key: "extra", Value: `{"my":2,"userId":7,"type":2}`},
+		}))
+		changed, ok := event.(ReactionChanged)
+		if err != nil || !ok {
+			t.Fatalf("%s: %T %v", content, event, err)
+		}
+		if changed.ChatID != 42 || changed.LogID != 99 || changed.Revision != 3 || changed.LinkID != 0 {
+			t.Fatalf("%#v", changed)
+		}
+		if content != `{}` && (len(changed.Items) != 1 || changed.Items[0].Kind != 1 || changed.Items[0].ID != "2" || changed.Items[0].Count != 1) {
+			t.Fatalf("%#v", changed)
+		}
+	}
+	for _, content := range []string{`{"2":null}`, `{"7":1}`, `{"2":-1}`, `{"2":1.5}`, `{"2":"1"}`, `null`, `{"2":1}{}`} {
+		_, err := Decode(packet(t, "CHGLOGMETA", bson.D{
+			{Key: "chatId", Value: int64(42)}, {Key: "logId", Value: int64(99)}, {Key: "type", Value: int32(1)},
+			{Key: "revision", Value: int64(3)}, {Key: "content", Value: content},
+		}))
+		if !errors.Is(err, ErrMalformedEvent) {
+			t.Fatalf("%s: %v", content, err)
+		}
+	}
+}
+
 func TestDecodeReadStateChanged(t *testing.T) {
 	event, err := Decode(packet(t, "DECUNREAD", bson.D{
 		{Key: "chatId", Value: int64(42)},

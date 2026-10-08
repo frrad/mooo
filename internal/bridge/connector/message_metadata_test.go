@@ -121,6 +121,7 @@ func TestReactionRevisionSurvivesSQLiteCloseAndReopen(t *testing.T) {
 	}
 	want := newKakaoMessageMetadata(3000, 11, 2000, chat.TextType, "persisted", 0)
 	want.ReactionRevision = 12
+	want.MiniReactionRevision = 3
 	message := &database.Message{
 		BridgeID: "test", ID: makeMessageID(3000, 11), PartID: "0", MXID: "$event",
 		Room: makePortalKey(3000, "1000"), SenderID: makeUserID(2000), SenderMXID: "@sender:test",
@@ -143,7 +144,7 @@ func TestReactionRevisionSurvivesSQLiteCloseAndReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	metadata, ok := got.Metadata.(*KakaoMessageMetadata)
-	if !ok || metadata.ReactionRevision != 12 {
+	if !ok || metadata.ReactionRevision != 12 || metadata.MiniReactionRevision != 3 {
 		t.Fatalf("reopened reaction revision = %#v", got.Metadata)
 	}
 }

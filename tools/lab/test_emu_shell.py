@@ -22,6 +22,12 @@ def run(commands):
 
 
 class EmulatorShellTests(unittest.TestCase):
+    def test_private_stdin_survives_adb_preflight(self):
+        for command in ['cmd_chat_phone text', 'cmd_qr_phone code']:
+            result = run('SERIAL=synthetic; ALLOW_TEST_MESSAGES=1; ALLOW_QR_ENROLLMENT=1; find_serial() { cat >/dev/null; }; assert_client_version() { cat >/dev/null; }; python3() { cat; }; ' + command + ' <<<synthetic-input')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('synthetic-input', result.stdout)
+
     def test_finder_after_qr_returns_via_back(self):
         xml = '<hierarchy><node resource-id="com.kakao.talk.finder:id/finder_nav_host_fragment"/><node resource-id="com.kakao.talk.finder:id/input_focus"/></hierarchy>'
         result = run('require_login_authorization() { :; }; assert_client_version() { :; }; find_serial() { return 0; }; sleep() { :; }; adb() { echo "$*" >&2; }; state() { echo state=home-visible; }; dump() { printf "%s" ' + shlex.quote(xml) + '; }; cmd_finish')

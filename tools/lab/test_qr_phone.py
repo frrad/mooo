@@ -33,6 +33,18 @@ class FakePhone(Phone):
 
 
 class QRPhoneTests(unittest.TestCase):
+    def test_dump_retries_transient_xml_and_removes_each_capture(self):
+        phone = Phone('synthetic-adb', 'owned-emulator')
+        reads = iter([b'not XML', b'<hierarchy/>'])
+        calls = []
+        def adb(*args, text=None):
+            calls.append(args)
+            return next(reads) if args[0] == 'exec-out' else b''
+        phone.adb = adb
+        with patch('qr_phone.time.sleep'):
+            self.assertEqual(phone.dump().tag, 'hierarchy')
+        self.assertEqual(sum(args[:3] == ('shell', 'rm', '-f') for args in calls), 2)
+
     def test_success_overlay_closes_without_opening_device_management(self):
         root = xml('<node text="Successfully logged in"/><node text="Close" bounds="[10,20][30,40]"/>'
                    '<node text="Manage Devices" bounds="[40,20][90,40]"/>')

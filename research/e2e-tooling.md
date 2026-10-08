@@ -145,3 +145,54 @@ Closing successful QR approval returns to Finder rather than Friends. The
 readiness helper now recognizes the versioned Finder navigation host and returns
 with bounded Back navigation; synthetic classifier and command regressions
 protect this recovery path.
+
+## Prepared synthetic chat sends
+
+After opening the exact owned direct room, enable `ALLOW_TEST_MESSAGES=1` in
+private configuration. Pipe a private JSON request to:
+
+```sh
+private-fixture-provider | research/emu.sh send-text a
+private-selected-photo-provider | research/emu.sh send-photo a
+```
+
+Text requests contain `peer` (exact private toolbar accessibility label),
+`text` (1–512 ASCII synthetic fixture characters), and `receipt` (an absolute
+new file in a mode-0700 directory outside the repository). Photo requests
+replace `text` with `bounds`: the exact screen-derived Send control bounds for
+one already-selected synthetic image. The phone must remain in the explicitly
+selected owned chat. There is no recipient search or automatic navigation.
+
+The helper exclusively creates a mode-0600 attempt receipt before tapping Send.
+An existing receipt blocks another send, even if the previous result is
+uncertain. Text entry is verified before submission. Final Matrix delivery and
+source identity remain the caller's responsibility. Do not put requests in
+command arguments, shell history, tracked fixtures, or logs.
+
+Observed on owned Android 26.8.2 during 2026-10-07 A/B messaging acceptance:
+
+- Text Send uses `send_button_layout`; photo Send uses `send_button`.
+- The toolbar peer is `toolbar_default_title_text`'s content description, not
+  a `title` text field or a nickname inside a message/reply.
+- Clickable parents and nonclickable children can share the same label. Match
+  clickable controls, not all label matches.
+- Photo-gallery overlays can expose two enabled Send controls. Require the
+  explicitly inspected bounds and `1 Selected, Send`; refuse ambiguity.
+- With no photo permission, Allow limited access opened the system picker.
+  Only the synthetic image was granted. Its MediaStore bytes were checked
+  before selection. `/sdcard` and MediaStore's canonical storage path differ;
+  identify the exact filename/relative path and verify bytes rather than assume
+  `_data` matches the pushed alias. No broad photo-access grant is required.
+- Original quality preserved the PNG exactly in the inbound Matrix transfer.
+  Permission grant and gallery selection remain explicit caller operations;
+  `send-photo` only submits a verified, already-selected image.
+- ADB shell preflight could consume the piped JSON/code. Both chat and QR
+  preflight now use `/dev/null` stdin, preserving the private input pipe.
+- Shared phone XML reads now retry three transient dump/parse failures and
+  remove every transient device capture. Sends themselves are never retried.
+
+Failing-first synthetic tests cover title identity, text Send, existing drafts,
+receipt reuse, duplicate gallery controls, private stdin preservation, and
+transient XML failures. The shared text launcher passed on A's owned chat.
+The full A/B evidence and remaining group scope are in
+[direct messaging validation](bridge/DIRECT-MESSAGING-VALIDATION.md).

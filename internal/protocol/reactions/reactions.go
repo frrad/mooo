@@ -149,6 +149,7 @@ type Response struct {
 func DecodeResponse(body []byte) (Response, error) {
 	var wire struct {
 		Status *int32 `json:"status"`
+		Result *bool  `json:"result"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	if err := decoder.Decode(&wire); err != nil {
@@ -157,12 +158,18 @@ func DecodeResponse(body []byte) (Response, error) {
 	if err := requireJSONEOF(decoder); err != nil {
 		return Response{}, ErrInvalidResponse
 	}
-	if wire.Status == nil {
+	if wire.Status == nil && wire.Result == nil {
 		return Response{}, ErrInvalidResponse
 	}
-	response := Response{Status: *wire.Status}
+	response := Response{}
+	if wire.Status != nil {
+		response.Status = *wire.Status
+	}
 	if response.Status != 0 {
 		return response, fmt.Errorf("%w: status %d", ErrRejected, response.Status)
+	}
+	if wire.Result != nil && !*wire.Result {
+		return response, fmt.Errorf("%w: result false", ErrRejected)
 	}
 	return response, nil
 }

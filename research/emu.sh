@@ -1,6 +1,6 @@
 #!/bin/bash
 # Owned A/B emulator preparation. Configuration lives in .lab/emu-config.sh.
-# Usage: emu.sh up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish a|b [--login]
+# Usage: emu.sh up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo a|b [--login]
 # ready (or up --login) permits one password submission and normal verification.
 # Configure explicit login and required-policy authorization before using auth.
 set -euo pipefail
@@ -16,7 +16,7 @@ LAB_DIR=$REPO_DIR/.lab
 TOOL_DIR=$REPO_DIR/tools/lab
 LOGDIR=${EMU_RUNTIME_DIR:-"$HOME/Library/Caches/mooo-lab/emu"}
 
-usage() { echo "usage: $0 up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish a|b [--login]" >&2; exit 2; }
+usage() { echo "usage: $0 up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo a|b [--login]" >&2; exit 2; }
 
 profile() {
   case "$1" in
@@ -391,9 +391,17 @@ cmd_down() {
 # resend, or retry enrollment. qr-code reads one code from a private stdin pipe.
 cmd_qr_phone() {
   [ "${ALLOW_QR_ENROLLMENT:-0}" = 1 ] || { echo "configure explicit QR enrollment authorization" >&2; return 1; }
-  find_serial || { echo "owned emulator is not running" >&2; return 1; }
-  assert_client_version
+  find_serial </dev/null || { echo "owned emulator is not running" >&2; return 1; }
+  assert_client_version </dev/null
   python3 "$TOOL_DIR/qr_phone.py" "$ADB" "$SERIAL" "$1"
+}
+
+# JSON on private stdin: peer, receipt, and text or exact selected-photo bounds.
+cmd_chat_phone() {
+  [ "${ALLOW_TEST_MESSAGES:-0}" = 1 ] || { echo "configure explicit owned-chat test authorization" >&2; return 1; }
+  find_serial </dev/null || { echo "owned emulator is not running" >&2; return 1; }
+  assert_client_version </dev/null
+  python3 "$TOOL_DIR/chat_phone.py" "$ADB" "$SERIAL" "$1"
 }
 
 main() {
@@ -425,6 +433,8 @@ main() {
     qr-approve) cmd_qr_phone approve ;;
     qr-code) cmd_qr_phone code ;;
     qr-finish) cmd_qr_phone finish ;;
+    send-text) cmd_chat_phone text ;;
+    send-photo) cmd_chat_phone photo ;;
     down) cmd_down ;;
     *) usage ;;
   esac
