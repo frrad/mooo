@@ -90,6 +90,22 @@ def photo_send(root, bounds=None):
                            PREFIX + 'send_button')
 
 
+def send_album(phone, peer, bounds, count, receipt):
+    if Path(receipt).exists():
+        raise ValueError('previous attempt exists; inspect outcome without resending')
+    if type(count) is not int or not 2 <= count <= 30:
+        raise ValueError('album count must be 2 through 30')
+    root = phone.dump()
+    owned_chat(root, peer)
+    if control(root, 'send_bundle_checkbox').get('checked') != 'true':
+        raise ValueError('collage selection required')
+    button = clickable_label(root, str(count) + ' Selected, Send', bounds,
+                             PREFIX + 'send_button')
+    reserve(receipt)
+    tap(phone, button)
+    return 'selected-album-submitted-once'
+
+
 def send_sticker(phone, peer, receipt):
     if Path(receipt).exists():
         raise ValueError('previous attempt exists; inspect outcome without resending')
@@ -114,6 +130,8 @@ def main():
             result = send_text(phone, request['peer'], request['text'], request['receipt'])
         elif action == 'sticker':
             result = send_sticker(phone, request['peer'], request['receipt'])
+        elif action == 'album':
+            result = send_album(phone, request['peer'], request['bounds'], request['count'], request['receipt'])
         elif action == 'photo':
             root = phone.dump()
             owned_chat(root, request['peer'])

@@ -220,3 +220,23 @@ caller operations. A regression covers missing preview and receipt reuse.
 The owned static/type-12 and animated/type-20 experiments passed this helper.
 See [the sticker contract and acceptance evidence](stickers.md). Record new pack,
 preview or layout edge cases here and add a sanitized regression before resuming.
+
+## Prepared album acceptance
+
+`private-selected-album-provider | research/emu.sh send-album a` accepts private
+JSON `peer`, `receipt`, `bounds` and `count` (2–30). It requires the exact owned
+chat, a checked `send_bundle_checkbox` (Collage Photos), and the exact inspected
+Send bounds with matching `N Selected, Send`. The receipt is reserved before one
+tap; reuse blocks repeats. Select and independently verify generated media first.
+A regression covers the two simultaneously enabled gallery Send controls,
+collage state and receipt reuse. This helper submits a prepared selection; the
+captured wire type and final media delivery remain caller verification.
+
+Android 26.8.2 limited permission can retain previously selected images while
+adding another fixture. Grant only generated items, then verify the exact gallery
+selection; never infer its contents from the count alone. The first gallery open
+can show a Show Shared Media informational dialog. A recent-media thumbnail tap
+selects that thumbnail rather than opening the full picker; use Photo to open the
+full gallery. Original quality and Collage Photos produced observed type 27.
+A video attempt produced type 3; file size or a UI Send success alone cannot prove
+LargeVideo/28 or LargeFile/29 acceptance. See [the research and live evidence](multi-large-media.md).

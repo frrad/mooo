@@ -24,6 +24,7 @@ const (
 	KindTextMessage        Kind = "text_message"
 	KindReplyMessage       Kind = "reply_message"
 	KindPhotoMessage       Kind = "photo_message"
+	KindMultiPhotoMessage  Kind = "multi_photo_message"
 	KindStickerMessage     Kind = "sticker_message"
 	KindMessageGap         Kind = "message_gap"
 	KindUnsupportedMessage Kind = "unsupported_message"
@@ -93,6 +94,12 @@ func MessagePosition(event Event) (chatID, logID int64, ok bool) {
 			return 0, 0, false
 		}
 		return value.Message.ChatID, value.Message.LogID, true
+	case MultiPhotoMessage:
+		return value.Message.ChatID, value.Message.LogID, true
+	case *MultiPhotoMessage:
+		if value != nil {
+			return value.Message.ChatID, value.Message.LogID, true
+		}
 	case StickerMessage:
 		return value.ChatID, value.LogID, true
 	case *StickerMessage:
@@ -164,6 +171,13 @@ func (StickerMessage) Kind() Kind         { return KindStickerMessage }
 func (StickerMessage) isEvent()           {}
 func (StickerMessage) String() string     { return "StickerMessage{<redacted>}" }
 func (m StickerMessage) GoString() string { return m.String() }
+
+type MultiPhotoMessage struct{ Message media.MultiPhotoMessage }
+
+func (MultiPhotoMessage) Kind() Kind         { return KindMultiPhotoMessage }
+func (MultiPhotoMessage) isEvent()           {}
+func (MultiPhotoMessage) String() string     { return "MultiPhotoMessage{<redacted>}" }
+func (m MultiPhotoMessage) GoString() string { return m.String() }
 
 type PhotoMessage struct {
 	Message media.PhotoMessage
@@ -640,6 +654,12 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 			return nil, ErrMalformedEvent
 		}
 		return PhotoMessage{Message: photo}, nil
+	case messagetype.MultiPhoto:
+		album, err := media.DecodeMultiPhotoMessage(packet.Body)
+		if err != nil {
+			return nil, ErrMalformedEvent
+		}
+		return MultiPhotoMessage{Message: album}, nil
 	case messagetype.Sticker, messagetype.AnimatedSticker:
 		value, err := requiredString(chatLog, "attachment")
 		if err != nil {

@@ -62,7 +62,7 @@ Naming unsupported constants is intentional and does not enable their payloads.
 | 24 | `Post` | `UnsupportedMessage` notice |
 | 25 | `AnimatedStickerEx` | `UnsupportedMessage` notice |
 | 26 | `Reply` | Typed message |
-| 27 | `MultiPhoto` | `UnsupportedMessage` notice |
+| 27 | `MultiPhoto` | Typed URL-based album; resource-only forms remain gaps |
 | 28 | `LargeVideo` | `UnsupportedMessage` notice |
 | 29 | `LargeFile` | `UnsupportedMessage` notice |
 | 51 | `Mvoip` | `UnsupportedMessage` notice |
@@ -111,3 +111,6 @@ business/universal templates require independent payload research and controlled
 owned-account acceptance. Native outbound stickers also remain unsupported.
 A named numeric type is never a claim of support for paid packs, audio playback,
 secret chats or official-client parity.
+
+[Type-27 acceptance and type-28/29 gates](multi-large-media.md) record the
+owned emulator findings and remaining live-test limitations.

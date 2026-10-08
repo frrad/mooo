@@ -1,0 +1,60 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-08",
+    "method": "Owned A/B two synthetic PNGs, Original quality, Collage Photos; private raw MSG capture. Keys, URLs and expiration replaced with synthetic values; dimensions, sizes, checksums and media bytes retained from generated swatches.",
+    "doc": "research/multi-large-media.md"
+  },
+  "attachment": {
+    "kl": [
+      "synthetic-0",
+      "synthetic-1"
+    ],
+    "hl": [
+      64,
+      64
+    ],
+    "wl": [
+      64,
+      64
+    ],
+    "mtl": [
+      "image/png",
+      "image/png"
+    ],
+    "sl": [
+      139,
+      141
+    ],
+    "csl": [
+      "a15dea4cf9f8b0d99695368ef3f0b35bb5be532f",
+      "42d3711c1160fa5fecfc26b709c5cb4fbd9582bc"
+    ],
+    "cmtl": [
+      "",
+      ""
+    ],
+    "imageUrls": [
+      "https://talk.kakaocdn.net/synthetic/imageUrls/0",
+      "https://talk.kakaocdn.net/synthetic/imageUrls/1"
+    ],
+    "thumbnailUrls": [
+      "https://talk.kakaocdn.net/synthetic/thumbnailUrls/0",
+      "https://talk.kakaocdn.net/synthetic/thumbnailUrls/1"
+    ],
+    "thumbnailHeights": [
+      120,
+      120
+    ],
+    "thumbnailWidths": [
+      120,
+      120
+    ],
+    "expire": 4102444800
+  },
+  "photos_base64": [
+    "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAUklEQVR4nOzPQQkAMAwAsaPUv+ap2KMQiIFstc1lO3WYgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAwP/AGwBAHyL369yp+wAAAABJRU5ErkJggg==",
+    "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAVElEQVR4nOzPQQkAMAwEsKOcrPnXNRV9FAIxkCavmcs6yWECAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC+4E/AI8QIzN5NWiQAAAAAElFTkSuQmCC"
+  ]
+}
