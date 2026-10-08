@@ -380,6 +380,9 @@ Execution follows [`research/bridge/PLAN.md`](research/bridge/PLAN.md).
       bidirectional text, inbound replies, and commit-after-Matrix handling.
 - [x] Live-validate the minimal bridge and restart catch-up against a disposable
       Synapse with owned disposable accounts.
+- [x] Live-validate fresh bridge-native QR enrollment, persistent device approval,
+      credential persistence, and one clean restart on an owned account
+      (2026-10-07); see `research/bridge/QR-ENROLLMENT.md` for scope and gaps.
 - [ ] Complete the single-user alpha in bridge-plan execution order: lifecycle
       reliability, room/member metadata, QR enrollment, replies/photos/reactions,
       controlled reconnect, and deployment validation.

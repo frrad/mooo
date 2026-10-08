@@ -22,6 +22,29 @@ def run(commands):
 
 
 class EmulatorShellTests(unittest.TestCase):
+    def test_finder_after_qr_returns_via_back(self):
+        xml = '<hierarchy><node resource-id="com.kakao.talk.finder:id/finder_nav_host_fragment"/><node resource-id="com.kakao.talk.finder:id/input_focus"/></hierarchy>'
+        result = run('require_login_authorization() { :; }; assert_client_version() { :; }; find_serial() { return 0; }; sleep() { :; }; adb() { echo "$*" >&2; }; state() { echo state=home-visible; }; dump() { printf "%s" ' + shlex.quote(xml) + '; }; cmd_finish')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('shell input keyevent KEYCODE_BACK', result.stderr)
+        self.assertIn('state=home-visible', result.stdout)
+
+    def test_qr_approval_requires_explicit_authorization(self):
+        result = run('ALLOW_QR_ENROLLMENT=0; find_serial() { echo BAD_DEVICE_ACTION; }; cmd_qr_phone approve')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('BAD_DEVICE_ACTION', result.stdout)
+
+    def test_qr_approval_checks_client_version_before_actions(self):
+        result = run('ALLOW_QR_ENROLLMENT=1; find_serial() { return 0; }; assert_client_version() { return 1; }; python3() { echo BAD_PHONE_ACTION; }; cmd_qr_phone approve')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('BAD_PHONE_ACTION', result.stdout)
+
+    def test_example_sms_provider_resolves_after_launcher_move(self):
+        result = run('source "$TOOL_DIR/emu-config.example.sh"; exec() { printf "%s\\n" "$@"; }; read_sms_code a synthetic-marker')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        provider = str(Path(__file__).with_name('sms_xmpp.py').resolve())
+        self.assertIn(provider, result.stdout)
+
     def test_launch_is_direct_and_failure_is_not_suppressed(self):
         result = run('adb() { echo "$*" >&2; return 1; }; sleep() { :; }; launch')
         self.assertNotEqual(result.returncode, 0)

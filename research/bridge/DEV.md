@@ -69,7 +69,10 @@ homeserver, and start the bridge:
 Start a DM with the bridge bot and send `login` to select the QR enrollment
 flow. It creates a fresh bridge-owned profile; scan the displayed QR code with
 your authorized primary Kakao client and complete any displayed device approval.
-Controlled live validation of this new flow remains outstanding.
+Fresh enrollment and one restart passed on owned B on 2026-10-07;
+see [the enrollment evidence](QR-ENROLLMENT.md). Use `login qr` to select
+the QR flow directly. An explicit account-protection restriction is a stop
+condition, not a reason to regenerate repeatedly.
 
 Alternatively, send `login import-profile`, then enter the profile's name. `list-logins` shows the login's connection state.
 Stopping the bridge with an interrupt shuts it down cleanly even though the

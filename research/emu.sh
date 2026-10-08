@@ -1,6 +1,6 @@
 #!/bin/bash
 # Owned A/B emulator preparation. Configuration lives in .lab/emu-config.sh.
-# Usage: emu.sh up|status|down|login|finish|verify|ready a|b [--login]
+# Usage: emu.sh up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish a|b [--login]
 # ready (or up --login) permits one password submission and normal verification.
 # Configure explicit login and required-policy authorization before using auth.
 set -euo pipefail
@@ -16,7 +16,7 @@ LAB_DIR=$REPO_DIR/.lab
 TOOL_DIR=$REPO_DIR/tools/lab
 LOGDIR=${EMU_RUNTIME_DIR:-"$HOME/Library/Caches/mooo-lab/emu"}
 
-usage() { echo "usage: $0 up|status|down|login|finish|verify|ready a|b [--login]" >&2; exit 2; }
+usage() { echo "usage: $0 up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish a|b [--login]" >&2; exit 2; }
 
 profile() {
   case "$1" in
@@ -189,7 +189,7 @@ cmd_finish() {
   local ui x y account report
   ui=$(dump)
   report=$(python3 "$TOOL_DIR/emu_state.py" <<<"$ui")
-  if [ "$report" = state=chat-visible ]; then
+  if [ "$report" = state=chat-visible ] || [ "$report" = state=finder-visible ]; then
     adb shell input keyevent KEYCODE_BACK
     sleep 2
     state
@@ -387,6 +387,15 @@ cmd_down() {
   echo "stopped $AVD ($SERIAL)"
 }
 
+# These commands consume an already-scanned challenge; they never generate,
+# resend, or retry enrollment. qr-code reads one code from a private stdin pipe.
+cmd_qr_phone() {
+  [ "${ALLOW_QR_ENROLLMENT:-0}" = 1 ] || { echo "configure explicit QR enrollment authorization" >&2; return 1; }
+  find_serial || { echo "owned emulator is not running" >&2; return 1; }
+  assert_client_version
+  python3 "$TOOL_DIR/qr_phone.py" "$ADB" "$SERIAL" "$1"
+}
+
 main() {
   [ $# -ge 2 ] || usage
   CMD=$1 WHO=$2
@@ -413,6 +422,9 @@ main() {
     login) cmd_login ;;
     finish) cmd_finish ;;
     verify) cmd_verify ;;
+    qr-approve) cmd_qr_phone approve ;;
+    qr-code) cmd_qr_phone code ;;
+    qr-finish) cmd_qr_phone finish ;;
     down) cmd_down ;;
     *) usage ;;
   esac

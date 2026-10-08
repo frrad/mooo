@@ -101,3 +101,47 @@ validation concerns preparation, not bridge delivery or protocol parity.
 python3 -m unittest discover -s tools/lab -p 'test_*.py'
 bash -n research/emu.sh
 ```
+
+
+## Secondary-device QR approval
+
+Prepare the phone's scanner before issuing the bridge management command
+`login qr`. Select the exact fresh framework PNG from a unique folder after
+verifying its bytes; do not reuse an expired image. Generation, Matrix event
+anchoring, image transport, and the server deadline belong to the caller.
+
+With explicit `ALLOW_QR_ENROLLMENT=1` in private configuration:
+
+```sh
+research/emu.sh qr-approve b
+private-fresh-code-provider | research/emu.sh qr-code b
+research/emu.sh qr-finish b
+```
+
+`qr-approve` waits for the asynchronous approval screen, selects persistent
+`Verify with my PC`, then waits for the versioned verification form. `qr-code`
+reads one four-character code from stdin, requires an empty field, verifies the
+entered value and enabled confirmation control, and submits once. `qr-finish`
+waits for the success dialog and chooses Close, leaving device management alone.
+A private provider must select the bot code event belonging to this exact login command
+and enforce its challenge/device-auth deadline. Do not enter a code in command
+arguments or shell history. Neither helper generates challenges, resends codes,
+or asserts final enrollment; confirm bridge `CONNECTED`, persisted login, and
+restart independently.
+
+The 2026-10-07 trial found that the approval transition is asynchronous and the
+title-only verification check can run before the form is ready.
+Synthetic regressions now use the actual form resource IDs and bounded waits. Account-protection and invalid-QR screens stop without approval
+or retry. Unknown screens time out. The helper is guarded for Android KakaoTalk
+26.8.2. Fresh B enrollment and restart passed; A reported a secondary-device
+restriction ([evidence](bridge/QR-ENROLLMENT.md)).
+
+The launcher move also exposed a provider-path bug in the example/private
+configuration: SMS provider lookup now uses `TOOL_DIR`, with a failing-first
+regression exercising the supplied configuration. Keep `SCRIPT_DIR` reserved
+for the launcher location.
+
+Closing successful QR approval returns to Finder rather than Friends. The
+readiness helper now recognizes the versioned Finder navigation host and returns
+with bounded Back navigation; synthetic classifier and command regressions
+protect this recovery path.

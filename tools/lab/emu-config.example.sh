@@ -7,6 +7,8 @@ KEYCHAIN_B=owned-kakao-b
 # Set only for profiles whose normal login/required-policy steps are authorized.
 ALLOW_LOGIN=0
 ALLOW_REQUIRED_PRIVACY_POLICY=0
+# Separately authorize secondary-device QR approval for these owned profiles.
+ALLOW_QR_ENROLLMENT=0
 
 # Optional provider contract: start listening, create the ready marker, then
 # emit exactly one fresh code on stdout. Errors must not contain message bodies.
@@ -18,5 +20,5 @@ read_sms_code() {
     b) export SMS_XMPP_JID="test-b@example.org" SMS_KEYCHAIN_SERVICE="owned-xmpp-b" ;;
     *) return 1 ;;
   esac
-  exec "$LAB_DIR/venv/bin/python" "$SCRIPT_DIR/sms_xmpp.py" "$marker"
+  exec "$LAB_DIR/venv/bin/python" "$TOOL_DIR/sms_xmpp.py" "$marker"
 }

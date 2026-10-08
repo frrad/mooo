@@ -51,3 +51,7 @@ class StateTests(unittest.TestCase):
 
     def test_chat_text_does_not_trigger_verification(self):
         self.assertEqual(classify('<hierarchy><node resource-id="com.kakao.talk:id/chat_room_root"/><node text="Here is a verification code"/></hierarchy>'), 'chat-visible')
+
+    def test_finder_after_qr_is_navigation_not_home(self):
+        ui = '<hierarchy><node resource-id="com.kakao.talk.finder:id/finder_nav_host_fragment"/><node resource-id="com.kakao.talk.finder:id/input_focus"/></hierarchy>'
+        self.assertEqual(classify(ui), 'finder-visible')
