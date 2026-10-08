@@ -23,6 +23,7 @@ const (
 	KindTextMessage        Kind = "text_message"
 	KindReplyMessage       Kind = "reply_message"
 	KindPhotoMessage       Kind = "photo_message"
+	KindStickerMessage     Kind = "sticker_message"
 	KindMessageGap         Kind = "message_gap"
 	KindUnsupportedMessage Kind = "unsupported_message"
 	KindReactionChanged    Kind = "reaction_changed"
@@ -91,6 +92,12 @@ func MessagePosition(event Event) (chatID, logID int64, ok bool) {
 			return 0, 0, false
 		}
 		return value.Message.ChatID, value.Message.LogID, true
+	case StickerMessage:
+		return value.ChatID, value.LogID, true
+	case *StickerMessage:
+		if value != nil {
+			return value.ChatID, value.LogID, true
+		}
 	case UnsupportedMessage:
 		return value.ChatID, value.LogID, true
 	case *UnsupportedMessage:
@@ -145,6 +152,17 @@ func (m ReplyMessage) String() string {
 }
 
 func (m ReplyMessage) GoString() string { return m.String() }
+
+type StickerMessage struct {
+	ChatID, LogID, AuthorID, SentAt int64
+	Type                            int32
+	Attachment                      media.StickerAttachment
+}
+
+func (StickerMessage) Kind() Kind         { return KindStickerMessage }
+func (StickerMessage) isEvent()           {}
+func (StickerMessage) String() string     { return "StickerMessage{<redacted>}" }
+func (m StickerMessage) GoString() string { return m.String() }
 
 type PhotoMessage struct {
 	Message media.PhotoMessage
@@ -621,6 +639,16 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 			return nil, ErrMalformedEvent
 		}
 		return PhotoMessage{Message: photo}, nil
+	case 12, 20:
+		value, err := requiredString(chatLog, "attachment")
+		if err != nil {
+			return nil, ErrMalformedEvent
+		}
+		attachment, err := media.DecodeStickerAttachment(value)
+		if err != nil {
+			return nil, ErrMalformedEvent
+		}
+		return StickerMessage{ChatID: chatID, LogID: logID, AuthorID: optionalInt64(chatLog, "authorId"), SentAt: optionalInt64(chatLog, "sendAt"), Type: messageType, Attachment: attachment}, nil
 	case chat.ReplyType:
 		return decodeReply(chatID, logID, chatLog)
 	default:

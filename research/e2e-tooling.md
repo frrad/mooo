@@ -205,3 +205,18 @@ add regressions before considering them resolved. The owned A/B direct-room
 [text, photo and restart acceptance evidence](bridge/ENCRYPTED-ROOM-VALIDATION.md)
 checks the production bridge with the pinned SDK; changing the emulators' login
 state is unnecessary for this test.
+
+## Prepared inbound sticker acceptance
+
+`private-selected-sticker-provider | research/emu.sh send-sticker a` uses the same
+private `ALLOW_TEST_MESSAGES=1` guard and version checks. Its JSON contains `peer`
+and `receipt`, as above. Explicitly select an owned free-pack tile first. On
+Android 26.8.2 this opens a preview rather than sending immediately. The helper
+requires exactly one `emoticon_preview_root`, an empty text composer and one
+Send control in the exact owned chat. It reserves the receipt before tapping;
+existing receipts block repeats. Pack selection and delivery verification remain
+caller operations. A regression covers missing preview and receipt reuse.
+
+The owned static/type-12 and animated/type-20 experiments passed this helper.
+See [the sticker contract and acceptance evidence](stickers.md). Record new pack,
+preview or layout edge cases here and add a sanitized regression before resuming.

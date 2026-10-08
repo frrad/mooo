@@ -181,21 +181,15 @@ func run(o options) (kind string) {
 		if readErr != nil {
 			return "expected_file"
 		}
-		var expected struct {
-			Type   string `json:"type"`
-			Body   string `json:"body"`
-			SHA256 string `json:"sha256"`
-		}
-		if json.Unmarshal(expectedData, &expected) != nil || expected.Type == "" || expected.Body == "" {
+		var expected expectedMessage
+		if json.Unmarshal(expectedData, &expected) != nil || expected.Body == "" || (expected.EventType != "m.sticker" && expected.Type == "") {
 			return "expected_json"
 		}
-		if decrypted.RoomID != id.RoomID(o.room) || decrypted.Type != event.EventMessage {
+		if decrypted.RoomID != id.RoomID(o.room) || !matchesExpected(decrypted, expected) {
 			return "decrypt_mismatch"
 		}
-		content, ok := decrypted.Content.Parsed.(*event.MessageEventContent)
-		if !ok || string(content.MsgType) != expected.Type || content.Body != expected.Body {
-			return "decrypt_mismatch"
-		}
+		content := decrypted.Content.Parsed.(*event.MessageEventContent)
+
 		if expected.SHA256 != "" && content.URL != "" {
 			return "media_plaintext_url"
 		}
@@ -496,4 +490,22 @@ func privateParent(path string) error {
 		return errors.New("private directory required")
 	}
 	return nil
+}
+
+type expectedMessage struct {
+	EventType string `json:"event_type"`
+	Type      string `json:"type"`
+	Body      string `json:"body"`
+	SHA256    string `json:"sha256"`
+}
+
+func matchesExpected(evt *event.Event, expected expectedMessage) bool {
+	typ := event.EventMessage
+	if expected.EventType == "m.sticker" {
+		typ = event.EventSticker
+	} else if expected.EventType != "" && expected.EventType != "m.room.message" {
+		return false
+	}
+	content, ok := evt.Content.Parsed.(*event.MessageEventContent)
+	return evt.Type == typ && ok && string(content.MsgType) == expected.Type && content.Body == expected.Body
 }
