@@ -73,3 +73,7 @@ complete uploader request/response callbacks, relay downloader callbacks, cache
 cleanup transitions and all player consumers are not fully traced. Controlled
 receiver playback and Matrix SDK acceptance cover the tested path only, and do
 not establish full official-client parity. Native outbound video is unimplemented.
+
+Final readiness exposed an unrecognized official video-player screen. A
+failing-first classifier/navigation regression now recognizes the combined
+player controls and exits with Back, preserving unknown-dialog stops.

@@ -262,3 +262,9 @@ The failed receipt is retained; inspect delivery and draft state, and never
 automatically repeat that attempt. Moving controls fail before any send receipt.
 The Matrix lab decrypt expectation optionally checks media `info`: MIME, size,
 width, height and duration, in addition to native event/body and decrypted hash.
+
+The official video player is recognized only by the combined Kakao resource IDs
+`playerTouchPanel` and `playPauseButton`. Readiness backs out of that viewer to
+the chat and then home; the viewer itself does not count as ready. Unknown dialogs
+still stop preparation. Capture UI after confirming the intended screen: an
+immediate screenshot after navigation can precede the transition animation.

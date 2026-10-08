@@ -189,7 +189,7 @@ cmd_finish() {
   local ui x y account report
   ui=$(dump)
   report=$(python3 "$TOOL_DIR/emu_state.py" <<<"$ui")
-  if [ "$report" = state=chat-visible ] || [ "$report" = state=finder-visible ]; then
+  if [ "$report" = state=chat-visible ] || [ "$report" = state=finder-visible ] || [ "$report" = state=media-viewer-visible ]; then
     adb shell input keyevent KEYCODE_BACK
     sleep 2
     state

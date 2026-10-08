@@ -43,6 +43,9 @@ def classify(xml):
         return "login-form"
     if "com.kakao.talk:id/txt_message" in ids:
         return "unknown"
+    if {"com.kakao.talk:id/playerTouchPanel",
+            "com.kakao.talk:id/playPauseButton"} <= ids:
+        return "media-viewer-visible"
     if "com.kakao.talk:id/chat_room_root" in ids:
         return "chat-visible"
     if {"com.kakao.talk.finder:id/finder_nav_host_fragment",

@@ -42,6 +42,12 @@ class StateTests(unittest.TestCase):
     def test_chat_requires_navigation(self):
         self.assertEqual(classify('<hierarchy><node resource-id="com.kakao.talk:id/chat_room_root"/></hierarchy>'), 'chat-visible')
 
+    def test_video_player_is_navigation_not_home(self):
+        ui = '<hierarchy><node resource-id="com.kakao.talk:id/playerTouchPanel"/><node resource-id="com.kakao.talk:id/playPauseButton"/></hierarchy>'
+        self.assertEqual(classify(ui), 'media-viewer-visible')
+        self.assertEqual(classify('<hierarchy><node resource-id="com.kakao.talk:id/playPauseButton"/></hierarchy>'), 'unknown')
+        self.assertEqual(classify(ui.replace('</hierarchy>', '<node resource-id="com.kakao.talk:id/txt_message" text="Unknown alert"/></hierarchy>')), 'unknown')
+
     def test_unknown_dialog_beats_home(self):
         self.assertEqual(classify('<hierarchy><node resource-id="com.kakao.talk:id/sliding_tabs"/><node text="Friends"/><node resource-id="com.kakao.talk:id/txt_message" text="Unrecognized alert"/></hierarchy>'), 'unknown')
 
