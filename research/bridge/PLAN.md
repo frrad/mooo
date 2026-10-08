@@ -1,6 +1,6 @@
 # Matrix bridge plan
 
-Status: active work plan, updated 2026-10-05. Framework decision:
+Status: active work plan, updated 2026-10-07. Framework decision:
 [ADR 0003](../../docs/adr/0003-bridge-on-mautrix-bridgev2.md).
 
 ## Goals
@@ -37,7 +37,7 @@ distinguish implemented behavior from planned integrations.
 | IDs | Portal = Kakao chat ID. Ghost = Kakao user ID. Message = `chatID:logID`. Outbound messages record the `WriteResponse` log ID. |
 | Inbound | `Client.Events()` feeds remote events, which are queued in per-chat delivery order. `CommitEvent` is called only after the framework reports the event as handled. Delivery is at-least-once, and the framework's message-ID dedup absorbs replays. |
 | Outbound | Text, reply, photo, and reaction go to the existing client methods. An ambiguous delivery fails the Matrix event and is never resent. |
-| Reactions | Kakao pushes aggregate counts (`CHGLOGMETA`). PR #179 reconciles per-sender Matrix reactions from `ReactionMembers` / `MiniReactionDetails` with checked add/remove operations, database postconditions, replay-safe revision persistence, and explicit lookup/failure handling. Outbound failure categories and the no-retry rule are documented in [`reaction-failure-policy.md`](reaction-failure-policy.md). Live acceptance remains open. |
+| Reactions | Kakao pushes aggregate counts (`CHGLOGMETA`). PR #179 reconciles per-sender Matrix reactions from `ReactionMembers` / `MiniReactionDetails` with checked add/remove operations, database postconditions, replay-safe revision persistence, and explicit lookup/failure handling. Outbound failure categories and the no-retry rule are documented in [`reaction-failure-policy.md`](reaction-failure-policy.md). Direct A/B legacy and mini acceptance is recorded; groups remain open. |
 | Own messages | Messages written by the logged-in account on another device are sent through double puppeting. |
 | Connection | The bridge decides when to reconnect. Kakao gives it no reconnect of its own. Retries use exponential backoff and then run a bounded `CatchUp`. A dropped connection is reported as a transient disconnect; `KICKOUT` is reported as logged out or bad credentials. |
 | Read state | Matrix read receipts go to `MarkRead`. `DECUNREAD` becomes ghost read receipts, or a double-puppet receipt for the user's own watermark ([policy](read-receipt-policy.md)). `NOTIREAD` is not sent. Catch-up and backfill use `SYNCMSG`, which can mark messages read on the server, so both are bounded and backfill is opt-in. |
@@ -58,9 +58,13 @@ B phone displayed the exact fixture in the existing self-chat. A 2026-10-05
 Docker resume exercised
 the existing profile, one text, one encrypted-media attachment in an
 unencrypted portal, and one persistent restart; the reply and reaction probes
-were rejected/failed and were not retried. Group/other-participant delivery,
-inbound encrypted Kakao-to-Matrix text, encrypted media parity, reaction
-acceptance, and broader recovery remain open. The framework supplies appservice,
+were rejected/failed and were not retried. The 2026-10-07 fresh-QR A/B run
+validated other-participant direct text,
+photos, replies after restart, legacy/mini reaction attribution and removal,
+and one controlled automatic carriage recovery; see
+[direct acceptance](DIRECT-MESSAGING-VALIDATION.md). Groups are pending at the
+maintainer’s direction. Inbound encrypted Kakao-to-Matrix text, encrypted media
+parity, and broader fault recovery remain open. The framework supplies appservice,
 encryption, and double-puppeting machinery; that does not establish deployment
 validation for every homeserver or Beeper configuration.
 
@@ -235,17 +239,24 @@ and full official-client parity remain outside this alpha goal.
       author/timestamp fields have synthetic parser coverage; live encoding
       remains an explicit gap. Image replies are rejected.
 - [ ] Live-validate direct/group photo transfers, Matrix room E2EE media, and
-      author/timestamp attribution. The Docker attachment probe covered
+      author/timestamp attribution. Direct A/B photos and exact inbound original
+      PNG passed on 2026-10-07.
+      Group/E2EE-room media remain pending. The Docker attachment probe covered
       encrypted media transport in an unencrypted portal only.
 - [x] Inbound reply conversion with chat-scoped source message IDs.
 - [x] Outbound replies with persisted source metadata, explicit missing-source
       rejection, chat/receiver guards, UTF-16-bounded previews, and single-attempt
       sends. Synthetic connector and SQLite round-trip tests pass (PR #164).
-- [ ] Live-validate outbound replies, including reply after bridge restart. The
-      Docker synthetic-target probe was rejected before Kakao mutation.
+- [x] Live-validate direct outbound replies, including reply after bridge restart.
+      The 2026-10-07 A/B trial rendered the persisted original context. Group
+      and attachment-specific reply behavior remain separate.
 - [x] Reactions in both directions, with checked aggregate-to-per-sender
       reconciliation, replay-safe revisions, and explicit Matrix failure
-      handling (PR #179). Live direct/group acceptance remains outstanding; the
+      handling (PR #179). Direct legacy addition/cancellation and inbound mini
+      attribution/removal
+      passed on 2026-10-07; group acceptance remains outstanding.
+      [Compatibility fixes](REACTION-COMPATIBILITY.md) cover observed response
+      and push shapes; outbound mini selections remain unsupported. The
       Docker heart probe produced the connector's generic mutation failure
       (PR #219); the retained evidence cannot distinguish server rejection
       from transport or another ambiguous outcome, so no server-rejection
@@ -264,7 +275,9 @@ and full official-client parity remain outside this alpha goal.
 - [x] Initial portal names and member profiles/rosters from existing client APIs
       (PR #162). Complete versus partial membership is explicit; unrequested
       profiles and invalid IDs are rejected.
-- [ ] Live-validate initial metadata in direct and group portals.
+- [x] Live-validate initial direct portal names, participant identities and roster
+      in the 2026-10-07 A/B trial.
+- [ ] Live-validate group portal metadata; pending a third owned participant.
 - [x] Portal and ghost avatars, plus updates to existing portal metadata (PR #173).
       HTTPS CDN policy, byte bounds, and redacted failures are synthetic-tested;
       direct/group live validation remains outstanding.
@@ -300,7 +313,10 @@ The implemented supervisor and its bounded policy are documented in
       chats on 2026-09-30.
 - [ ] Extend controlled owned-account resume/catch-up validation to automatic
       reconnect, terminal events, delivery failures, and cleanup timeouts.
-      Synthetic regressions cover these paths; live acceptance remains open.
+      One controlled idle carriage drop, bounded replacement gate, missed A
+      message recovery, and subsequent live delivery passed on 2026-10-07.
+      Terminal events, delivery failures and cleanup timeouts still lack live
+      acceptance; synthetic regressions cover these paths.
 - [ ] Opt-in, bounded backfill with an explicit read-side-effect policy.
 
 ### B4: polish and packaging

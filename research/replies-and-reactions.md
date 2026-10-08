@@ -66,7 +66,9 @@ The recovered selection values are:
 
 The request uses the persisted Mac-class access token and device UUID, so it
 does not create or reconnect a LOCO session. The client performs the mutation
-once and accepts only a successful HTTP response whose JSON status is zero.
+once and accepts a successful HTTP response with numeric status zero or the
+boolean `result:true` observed on 2026-10-07. False or malformed results do not
+establish success; see [compatibility evidence](bridge/REACTION-COMPATIBILITY.md).
 A production Go-client heart mutation returned status zero and appeared on the
 official Android message bubble. Confidence: high for heart and cancellation's
 request contract; medium for the remaining recovered selection labels until
@@ -74,8 +76,10 @@ each is exercised live.
 
 ## Incoming aggregate and member attribution
 
-Reaction changes arrive over the existing LOCO session as `CHGLOGMETA`. Metadata
-type `2` has a JSON `content` string with an `rx` array. Each aggregate entry
+Reaction changes arrive over the existing LOCO session as `CHGLOGMETA`. The
+2026-10-07 A/B run additionally observed legacy type `1`, with selection-keyed
+counts, and current mini attribution/removal
+([evidence](bridge/REACTION-COMPATIBILITY.md)). Metadata type `2` has a JSON `content` string with an `rx` array. Each aggregate entry
 contains localized label map `a`, count `c`, kind `k`, and stable item ID `o`.
 The outer packet supplies the chat ID, target log ID, and revision. This event is
 aggregate state; it does not identify the actors.

@@ -3,6 +3,46 @@
 This record contains sanitized evidence from an operator-owned disposable A/B
 direct room. It does not establish general Kakao or Matrix parity.
 
+## Other-participant A/B acceptance — 2026-10-07
+
+Source baseline `c464ca0`, followed by the reaction compatibility fixes in this
+change. Owned Android clients: KakaoTalk 26.8.2, API 35. B used the fresh native
+QR profile from [QR enrollment](QR-ENROLLMENT.md). A remained an independent
+primary participant; no secondary login on restricted A was retried. The local
+Synapse portal was unencrypted. Evidence came from exact synthetic fixture
+matches, official phone UI, Matrix events, source IDs and the bridge database.
+
+Passed paths:
+
+- A participant text created one direct portal and arrived once as A's ghost.
+  The ghost and room name matched A, and membership included both participants.
+- Matrix text appeared on A's phone and persisted with positive Kakao source
+  IDs. B's phone also displayed the independent A text.
+- Matrix-to-Kakao PNG rendered on A. An original-quality 64x64 PNG sent by A
+  arrived once as A's Matrix image, with byte-for-byte matching media content.
+- A phone reply referenced the exact Matrix source event. A Matrix reply after
+  restart rendered the persisted original message in the same Kakao reply bubble
+  and persisted as type 26.
+- Two A messages sent during a clean bridge stop recovered once each, in order,
+  before a fresh live message, using the same database/profile and no new QR.
+- A private current-source harness closed only B's active carriage while idle,
+  gated its replacement, and sent one A message during that gap. Automatic
+  recovery delivered it once before a later live fixture. Production bootstrap,
+  profile lease, continuity and supervisor paths remained in use. This proves
+  this one controlled drop, not every terminal event or timeout path.
+- Reaction acceptance exposed and fixed boolean mutation responses, legacy
+  type-1 pushes, and current mini attribution. Fresh outbound legacy addition
+  and cancellation persisted successfully. A's two distinct mini items arrived
+  with correct attribution; individual and final removal redacted Matrix events
+  and deleted stored rows. See [compatibility evidence](REACTION-COMPATIBILITY.md).
+
+The original failed mutations were never resent automatically. Fresh targets
+and explicitly chosen state changes tested fixes. Transient tooling captures
+stayed outside the repository. Group testing is pending at the maintainer's
+direction because the lab has only two owned participants. Avatars beyond the
+default profile, room E2EE, receipt/SYNCMSG read-side effects, membership changes,
+terminal events, cleanup timeouts, and Matrix delivery faults remain separate.
+
 ## Native bridge smoke
 
 On 2026-10-04, the native bridge at source revision `a8d8970` was exercised
