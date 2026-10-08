@@ -11,7 +11,9 @@ ADB=$SDK/platform-tools/adb
 EMULATOR=$SDK/emulator/emulator
 PKG=com.kakao.talk
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-LAB_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)/.lab
+REPO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
+LAB_DIR=$REPO_DIR/.lab
+TOOL_DIR=$REPO_DIR/tools/lab
 LOGDIR=${EMU_RUNTIME_DIR:-"$HOME/Library/Caches/mooo-lab/emu"}
 
 usage() { echo "usage: $0 up|status|down|login|finish|verify|ready a|b [--login]" >&2; exit 2; }
@@ -100,7 +102,7 @@ launch() {
 state() {
   local ui
   ui=$(dump)
-  python3 "$SCRIPT_DIR/emu_state.py" <<<"$ui"
+  python3 "$TOOL_DIR/emu_state.py" <<<"$ui"
 }
 
 cmd_up() {
@@ -186,7 +188,7 @@ cmd_finish() {
   assert_client_version
   local ui x y account report
   ui=$(dump)
-  report=$(python3 "$SCRIPT_DIR/emu_state.py" <<<"$ui")
+  report=$(python3 "$TOOL_DIR/emu_state.py" <<<"$ui")
   if [ "$report" = state=chat-visible ]; then
     adb shell input keyevent KEYCODE_BACK
     sleep 2
@@ -219,7 +221,7 @@ cmd_finish() {
     ui=$(dump)
   fi
   if grep -q 'com.android.permissioncontroller:id/permission_allow_button' <<<"$ui"; then
-    read -r x y < <(python3 "$SCRIPT_DIR/emu_state.py" --permission-target <<<"$ui") || { echo "unknown permission; stop" >&2; return 1; }
+    read -r x y < <(python3 "$TOOL_DIR/emu_state.py" --permission-target <<<"$ui") || { echo "unknown permission; stop" >&2; return 1; }
     adb shell input tap "$x" "$y"
     sleep 2
     ui=$(dump)

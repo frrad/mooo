@@ -1,6 +1,6 @@
 # E2E emulator preparation
 
-Use `tools/lab/emu.sh` for the two owned lab profiles. The local `.lab/emu.sh`
+Use `research/emu.sh` for the two owned lab profiles. The local `.lab/emu.sh`
 is a compatibility wrapper. Profile mappings, Keychain references, and SMS-line
 identities live in gitignored `.lab/emu-config.sh`; see
 [`emu-config.example.sh`](../tools/lab/emu-config.example.sh) for its schema.
@@ -99,5 +99,5 @@ validation concerns preparation, not bridge delivery or protocol parity.
 
 ```sh
 python3 -m unittest discover -s tools/lab -p 'test_*.py'
-bash -n tools/lab/emu.sh
+bash -n research/emu.sh
 ```

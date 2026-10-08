@@ -3,7 +3,7 @@ import shlex
 import subprocess
 import unittest
 
-SCRIPT = shlex.quote(str(Path(__file__).with_name('emu.sh').resolve()))
+SCRIPT = shlex.quote(str((Path(__file__).resolve().parents[2] / 'research' / 'emu.sh')))
 
 
 def run(commands):
