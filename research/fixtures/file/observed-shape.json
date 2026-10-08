@@ -1,0 +1,19 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-08",
+    "method": "Owned A selected generated TXT in system document picker; scoped B MSG probe plus independent HTTPS download verified original bytes.",
+    "doc": "research/file.md"
+  },
+  "attachment": {
+    "k": "synthetic-file-token",
+    "name": "mooo-file-synthetic.txt",
+    "size": 48,
+    "cs": "A9209C8E6B2E3CF8AF32CA4C6DC1BB91E8ADC154",
+    "url": "https://talk.kakaocdn.net/synthetic/file.txt",
+    "expire": 4102444800000,
+    "s": 48
+  },
+  "data_base64": "bW9vbyBvd25lZCBsYWJvcmF0b3J5IHN5bnRoZXRpYyBmaWxlCjAxMjM0NTY3ODkK"
+}

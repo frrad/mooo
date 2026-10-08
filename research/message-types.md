@@ -54,7 +54,7 @@ Naming unsupported constants is intentional and does not enable their payloads.
 | 15 | `CJ20121212` | `UnsupportedMessage` notice |
 | 16 | `Location` | `UnsupportedMessage` notice |
 | 17 | `Profile` | `UnsupportedMessage` notice |
-| 18 | `File` | `UnsupportedMessage` notice |
+| 18 | `File` | Typed direct-URL file; relay/cloud forms remain gaps |
 | 20 | `AnimatedSticker` | Typed message |
 | 21 | `Nudge` | `UnsupportedMessage` notice |
 | 22 | `Spritecon` | `UnsupportedMessage` notice |
@@ -116,3 +116,5 @@ secret chats or official-client parity.
 owned emulator findings and remaining live-test limitations.
 
 [Ordinary-video contract and acceptance](video.md) describe scoped type-3 support.
+
+[Ordinary-file contract and acceptance](file.md) describe scoped type-18 support.

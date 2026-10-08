@@ -268,3 +268,13 @@ The official video player is recognized only by the combined Kakao resource IDs
 the chat and then home; the viewer itself does not count as ready. Unknown dialogs
 still stop preparation. Capture UI after confirming the intended screen: an
 immediate screenshot after navigation can precede the transition animation.
+
+
+`send-file` takes private stdin peer, synthetic filename, SHA-256 and receipt. It
+checks the pushed source bytes, empty composer and owned peer, then uses File →
+Select from File. Android document selection sends immediately: the durable
+receipt is reserved before selecting the exact DocumentsUI item. A new exact
+filename must appear in the owned chat within four dumps. Returning to chat alone
+is insufficient, as observed with an unconfirmed binary fixture. Preserve its
+receipt; never retry automatically. The SDK decrypt expectation can also check
+`filename` for native `m.file` messages.

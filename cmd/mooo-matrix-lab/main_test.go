@@ -146,3 +146,16 @@ func TestExpectedVideoMediaInfo(t *testing.T) {
 		t.Fatal("missing video info accepted")
 	}
 }
+
+func TestExpectedFileName(t *testing.T) {
+	content := &event.MessageEventContent{MsgType: event.MsgFile, Body: "synthetic.txt", FileName: "synthetic.txt"}
+	evt := &event.Event{Type: event.EventMessage, Content: event.Content{Parsed: content}}
+	expected := expectedMessage{Type: "m.file", Body: "synthetic.txt", FileName: "synthetic.txt"}
+	if !matchesExpected(evt, expected) {
+		t.Fatal("native filename rejected")
+	}
+	content.FileName = "different.txt"
+	if matchesExpected(evt, expected) {
+		t.Fatal("wrong filename accepted")
+	}
+}

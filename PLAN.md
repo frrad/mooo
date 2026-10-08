@@ -463,6 +463,8 @@ run required checks and secret scans, then merge through passing CI.
       document evidence and blockers rather than claiming enum-only support.
 
 LargeFile (29) may be skipped when not live-testable per maintainer. LargeVideo
-(28) still needs an eligible owned sender fixture. No third participant, primary
-account, purchase, backup/restore operation or entitlement bypass is authorized
-by this rollout. Existing owned A/B research authorization remains in force.
+(28) still needs an eligible owned sender fixture. After the independently testable types land, create a third disposable owned
+lab account C and begin multi-participant chat testing, as requested. Keep any
+phone verification and account state private. Purchases, primary-account tests,
+backup/restore and entitlement bypass remain outside this rollout. Existing
+owned A/B research authorization remains in force.

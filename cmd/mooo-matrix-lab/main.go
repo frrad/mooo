@@ -498,6 +498,7 @@ type expectedMessage struct {
 	Body      string          `json:"body"`
 	SHA256    string          `json:"sha256"`
 	Info      *event.FileInfo `json:"info,omitempty"`
+	FileName  string          `json:"filename,omitempty"`
 }
 
 func matchesExpected(evt *event.Event, expected expectedMessage) bool {
@@ -509,6 +510,9 @@ func matchesExpected(evt *event.Event, expected expectedMessage) bool {
 	}
 	content, ok := evt.Content.Parsed.(*event.MessageEventContent)
 	if evt.Type != typ || !ok || string(content.MsgType) != expected.Type || content.Body != expected.Body {
+		return false
+	}
+	if expected.FileName != "" && content.FileName != expected.FileName {
 		return false
 	}
 	if expected.Info != nil {
