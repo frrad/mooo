@@ -64,11 +64,16 @@ class Phone:
 
     def dump(self):
         path = "/sdcard/mooo-qr-" + uuid.uuid4().hex + ".xml"
-        try:
-            self.adb("shell", "uiautomator", "dump", path)
-            return ET.fromstring(self.adb("exec-out", "cat", path))
-        finally:
-            self.adb("shell", "rm", "-f", path)
+        for attempt in range(3):
+            try:
+                self.adb("shell", "uiautomator", "dump", path)
+                return ET.fromstring(self.adb("exec-out", "cat", path))
+            except (ET.ParseError, subprocess.SubprocessError):
+                if attempt == 2:
+                    raise ValueError("UI dump unavailable") from None
+                time.sleep(.25)
+            finally:
+                self.adb("shell", "rm", "-f", path)
 
     def tap(self, root, name):
         _, (x, y) = target(root, name)

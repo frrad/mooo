@@ -9,6 +9,8 @@ ALLOW_LOGIN=0
 ALLOW_REQUIRED_PRIVACY_POLICY=0
 # Separately authorize secondary-device QR approval for these owned profiles.
 ALLOW_QR_ENROLLMENT=0
+# Explicit synthetic message sends in an already-selected owned chat.
+ALLOW_TEST_MESSAGES=0
 
 # Optional provider contract: start listening, create the ready marker, then
 # emit exactly one fresh code on stdout. Errors must not contain message bodies.
