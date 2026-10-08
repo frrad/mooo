@@ -5,6 +5,7 @@ The private stdin JSON supplies peer, receipt, and text (or selected photo
 Send bounds). No navigation, recipient search, permission grant, or retry.
 """
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -129,6 +130,60 @@ def send_album(phone, peer, bounds, count, receipt):
     return 'selected-album-submitted-once'
 
 
+def clickable_text_parent(root, text):
+    parents = {child: node for node in root.iter() for child in node}
+    targets = []
+    for node in root.iter('node'):
+        if node.get('text') != text:
+            continue
+        while node.get('clickable') != 'true' and node in parents:
+            node = parents[node]
+        if node.get('clickable') == 'true' and node not in targets:
+            targets.append(node)
+    return unique(targets)
+
+
+def document_item(root, filename):
+    return unique([node for node in root.iter('node')
+                   if node.get('resource-id') == 'com.google.android.documentsui:id/item_root'
+                   and node.get('clickable') == 'true'
+                   and any(child.get('text') == filename for child in node.iter('node'))])
+
+
+def send_file(phone, peer, filename, sha256, receipt):
+    if Path(receipt).exists():
+        raise ValueError('previous attempt exists; inspect outcome without resending')
+    if not re.fullmatch(r'mooo-[A-Za-z0-9._-]{1,120}', filename) or not re.fullmatch(r'[A-Fa-f0-9]{64}', sha256):
+        raise ValueError('synthetic filename and expected hash required')
+    root = phone.dump()
+    owned_chat(root, peer)
+    if control(root, 'message_edit_text').get('text', '') not in ('', 'Message'):
+        raise ValueError('composer not empty')
+    if any(n.get('text') == filename for n in root.iter('node')):
+        raise ValueError('fixture already visible; inspect without resending')
+    data = phone.adb('exec-out', 'head', '-c', '4194305', '/sdcard/Download/' + filename)
+    if not data or len(data) > 4 << 20 or hashlib.sha256(data).hexdigest() != sha256.lower():
+        raise ValueError('pushed synthetic fixture unconfirmed')
+    tap(phone, control(root, 'media_send_layout'))
+    root = phone.dump()
+    _, (x, y) = node_target(control(root, 'handle_container'))
+    phone.adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(max(200, y // 4)), '450')
+    root = phone.dump()
+    tap(phone, clickable_text_parent(root, 'File'))
+    root = phone.dump()
+    tap(phone, clickable_text_parent(root, 'Select from File'))
+    root = phone.dump()
+    item = document_item(root, filename)
+    reserve(receipt)  # Document selection sends immediately in the observed client.
+    tap(phone, item)
+    for _ in range(4):
+        root = phone.dump()
+        owned_chat(root, peer)
+        if any(n.get('text') == filename for n in root.iter('node')):
+            return 'file-submitted-once'
+    raise ValueError('file outcome unconfirmed; preserve receipt and do not retry')
+
+
 def send_sticker(phone, peer, receipt):
     if Path(receipt).exists():
         raise ValueError('previous attempt exists; inspect outcome without resending')
@@ -153,6 +208,8 @@ def main():
             result = send_text(phone, request['peer'], request['text'], request['receipt'])
         elif action == 'sticker':
             result = send_sticker(phone, request['peer'], request['receipt'])
+        elif action == 'file':
+            result = send_file(phone, request['peer'], request['filename'], request['sha256'], request['receipt'])
         elif action == 'album':
             result = send_album(phone, request['peer'], request['bounds'], request['count'], request['receipt'])
         elif action in ('photo', 'video'):

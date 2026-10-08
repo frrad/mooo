@@ -1,9 +1,10 @@
 import tempfile
+import hashlib
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media
+from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file
 
 
 def frame(body):
@@ -102,6 +103,75 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(len(p.calls), 1)
             with self.assertRaises(ValueError):
                 send_selected_media(p, 'owned peer', '[0,40][20,60]', receipt, 'video')
+
+    def file_frames(self, duplicate=False):
+        initial = chat()
+        ET.SubElement(initial, 'node', {'resource-id': 'com.kakao.talk:id/media_send_layout', 'bounds': '[0,20][20,40]'})
+        sheet = frame('<node resource-id="com.kakao.talk:id/handle_container" bounds="[0,100][40,120]"/>')
+        expanded = frame('<node clickable="true" bounds="[0,40][20,60]"><node text="File"/></node>')
+        menu = frame('<node clickable="true" bounds="[0,60][20,80]"><node text="Select from File"/></node>')
+        item = '<node resource-id="com.google.android.documentsui:id/item_root" clickable="true" bounds="[0,80][20,100]"><node text="mooo-synthetic.txt"/></node>'
+        documents = frame(item + (item if duplicate else ''))
+        delivered = chat()
+        ET.SubElement(delivered, 'node', {'text': 'mooo-synthetic.txt'})
+        return [initial, sheet, expanded, menu, documents, delivered]
+
+    def test_file_verifies_initial_peer_hash_and_reserves_before_selection(self):
+        data = b'synthetic file'
+        with tempfile.TemporaryDirectory() as d:
+            receipt = Path(d) / 'file.json'
+            class FilePhone(FakePhone):
+                def adb(self, *args, text=None):
+                    if args[:2] == ('exec-out', 'head'):
+                        self.calls.append((args, text))
+                        return data
+                    if args == ('shell', 'input', 'tap', '10', '90'):
+                        if not receipt.exists():
+                            raise AssertionError('selection occurred before durable receipt')
+                    return super().adb(*args, text=text)
+            p = FilePhone(self.file_frames())
+            self.assertEqual(send_file(p, 'owned peer', 'mooo-synthetic.txt', hashlib.sha256(data).hexdigest(), receipt), 'file-submitted-once')
+            self.assertEqual(sum(args == ('shell', 'input', 'tap', '10', '90') for args, _ in p.calls), 1)
+            with self.assertRaises(ValueError):
+                send_file(p, 'owned peer', 'mooo-synthetic.txt', hashlib.sha256(data).hexdigest(), receipt)
+            p = FilePhone(self.file_frames(duplicate=True))
+            with self.assertRaises(ValueError):
+                send_file(p, 'owned peer', 'mooo-synthetic.txt', hashlib.sha256(data).hexdigest(), Path(d) / 'duplicate.json')
+            self.assertFalse((Path(d) / 'duplicate.json').exists())
+
+    def test_file_missing_card_preserves_receipt_and_never_retries(self):
+        data = b'synthetic file'
+        class MissingCardPhone(FakePhone):
+            def adb(self, *args, text=None):
+                self.calls.append((args, text))
+                return data if args[:2] == ('exec-out', 'head') else None
+        with tempfile.TemporaryDirectory() as d:
+            receipt = Path(d) / 'file.json'
+            frames = self.file_frames()
+            frames[-1] = chat()
+            p = MissingCardPhone(frames + [chat()] * 3)
+            with self.assertRaisesRegex(ValueError, 'unconfirmed'):
+                send_file(p, 'owned peer', 'mooo-synthetic.txt', hashlib.sha256(data).hexdigest(), receipt)
+            self.assertTrue(receipt.exists())
+            self.assertEqual(sum(args == ('shell', 'input', 'tap', '10', '90') for args, _ in p.calls), 1)
+            with self.assertRaisesRegex(ValueError, 'previous attempt'):
+                send_file(p, 'owned peer', 'mooo-synthetic.txt', hashlib.sha256(data).hexdigest(), receipt)
+
+    def test_file_wrong_peer_or_hash_never_selects(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = FakePhone([chat(title='other')])
+            with self.assertRaises(ValueError):
+                send_file(p, 'owned peer', 'mooo-synthetic.txt', 'a' * 64, Path(d) / 'wrong-peer.json')
+            self.assertEqual(p.calls, [])
+            class WrongHashPhone(FakePhone):
+                def adb(self, *args, text=None):
+                    self.calls.append((args, text))
+                    return b'wrong contents'
+            p = WrongHashPhone(self.file_frames())
+            with self.assertRaises(ValueError):
+                send_file(p, 'owned peer', 'mooo-synthetic.txt', 'a' * 64, Path(d) / 'wrong-hash.json')
+            self.assertEqual(len(p.calls), 1)
+            self.assertFalse((Path(d) / 'wrong-hash.json').exists())
 
     def test_album_requires_collage_count_and_exact_send_bounds(self):
         with tempfile.TemporaryDirectory() as d:

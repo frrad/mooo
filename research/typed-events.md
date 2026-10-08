@@ -24,6 +24,8 @@ than failures. Their raw BSON is deliberately not exposed by the typed layer.
 - `VideoMessage`: observed ordinary type-3 direct-URL MP4; bounded native Matrix
   video conversion with seconds-to-milliseconds duration. Resource-only and
   high-quality selection remain explicit gaps.
+- `FileMessage`: observed ordinary type-18 direct-URL files, bounded download
+  with millisecond expiry; native Matrix `m.file` with filename and media metadata.
 - `MultiPhotoMessage`: type-27 ordered photo arrays, bounded URL-based resources.
 - `StickerMessage`: types 12/20 and validated inbound resource metadata.
 - `UnsupportedMessage`: chat ID, log ID, and numeric message type.
