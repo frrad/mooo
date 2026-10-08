@@ -1,0 +1,16 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-08",
+    "method": "Owned emulator A voice memo with host audio disabled, captured once on owned B; independent bounded download and ffprobe inspection. Identifiers/resources replaced.",
+    "doc": "research/audio.md"
+  },
+  "attachment": {
+    "k": "synthetic-audio-token.m4a",
+    "url": "https://talk.kakaocdn.net/synthetic/audio.m4a",
+    "expire": 4102444800000,
+    "s": 110298,
+    "d": 51000
+  }
+}

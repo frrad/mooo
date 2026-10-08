@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 import re
 import sys
+import subprocess
+import time
 
 from qr_phone import Phone, PREFIX, node_target
 
@@ -184,6 +186,56 @@ def send_file(phone, peer, filename, sha256, receipt):
     raise ValueError('file outcome unconfirmed; preserve receipt and do not retry')
 
 
+def ensure_silent_emulator(phone):
+    avd = phone.adb('emu', 'avd', 'name').decode().splitlines()[0].strip()
+    if avd not in ('mooo-lab', 'mooo-lab-b'):
+        raise ValueError('owned audio emulator unavailable')
+    lines = subprocess.check_output(['ps', '-axo', 'comm=,args='], text=True).splitlines()
+    matches = [line for line in lines if 'qemu-system-aarch64' in line
+               and re.search(r'-avd\s+' + re.escape(avd) + r'(?:\s|$)', line)
+               and 'python' not in line]
+    if len(matches) != 1 or '-allow-host-audio' in matches[0]:
+        raise ValueError('host microphone disabled state unconfirmed')
+
+
+def send_audio(phone, peer, seconds, receipt):
+    if Path(receipt).exists():
+        raise ValueError('previous attempt exists; inspect outcome without resending')
+    if type(seconds) is not int or not 1 <= seconds <= 10:
+        raise ValueError('bounded synthetic recording required')
+    ensure_silent_emulator(phone)
+    root = phone.dump()
+    owned_chat(root, peer)
+    if control(root, 'message_edit_text').get('text', '') not in ('', 'Message'):
+        raise ValueError('composer not empty')
+    tap(phone, control(root, 'media_send_layout'))
+    root = phone.dump()
+    _, (x, y) = node_target(control(root, 'handle_container'))
+    phone.adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(max(200, y // 4)), '450')
+    root = phone.dump()
+    tap(phone, clickable_text_parent(root, 'Voice Memo'))
+    root = phone.dump()
+    if not any(n.get('text') == 'Voice Memo' for n in root.iter('node')):
+        raise ValueError('voice memo modal unavailable')
+    record = control(root, 'record_control')
+    if any(n.get('resource-id') == PREFIX + 'play' for n in root.iter('node')):
+        raise ValueError('existing recording; inspect without resending')
+    reserve(receipt)
+    tap(phone, record)
+    # Stop uses the validated unchanged record control. Never idle-dump animation.
+    try:
+        time.sleep(seconds)
+    finally:
+        tap(phone, record)
+    root = phone.dump()
+    if not any(n.get('text') == 'Voice Memo' for n in root.iter('node')):
+        raise ValueError('stopped recording unavailable; do not retry')
+    control(root, 'play')
+    tap(phone, control(root, 'send'))
+    owned_chat(phone.dump(), peer)
+    return 'silent-audio-submitted-once'
+
+
 def send_sticker(phone, peer, receipt):
     if Path(receipt).exists():
         raise ValueError('previous attempt exists; inspect outcome without resending')
@@ -208,6 +260,8 @@ def main():
             result = send_text(phone, request['peer'], request['text'], request['receipt'])
         elif action == 'sticker':
             result = send_sticker(phone, request['peer'], request['receipt'])
+        elif action == 'audio':
+            result = send_audio(phone, request['peer'], request['seconds'], request['receipt'])
         elif action == 'file':
             result = send_file(phone, request['peer'], request['filename'], request['sha256'], request['receipt'])
         elif action == 'album':

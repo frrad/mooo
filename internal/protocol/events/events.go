@@ -25,6 +25,7 @@ const (
 	KindReplyMessage       Kind = "reply_message"
 	KindPhotoMessage       Kind = "photo_message"
 	KindVideoMessage       Kind = "video_message"
+	KindAudioMessage       Kind = "audio_message"
 	KindFileMessage        Kind = "file_message"
 	KindMultiPhotoMessage  Kind = "multi_photo_message"
 	KindStickerMessage     Kind = "sticker_message"
@@ -102,6 +103,13 @@ func MessagePosition(event Event) (chatID, logID int64, ok bool) {
 		if value != nil {
 			return value.Message.ChatID, value.Message.LogID, true
 		}
+	case AudioMessage:
+		return value.Message.ChatID, value.Message.LogID, true
+	case *AudioMessage:
+		if value != nil {
+			return value.Message.ChatID, value.Message.LogID, true
+		}
+		return 0, 0, false
 	case VideoMessage:
 		return value.Message.ChatID, value.Message.LogID, true
 	case *VideoMessage:
@@ -192,6 +200,13 @@ func (FileMessage) Kind() Kind         { return KindFileMessage }
 func (FileMessage) isEvent()           {}
 func (FileMessage) String() string     { return "FileMessage{<redacted>}" }
 func (m FileMessage) GoString() string { return m.String() }
+
+type AudioMessage struct{ Message media.AudioMessage }
+
+func (AudioMessage) Kind() Kind         { return KindAudioMessage }
+func (AudioMessage) isEvent()           {}
+func (AudioMessage) String() string     { return "AudioMessage{<redacted>}" }
+func (m AudioMessage) GoString() string { return m.String() }
 
 type VideoMessage struct{ Message media.VideoMessage }
 
@@ -688,6 +703,12 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 			return nil, ErrMalformedEvent
 		}
 		return FileMessage{Message: file}, nil
+	case messagetype.Audio:
+		audio, err := media.DecodeAudioMessage(packet.Body)
+		if err != nil {
+			return nil, ErrMalformedEvent
+		}
+		return AudioMessage{Message: audio}, nil
 	case messagetype.Video:
 		video, err := media.DecodeVideoMessage(packet.Body)
 		if err != nil {
