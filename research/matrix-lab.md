@@ -17,7 +17,9 @@ existing file fails closed rather than creating another device.
 Explicit `--connect` is required for network operations. `startup` initializes
 the device; `sync` processes one complete sync response; `decrypt` checks an
 exported encrypted event against private expected JSON containing `type`, `body`
-and optionally `sha256` for an encrypted attachment. `send-text` reads the exact
+and optionally `sha256` for an encrypted attachment. Optional `event_type` defaults
+to `m.room.message`; set it to `m.sticker` and use an empty `type` for native
+stickers. Decryption checks the event type as well as its content and media hash. `send-text` reads the exact
 body bytes; `send-file` accepts a synthetic 64×64 PNG and encrypts both attachment
 and room event. Both sends require a new absolute `--receipt-file`, reserved
 before upload/send. An existing receipt always blocks another attempt, including

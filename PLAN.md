@@ -418,3 +418,12 @@ The reusable `cmd/mooo-matrix-lab` companion records the harness parsing/login
 edge cases and prevents automatic repeat sends. Remaining acceptance includes
 key rotation/missing-key recovery/trust transitions, encrypted replies and
 reactions, Beeper deployment, and groups (third owned participant pending).
+
+### Inbound sticker acceptance (2026-10-08)
+
+Types 12/20 now map to native Matrix stickers with bounded fixed-origin resource
+fetching and the independently traced resource transform. Owned static PNG and
+animated WebP passed encrypted attachment verification and restart uniqueness;
+synthetic GIF and official executed codec vectors exercise production code.
+See [research/stickers.md](research/stickers.md). Sound/composition, outbound
+stickers, paid-pack behavior and Matrix client animation playback remain gaps.

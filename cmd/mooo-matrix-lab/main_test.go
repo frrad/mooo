@@ -112,3 +112,20 @@ func TestPrivateFilesFailClosed(t *testing.T) {
 		t.Fatal("public directory accepted")
 	}
 }
+
+func TestExpectedNativeStickerEvent(t *testing.T) {
+	evt := &event.Event{Type: event.EventSticker, Content: event.Content{Parsed: &event.MessageEventContent{Body: "KakaoTalk sticker"}}}
+	expected := expectedMessage{EventType: "m.sticker", Body: "KakaoTalk sticker"}
+	if !matchesExpected(evt, expected) {
+		t.Fatal("native sticker rejected")
+	}
+	evt.Type = event.EventMessage
+	if matchesExpected(evt, expected) {
+		t.Fatal("ordinary message accepted as sticker")
+	}
+	expected = expectedMessage{Type: "m.text", Body: "KakaoTalk sticker"}
+	evt.Content.Parsed.(*event.MessageEventContent).MsgType = event.MsgText
+	if !matchesExpected(evt, expected) {
+		t.Fatal("existing text expectation broken")
+	}
+}

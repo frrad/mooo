@@ -90,6 +90,21 @@ def photo_send(root, bounds=None):
                            PREFIX + 'send_button')
 
 
+def send_sticker(phone, peer, receipt):
+    if Path(receipt).exists():
+        raise ValueError('previous attempt exists; inspect outcome without resending')
+    root = phone.dump()
+    owned_chat(root, peer)
+    unique([n for n in root.iter('node') if n.get('resource-id') ==
+            'com.kakao.talk.emoticon:id/emoticon_preview_root'])
+    if control(root, 'message_edit_text').get('text', '') not in ('', 'Message'):
+        raise ValueError('composer not empty')
+    button = control(root, 'send_button_layout')
+    reserve(receipt)
+    tap(phone, button)
+    return 'selected-sticker-submitted-once'
+
+
 def main():
     try:
         adb, serial, action = sys.argv[1:]
@@ -97,6 +112,8 @@ def main():
         phone = Phone(adb, serial)
         if action == 'text':
             result = send_text(phone, request['peer'], request['text'], request['receipt'])
+        elif action == 'sticker':
+            result = send_sticker(phone, request['peer'], request['receipt'])
         elif action == 'photo':
             root = phone.dump()
             owned_chat(root, request['peer'])
