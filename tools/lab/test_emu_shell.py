@@ -28,6 +28,13 @@ class EmulatorShellTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('synthetic-input', result.stdout)
 
+    def test_video_player_returns_via_back(self):
+        xml = '<hierarchy><node resource-id="com.kakao.talk:id/playerTouchPanel"/><node resource-id="com.kakao.talk:id/playPauseButton"/></hierarchy>'
+        result = run('require_login_authorization() { :; }; assert_client_version() { :; }; find_serial() { return 0; }; sleep() { :; }; adb() { echo "$*" >&2; }; state() { echo state=chat-visible; }; dump() { printf "%s" ' + shlex.quote(xml) + '; }; cmd_finish')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('shell input keyevent KEYCODE_BACK', result.stderr)
+        self.assertIn('state=chat-visible', result.stdout)
+
     def test_finder_after_qr_returns_via_back(self):
         xml = '<hierarchy><node resource-id="com.kakao.talk.finder:id/finder_nav_host_fragment"/><node resource-id="com.kakao.talk.finder:id/input_focus"/></hierarchy>'
         result = run('require_login_authorization() { :; }; assert_client_version() { :; }; find_serial() { return 0; }; sleep() { :; }; adb() { echo "$*" >&2; }; state() { echo state=home-visible; }; dump() { printf "%s" ' + shlex.quote(xml) + '; }; cmd_finish')

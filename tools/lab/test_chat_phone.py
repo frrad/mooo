@@ -3,7 +3,7 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album
+from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media
 
 
 def frame(body):
@@ -33,12 +33,36 @@ class ChatTests(unittest.TestCase):
     def test_text_uses_layout_and_receipt_blocks_repeat(self):
         with tempfile.TemporaryDirectory() as d:
             receipt = Path(d) / 'send.json'
-            p = FakePhone([chat(), chat('synthetic'), chat()])
+            p = FakePhone([chat(), chat('synthetic'), chat('synthetic'), chat()])
             send_text(p, 'owned peer', 'synthetic', receipt)
             self.assertEqual(sum(args == ('shell', 'input', 'tap', '30', '10') for args, _ in p.calls), 1)
             self.assertEqual([data for _, data in p.calls if data], [b'synthetic\n'])
             with self.assertRaises(ValueError):
                 send_text(p, 'owned peer', 'synthetic', receipt)
+
+    def test_text_waits_for_keyboard_to_stop_moving_send(self):
+        with tempfile.TemporaryDirectory() as d:
+            initial = chat('synthetic')
+            moved = chat('synthetic')
+            moved.find("node[@resource-id='com.kakao.talk:id/send_button_layout']").set('bounds', '[20,100][40,120]')
+            p = FakePhone([chat(), initial, moved, moved, chat()])
+            send_text(p, 'owned peer', 'synthetic', Path(d) / 'send.json')
+            taps = [args for args, _ in p.calls if args[:3] == ('shell', 'input', 'tap')]
+            self.assertEqual(taps[-1], ('shell', 'input', 'tap', '30', '110'))
+
+    def test_text_moving_send_never_reserves_or_taps(self):
+        with tempfile.TemporaryDirectory() as d:
+            frames = [chat()]
+            for y in [40, 80, 120, 160]:
+                root = chat('synthetic')
+                root.find("node[@resource-id='com.kakao.talk:id/send_button_layout']").set('bounds', '[20,' + str(y) + '][40,' + str(y + 20) + ']')
+                frames.append(root)
+            p = FakePhone(frames)
+            receipt = Path(d) / 'send.json'
+            with self.assertRaises(ValueError):
+                send_text(p, 'owned peer', 'synthetic', receipt)
+            self.assertFalse(receipt.exists())
+            self.assertEqual(sum(args[:3] == ('shell', 'input', 'tap') for args, _ in p.calls), 1)
 
     def test_wrong_peer_or_existing_draft_never_sends(self):
         for root in [chat(title='other'), chat('existing')]:
@@ -66,6 +90,18 @@ class ChatTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 send_sticker(p, 'owned peer', Path(d) / 'missing-preview.json')
             self.assertEqual(p.calls, [])
+
+    def test_selected_video_exact_bounds_and_receipt(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = chat()
+            for y in [40, 80]:
+                ET.SubElement(root, 'node', {'resource-id': 'com.kakao.talk:id/send_button', 'clickable': 'true', 'content-desc': '1 Selected, Send', 'bounds': '[0,' + str(y) + '][20,' + str(y + 20) + ']'})
+            receipt = Path(d) / 'video.json'
+            p = FakePhone([root])
+            self.assertEqual(send_selected_media(p, 'owned peer', '[0,40][20,60]', receipt, 'video'), 'selected-video-submitted-once')
+            self.assertEqual(len(p.calls), 1)
+            with self.assertRaises(ValueError):
+                send_selected_media(p, 'owned peer', '[0,40][20,60]', receipt, 'video')
 
     def test_album_requires_collage_count_and_exact_send_bounds(self):
         with tempfile.TemporaryDirectory() as d:

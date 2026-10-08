@@ -40,7 +40,7 @@ Naming unsupported constants is intentional and does not enable their payloads.
 | 0 | `Feed` | Envelope rejects nonpositive value; semantics unimplemented |
 | 1 | `Text` | Typed message |
 | 2 | `Photo` | Typed message |
-| 3 | `Video` | `UnsupportedMessage` notice |
+| 3 | `Video` | Typed direct-URL MP4; relay/high-quality forms remain gaps |
 | 4 | `Contact` | `UnsupportedMessage` notice |
 | 5 | `Audio` | `UnsupportedMessage` notice |
 | 6 | `AnimatedEmoticon` | `UnsupportedMessage` notice |
@@ -105,7 +105,7 @@ values; do not assign them the existing type-12/20 decoder without tracing their
 attachments, resources and consumers. Opaque historical/product names such as
 CJ20121212 and Leverage are retained without invented semantic descriptions.
 
-Video/audio/files, contact/profile/location cards, multi-photo messages,
+Audio/files, contact/profile/location cards, resource-only multi-photo messages,
 schedules/votes/posts and their OpenLink variants, call-related models and
 business/universal templates require independent payload research and controlled
 owned-account acceptance. Native outbound stickers also remain unsupported.
@@ -114,3 +114,5 @@ secret chats or official-client parity.
 
 [Type-27 acceptance and type-28/29 gates](multi-large-media.md) record the
 owned emulator findings and remaining live-test limitations.
+
+[Ordinary-video contract and acceptance](video.md) describe scoped type-3 support.

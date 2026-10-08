@@ -440,3 +440,29 @@ needs an eligible owned sender/resource fixture: the current video attempt emitt
 live-testable, as the maintainer permits; the normal Android file policy does not
 select LARGE. Do not retag another type and call it E2E coverage. Resource-only
 albums, full official storage parity and outbound albums remain gaps.
+
+
+### Owned-emulator message-type rollout (2026-10-08)
+
+Implement types that can be independently emitted and verified end to end. Land
+one type per PR, or two closely related types when sharing a coherent contract.
+For each: trace official models/callers/persistence/consumers/failures, document
+untraced layers, capture a controlled owned-account fixture, add production-path
+regressions, verify native encrypted Matrix delivery/media and restart behavior,
+run required checks and secret scans, then merge through passing CI.
+
+- [x] Ordinary Video (3): controlled owned A/B encrypted delivery, exact received
+      bytes/metadata, native receiver playback and restart verified; see
+      [video.md](research/video.md).
+- [ ] Audio (5) and File (18): independently exercise owned picker/recording flows.
+- [ ] Contact/Profile (4/17), Location (16), and Link (9): inspect available owned
+      sharing flows, using synthetic non-identifying payloads where possible.
+- [ ] Schedule/Vote/Post (13/14/24), Nudge (21), and sticker variants (6/22/25):
+      determine which controlled A/B UI flows are available without purchases.
+- [ ] Audit remaining types against actual emitter/receiver availability;
+      document evidence and blockers rather than claiming enum-only support.
+
+LargeFile (29) may be skipped when not live-testable per maintainer. LargeVideo
+(28) still needs an eligible owned sender fixture. No third participant, primary
+account, purchase, backup/restore operation or entitlement bypass is authorized
+by this rollout. Existing owned A/B research authorization remains in force.

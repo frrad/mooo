@@ -129,3 +129,20 @@ func TestExpectedNativeStickerEvent(t *testing.T) {
 		t.Fatal("existing text expectation broken")
 	}
 }
+
+func TestExpectedVideoMediaInfo(t *testing.T) {
+	content := &event.MessageEventContent{MsgType: event.MsgVideo, Body: "video.mp4", Info: &event.FileInfo{MimeType: "video/mp4", Size: 146274, Width: 320, Height: 240, Duration: 3000}}
+	evt := &event.Event{Type: event.EventMessage, Content: event.Content{Parsed: content}}
+	expected := expectedMessage{Type: "m.video", Body: "video.mp4", Info: &event.FileInfo{MimeType: "video/mp4", Size: 146274, Width: 320, Height: 240, Duration: 3000}}
+	if !matchesExpected(evt, expected) {
+		t.Fatal("correct video info rejected")
+	}
+	content.Info.Duration = 3
+	if matchesExpected(evt, expected) {
+		t.Fatal("seconds mistaken for Matrix milliseconds")
+	}
+	content.Info = nil
+	if matchesExpected(evt, expected) {
+		t.Fatal("missing video info accepted")
+	}
+}

@@ -493,10 +493,11 @@ func privateParent(path string) error {
 }
 
 type expectedMessage struct {
-	EventType string `json:"event_type"`
-	Type      string `json:"type"`
-	Body      string `json:"body"`
-	SHA256    string `json:"sha256"`
+	EventType string          `json:"event_type"`
+	Type      string          `json:"type"`
+	Body      string          `json:"body"`
+	SHA256    string          `json:"sha256"`
+	Info      *event.FileInfo `json:"info,omitempty"`
 }
 
 func matchesExpected(evt *event.Event, expected expectedMessage) bool {
@@ -507,5 +508,12 @@ func matchesExpected(evt *event.Event, expected expectedMessage) bool {
 		return false
 	}
 	content, ok := evt.Content.Parsed.(*event.MessageEventContent)
-	return evt.Type == typ && ok && string(content.MsgType) == expected.Type && content.Body == expected.Body
+	if evt.Type != typ || !ok || string(content.MsgType) != expected.Type || content.Body != expected.Body {
+		return false
+	}
+	if expected.Info != nil {
+		actual, want := content.Info, expected.Info
+		return actual != nil && actual.MimeType == want.MimeType && actual.Size == want.Size && actual.Width == want.Width && actual.Height == want.Height && actual.Duration == want.Duration
+	}
+	return true
 }

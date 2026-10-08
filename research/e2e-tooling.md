@@ -240,3 +240,31 @@ selects that thumbnail rather than opening the full picker; use Photo to open th
 full gallery. Original quality and Collage Photos produced observed type 27.
 A video attempt produced type 3; file size or a UI Send success alone cannot prove
 LargeVideo/28 or LargeFile/29 acceptance. See [the research and live evidence](multi-large-media.md).
+
+### Prepared video send
+
+`send-video a|b` uses the single-selected-item picker contract and exact private
+Send bounds, owned peer and external durable receipt, just like `send-photo`.
+The operator must independently inspect the selected video and capture its wire
+type; the selection count alone cannot distinguish a photo, ordinary video or
+large video. Limited Android permissions may require Add Photos to grant access
+to the new generated clip before opening Photo/View All. Sending may transcode
+video, so compare bridged bytes against independently downloaded received output,
+not merely the generated input. Separate sends of the same source may produce
+different transcoded bytes and sizes; fetch each attempt’s own server attachment
+and expected media independently. Never resend an attempted fixture automatically.
+
+Text entry can trigger a delayed keyboard resize. `send-text` now requires the
+exact fixture and peer plus unchanged Send bounds across two dumps (four dumps
+maximum) before reserving the attempt and tapping. A live failure previously
+tapped keyboard Enter using stale Send coordinates, leaving an unsent draft.
+The failed receipt is retained; inspect delivery and draft state, and never
+automatically repeat that attempt. Moving controls fail before any send receipt.
+The Matrix lab decrypt expectation optionally checks media `info`: MIME, size,
+width, height and duration, in addition to native event/body and decrypted hash.
+
+The official video player is recognized only by the combined Kakao resource IDs
+`playerTouchPanel` and `playPauseButton`. Readiness backs out of that viewer to
+the chat and then home; the viewer itself does not count as ready. Unknown dialogs
+still stop preparation. Capture UI after confirming the intended screen: an
+immediate screenshot after navigation can precede the transition animation.

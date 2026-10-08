@@ -71,11 +71,21 @@ def send_text(phone, peer, text, receipt):
         raise ValueError('composer not empty')
     tap(phone, field)
     phone.adb('shell', 'IFS= read -r value; input text "$value"', text=(text + '\n').encode())
-    root = phone.dump()
-    owned_chat(root, peer)
-    if control(root, 'message_edit_text').get('text') != text:
-        raise ValueError('fixture entry unconfirmed')
-    button = control(root, 'send_button_layout')
+    previous = None
+    button = None
+    for _ in range(4):
+        root = phone.dump()
+        owned_chat(root, peer)
+        if control(root, 'message_edit_text').get('text') != text:
+            raise ValueError('fixture entry unconfirmed')
+        current = control(root, 'send_button_layout')
+        bounds = current.get('bounds')
+        if bounds == previous:
+            button = current
+            break
+        previous = bounds
+    if button is None:
+        raise ValueError('send control still moving; no send attempted')
     reserve(receipt)
     tap(phone, button)
     root = phone.dump()
@@ -88,6 +98,19 @@ def send_text(phone, peer, text, receipt):
 def photo_send(root, bounds=None):
     return clickable_label(root, '1 Selected, Send', bounds,
                            PREFIX + 'send_button')
+
+
+def send_selected_media(phone, peer, bounds, receipt, kind):
+    if kind not in ('photo', 'video'):
+        raise ValueError('unsupported selected media')
+    if Path(receipt).exists():
+        raise ValueError('previous attempt exists; inspect outcome without resending')
+    root = phone.dump()
+    owned_chat(root, peer)
+    button = photo_send(root, bounds)
+    reserve(receipt)
+    tap(phone, button)
+    return 'selected-' + kind + '-submitted-once'
 
 
 def send_album(phone, peer, bounds, count, receipt):
@@ -132,13 +155,8 @@ def main():
             result = send_sticker(phone, request['peer'], request['receipt'])
         elif action == 'album':
             result = send_album(phone, request['peer'], request['bounds'], request['count'], request['receipt'])
-        elif action == 'photo':
-            root = phone.dump()
-            owned_chat(root, request['peer'])
-            button = photo_send(root, request['bounds'])
-            reserve(request['receipt'])
-            tap(phone, button)
-            result = 'selected-photo-submitted-once'
+        elif action in ('photo', 'video'):
+            result = send_selected_media(phone, request['peer'], request['bounds'], request['receipt'], action)
         else:
             raise ValueError('unsupported action')
         print(result)
