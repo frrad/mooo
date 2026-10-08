@@ -10,7 +10,7 @@ test:
 	go test -race ./...
 
 lab-test:
-	bash -n tools/lab/emu.sh
+	bash -n research/emu.sh
 	python3 -m unittest discover -s tools/lab -p 'test_*.py'
 
 vet:
