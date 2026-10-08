@@ -26,6 +26,8 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go test -race ./...
+      - name: Lab tooling regressions (synthetic, no accounts)
+        run: make lab-test
 
   vet:
     name: Vet

@@ -399,7 +399,8 @@ Execution follows [`research/bridge/PLAN.md`](research/bridge/PLAN.md).
 
 ## E2E tooling maintenance
 
-Use the private emulator helper for owned A/B preparation and follow
+Use the shared emulator launcher with private configuration for owned A/B
+preparation and follow
 [the E2E maintenance contract](research/e2e-tooling.md) whenever startup, login,
 or navigation encounters a new edge case. Add a sanitized regression and improve
 the shared helper before resuming the experiment.

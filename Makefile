@@ -4,10 +4,14 @@ override GOFLAGS += -tags=goolm
 export GOFLAGS
 
 .DEFAULT_GOAL := test
-.PHONY: test vet build lint vuln format-check check
+.PHONY: test lab-test vet build lint vuln format-check check
 
 test:
 	go test -race ./...
+
+lab-test:
+	bash -n tools/lab/emu.sh
+	python3 -m unittest discover -s tools/lab -p 'test_*.py'
 
 vet:
 	go vet ./...
@@ -24,4 +28,4 @@ vuln:
 format-check:
 	test -z "$$(gofmt -l .)"
 
-check: test vet format-check lint vuln
+check: test lab-test vet format-check lint vuln
