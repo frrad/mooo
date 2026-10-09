@@ -119,7 +119,7 @@ func newReadReceiptFramework(t *testing.T) *readReceiptFramework {
 	if err != nil {
 		t.Fatal(err)
 	}
-	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), UserMXID: user.MXID}, Bridge: bridge, User: user, Log: zerolog.Nop()}
+	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID), UserMXID: user.MXID}, Bridge: bridge, User: user, Log: zerolog.Nop()}
 	f := &readReceiptFramework{bridge: bridge, login: login, matrix: matrix}
 	f.kc = newKakaoClient(login, testSelfID, nil)
 	f.kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {

@@ -12,6 +12,7 @@ import (
 
 	up "go.mau.fi/util/configupgrade"
 	"maunium.net/go/mautrix/bridgev2"
+	"maunium.net/go/mautrix/bridgev2/commands"
 	"maunium.net/go/mautrix/bridgev2/database"
 
 	"github.com/frrad/mooo/internal/authstate"
@@ -71,6 +72,9 @@ var (
 
 func (kc *KakaoConnector) Init(bridge *bridgev2.Bridge) {
 	kc.Bridge = bridge
+	if processor, ok := bridge.Commands.(*commands.Processor); ok {
+		processor.AddHandlers(commandReconcileGroup, commandCompleteGroupInvitations)
+	}
 }
 
 func (kc *KakaoConnector) Start(ctx context.Context) error {
@@ -159,7 +163,13 @@ func (kc *KakaoConnector) GetDBMetaTypes() database.MetaTypes {
 }
 
 func (kc *KakaoConnector) GetCapabilities() *bridgev2.NetworkGeneralCapabilities {
-	return &bridgev2.NetworkGeneralCapabilities{}
+	return &bridgev2.NetworkGeneralCapabilities{Provisioning: bridgev2.ProvisioningCapabilities{
+		GroupCreation: map[string]bridgev2.GroupTypeCapabilities{"regular": {
+			TypeDescription: "Regular KakaoTalk group in the selected Matrix room",
+			Name:            bridgev2.GroupFieldCapability{Allowed: true},
+			Participants:    bridgev2.GroupFieldCapability{Allowed: true, MinLength: 2, MaxLength: 1000},
+		}},
+	}}
 }
 
 func (kc *KakaoConnector) GetConfig() (string, any, up.Upgrader) {

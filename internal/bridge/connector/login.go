@@ -28,7 +28,8 @@ import (
 type UserLoginMetadata struct {
 	// Profile names the auth-state file inside the configured profile
 	// directory. It is never a path.
-	Profile string `json:"profile"`
+	Profile      string                        `json:"profile"`
+	GroupCreates map[string]groupCreateAttempt `json:"group_creates,omitempty"`
 }
 
 const (

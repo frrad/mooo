@@ -323,7 +323,7 @@ func (h *testHarness) lastState() status.BridgeState {
 func newTestClient(t *testing.T, open func() (kakaoClient, error)) (*KakaoClient, *testHarness) {
 	t.Helper()
 	login := &bridgev2.UserLogin{
-		UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID)},
+		UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}},
 		Log:       zerolog.Nop(),
 	}
 	kc := newKakaoClient(login, testSelfID, open)
@@ -1406,7 +1406,7 @@ func TestDisconnectDuringConnectReleasesProfile(t *testing.T) {
 // captured nil, so every later state was silently dropped.
 func TestBridgeStateQueueIsResolvedAtSendTime(t *testing.T) {
 	login := &bridgev2.UserLogin{
-		UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID)},
+		UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}},
 		Log:       zerolog.Nop(),
 	}
 	kc := newKakaoClient(login, testSelfID, nil)
@@ -1600,4 +1600,12 @@ func TestChatNameSharedRevisionAndPersonalOverride(t *testing.T) {
 	if got := chatName(data); got != "Fallback" {
 		t.Fatalf("cleared name = %q", got)
 	}
+}
+
+func (f *fakeKakao) CreateChat(context.Context, chat.CreateRequest) (chat.CreateResponse, error) {
+	return chat.CreateResponse{}, errors.New("unexpected creation")
+}
+
+func (f *fakeKakao) AddMembers(context.Context, chat.AddMembersRequest) (chat.AddMembersResponse, error) {
+	return chat.AddMembersResponse{}, errors.New("unexpected invitation")
 }
