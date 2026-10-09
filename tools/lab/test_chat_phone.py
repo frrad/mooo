@@ -5,7 +5,7 @@ from unittest.mock import patch
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file, send_audio, ensure_silent_emulator
+from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file, send_audio, ensure_silent_emulator, send_profile
 
 
 def frame(body):
@@ -104,6 +104,32 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(len(p.calls), 1)
             with self.assertRaises(ValueError):
                 send_selected_media(p, 'owned peer', '[0,40][20,60]', receipt, 'video')
+
+    def test_profile_exact_description_selection_and_receipt(self):
+        initial = chat()
+        ET.SubElement(initial, 'node', {'resource-id': 'com.kakao.talk:id/media_send_layout', 'bounds': '[0,20][20,40]'})
+        sheet = frame('<node resource-id="com.kakao.talk:id/handle_container" bounds="[0,100][40,120]"/>')
+        menu = frame('<node clickable="true" bounds="[0,40][20,60]"><node text="Contacts"/></node>')
+        chooser = frame('<node clickable="true" bounds="[0,60][20,80]"><node text="Send KakaoTalk Profile"/></node>')
+        picker = frame('<node resource-id="com.kakao.talk:id/friends_pickerLayout" bounds="[0,0][200,200]"/><node clickable="true" bounds="[0,80][20,100]"><node content-desc="owned synthetic profile"/><node content-desc="owned synthetic profile"/></node>')
+        selected = frame('<node resource-id="com.kakao.talk:id/friends_pickerLayout" bounds="[0,0][200,200]"/><node checked="true"/><node text="OK" clickable="true" enabled="true" bounds="[20,80][40,100]"/>')
+        with tempfile.TemporaryDirectory() as d:
+            receipt = Path(d) / 'profile.json'
+            class ProfilePhone(FakePhone):
+                def adb(self, *args, text=None):
+                    if args == ('shell', 'input', 'tap', '30', '90') and not receipt.exists():
+                        raise AssertionError('send without receipt')
+                    return super().adb(*args, text=text)
+            frames = [initial, sheet, menu, chooser, picker, selected, chat()]
+            p = ProfilePhone(frames)
+            self.assertEqual(send_profile(p, 'owned peer', '[0,80][20,100]', 'owned synthetic profile', receipt), 'owned-profile-submitted-once')
+            with self.assertRaises(ValueError):
+                send_profile(p, 'owned peer', '[0,80][20,100]', 'owned synthetic profile', receipt)
+            p = FakePhone(frames)
+            wrong = Path(d) / 'wrong.json'
+            with self.assertRaises(ValueError):
+                send_profile(p, 'owned peer', '[0,80][20,100]', 'other profile', wrong)
+            self.assertFalse(wrong.exists())
 
     def test_audio_host_input_guard_fails_closed(self):
         class EmulatorPhone(FakePhone):

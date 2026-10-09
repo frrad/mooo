@@ -22,6 +22,7 @@ type Kind string
 
 const (
 	KindTextMessage        Kind = "text_message"
+	KindProfileMessage     Kind = "profile_message"
 	KindReplyMessage       Kind = "reply_message"
 	KindPhotoMessage       Kind = "photo_message"
 	KindVideoMessage       Kind = "video_message"
@@ -75,6 +76,12 @@ func MessagePosition(event Event) (chatID, logID int64, ok bool) {
 	case MessageGap:
 		return value.ChatID, value.LogID, true
 	case *MessageGap:
+		if value != nil {
+			return value.ChatID, value.LogID, true
+		}
+	case ProfileMessage:
+		return value.ChatID, value.LogID, true
+	case *ProfileMessage:
 		if value != nil {
 			return value.ChatID, value.LogID, true
 		}
@@ -678,6 +685,8 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 		return nil, ErrMalformedEvent
 	}
 	switch messageType {
+	case messagetype.Profile:
+		return decodeProfile(chatID, logID, chatLog)
 	case messagetype.Text:
 		messageValue, err := chatLog.LookupErr("message")
 		if err != nil {
