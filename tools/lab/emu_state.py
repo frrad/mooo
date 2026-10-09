@@ -53,6 +53,11 @@ def classify(xml):
     if {"com.kakao.talk:id/playerTouchPanel",
             "com.kakao.talk:id/playPauseButton"} <= ids:
         return "media-viewer-visible"
+    if {"com.kakao.talk.moim:id/profile_view", "com.kakao.talk.moim:id/menu_button",
+            "com.kakao.talk.moim:id/like_button", "com.kakao.talk.moim:id/comment_write_button"} <= ids:
+        comments = [n for n in nodes if n.get("resource-id") == "com.kakao.talk.moim:id/comment_edit"]
+        if len(comments) == 1 and comments[0].get("text") == "Enter a comment." and comments[0].get("class") == "android.widget.MultiAutoCompleteTextView":
+            return "boards-post-visible"
     if "com.kakao.talk:id/chat_room_root" in ids:
         return "chat-visible"
     if {"com.kakao.talk.finder:id/finder_nav_host_fragment",

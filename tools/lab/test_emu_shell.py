@@ -150,3 +150,9 @@ print("123456", flush=True)' "$LOGDIR" "$2"
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('shell input keyevent KEYCODE_BACK', result.stderr)
         self.assertNotIn('shell input tap', result.stderr)
+
+    def test_boards_post_returns_via_back_without_submitting_comment(self):
+        result = run('require_login_authorization() { :; }; assert_client_version() { :; }; find_serial() { return 0; }; sleep() { :; }; adb() { echo "$*" >&2; }; state() { echo state=chat-visible; }; dump() { echo synthetic; }; python3() { echo state=boards-post-visible; }; cmd_finish')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr.strip(), 'shell input keyevent KEYCODE_BACK')
+        self.assertIn('state=chat-visible', result.stdout)

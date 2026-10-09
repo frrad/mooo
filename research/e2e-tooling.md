@@ -289,6 +289,14 @@ maximum) before reserving the attempt and tapping. A live failure previously
 tapped keyboard Enter using stale Send coordinates, leaving an unsent draft.
 The failed receipt is retained; inspect delivery and draft state, and never
 automatically repeat that attempt. Moving controls fail before any send receipt.
+A native group draft can change its toolbar title after its first send. For this
+explicitly inspected transition, private stdin may supply `after_peer`, the exact
+expected post-send title. The pre-send peer still must match exactly; any other
+title fails after the single attempted send and must never trigger a retry. Empty
+or non-string transition values fail before mutation. The Android naming field
+exposes an aggregate accessibility text (label plus value), so inspect that exact
+text rather than assuming a separate value or content description.
+
 The Matrix lab decrypt expectation optionally checks media `info`: MIME, size,
 width, height and duration, in addition to native event/body and decrypted hash.
 
@@ -336,3 +344,9 @@ Recognition requires the Kakao picker controls, Contacts/Location labels and
 exactly one disabled Send button. Selected attachments remain unsupported
 screens for private inspection. Do not tap the center of `touch_outside`: its
 bounds cover the sheet as well as the exposed backdrop.
+
+The observed Boards post viewer is recognized by its profile, menu, like,
+comment field and comment-submit controls. Readiness backs out only when the
+comment field contains the exact empty-field placeholder (`Enter a comment.`).
+A draft or unknown dialog stops preparation. This prevents silently discarding
+an unsent comment or treating a post viewer as home.

@@ -67,3 +67,10 @@ class StateTests(unittest.TestCase):
         self.assertEqual(classify(ui), 'attachment-picker-visible')
         self.assertEqual(classify(ui.replace('enabled="false"', 'enabled="true"')), 'unknown')
         self.assertEqual(classify(ui.replace('com.kakao.talk:id/handle_container', 'other:id/handle_container')), 'unknown')
+
+    def test_boards_post_viewer_requires_complete_controls_and_empty_draft(self):
+        ui = '<hierarchy><node resource-id="com.kakao.talk.moim:id/profile_view"/><node resource-id="com.kakao.talk.moim:id/menu_button"/><node resource-id="com.kakao.talk.moim:id/like_button"/><node resource-id="com.kakao.talk.moim:id/comment_edit" class="android.widget.MultiAutoCompleteTextView" text="Enter a comment."/><node resource-id="com.kakao.talk.moim:id/comment_write_button"/></hierarchy>'
+        self.assertEqual(classify(ui), 'boards-post-visible')
+        self.assertEqual(classify(ui.replace('text="Enter a comment."', 'text="Synthetic unsent draft"')), 'unknown')
+        self.assertEqual(classify(ui.replace('com.kakao.talk.moim:id/like_button', 'other:id/like_button')), 'unknown')
+        self.assertEqual(classify(ui.replace('</hierarchy>', '<node resource-id="com.kakao.talk:id/txt_message" text="Unknown alert"/></hierarchy>')), 'unknown')

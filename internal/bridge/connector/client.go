@@ -32,6 +32,7 @@ import (
 // the event loop and send paths can be tested without a Kakao backend.
 type kakaoClient interface {
 	Connect(ctx context.Context) error
+	ListChats(ctx context.Context) ([]chatmeta.ChatData, error)
 	Events(ctx context.Context) (<-chan events.Result, error)
 	CommitEvent(event events.Event) error
 	ResumeTargets(ctx context.Context) ([]syncmsg.Target, error)
@@ -57,7 +58,7 @@ func (e bootstrapFailure) Error() string { return e.stage + ": " + e.err.Error()
 func (e bootstrapFailure) Unwrap() error { return e.err }
 
 func openProfileClient(statePath string) (kakaoClient, error) {
-	return client.Open(statePath, nil)
+	return client.OpenWithOptions(statePath, nil, client.OpenOptions{FullChatList: true})
 }
 
 // Bridge state error codes reported by this connector.
@@ -438,6 +439,9 @@ func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (
 	if err := c.Connect(ctx); err != nil {
 		return nil, bootstrapFailure{stage: "connect", err: err}
 	}
+	if err := kc.discoverGroups(ctx, c); err != nil {
+		return nil, bootstrapFailure{stage: "group-discovery", err: err}
+	}
 	if err := kc.catchUp(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "catch-up", err: err}
 	}
@@ -703,6 +707,13 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		return kc.handleReadState(notice)
 	}
 	remote := kc.remoteEventFor(evt)
+	if added, ok := evt.(events.MemberAdded); ok {
+		change := remote.(*chatInfoChangeEvent)
+		if err := kc.prepareMemberDiscovery(context.Background(), c, added.ChatID, change); err != nil {
+			kc.log().Warn().Msg("Kakao group discovery snapshot failed; leaving event uncommitted")
+			return false
+		}
+	}
 	if remote == nil {
 		kc.log().Debug().Str("kind", string(evt.Kind())).Msg("Ignoring Kakao event not bridged yet")
 		return true
@@ -905,11 +916,22 @@ func (kc *KakaoClient) IsThisUser(ctx context.Context, userID networkid.UserID) 
 // profile APIs are deliberately called only once per request; the bridge does
 // not invent names or avatars when Kakao omits them.
 func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
-	chatID, err := parseChatID(portal.ID)
+	return kc.getChatInfo(ctx, portal, false)
+}
+
+func (kc *KakaoClient) getChatInfo(ctx context.Context, portal *bridgev2.Portal, regularGroupOnly bool) (*bridgev2.ChatInfo, error) {
+	if portal == nil {
+		return nil, errChatInfoMismatch
+	}
+	c, err := kc.metadataClient()
 	if err != nil {
 		return nil, err
 	}
-	c, err := kc.metadataClient()
+	return kc.chatInfoFromClient(ctx, portal, c, regularGroupOnly)
+}
+
+func (kc *KakaoClient) chatInfoFromClient(ctx context.Context, portal *bridgev2.Portal, c kakaoClient, regularGroupOnly bool) (*bridgev2.ChatInfo, error) {
+	chatID, err := parseChatID(portal.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -920,6 +942,9 @@ func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 	data := response.ChatData
 	if data.ChatID != chatID {
 		return nil, fmt.Errorf("%w: requested %d, got %d", errChatInfoMismatch, chatID, data.ChatID)
+	}
+	if regularGroupOnly && data.Type != "MultiChat" {
+		return nil, errors.New("connector: discovery requires a regular group")
 	}
 	if data.LinkID > 0 {
 		return nil, errUnsupportedOpenChatMetadata
@@ -933,6 +958,9 @@ func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 		return nil, err
 	}
 	completeRoster := len(roster.MemberIDs) > 0
+	if regularGroupOnly && !completeRoster {
+		return nil, errInvalidMemberRoster
+	}
 	for _, userID := range roster.MemberIDs {
 		if userID <= 0 {
 			return nil, fmt.Errorf("%w: %d", errInvalidMemberRoster, userID)

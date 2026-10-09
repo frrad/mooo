@@ -149,12 +149,19 @@ func (kc *KakaoClient) memberChange(chatID, logID, authorID int64, identities []
 	portalKey := makePortalKey(chatID, kc.login.ID)
 	return &chatInfoChangeEvent{
 		EventMeta: simplevent.EventMeta{
-			Type:      bridgev2.RemoteEventChatInfoChange,
-			PortalKey: portalKey,
-			Sender:    kc.senderFor(authorID),
+			Type:         bridgev2.RemoteEventChatInfoChange,
+			CreatePortal: false,
+			PortalKey:    portalKey,
+			Sender:       kc.senderFor(authorID),
 			LogContext: func(c zerolog.Context) zerolog.Context {
 				return c.Int64("kakao_chat_id", chatID).Int64("kakao_log_id", logID)
 			},
+		},
+		getCreationInfo: func(ctx context.Context, portal *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
+			if portal == nil || portal.PortalKey != portalKey {
+				return nil, errChatInfoMismatch
+			}
+			return kc.getChatInfo(ctx, portal, true)
 		},
 		getInfo: func(ctx context.Context) (*bridgev2.ChatInfo, error) {
 			portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: portalKey}}
@@ -168,11 +175,13 @@ func (kc *KakaoClient) memberChange(chatID, logID, authorID int64, identities []
 
 type chatInfoChangeEvent struct {
 	simplevent.EventMeta
-	getInfo    func(context.Context) (*bridgev2.ChatInfo, error)
-	getChanges func(context.Context) (*bridgev2.ChatMemberList, error)
+	getCreationInfo func(context.Context, *bridgev2.Portal) (*bridgev2.ChatInfo, error)
+	getInfo         func(context.Context) (*bridgev2.ChatInfo, error)
+	getChanges      func(context.Context) (*bridgev2.ChatMemberList, error)
 }
 
 var _ bridgev2.RemoteChatInfoChange = (*chatInfoChangeEvent)(nil)
+var _ bridgev2.RemoteChatResyncWithInfo = (*chatInfoChangeEvent)(nil)
 
 func (evt *chatInfoChangeEvent) GetChatInfoChange(ctx context.Context) (*bridgev2.ChatInfoChange, error) {
 	if ctx == nil {
@@ -388,4 +397,15 @@ func photoConversionGapNotice(msg events.PhotoMessage, category string) *bridgev
 	metadata := newKakaoMessageMetadata(msg.Message.ChatID, msg.Message.LogID, msg.Message.AuthorID, media.PhotoType, "[photo unavailable]", 0)
 	metadata.ConversionGap = category
 	return messageWithMetadata(event.MsgNotice, fmt.Sprintf("A KakaoTalk photo could not be displayed (%s).", category), metadata)
+}
+
+// GetChatInfo supplies the creation snapshot before bridgev2 creates a room.
+// Ordinary membership changes continue using GetChatInfoChange.
+func (evt *chatInfoChangeEvent) GetChatInfo(ctx context.Context, portal *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
+	if ctx == nil {
+		return nil, bridgev2.ErrNotLoggedIn
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	return evt.getCreationInfo(ctx, portal)
 }
