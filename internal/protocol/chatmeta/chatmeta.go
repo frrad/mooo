@@ -87,9 +87,32 @@ type RoomMeta struct {
 	ChatCategory string
 }
 
-// SharedMetaTitle identifies a shared chat title. Android 26.8.2 names wire
-// value 3 Title in the ChatSharedMeta.kt enum; see research/chat-metadata.md.
-const SharedMetaTitle int32 = 3
+// Shared metadata types recovered from Android 26.8.2 ChatSharedMeta.kt.
+// Values are explicit wire codes, not ordinals; 11 and 12 are absent.
+// Names retain the official enum spelling. See research/chat-metadata.md.
+const (
+	SharedMetaNone                   int32 = 0
+	SharedMetaNotice                 int32 = 1
+	SharedMetaKakaoGroup             int32 = 2
+	SharedMetaTitle                  int32 = 3
+	SharedMetaProfile                int32 = 4
+	SharedMetaTv                     int32 = 5
+	SharedMetaPrivilege              int32 = 6
+	SharedMetaTvLive                 int32 = 7
+	SharedMetaPlustChatBackground    int32 = 8
+	SharedMetaDailyCard              int32 = 9
+	SharedMetaDailyCardProfile       int32 = 10
+	SharedMetaOpenLinkChannelChat    int32 = 13
+	SharedMetaOpenLinkBotCommand     int32 = 14
+	SharedMetaWarehouse              int32 = 15
+	SharedMetaVoiceroom              int32 = 16
+	SharedMetaVoiceroomCount         int32 = 17
+	SharedMetaCecall                 int32 = 18
+	SharedMetaCecallCount            int32 = 19
+	SharedMetaOpenLinkChatBackground int32 = 20
+	SharedMetaChatBot                int32 = 21
+	SharedMetaWebBanner              int32 = 22
+)
 
 // ChatMeta is one element of chatMetas. Unknown type values are preserved.
 type ChatMeta struct {
