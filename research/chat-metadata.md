@@ -321,3 +321,12 @@ Implementation decisions that follow from the traced behavior:
 - Public transfer: command names, field names, wire keys, types, ownership
   boundaries, and control-flow conclusions only. Private addresses, decompiler
   output, build paths, and helper output remain in the external lab directory.
+
+## Observed regular-group shared name (2026-10-09)
+
+A controlled three-owned-account Android 26.8.2 group showed the chosen shared
+name on every native client. CHATINFO for the bridged participant returned
+MultiChat, absent `m`, and a type-3 `chatMetas` entry with matching plain-string
+content. The connector previously fell back to display nicknames and now uses
+that shared name. Full name-consumer/persistence/notification parity remains
+untraced; see [the group validation](bridge/GROUP-MESSAGING-VALIDATION.md).

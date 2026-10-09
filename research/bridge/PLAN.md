@@ -354,3 +354,10 @@ The implemented supervisor and its bounded policy are documented in
   and its effect on the primary device's notifications are untraced. One
   2026-09-30 run suggested a live `MSG` already clears the sender's unread
   marker without it.
+
+- [x] Owned regular three-person group text acceptance: distinct encrypted
+      inbound senders, SDK-encrypted outbound visible on all three native
+      clients, complete roster/profile avatar, shared-name regression fix, and
+      persistent restart/offline catch-up with retained SDK keys. See
+      [group validation](GROUP-MESSAGING-VALIDATION.md). Lifecycle membership
+      mutations, group avatars, and Beeper-hosted acceptance remain gaps.
