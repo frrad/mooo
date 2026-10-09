@@ -98,3 +98,35 @@ and WebP byte preservation, bounded paths/resources, malformed attachments,
 missing-resource notices, and transient transfer failures that do not commit the
 cursor. This does not establish Element/Beeper animation playback, sound stickers,
 paid-pack entitlement behavior, outbound stickers, or full official-client parity.
+
+
+## Additional free-pack availability audit (2026-10-09)
+
+A controlled owned-account Android 26.8.2 experiment selected the first item in
+Kakao Friends Classic. One tap opened a preview; a single explicit Send produced
+`Sticker=12`, with `path`, `emoticonItemPath`, `name`, and `type` attachment keys.
+The receiving official client displayed the ordinary sticker. This adds emitter
+coverage but is not a fixture for AnimatedEmoticon, Spritecon, or AnimatedStickerEx.
+
+The first non-animated item in the free Kakao Friends Basic Mini Face 1 pack was
+selected in the Mini tab. Its editor's Enter inserted content into the chat
+composer; one explicit Send produced `Text=1`, with an `emojis` attachment.
+The receiving official client displayed a small graphic inside a text bubble.
+The observed structure contains `total_len`, `total_item`, and `items`; each
+observed item has an `id`, `len`, and an `at` array. Item IDs, resource resolution,
+position units, bounds, repeated placements, rendering, and failure behavior
+remain untraced. This is a rich-text gap, not a Spritecon fixture or evidence that
+all Mini items use this format. No Matrix graphic-parity claim is made.
+
+Scoped static inspection of `EmoticonChatLog.kt` (`chatlog.h`, classes10.dex)
+shows shared attachment getters for `name`, `alt`, `sound`, `width`, `height`,
+`xconVersion`, `emoticonDemoChatLog`, and `welcome`. Its resource helper treats
+Spritecon differently when deriving a thumbnail name. `ChatSender.kt`
+(`xua.o`, classes8.dex) passes the selected type and attachment through the send
+request and invokes an additional input cleanup for Spritecon. Neither trace
+establishes complete subtype contracts or an available owned pack for 6/22/25.
+The DEX fingerprints are recorded in [the Nudge audit](nudge.md).
+
+Private captures and UI observations remain outside the repository. No packs
+were purchased and no resource entitlement was bypassed. Types 6/22/25 remain
+unsupported pending controlled fixtures and a complete resource/rendering trace.
