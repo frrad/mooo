@@ -493,6 +493,7 @@ func privateParent(path string) error {
 }
 
 type expectedMessage struct {
+	GeoURI    string          `json:"geo_uri,omitempty"`
 	EventType string          `json:"event_type"`
 	Type      string          `json:"type"`
 	Body      string          `json:"body"`
@@ -510,6 +511,9 @@ func matchesExpected(evt *event.Event, expected expectedMessage) bool {
 	}
 	content, ok := evt.Content.Parsed.(*event.MessageEventContent)
 	if evt.Type != typ || !ok || string(content.MsgType) != expected.Type || content.Body != expected.Body {
+		return false
+	}
+	if expected.GeoURI != "" && content.GeoURI != expected.GeoURI {
 		return false
 	}
 	if expected.FileName != "" && content.FileName != expected.FileName {

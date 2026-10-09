@@ -5,6 +5,7 @@ The private stdin JSON supplies peer, receipt, and text (or selected photo
 Send bounds). No navigation, recipient search, permission grant, or retry.
 """
 import json
+import math
 import hashlib
 import os
 from pathlib import Path
@@ -186,6 +187,46 @@ def send_file(phone, peer, filename, sha256, receipt):
     raise ValueError('file outcome unconfirmed; preserve receipt and do not retry')
 
 
+def send_location(phone, peer, latitude, longitude, address, receipt):
+    if Path(receipt).exists():
+        raise ValueError('previous attempt exists; inspect outcome without resending')
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+           for v in [latitude, longitude]) or not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+        raise ValueError('synthetic GPS coordinates invalid')
+    if not address or len(address) > 4096:
+        raise ValueError('expected synthetic location address required')
+    root = phone.dump()
+    owned_chat(root, peer)
+    if control(root, 'message_edit_text').get('text', '') not in ('', 'Message'):
+        raise ValueError('composer not empty')
+    tap(phone, control(root, 'media_send_layout'))
+    root = phone.dump()
+    _, (x, y) = node_target(control(root, 'handle_container'))
+    phone.adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(max(200, y // 4)), '450')
+    tap(phone, clickable_text_parent(phone.dump(), 'Location'))
+    root = phone.dump()
+    button = control(root, 'btn_my_location')  # Unknown permission screens stop.
+    # Reapply after opening: the observed picker initially kept Android's default.
+    phone.adb('emu', 'geo', 'fix', str(longitude), str(latitude))
+    tap(phone, button)
+    for _ in range(4):
+        root = phone.dump()
+        bubbles = [n for n in root.iter('node') if n.get('resource-id') == PREFIX + 'location_bubble']
+        addresses = [n for n in root.iter('node') if n.get('resource-id') == PREFIX + 'location_address']
+        if not bubbles or not addresses:
+            continue  # Recentering temporarily hides controls; bounded wait only.
+        bubble = unique(bubbles)
+        address_node = unique(addresses)
+        bx1, by1, bx2, by2 = map(int, re.findall(r'\d+', bubble.get('bounds', '')))
+        ax1, ay1, ax2, ay2 = map(int, re.findall(r'\d+', address_node.get('bounds', '')))
+        if address_node.get('text') == address and bx1 <= ax1 < ax2 <= bx2 and by1 <= ay1 < ay2 <= by2:
+            reserve(receipt)  # Bubble selection sends immediately.
+            tap(phone, bubble)
+            owned_chat(phone.dump(), peer)
+            return 'synthetic-location-submitted-once'
+    raise ValueError('location fixture unconfirmed; no send performed')
+
+
 def send_contact(phone, peer, name, receipt):
     if Path(receipt).exists():
         raise ValueError('previous attempt exists; inspect outcome without resending')
@@ -326,6 +367,8 @@ def main():
             result = send_text(phone, request['peer'], request['text'], request['receipt'])
         elif action == 'sticker':
             result = send_sticker(phone, request['peer'], request['receipt'])
+        elif action == 'location':
+            result = send_location(phone, request['peer'], request['latitude'], request['longitude'], request['address'], request['receipt'])
         elif action == 'contact':
             result = send_contact(phone, request['peer'], request['name'], request['receipt'])
         elif action == 'profile':

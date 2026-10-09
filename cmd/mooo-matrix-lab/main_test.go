@@ -159,3 +159,18 @@ func TestExpectedFileName(t *testing.T) {
 		t.Fatal("wrong filename accepted")
 	}
 }
+
+func TestExpectedLocationCoordinates(t *testing.T) {
+	c := &event.MessageEventContent{MsgType: event.MsgLocation, Body: "Synthetic location", GeoURI: "geo:40.7484,-73.9857"}
+	e := &event.Event{Type: event.EventMessage, Content: event.Content{Parsed: c}}
+	want := expectedMessage{Type: "m.location", Body: "Synthetic location", GeoURI: "geo:40.7484,-73.9857"}
+	if !matchesExpected(e, want) {
+		t.Fatal("matching coordinates rejected")
+	}
+	for _, bad := range []string{"", "geo:-73.9857,40.7484", "geo:0,0"} {
+		c.GeoURI = bad
+		if matchesExpected(e, want) {
+			t.Fatal("wrong location accepted")
+		}
+	}
+}

@@ -460,8 +460,12 @@ run required checks and secret scans, then merge through passing CI.
 - [x] Profile (17): observed owned A/B readable encrypted identity/status
       rendering, shared picker guards and restart acceptance; PR #250. Avatar
       fetching and Kakao profile actions remain gaps.
-- [ ] Contact (4), Location (16), and Link (9): inspect available owned
-      sharing flows, using synthetic non-identifying payloads where possible.
+- [x] Contact (4): original vCard bytes and metadata preserved through encrypted
+      catch-up/live delivery, native receiver Details, restart and later text;
+      landed in PR #251.
+- [x] Location (16): synthetic emulator GPS, native receiver map, exact received
+      coordinates through encrypted catch-up/live delivery and restart verified.
+- [ ] Link (9): inspect the owned sharing flow and capture a controlled fixture.
 - [ ] Schedule/Vote/Post (13/14/24), Nudge (21), and sticker variants (6/22/25):
       determine which controlled A/B UI flows are available without purchases.
 - [ ] Audit remaining types against actual emitter/receiver availability;

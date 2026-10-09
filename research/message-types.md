@@ -52,7 +52,7 @@ Naming unsupported constants is intentional and does not enable their payloads.
 | 13 | `Schedule` | `UnsupportedMessage` notice |
 | 14 | `Vote` | `UnsupportedMessage` notice |
 | 15 | `CJ20121212` | `UnsupportedMessage` notice |
-| 16 | `Location` | `UnsupportedMessage` notice |
+| 16 | `Location` | Typed single location as native Matrix geo URI; OldLocation/live updates remain gaps |
 | 17 | `Profile` | Typed readable identity/status; avatar and profile actions remain gaps |
 | 18 | `File` | Typed direct-URL file; relay/cloud forms remain gaps |
 | 20 | `AnimatedSticker` | Typed message |
@@ -120,3 +120,5 @@ owned emulator findings and remaining live-test limitations.
 [Ordinary-file contract and acceptance](file.md) describe scoped type-18 support.
 
 [Profile-card contract and acceptance](profile.md) describe scoped type-17 support.
+
+[Location contract and acceptance](location.md) describe scoped type-16 support.
