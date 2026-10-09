@@ -330,3 +330,9 @@ Exactly one checked entry and enabled OK are required. The exclusive durable
 receipt precedes OK; afterward the same owned chat must return. An ambiguous
 outcome preserves the receipt and forbids automatic resend. Profile labels may
 appear in accessibility descriptions rather than text.
+
+The observed empty attachment picker is dismissed with Back during `ready`.
+Recognition requires the Kakao picker controls, Contacts/Location labels and
+exactly one disabled Send button. Selected attachments remain unsupported
+screens for private inspection. Do not tap the center of `touch_outside`: its
+bounds cover the sheet as well as the exposed backdrop.

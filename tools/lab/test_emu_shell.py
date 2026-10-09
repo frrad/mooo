@@ -133,3 +133,10 @@ print("123456", flush=True)' "$LOGDIR" "$2"
             self.assertIn('state=restore-skip', result.stdout)
             self.assertNotIn('123456', result.stdout + result.stderr)
             self.assertFalse(list(Path(folder).glob('sms.*')))
+
+    def test_empty_attachment_picker_returns_via_back(self):
+        xml = '<hierarchy><node resource-id="com.kakao.talk:id/touch_outside"/><node resource-id="com.kakao.talk:id/handle_container"/><node resource-id="com.kakao.talk:id/btn_send" enabled="false"/><node text="Contacts"/><node text="Location"/></hierarchy>'
+        result = run('require_login_authorization() { :; }; assert_client_version() { :; }; find_serial() { return 0; }; sleep() { :; }; adb() { echo "$*" >&2; }; state() { echo state=chat-visible; }; dump() { printf "%s" ' + shlex.quote(xml) + '; }; cmd_finish')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('shell input keyevent KEYCODE_BACK', result.stderr)
+        self.assertNotIn('shell input tap', result.stderr)
