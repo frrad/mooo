@@ -1,6 +1,10 @@
 package events
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"io"
+	"strings"
+)
 
 // Validate all nested objects before unmarshalling so duplicate discriminator,
 // title or option fields cannot change meaning between consumers.
@@ -54,4 +58,18 @@ func validateBoundedJSON(dec *json.Decoder, depth int, budget *int) error {
 		return ErrMalformedEvent
 	}
 	return nil
+}
+
+func validBoundedEventJSON(value string) bool {
+	if len(value) > 64<<10 || !validEventString(value) {
+		return false
+	}
+	dec := json.NewDecoder(strings.NewReader(value))
+	dec.UseNumber()
+	budget := 1024
+	if validateBoundedJSON(dec, 0, &budget) != nil {
+		return false
+	}
+	_, err := dec.Token()
+	return err == io.EOF
 }

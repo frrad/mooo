@@ -42,6 +42,8 @@ func kakaoTime(seconds int64) time.Time {
 // later commits in its chat. Kinds that cannot be rendered yet become notices.
 func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 	switch evt := evt.(type) {
+	case events.MiniTextMessage:
+		return kc.miniTextEvent(evt)
 	case events.PostMessage:
 		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, convertPost)
 	case events.VoteMessage:

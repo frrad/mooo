@@ -130,3 +130,7 @@ The DEX fingerprints are recorded in [the Nudge audit](nudge.md).
 Private captures and UI observations remain outside the repository. No packs
 were purchased and no resource entitlement was bypassed. Types 6/22/25 remain
 unsupported pending controlled fixtures and a complete resource/rendering trace.
+
+Nonanimated Mini rendering is implemented through the type-1 text path; see
+[Mini emoticons](mini-emoticons.md) for source placement, encryption acceptance
+and the explicit layout and animated-resource gaps.

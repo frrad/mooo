@@ -38,7 +38,7 @@ Naming unsupported constants is intentional and does not enable their payloads.
 | -2 | `KakaoLink` | Envelope rejects nonpositive value; semantics unimplemented |
 | -1 | `TimeLine` | Envelope rejects nonpositive value; semantics unimplemented |
 | 0 | `Feed` | Envelope rejects nonpositive value; semantics unimplemented |
-| 1 | `Text` | Typed message |
+| 1 | `Text` | Typed text and observed nonanimated Mini emoticons; animated Mini remains a gap |
 | 2 | `Photo` | Typed message |
 | 3 | `Video` | Typed direct-URL MP4; relay/high-quality forms remain gaps |
 | 4 | `Contact` | Typed direct-URL vCard 3.0; other versions/resource forms remain gaps |
@@ -122,3 +122,6 @@ owned emulator findings and remaining live-test limitations.
 [Profile-card contract and acceptance](profile.md) describe scoped type-17 support.
 
 [Location contract and acceptance](location.md) describe scoped type-16 support.
+
+[Mini emoticon contract and acceptance](mini-emoticons.md) describe type-1
+attachment placement and ordered encrypted text/image parts.

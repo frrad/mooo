@@ -1,0 +1,135 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-09",
+    "method": "Owned sender selected the first free Basic Mini Face 1 item and sent pure/mixed synthetic sources. Initial manual sends also pressed Enter and included a newline; shared helper direct-insertion sends did not. Scoped owned receiver MSG capture or exact-log SYNCMSG read, native receiver display and encrypted Matrix SDK checks. Resource IDs replaced with a synthetic category-12 identifier; source, counts, lengths and anchors preserved. Envelope IDs in tests are synthetic.",
+    "doc": "research/mini-emoticons.md"
+  },
+  "cases": [
+    {
+      "name": "pure",
+      "message": "(item)\n",
+      "attachment": {
+        "emojis": {
+          "total_item": 1,
+          "total_len": 6,
+          "items": [
+            {
+              "id": "1200000000_001",
+              "len": 6,
+              "at": [
+                1
+              ]
+            }
+          ]
+        }
+      },
+      "mooo_deviation": "Matrix represents the native inline Mini graphic as ordered encrypted text/image parts. The graphic fallback and surrounding source are retained; single-bubble layout is not preserved.",
+      "mooo_expected": [
+        {
+          "Text": "(item)",
+          "ResourceID": "1200000000_001"
+        },
+        {
+          "Text": "\n",
+          "ResourceID": ""
+        }
+      ]
+    },
+    {
+      "name": "mixed",
+      "message": "Mooo-Synthetic (literal) before (item)\n after",
+      "attachment": {
+        "emojis": {
+          "total_item": 1,
+          "total_len": 6,
+          "items": [
+            {
+              "id": "1200000000_001",
+              "len": 6,
+              "at": [
+                2
+              ]
+            }
+          ]
+        }
+      },
+      "mooo_deviation": "Matrix represents the native inline Mini graphic as ordered encrypted text/image parts. The graphic fallback and surrounding source are retained; single-bubble layout is not preserved.",
+      "mooo_expected": [
+        {
+          "Text": "Mooo-Synthetic (literal) before ",
+          "ResourceID": ""
+        },
+        {
+          "Text": "(item)",
+          "ResourceID": "1200000000_001"
+        },
+        {
+          "Text": "\n after",
+          "ResourceID": ""
+        }
+      ]
+    },
+    {
+      "name": "direct-mixed",
+      "message": "Mooo-Synthetic-Mini-Verified (literal) before (item) after",
+      "attachment": {
+        "emojis": {
+          "total_len": 6,
+          "total_item": 1,
+          "items": [
+            {
+              "at": [
+                2
+              ],
+              "id": "1200000000_001",
+              "len": 6
+            }
+          ]
+        }
+      },
+      "mooo_deviation": "Matrix represents the native inline Mini graphic as ordered encrypted text/image parts. The graphic fallback and surrounding source are retained; single-bubble layout is not preserved.",
+      "mooo_expected": [
+        {
+          "Text": "Mooo-Synthetic-Mini-Verified (literal) before ",
+          "ResourceID": ""
+        },
+        {
+          "Text": "(item)",
+          "ResourceID": "1200000000_001"
+        },
+        {
+          "Text": " after",
+          "ResourceID": ""
+        }
+      ]
+    },
+    {
+      "name": "direct-pure",
+      "message": "(item)",
+      "attachment": {
+        "emojis": {
+          "total_len": 6,
+          "total_item": 1,
+          "items": [
+            {
+              "at": [
+                1
+              ],
+              "id": "1200000000_001",
+              "len": 6
+            }
+          ]
+        }
+      },
+      "mooo_deviation": "Matrix represents the native inline Mini graphic as ordered encrypted text/image parts. The graphic fallback and surrounding source are retained; single-bubble layout is not preserved.",
+      "mooo_expected": [
+        {
+          "Text": "(item)",
+          "ResourceID": "1200000000_001"
+        }
+      ]
+    }
+  ]
+}

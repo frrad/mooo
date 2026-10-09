@@ -2,7 +2,6 @@ package events
 
 import (
 	"encoding/json"
-	"io"
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -21,7 +20,7 @@ func (m PostMessage) GoString() string { return m.String() }
 
 func decodePost(chatID, logID int64, log bson.Raw) (Event, error) {
 	value, err := requiredString(log, "attachment")
-	if err != nil || !validPostJSON(value) {
+	if err != nil || !validBoundedEventJSON(value) {
 		return nil, ErrMalformedEvent
 	}
 	var a struct {
@@ -49,7 +48,7 @@ func decodePost(chatID, logID int64, log bson.Raw) (Event, error) {
 				return nil, ErrMalformedEvent
 			}
 		case 1:
-			if found || object.Structured == nil || !validPostJSON(*object.Structured) || (object.Content != nil && (!validEventString(*object.Content) || len(*object.Content) > 32<<10)) {
+			if found || object.Structured == nil || !validBoundedEventJSON(*object.Structured) || (object.Content != nil && (!validEventString(*object.Content) || len(*object.Content) > 32<<10)) {
 				return nil, ErrMalformedEvent
 			}
 			found = true
@@ -95,18 +94,4 @@ func decodePost(chatID, logID int64, log bson.Raw) (Event, error) {
 		return nil, ErrMalformedEvent
 	}
 	return m, nil
-}
-
-func validPostJSON(value string) bool {
-	if len(value) > 64<<10 || !validEventString(value) {
-		return false
-	}
-	dec := json.NewDecoder(strings.NewReader(value))
-	dec.UseNumber()
-	budget := 1024
-	if validateBoundedJSON(dec, 0, &budget) != nil {
-		return false
-	}
-	_, err := dec.Token()
-	return err == io.EOF
 }
