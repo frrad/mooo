@@ -1545,3 +1545,47 @@ func TestCatchUpFailureAbortsConnectBeforeLiveEvents(t *testing.T) {
 		})
 	}
 }
+
+func TestGetChatInfoUsesObservedSharedGroupName(t *testing.T) {
+	fake := &fakeKakao{
+		chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{
+			ChatID: testChatID, Type: "MultiChat", DisplayNicknames: []string{"Synthetic A", "Synthetic C"},
+			ChatMetas: []chatmeta.ChatMeta{{Type: 3, Revision: 42, AuthorID: testOtherID, Content: "Synthetic Group", UpdatedAt: 100}},
+		}},
+		memberList: chatmeta.MemberListResponse{MemberIDs: []int64{testSelfID, testOtherID, 9999}},
+	}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.client = fake
+	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, makeUserLoginID(testSelfID))}}
+	info, err := kc.GetChatInfo(context.Background(), portal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Name == nil || *info.Name != "Synthetic Group" {
+		t.Fatalf("group name = %v, want shared group name", info.Name)
+	}
+	if info.Type != nil && *info.Type == database.RoomTypeDM {
+		t.Fatal("group classified as DM")
+	}
+	if !info.Members.IsFull || info.Members.TotalMemberCount != 3 {
+		t.Fatalf("group roster = %+v", info.Members)
+	}
+}
+
+func TestChatNameSharedRevisionAndPersonalOverride(t *testing.T) {
+	data := chatmeta.ChatData{DisplayNicknames: []string{"Fallback"}, ChatMetas: []chatmeta.ChatMeta{
+		{Type: 3, Revision: 2, Content: "Latest"}, {Type: 3, Revision: 1, Content: "Older"}, {Type: 4, Revision: 3, Content: "Other kind"},
+	}}
+	if got := chatName(data); got != "Latest" {
+		t.Fatalf("name = %q", got)
+	}
+	data.Meta = &chatmeta.RoomMeta{Name: "Personal override"}
+	if got := chatName(data); got != "Personal override" {
+		t.Fatalf("name = %q", got)
+	}
+	data.Meta = nil
+	data.ChatMetas = append(data.ChatMetas, chatmeta.ChatMeta{Type: 3, Revision: 4})
+	if got := chatName(data); got != "Fallback" {
+		t.Fatalf("cleared name = %q", got)
+	}
+}

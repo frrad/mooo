@@ -1049,6 +1049,19 @@ func chatName(data chatmeta.ChatData) string {
 	if data.Meta != nil && data.Meta.Name != "" {
 		return data.Meta.Name
 	}
+	// Owned three-person group observation: CHATINFO carries the shared
+	// room name as type-3 chat metadata even when the personal m is absent.
+	// A newer empty value clears the name instead of reviving an older one.
+	var sharedName *chatmeta.ChatMeta
+	for i := range data.ChatMetas {
+		meta := &data.ChatMetas[i]
+		if meta.Type == 3 && (sharedName == nil || meta.Revision > sharedName.Revision) {
+			sharedName = meta
+		}
+	}
+	if sharedName != nil && sharedName.Content != "" {
+		return sharedName.Content
+	}
 	names := make([]string, 0, len(data.DisplayNicknames))
 	for _, nickname := range data.DisplayNicknames {
 		if nickname != "" {
