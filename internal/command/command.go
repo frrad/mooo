@@ -1,6 +1,6 @@
-// Package command implements the deliberately small, offline mooo-lab CLI.
+// Package command implements the deliberately small mooo-lab CLI.
 // It owns argument validation and presentation while authstate owns persistence
-// and validation. No command in this package performs network operations.
+// and validation. Explicit chat listing uses one selected authenticated profile.
 package command
 
 import (
@@ -14,6 +14,7 @@ import (
 )
 
 const usage = `usage:
+  mooo-lab chats list --state ABSOLUTE_PATH --output ABSOLUTE_PATH
   mooo-lab auth init --state ABSOLUTE_PATH --device-name NAME --app-version VERSION --os-version VERSION --model MODEL
   mooo-lab auth inspect --state ABSOLUTE_PATH
 `
@@ -34,6 +35,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if args[0] == "--help" || args[0] == "-h" {
 		_, _ = io.WriteString(stdout, usage)
 		return 0
+	}
+	if len(args) >= 2 && args[0] == "chats" && args[1] == "list" {
+		return runListChats(args[2:], stdout, stderr, openChatLister)
 	}
 	if args[0] != "auth" || len(args) < 2 {
 		return usageError(stderr)
