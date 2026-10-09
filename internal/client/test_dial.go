@@ -27,16 +27,24 @@ type TestDialers struct {
 
 // OpenWithTestDialers opens a normal leased Client while replacing only its
 // network dial path. The constructor is intentionally narrow and internal:
-// production callers should use Open.
-func OpenWithTestDialers(statePath string, doer friends.Doer, dialers TestDialers) (*Client, error) {
+// production callers should use Open or OpenWithOptions. The optional options
+// select the same production login policy while keeping synthetic dialers.
+func OpenWithTestDialers(statePath string, doer friends.Doer, dialers TestDialers, options ...OpenOptions) (*Client, error) {
 	if dialers.TLS == nil || dialers.Secure == nil {
 		return nil, ErrBootstrap
 	}
-	c, err := Open(statePath, doer)
+	if len(options) > 1 {
+		return nil, ErrBootstrap
+	}
+	var option OpenOptions
+	if len(options) == 1 {
+		option = options[0]
+	}
+	c, err := OpenWithOptions(statePath, doer, option)
 	if err != nil {
 		return nil, err
 	}
-	resume := c.checkpoint.Snapshot()
+	resume := option.loginResume(c.checkpoint.Snapshot())
 	c.dial = func(ctx context.Context, state authstate.State) (*Session, error) {
 		return connectSessionWithResume(ctx, state, resume, testSessionDialers(dialers))
 	}

@@ -1,0 +1,31 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk for Android 26.8.2 with mooo's existing Mac-class secondary profile",
+    "date": "2026-10-09",
+    "method": "Owned A/B/C regular-chat draft, first synthetic send, completed secondary LOGINLIST, CHATINFO-backed encrypted Matrix discovery; identifiers and text replaced with synthetic equivalents",
+    "doc": "research/bridge/GROUP-DISCOVERY.md"
+  },
+  "cases": [
+    {
+      "name": "local draft is absent from recipient inventory",
+      "inventory": [],
+      "expected_portals": 0
+    },
+    {
+      "name": "server-created group needs no additional message for discovery",
+      "inventory": [{"ChatID": 3000, "Type": "MultiChat"}],
+      "chat_data": {
+        "ChatID": 3000,
+        "Type": "MultiChat",
+        "ActiveMemberCount": 3,
+        "ChatMetas": [{"Type": 3, "Content": "Synthetic discovery group"}]
+      },
+      "member_ids": [1000, 2000, 4000],
+      "members": [{"UserID": 2000, "Nickname": "Synthetic A"}, {"UserID": 4000, "Nickname": "Synthetic C"}],
+      "expected_portals": 1,
+      "expected_name": "Synthetic discovery group",
+      "expected_member_ids": [1000, 2000, 4000]
+    }
+  ]
+}

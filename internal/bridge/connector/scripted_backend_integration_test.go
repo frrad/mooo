@@ -68,7 +68,7 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	}
 
 	firstDialers, firstBackends, _ := scriptedScenario(t, 2, nil, false)
-	firstRaw, err := client.OpenWithTestDialers(statePath, nil, firstDialers)
+	firstRaw, err := client.OpenWithTestDialers(statePath, nil, firstDialers, client.OpenOptions{FullChatList: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 
 	trigger := make(chan struct{})
 	secondDialers, secondBackends, writes := scriptedScenario(t, 2, trigger, true)
-	secondRaw, err := client.OpenWithTestDialers(statePath, nil, secondDialers)
+	secondRaw, err := client.OpenWithTestDialers(statePath, nil, secondDialers, client.OpenOptions{FullChatList: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	if !reloaded.IsCommitted(testChatID, 2) || !reloaded.IsCommitted(testChatID, 3) {
 		t.Fatal("replayed and live events were not committed")
 	}
-	reopenedClient, err := client.OpenWithTestDialers(statePath, nil, secondDialers)
+	reopenedClient, err := client.OpenWithTestDialers(statePath, nil, secondDialers, client.OpenOptions{FullChatList: true})
 	if err != nil {
 		t.Fatal("profile lease was not released after shutdown")
 	}
@@ -167,7 +167,7 @@ func TestScriptedBackendAutomaticRecoveryReleasesLeaseBeforeReopen(t *testing.T)
 	}
 	outage := make(chan struct{})
 	firstDialers, firstBackends, firstWrites := scriptedScenarioWithIDs(t, 2, outage, true, 2, 3, false)
-	firstRaw, err := client.OpenWithTestDialers(statePath, nil, firstDialers)
+	firstRaw, err := client.OpenWithTestDialers(statePath, nil, firstDialers, client.OpenOptions{FullChatList: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestScriptedBackendAutomaticRecoveryReleasesLeaseBeforeReopen(t *testing.T)
 		case 1:
 			raw = firstRaw
 		case 2:
-			raw, openErr = client.OpenWithTestDialers(statePath, nil, secondDialers)
+			raw, openErr = client.OpenWithTestDialers(statePath, nil, secondDialers, client.OpenOptions{FullChatList: true})
 		default:
 			return nil, fmt.Errorf("unexpected automatic recovery open %d", opened)
 		}

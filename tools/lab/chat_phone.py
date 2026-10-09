@@ -63,7 +63,9 @@ def reserve(receipt):
         os.fsync(f.fileno())
 
 
-def send_text(phone, peer, text, receipt):
+def send_text(phone, peer, text, receipt, after_peer=None):
+    if after_peer is not None and (not isinstance(after_peer, str) or not after_peer):
+        raise ValueError('explicit post-send peer must be a nonempty string')
     if Path(receipt).exists():
         raise ValueError('previous attempt exists; inspect outcome without resending')
     if not re.fullmatch(r'[A-Za-z0-9._-]{1,512}', text):
@@ -93,7 +95,7 @@ def send_text(phone, peer, text, receipt):
     reserve(receipt)
     tap(phone, button)
     root = phone.dump()
-    owned_chat(root, peer)
+    owned_chat(root, peer if after_peer is None else after_peer)
     if control(root, 'message_edit_text').get('text', '') not in ('', 'Message'):
         raise ValueError('send outcome unconfirmed; do not retry')
     return 'text-submitted-once'
@@ -581,7 +583,7 @@ def main():
         request = json.load(sys.stdin)
         phone = Phone(adb, serial)
         if action == 'text':
-            result = send_text(phone, request['peer'], request['text'], request['receipt'])
+            result = send_text(phone, request['peer'], request['text'], request['receipt'], request.get('after_peer'))
         elif action == 'sticker':
             result = send_sticker(phone, request['peer'], request['receipt'])
         elif action == 'poll':

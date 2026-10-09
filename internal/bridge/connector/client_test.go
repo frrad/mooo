@@ -45,6 +45,8 @@ type catchUpResult struct {
 }
 
 type fakeKakao struct {
+	chatInventory     []chatmeta.ChatData
+	chatInventoryErr  error
 	mu                sync.Mutex
 	connectErr        error
 	resumeTargets     []syncmsg.Target

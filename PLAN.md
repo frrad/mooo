@@ -20,7 +20,7 @@ These are scoped capabilities, not full official-client parity.
 
 | Priority | Missing implementation or acceptance | Code/evidence boundary |
 |---|---|---|
-| 1 | Regular-group announcements; rename, join/leave and metadata lifecycle acceptance | `CHGMOMETAS` has no committed bridge projection; initial shared title/roster works. Membership handlers exist, but live mutations remain unvalidated. See [chat metadata](research/chat-metadata.md) and [group evidence](research/bridge/GROUP-MESSAGING-VALIDATION.md). |
+| 1 | Regular-group announcements; rename, join/leave and metadata lifecycle acceptance | Inbound text Boards announcements now project to the room topic (PR #269); rich and outbound announcements remain open. Initial shared title/roster works. Membership handlers exist, but live mutations remain unvalidated. See [chat metadata](research/chat-metadata.md) and [group evidence](research/bridge/GROUP-MESSAGING-VALIDATION.md). |
 | 2 | Group photos, replies, reactions and media/restart acceptance | Direct-room evidence does not cover group behavior. Group acceptance currently proves text, initial identities/name/avatar and restart only. |
 | 3 | Live read-receipt and catch-up read-side-effect policy; operator malformed-message recovery; terminal/failure lifecycle acceptance | Routing, bounded recovery and ownership are implemented; `SYNCMSG cnt=0`, terminal events, Matrix failures and cleanup timeouts need controlled acceptance. Receive-header timeout and push receipts are not installed by default. |
 | 4 | Reproducible deployment acceptance and Matrix crypto recovery | Docker/configuration exist. Complete standard appservice installation and separate Beeper validation; test key rotation, missing keys/trust transitions and encrypted replies/reactions. |
@@ -31,6 +31,63 @@ Keep opt-in historical backfill pending its read-side-effect policy. Continue
 Mac-first full-chain protocol research and production-fixture migration alongside
 these slices. Cloud backup/restore remains out of scope; paid or unavailable
 emitters are evidence blockers, not reasons to relabel supported messages.
+
+## Regular-group completion objective (2026-10-09)
+
+Complete each slice through a separate reviewable PR. Every slice requires the
+Mac request/response/caller/persistence/consumer/failure contract (with gaps
+recorded), production-path regression fixtures, owned A/B/C acceptance in an
+encrypted Matrix room, relevant offline/restart checks, sanitized evidence,
+`make check`, secret scanning, and passing required CI before squash merge.
+Existing direct-room acceptance does not satisfy a group acceptance gate.
+
+- [ ] Native group discovery and creation lifecycle: online/offline inventory,
+      correct name and full roster, no duplicate portal; determine whether the
+      source requires a first message before a group exists.
+- [ ] Explicit Matrix group creation with selected participants and safe handling
+      of invalid participants and ambiguous creation/invitation failures.
+- [ ] Membership and access lifecycle, including offline changes and bridge-user
+      removal; prevent forwarding to removed members.
+- [ ] Shared/personal group names and group avatar replacement/clearing, with
+      convergence and clear rejection of unsupported outbound changes.
+- [ ] Member profile refresh with stable ghosts and isolated profile failures.
+- [ ] Bounded opt-in historical backfill with durable progress, source visibility,
+      ordering/deduplication, and observed read/unread policy.
+- [ ] Failure recovery and ambiguous sends: network/session/Matrix/media failures,
+      replay, commit boundaries, bounded shutdown, and actionable errors.
+- [ ] Group JPEG/PNG photos: exact bytes, captions, downloads/expiry, attribution,
+      offline catch-up and restart uniqueness.
+- [ ] Group text replies both directions and in history, with correct targets and
+      documented missing-target fallback after encrypted restart.
+- [ ] Outbound image replies and inbound image/reply context; reject unsupported
+      combinations before mutation.
+- [ ] Per-member reaction add/replace/remove, counts and attribution, encrypted
+      targets, replay and restart.
+- [ ] Group read receipts/unread state with monotonic member watermarks and
+      observed catch-up side effects.
+- [ ] More inbound group formats: albums, video, audio, files, contacts, profiles,
+      locations, stickers, polls and Boards; observed fixtures for each claim.
+- [ ] Rich announcement text summaries, replacement/clear/reconnect behavior and
+      preservation of current topic for unsupported content.
+- [ ] Explicit outbound announcements and supported Boards mutations with native
+      permissions and safe rejected/ambiguous outcomes.
+- [ ] Supported outbound video/audio/files/albums with source limits and native
+      usability, without automatic duplicate sends.
+- [ ] Source-supported message edits/deletions with permission/time limits,
+      attribution, replay/restart correctness and clear unsupported outcomes.
+- [ ] Group settings and permissions: explicit mappings for personal mute and
+      notifications, source roles and management permissions; prevent personal
+      settings from changing shared state and reject unsupported actions.
+
+First active slice: native group discovery, implemented and locally validated on
+the feature branch; PR/CI/merge remain pending. Completed inventory and native
+creation now admit regular-group portals after validated metadata/roster snapshots.
+Owned Android creation first makes a local draft; its first send creates the server
+room. Offline inventory discovery needs no additional message. See
+[discovery evidence](research/bridge/GROUP-DISCOVERY.md) for acceptance and source gaps.
+
+Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
+room-type or scale parity beyond supporting evidence.
 
 ## Phase 0 — foundation
 

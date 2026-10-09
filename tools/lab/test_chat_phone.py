@@ -180,6 +180,32 @@ class PostTests(unittest.TestCase):
 
 
 class ChatTests(unittest.TestCase):
+    def test_first_group_message_accepts_only_explicit_expected_title_transition(self):
+        for result_title in ['SyntheticGroup3', 'OtherGroup3']:
+            with tempfile.TemporaryDirectory() as d:
+                receipt = Path(d) / 'send.json'
+                p = FakePhone([chat(title='Group Chat3'), chat('synthetic', title='Group Chat3'), chat('synthetic', title='Group Chat3'), chat(title=result_title)])
+                if result_title == 'SyntheticGroup3':
+                    self.assertEqual(send_text(p, 'Group Chat3', 'synthetic', receipt, after_peer='SyntheticGroup3'), 'text-submitted-once')
+                else:
+                    with self.assertRaises(ValueError):
+                        send_text(p, 'Group Chat3', 'synthetic', receipt, after_peer='SyntheticGroup3')
+                self.assertTrue(receipt.exists())
+                self.assertEqual(sum(args == ('shell', 'input', 'tap', '30', '10') for args, _ in p.calls), 1)
+                before = list(p.calls)
+                with self.assertRaises(ValueError):
+                    send_text(p, 'Group Chat3', 'synthetic', receipt, after_peer='SyntheticGroup3')
+                self.assertEqual(p.calls, before)
+
+
+    def test_invalid_post_send_peer_stops_before_input(self):
+        for value in ['', [], 42]:
+            with tempfile.TemporaryDirectory() as d:
+                p = FakePhone([chat()])
+                with self.assertRaises(ValueError):
+                    send_text(p, 'owned peer', 'synthetic', Path(d) / 'send.json', after_peer=value)
+                self.assertEqual(p.calls, [])
+
     def test_text_uses_layout_and_receipt_blocks_repeat(self):
         with tempfile.TemporaryDirectory() as d:
             receipt = Path(d) / 'send.json'
