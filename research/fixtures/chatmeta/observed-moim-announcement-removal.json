@@ -1,0 +1,25 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2 (29260820); original owned Go secondary session",
+    "date": "2026-10-09",
+    "method": "Native Boards Remove Announcement, then read-only GETMOMETA; identifiers and revision values replaced, ordering preserved",
+    "doc": "research/chat-metadata.md"
+  },
+  "method": "GETMOMETA",
+  "input": {
+    "c": 3000,
+    "ms": [
+      {
+        "t": 1,
+        "br": 42,
+        "ur": 44,
+        "ct": "{}"
+      }
+    ]
+  },
+  "expected": {
+    "native_banner_present": false,
+    "matrix_topic": ""
+  }
+}

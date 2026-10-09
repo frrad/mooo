@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/frrad/mooo/internal/protocol/chat"
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/media"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
@@ -21,33 +22,34 @@ import (
 type Kind string
 
 const (
-	KindTextMessage        Kind = "text_message"
-	KindPostMessage        Kind = "post_message"
-	KindVoteMessage        Kind = "vote_message"
-	KindLocationMessage    Kind = "location_message"
-	KindProfileMessage     Kind = "profile_message"
-	KindReplyMessage       Kind = "reply_message"
-	KindPhotoMessage       Kind = "photo_message"
-	KindVideoMessage       Kind = "video_message"
-	KindAudioMessage       Kind = "audio_message"
-	KindFileMessage        Kind = "file_message"
-	KindContactMessage     Kind = "contact_message"
-	KindMultiPhotoMessage  Kind = "multi_photo_message"
-	KindStickerMessage     Kind = "sticker_message"
-	KindMessageGap         Kind = "message_gap"
-	KindUnsupportedMessage Kind = "unsupported_message"
-	KindReactionChanged    Kind = "reaction_changed"
-	KindReadStateChanged   Kind = "read_state_changed"
-	KindChangeServer       Kind = "change_server"
-	KindKickout            Kind = "kickout"
-	KindMemberRemoved      Kind = "member_removed"
-	KindMemberAdded        Kind = "member_added"
-	KindChatLeft           Kind = "chat_left"
-	KindChatStatusChanged  Kind = "chat_status_changed"
-	KindChatMetaChanged    Kind = "chat_meta_changed"
-	KindChatMCMetaChanged  Kind = "chat_mcmeta_changed"
-	KindUnsupportedLogMeta Kind = "unsupported_log_meta"
-	KindUnknownPacket      Kind = "unknown_packet"
+	KindTextMessage         Kind = "text_message"
+	KindPostMessage         Kind = "post_message"
+	KindVoteMessage         Kind = "vote_message"
+	KindLocationMessage     Kind = "location_message"
+	KindProfileMessage      Kind = "profile_message"
+	KindReplyMessage        Kind = "reply_message"
+	KindPhotoMessage        Kind = "photo_message"
+	KindVideoMessage        Kind = "video_message"
+	KindAudioMessage        Kind = "audio_message"
+	KindFileMessage         Kind = "file_message"
+	KindContactMessage      Kind = "contact_message"
+	KindMultiPhotoMessage   Kind = "multi_photo_message"
+	KindStickerMessage      Kind = "sticker_message"
+	KindMessageGap          Kind = "message_gap"
+	KindUnsupportedMessage  Kind = "unsupported_message"
+	KindReactionChanged     Kind = "reaction_changed"
+	KindReadStateChanged    Kind = "read_state_changed"
+	KindChangeServer        Kind = "change_server"
+	KindKickout             Kind = "kickout"
+	KindMemberRemoved       Kind = "member_removed"
+	KindMemberAdded         Kind = "member_added"
+	KindChatLeft            Kind = "chat_left"
+	KindChatStatusChanged   Kind = "chat_status_changed"
+	KindChatMetaChanged     Kind = "chat_meta_changed"
+	KindChatMoimMetaChanged Kind = "chat_moim_meta_changed"
+	KindChatMCMetaChanged   Kind = "chat_mcmeta_changed"
+	KindUnsupportedLogMeta  Kind = "unsupported_log_meta"
+	KindUnknownPacket       Kind = "unknown_packet"
 )
 
 var ErrMalformedEvent = errors.New("events: malformed event")
@@ -427,6 +429,16 @@ type ChatMetaChanged struct {
 func (ChatMetaChanged) Kind() Kind { return KindChatMetaChanged }
 func (ChatMetaChanged) isEvent()   {}
 
+// ChatMoimMetaChanged is a Boards metadata refresh signal. It is separate
+// from CHGMETA shared room metadata.
+type ChatMoimMetaChanged struct {
+	ChatID int64
+	Metas  []chatmeta.MoimMeta
+}
+
+func (ChatMoimMetaChanged) Kind() Kind { return KindChatMoimMetaChanged }
+func (ChatMoimMetaChanged) isEvent()   {}
+
 // ChatMCMetaChanged carries the decoder-proven MCM fields without interpreting
 // type labels or applying room/revision effects.
 type ChatMCMetaChanged struct {
@@ -462,6 +474,12 @@ func Decode(packet loco.Packet) (Event, error) {
 		return decodeMemberAdded(packet.Body)
 	case "CHGCHATST":
 		return decodeChatStatusChanged(packet.Body)
+	case "CHGMOMETAS":
+		r, err := chatmeta.DecodeMoimResponse(packet.Body)
+		if err != nil {
+			return nil, ErrMalformedEvent
+		}
+		return ChatMoimMetaChanged{ChatID: r.ChatID, Metas: r.Metas}, nil
 	case "CHGMETA":
 		return decodeChatMetaChanged(packet.Body)
 	case "CHGMCMETA":

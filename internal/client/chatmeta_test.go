@@ -338,3 +338,29 @@ func TestSessionMemberListRejectsNonzeroStatusExactlyOnce(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionMoimMetaReadRequest(t *testing.T) {
+	backend := newScriptedBackend(t, false, expectRequest("GETMOMETA", func(raw bson.Raw) error {
+		if err := requireExactKeys(raw, "c", "ts"); err != nil {
+			return err
+		}
+		if err := requireInt64(raw, "c", 42); err != nil {
+			return err
+		}
+		v, err := raw.Lookup("ts").Array().Values()
+		if err != nil || len(v) != 1 || v[0].Type != bson.TypeInt32 || v[0].Int32() != 1 {
+			return errors.New("wrong notice type")
+		}
+		return nil
+	}, statusDocument(bson.E{Key: "c", Value: int64(42)}, bson.E{Key: "ms", Value: bson.A{bson.D{{Key: "t", Value: int32(1)}, {Key: "ur", Value: int64(44)}, {Key: "ct", Value: "{}"}}}})))
+	s := testMetadataSession(backend, 1)
+	r, err := s.MoimMeta(context.Background(), 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := r.Metas[0].Announcement()
+	if err != nil || a.Active {
+		t.Fatalf("removal=%+v err=%v", a, err)
+	}
+	backend.wait(t)
+}

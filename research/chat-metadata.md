@@ -436,10 +436,58 @@ meta entries and updates view/last-seen revision state; the notice factory
 constructs its view model from the Moim meta and room. Exact merge ordering,
 database block contents, UI invalidation, and failure branches remain untraced.
 These Moim push/update and notice-model chains are distinct
-from the shared metadata factory. Announcement bridging, removal/replacement,
-restart recovery, and mapping Boards IDs to Matrix pin targets are open gaps.
-The live test establishes native behavior and a missing bridge feature, not
-end-to-end announcement support or full Mac notice parity.
+from the shared metadata factory. The initial experiment established the missing
+bridge feature; the subsequent TEXT-announcement projection below closes that
+specific gap. Mapping Boards IDs to Matrix pin targets and full Mac notice parity
+remain outside the implemented scope.
 
 The sanitized observed shape is recorded in
 [the announcement fixture](fixtures/chatmeta/observed-moim-announcement.json).
+
+### Boards announcement topics (2026-10-09)
+
+Mac 26.8.0 `LocoGetMoimMetaRequest` names the command `GETMOMETA` and maps
+`c` to chatId and `ts` to types. Its response maps `c` to chatId and `ms` to
+metas; `LocoMoimMeta` maps `t` to type, `ur` to updateRevision, `br` to
+badgeRevision, and `ct` to content. These are separate from CHGMETA revision
+fields. The request sender constructs this model and uses the carriage request
+path. Its callback (10151d87c) calls completion with nil for absent response,
+or initializes the response model from the response JSON. The push consumer's
+database block (1015434d4) obtains the merged Moim dictionary and passes it to
+the room's persistence setter. Inner database serialization, downstream notice
+view invalidation, and all error/UI branches remain static-trace gaps; no full
+official-client parity claim is made.
+
+The implementation requests only Moim type 1 for regular MultiChat rooms.
+CHGMOMETAS is a typed refresh signal; a fresh GETMOMETA snapshot selects the
+current announcement rather than a possibly delayed push payload. The selected
+highest updateRevision is checkpointed in portal metadata, separately from
+message cursors and shared metadata. Older revisions cannot change the topic.
+Equal revisions can retry a failed Matrix state write, while the framework
+suppresses repeated successful writes. Conflicting content at the same revision
+and malformed wire/JSON fields fail closed. Badge revisions are preserved but
+do not drive the topic. Authoritative empty results clear the topic.
+
+Owned observations found that removal returns type 1 with a newer
+updateRevision and content `{}`. A TEXT post with notice=true projects its
+content to `m.room.topic`; empty/removal content clears it. The operator selected
+room topics knowing that Matrix state is plaintext even in an encrypted room.
+This is inbound only; changing a Matrix topic does not publish a Kakao Boards
+announcement. Unsupported rich posts keep the current topic and do not prevent
+ordinary group metadata from syncing. Rich announcement rendering and Boards
+post editing/deletion remain gaps.
+
+Controlled owned Android 26.8.2 observations through the original secondary
+profile and local Matrix homeserver verified native announce → exact topic,
+replacement → new topic, native removal → empty topic, offline announcement →
+reconnect recovery, and offline removal → reconnect clearing. The encrypted
+room remained the existing three-person portal; no new secondary enrollment or
+profile copy was used. Synthetic database/framework tests cover failed state
+writes, same-revision retry, successful duplicate suppression, restart metadata
+loading, stale revision rejection, and removal persistence. The removal snapshot
+is recorded in [the observed fixture](fixtures/chatmeta/observed-moim-announcement-removal.json).
+
+These tests exposed mautrix v0.31.0 swapping topic_set and avatar_set on portal
+save. The dependency is pinned to the minimal upstream revision containing
+[the existing fix](https://github.com/mautrix/go/commit/40942319c433df60488bcb1ee9f9766d3da268b7);
+the regression test exercises the real database and framework state sender.

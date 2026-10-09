@@ -102,3 +102,23 @@ func (c *Client) MemberList(ctx context.Context, chatID, token int64) (chatmeta.
 	}
 	return session.MemberList(ctx, chatID, token)
 }
+
+// MoimMeta fetches the current Boards announcement, independently of CHATINFO.
+func (s *Session) MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error) {
+	body, err := (chatmeta.MoimRequest{ChatID: chatID}).MarshalBSON()
+	if err != nil {
+		return chatmeta.MoimResponse{}, err
+	}
+	reply, err := s.Request(ctx, chatmeta.GetMoimMetaCommand, body)
+	if err != nil {
+		return chatmeta.MoimResponse{}, err
+	}
+	return chatmeta.DecodeMoimResponse(reply.Body)
+}
+func (c *Client) MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error) {
+	s, err := c.ensureSession(ctx)
+	if err != nil {
+		return chatmeta.MoimResponse{}, err
+	}
+	return s.MoimMeta(ctx, chatID)
+}
