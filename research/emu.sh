@@ -1,6 +1,6 @@
 #!/bin/bash
 # Owned A/B emulator preparation. Configuration lives in .lab/emu-config.sh.
-# Usage: emu.sh up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo|send-video|send-audio|send-profile|send-contact|send-location|send-file|send-album|send-sticker|send-poll a|b [--login]
+# Usage: emu.sh up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo|send-video|send-audio|send-profile|send-contact|send-location|send-file|send-album|send-sticker|send-poll|send-post a|b [--login]
 # ready (or up --login) permits one password submission and normal verification.
 # Configure explicit login and required-policy authorization before using auth.
 set -euo pipefail
@@ -16,7 +16,7 @@ LAB_DIR=$REPO_DIR/.lab
 TOOL_DIR=$REPO_DIR/tools/lab
 LOGDIR=${EMU_RUNTIME_DIR:-"$HOME/Library/Caches/mooo-lab/emu"}
 
-usage() { echo "usage: $0 up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo|send-video|send-audio|send-profile|send-contact|send-location|send-file|send-album|send-sticker|send-poll a|b [--login]" >&2; exit 2; }
+usage() { echo "usage: $0 up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo|send-video|send-audio|send-profile|send-contact|send-location|send-file|send-album|send-sticker|send-poll|send-post a|b [--login]" >&2; exit 2; }
 
 profile() {
   case "$1" in
@@ -458,6 +458,7 @@ main() {
     send-album) cmd_chat_phone album ;;
     send-sticker) cmd_chat_phone sticker ;;
     send-poll) cmd_chat_phone poll ;;
+    send-post) cmd_chat_phone post ;;
     down) cmd_down ;;
     *) usage ;;
   esac

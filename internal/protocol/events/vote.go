@@ -28,7 +28,7 @@ func decodeVote(chatID, logID int64, log bson.Raw) (Event, error) {
 	dec := json.NewDecoder(strings.NewReader(value))
 	dec.UseNumber()
 	budget := 1024
-	if err = validateVoteJSON(dec, 0, &budget); err != nil {
+	if err = validateBoundedJSON(dec, 0, &budget); err != nil {
 		return nil, err
 	}
 	if _, err = dec.Token(); err != io.EOF {
@@ -102,64 +102,4 @@ func decodeVote(chatID, logID int64, log bson.Raw) (Event, error) {
 
 func validVoteText(value string, max int) bool {
 	return strings.TrimSpace(value) != "" && len(value) <= max && validEventString(value)
-}
-
-// Validate all nested objects before unmarshalling so duplicate discriminator,
-// title or option fields cannot change meaning between consumers.
-func validateVoteJSON(dec *json.Decoder, depth int, budget *int) error {
-	*budget -= 1
-	if depth > 16 || *budget < 0 {
-		return ErrMalformedEvent
-	}
-	tok, err := dec.Token()
-	if err != nil {
-		return ErrMalformedEvent
-	}
-	delim, ok := tok.(json.Delim)
-	if !ok {
-		if depth == 0 {
-			return ErrMalformedEvent
-		}
-		return nil
-	}
-	switch delim {
-	case '{':
-		seen := map[string]bool{}
-		for dec.More() {
-			tok, err = dec.Token()
-			key, ok := tok.(string)
-			if err != nil || !ok || seen[key] || len(seen) >= 64 {
-				return ErrMalformedEvent
-			}
-			seen[key] = true
-			if err = validateVoteJSON(dec, depth+1, budget); err != nil {
-				return err
-			}
-		}
-		tok, err = dec.Token()
-		if err != nil || tok != json.Delim('}') {
-			return ErrMalformedEvent
-		}
-	case '[':
-		if depth == 0 {
-			return ErrMalformedEvent
-		}
-		count := 0
-		for dec.More() {
-			count++
-			if count > 128 {
-				return ErrMalformedEvent
-			}
-			if err = validateVoteJSON(dec, depth+1, budget); err != nil {
-				return err
-			}
-		}
-		tok, err = dec.Token()
-		if err != nil || tok != json.Delim(']') {
-			return ErrMalformedEvent
-		}
-	default:
-		return ErrMalformedEvent
-	}
-	return nil
 }

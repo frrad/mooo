@@ -34,6 +34,8 @@ than failures. Their raw BSON is deliberately not exposed by the typed layer.
 - `StickerMessage`: types 12/20 and validated inbound resource metadata.
 - `VoteMessage`: type 14 observed text-poll creation title and ordered options;
   navigation URLs and interactive voting are omitted.
+- `PostMessage`: type 24 observed text-only board-post source content; private
+  board navigation and interactive actions are omitted.
 - `UnsupportedMessage`: chat ID, log ID, and numeric message type.
 - `ReactionChanged`: aggregate reaction items and the server revision from
   reaction metadata changes.

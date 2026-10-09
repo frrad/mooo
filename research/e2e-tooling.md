@@ -5,6 +5,10 @@ owned chat to a new poll, validates synthetic title/options and default settings
 and reserves a private receipt before DONE. It never retries an uncertain send.
 See [the Vote experiment and helper contract](vote.md#repeatable-owned-sender).
 
+`send-post a|b` similarly creates a synthetic text-only board post, verifies the
+non-announcement setting before submit, and returns to the selected owned chat.
+See [the Post experiment and helper contract](post.md#repeatable-owned-sender).
+
 Use `research/emu.sh` for the two owned lab profiles. The local `.lab/emu.sh`
 is a compatibility wrapper. Profile mappings, Keychain references, and SMS-line
 identities live in gitignored `.lab/emu-config.sh`; see

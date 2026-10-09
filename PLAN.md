@@ -474,7 +474,11 @@ run required checks and secret scans, then merge through passing CI.
       restart. Zero legacy vote-ID placeholders have a live regression fixture;
       interactive voting, results and lifecycle changes remain gaps. See
       [vote.md](research/vote.md).
-- [ ] Schedule/Post (13/24), Nudge (21), and sticker variants (6/22/25):
+- [x] Post (24): observed text-only board posts preserve structured source text
+      through encrypted catch-up/live delivery, native details and normal
+      restart. Rich/multimedia forms and board interaction remain gaps. See
+      [post.md](research/post.md).
+- [ ] Schedule (13), Nudge (21), and sticker variants (6/22/25):
       determine which controlled A/B UI flows are available without purchases.
       The owned sender's Calendar creation was rejected by user protection
       policy; no retry or Schedule fixture was produced.
