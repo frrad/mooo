@@ -125,3 +125,6 @@ owned emulator findings and remaining live-test limitations.
 
 [Mini emoticon contract and acceptance](mini-emoticons.md) describe type-1
 attachment placement and ordered encrypted text/image parts.
+
+[SharpSearch availability audit](sharp-search.md) records the inspected normal
+UI and static feature gate; no type-23 payload or support is claimed.

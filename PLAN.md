@@ -510,3 +510,31 @@ Keep any
 phone verification and account state private. Purchases, primary-account tests,
 backup/restore and entitlement bypass remain outside this rollout. Existing
 owned A/B research authorization remains in force.
+
+
+### SharpSearch availability checkpoint (2026-10-09)
+
+The owned Android sender exposes neither a search entry in the inspected
+attachment picker nor search controls after normal `#weather` composer input.
+The draft was discarded without sending. The official SharpSearch predicate
+reads the `available2` preference; its account value and update lifecycle remain
+untraced. Existing-log forwarding/results consumers do not prove an available
+original emitter. See [sharp-search.md](research/sharp-search.md).
+
+Keep type 23 unsupported pending a controlled eligible share. Remaining paid,
+business, call and Open Chat formats still require their own owned emitters and
+fixtures; enum names do not establish E2E support. Proceed to the requested
+operator chat-list/profile-photo audit while preserving those type gaps for
+future eligible experiments. Account C and group work follow that operator
+phase as requested.
+
+
+Operator listing audit: `Client.InitialChatData` is the current login's raw
+`LOGINLIST`/`LCHATLIST` deltas, not the complete resumed inventory. Continuity
+persists `KnownChats` and applies explicit removals; its reopen/delta regression
+protects retention when a later login returns no chat data. The operator path
+must reconcile that inventory and resolve typed room metadata, including rooms
+without last messages, and expose incomplete list synchronization honestly.
+The current `mooo-lab` command package is offline auth-only; it has no chat-list
+or contact-photo command. Existing connector avatar download support alone does
+not satisfy operator contact-photo retrieval.
