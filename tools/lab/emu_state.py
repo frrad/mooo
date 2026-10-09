@@ -43,6 +43,13 @@ def classify(xml):
         return "login-form"
     if "com.kakao.talk:id/txt_message" in ids:
         return "unknown"
+    # Only dismiss the observed empty picker. Selected media must remain for
+    # operator inspection instead of silently discarding an unsent attachment.
+    if {"com.kakao.talk:id/touch_outside",
+            "com.kakao.talk:id/handle_container"} <= ids and {"Contacts", "Location"} <= labels:
+        send = [n for n in nodes if n.get("resource-id") == "com.kakao.talk:id/btn_send"]
+        if len(send) == 1 and send[0].get("enabled") == "false":
+            return "attachment-picker-visible"
     if {"com.kakao.talk:id/playerTouchPanel",
             "com.kakao.talk:id/playPauseButton"} <= ids:
         return "media-viewer-visible"

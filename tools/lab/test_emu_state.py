@@ -61,3 +61,9 @@ class StateTests(unittest.TestCase):
     def test_finder_after_qr_is_navigation_not_home(self):
         ui = '<hierarchy><node resource-id="com.kakao.talk.finder:id/finder_nav_host_fragment"/><node resource-id="com.kakao.talk.finder:id/input_focus"/></hierarchy>'
         self.assertEqual(classify(ui), 'finder-visible')
+
+    def test_empty_attachment_picker_is_navigation(self):
+        ui = '<hierarchy><node resource-id="com.kakao.talk:id/touch_outside"/><node resource-id="com.kakao.talk:id/handle_container"/><node resource-id="com.kakao.talk:id/btn_send" enabled="false"/><node text="Contacts"/><node text="Location"/></hierarchy>'
+        self.assertEqual(classify(ui), 'attachment-picker-visible')
+        self.assertEqual(classify(ui.replace('enabled="false"', 'enabled="true"')), 'unknown')
+        self.assertEqual(classify(ui.replace('com.kakao.talk:id/handle_container', 'other:id/handle_container')), 'unknown')
