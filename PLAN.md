@@ -482,6 +482,12 @@ run required checks and secret scans, then merge through passing CI.
       determine which controlled A/B UI flows are available without purchases.
       The owned sender's Calendar creation was rejected by user protection
       policy; no retry or Schedule fixture was produced.
+      Nudge's ordinary Android view selector uses an unsupported bubble; no
+      controlled emitter has been established. Free Classic and Mini sends
+      produced type 12 and type 1 with `emojis`, respectively, rather than
+      fixtures for 6/22/25. See [nudge.md](research/nudge.md) and the
+      [free-pack audit](research/stickers.md). Mini resource/placement rendering
+      remains a separate rich-text gap.
 - [ ] Audit remaining types against actual emitter/receiver availability;
       document evidence and blockers rather than claiming enum-only support.
 
