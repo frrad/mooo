@@ -5,7 +5,7 @@ from unittest.mock import patch
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file, send_audio, ensure_silent_emulator, send_profile
+from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file, send_audio, ensure_silent_emulator, send_profile, send_contact
 
 
 def frame(body):
@@ -270,3 +270,35 @@ class ChatTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ContactTests(unittest.TestCase):
+    def frames(self, package='com.google.android.contacts', preview_name='Mooo-Synthetic-Contact'):
+        start = chat()
+        ET.SubElement(start, 'node', {'resource-id': 'com.kakao.talk:id/media_send_layout', 'bounds': '[0,0][20,20]'})
+        handle = frame('<node resource-id="com.kakao.talk:id/handle_container" bounds="[0,400][20,420]"/>')
+        menu = frame('<node text="Contacts" clickable="true" bounds="[0,0][20,20]"/>')
+        choice = frame('<node text="Send Contact" clickable="true" bounds="[0,0][20,20]"/>')
+        picker = frame('<node package="' + package + '" clickable="true" bounds="[0,0][20,20]"><node text="Mooo-Synthetic-Contact"/></node>')
+        preview = frame('<node text="' + preview_name + '"/><node text="Phone Number"/><node text="Cell"/><node text="SEND" clickable="true" bounds="[40,0][60,20]"/>')
+        return [start, handle, menu, choice, picker, preview, chat()]
+
+    def test_contact_preview_send_once_and_receipt_blocks_repeat(self):
+        with tempfile.TemporaryDirectory() as d:
+            receipt = Path(d) / 'send.json'
+            phone = FakePhone(self.frames())
+            self.assertEqual(send_contact(phone, 'owned peer', 'Mooo-Synthetic-Contact', receipt), 'synthetic-contact-submitted-once')
+            self.assertTrue(receipt.exists())
+            self.assertEqual(sum(args == ('shell', 'input', 'tap', '50', '10') for args, _ in phone.calls), 1)
+            with self.assertRaises(ValueError):
+                send_contact(phone, 'owned peer', 'Mooo-Synthetic-Contact', receipt)
+
+    def test_contact_unknown_picker_or_wrong_preview_never_sends(self):
+        for frames in [self.frames(package='unexpected'), self.frames(preview_name='other')]:
+            with tempfile.TemporaryDirectory() as d:
+                receipt = Path(d) / 'send.json'
+                phone = FakePhone(frames)
+                with self.assertRaises(ValueError):
+                    send_contact(phone, 'owned peer', 'Mooo-Synthetic-Contact', receipt)
+                self.assertFalse(receipt.exists())
+                self.assertFalse(any(args == ('shell', 'input', 'tap', '50', '10') for args, _ in phone.calls))

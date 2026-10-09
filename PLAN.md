@@ -457,7 +457,10 @@ run required checks and secret scans, then merge through passing CI.
 - [x] Audio (5) and File (18): independently verified owned A/B encrypted
       catch-up/live delivery, media metadata and exact bytes, retained keys and
       restart uniqueness; landed separately in PRs #248 and #247.
-- [ ] Contact/Profile (4/17), Location (16), and Link (9): inspect available owned
+- [x] Profile (17): observed owned A/B readable encrypted identity/status
+      rendering, shared picker guards and restart acceptance; PR #250. Avatar
+      fetching and Kakao profile actions remain gaps.
+- [ ] Contact (4), Location (16), and Link (9): inspect available owned
       sharing flows, using synthetic non-identifying payloads where possible.
 - [ ] Schedule/Vote/Post (13/14/24), Nudge (21), and sticker variants (6/22/25):
       determine which controlled A/B UI flows are available without purchases.
@@ -465,8 +468,19 @@ run required checks and secret scans, then merge through passing CI.
       document evidence and blockers rather than claiming enum-only support.
 
 LargeFile (29) may be skipped when not live-testable per maintainer. LargeVideo
-(28) still needs an eligible owned sender fixture. After the independently testable types land, create a third disposable owned
-lab account C and begin multi-participant chat testing, as requested. Keep any
+(28) still needs an eligible owned sender fixture.
+
+After the independently testable types land:
+
+- [ ] Audit and implement operator-facing chat listing, including production
+      callers, pagination/state reconciliation and owned-account E2E checks.
+- [ ] Audit and implement contact profile-photo retrieval, including the official
+      profile/resource path, safe expiry/cache behavior and owned-account E2E
+      checks. Profile-card text support does not satisfy avatar retrieval.
+- [ ] Create a third disposable owned lab account C and begin multi-participant
+      chat testing, after the listing/profile-photo phase.
+
+Keep any
 phone verification and account state private. Purchases, primary-account tests,
 backup/restore and entitlement bypass remain outside this rollout. Existing
 owned A/B research authorization remains in force.

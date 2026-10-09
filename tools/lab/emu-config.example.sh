@@ -1,5 +1,7 @@
 # Copy to .lab/emu-config.sh (gitignored), then fill owned-profile references.
 SDK=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}
+# Optional numeric resolver for a cold boot; leave empty to use host DNS.
+EMU_DNS_SERVER=
 AVD_A=owned-test-a
 AVD_B=owned-test-b
 KEYCHAIN_A=owned-kakao-a

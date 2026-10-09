@@ -1,0 +1,19 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-09",
+    "method": "Owned A shared one device-only fictional contact to B. Initial official-client DNS failure was explicitly retried after DNS recovery. Scoped MSG capture and independent bounded vCard download; resource identifiers replaced, deliberately synthetic source contact bytes preserved.",
+    "doc": "research/contact.md"
+  },
+  "attachment": {
+    "k": "synthetic-contact-token.vcf",
+    "name": "Mooo-Synthetic-Contact",
+    "url": "https://talk.kakaocdn.net/synthetic/contact.vcf",
+    "expire": 4102444800000,
+    "rsc": "synthetic-resource",
+    "hfac": "synthetic-hfac",
+    "rt": "synthetic-rt"
+  },
+  "data_base64": "QkVHSU46VkNBUkQKVkVSU0lPTjozLjAKRk46TW9vby1TeW50aGV0aWMtQ29udGFjdApOOk1vb28tU3ludGhldGljLUNvbnRhY3QKVEVMO1RZUEU9Q0VMTDorMS0yMDItNTU1LTAxMjMKRU5EOlZDQVJECg=="
+}

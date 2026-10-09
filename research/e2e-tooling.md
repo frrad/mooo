@@ -30,6 +30,17 @@ in the private Python environment. No credentials are copied into config.
 tmux session if needed, waits for Android boot completion, wakes/unlocks it,
 launches KakaoTalk directly, and navigates to Friends. Cold starts disable
 snapshot loading and saving to avoid restoring stale authentication/UI state.
+For a lab DNS failure, first distinguish host resolution from emulator resolution.
+A validated Android network does not prove DNS works: on 2026-10-09 the owned
+client failed a contact send with `UnknownHostException` while bounded emulator
+lookups timed out for both Kakao and an unrelated host. A Wi-Fi cycle did not
+recover it. The private config can set `EMU_DNS_SERVER` to a numeric IPv4 or IPv6
+resolver already verified reachable from the host. This option applies only to
+new emulator processes; use `down` then `up` for the selected owned AVD, preserving
+its data. No resolver is substituted automatically. Keep the original send
+receipt and inspect the existing failed card before any explicit retry; do not
+send another copy merely because a capture has not arrived.
+
 Login automation is guarded to KakaoTalk 26.8.2 and explicitly authorized lab
 profiles. It submits the selected Keychain credentials at most once per run.
 
