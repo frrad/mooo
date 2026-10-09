@@ -1,0 +1,29 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2 (29260820)",
+    "date": "2026-10-09",
+    "method": "Owned three-person regular group: Announce existing synthetic text, remove announcement, set again; original bridge profile push capture; identifying values replaced",
+    "doc": "research/chat-metadata.md"
+  },
+  "method": "CHGMOMETAS",
+  "input": {
+    "userId": 101,
+    "chatId": 3000,
+    "linkId": 0,
+    "status": 0,
+    "metas": [
+      {
+        "br": 42,
+        "ct": "{\"id\":\"synthetic-post\",\"owner_id\":101,\"type\":\"TEXT\",\"created_at\":\"2026-10-09T12:00:00.000Z\",\"revision\":42,\"notice\":true,\"notice_setter_id\":101,\"content\":\"Synthetic announcement\",\"json_content\":\"[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"Synthetic announcement\\\"}]\"}",
+        "t": 1,
+        "ur": 43
+      }
+    ]
+  },
+  "expected": {
+    "native_banner": "Synthetic announcement",
+    "native_boards_notice": true
+  },
+  "mooo_deviation": "Unimplemented CHGMOMETAS projection: currently an unknown packet; no Matrix pin or topic update. This is an open feature gap, not resolved parity."
+}

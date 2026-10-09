@@ -50,6 +50,9 @@ reproducible research before bridge features.
   account unless the maintainer explicitly requests it.
 - Keep an evidence trail: client version, platform, experiment date, method,
   sanitized observation, confidence, and source/provenance.
+- Prefer the official macOS binary for protocol reversing. Use Android as a
+  supplement for missing Mac evidence or platform/version comparisons, and
+  distinguish recovered names from obfuscated identifiers.
 - Reverse the authorized official clients and perform controlled owned-account
   observations before consulting public prior art. Use prior art only afterward
   to confirm, challenge, or contextualize independently derived findings; never

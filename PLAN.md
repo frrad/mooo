@@ -547,3 +547,9 @@ profile. Owned acceptance covers absent default avatar and a synthetic uploaded
 avatar corroborated by the peer's official Android profile view. See
 [operator-contact-photo.md](research/operator-contact-photo.md) for exact scope,
 resource safety, official-chain gaps and remaining merge validation.
+
+- [ ] Bridge regular-group Boards announcements (`CHGMOMETAS`) after tracing
+      Mac request/response, revision merge, database/UI state, removal and
+      failure behavior. Owned native Announce showed all three clients; Matrix
+      pin/topic projection is absent. Keep this separate from shared
+      `CHGMETA` Notice type 1; see research/chat-metadata.md and its fixture.
