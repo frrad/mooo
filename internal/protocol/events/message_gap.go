@@ -21,7 +21,11 @@ func (MessageGap) isEvent()   {}
 // remains an error: callers must stop message admission rather than skip it.
 func DecodeForDelivery(packet loco.Packet) (Event, error) {
 	if packet.Header.Method != "MSG" {
-		return Decode(packet)
+		decoded, err := Decode(packet)
+		if err != nil && (packet.Header.Method == "DELMEM" || packet.Header.Method == "NEWMEM" || packet.Header.Method == "LEFT") {
+			return nil, ErrUnidentifiableMembership
+		}
+		return decoded, err
 	}
 	raw := bson.Raw(packet.Body)
 	chatID, logID, typ, log, envelopeErr := messageDeliveryEnvelope(raw)

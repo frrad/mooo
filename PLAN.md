@@ -44,7 +44,7 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
 - [x] Native group discovery and creation lifecycle (PR #270): online/offline inventory,
       correct name and full roster, no duplicate portal; determine whether the
       source requires a first message before a group exists.
-- [ ] Explicit Matrix group creation with selected participants and safe handling
+- [x] Explicit Matrix group creation (PR #271) with selected participants and safe handling
       of invalid participants and ambiguous creation/invitation failures.
 - [ ] Membership and access lifecycle, including offline changes and bridge-user
       removal; prevent forwarding to removed members.
@@ -79,13 +79,14 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       notifications, source roles and management permissions; prevent personal
       settings from changing shared state and reject unsupported actions.
 
-First active slice: explicit Matrix group creation. Native discovery shipped in
-PR #270; its owned online/offline encrypted acceptance and Android draft boundary
-are recorded in [discovery evidence](research/bridge/GROUP-DISCOVERY.md).
-Trace the Mac generic CREATE callback, persistence/invitation and failure chain;
-then expose an explicit action selecting participants and binding the intended
-Matrix room. Persist mutation attempts so source ambiguity or a later Matrix
-failure cannot cause blind retries or duplicate source groups.
+First active slice: membership changes and access lifecycle. Native discovery
+shipped in PR #270 and explicit Matrix creation in PR #271. Creation's owned
+A/B/C encrypted acceptance, once-only invitation completion and restart evidence
+are recorded in [creation evidence](research/bridge/MATRIX-GROUP-CREATION.md).
+Trace Mac invitation/join/leave/removal consumers, source-authoritative roster
+refresh and bridge-account removal before implementing access changes. Verify
+removed members stop receiving subsequent content, and offline changes/rejoining
+converge without duplicate ghosts or source mutations.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.

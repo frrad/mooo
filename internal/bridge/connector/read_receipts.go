@@ -101,12 +101,17 @@ func (kc *KakaoClient) readReceiptTarget(ctx context.Context, chatID, watermark 
 // not re-sent; a failed one is reported without retrying, matching the shared
 // request path.
 func (kc *KakaoClient) HandleMatrixReadReceipt(ctx context.Context, receipt *bridgev2.MatrixReadReceipt) error {
+	kc.groupGate.Lock()
+	defer kc.groupGate.Unlock()
 	if receipt == nil || receipt.Portal == nil || receipt.Portal.Portal == nil {
 		return nil
 	}
 	chatID, err := parseChatID(receipt.Portal.ID)
 	if err != nil {
 		return nil
+	}
+	if err = kc.checkSourceAccess(ctx, chatID, receipt.Portal); err != nil {
+		return err
 	}
 	target := receipt.ExactMessage
 	if (target == nil || target.HasFakeMXID()) && receipt.Portal.Bridge != nil && receipt.Portal.Bridge.DB != nil && !receipt.ReadUpTo.IsZero() {

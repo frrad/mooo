@@ -10,12 +10,8 @@ import (
 
 func TestDecodeNewMemCarriesChatAndInviteeIdentity(t *testing.T) {
 	body, err := bson.Marshal(bson.D{{Key: "chatLog", Value: bson.D{
-		{Key: "chatId", Value: int64(42)},
-		{Key: "logId", Value: int64(102)},
-		{Key: "feed", Value: bson.D{{Key: "invitees", Value: bson.A{
-			bson.D{{Key: "userId", Value: int64(7)}, {Key: "userType", Value: int32(1)}},
-			bson.D{{Key: "userId", Value: int64(8)}, {Key: "userType", Value: int32(2)}},
-		}}}},
+		{Key: "chatId", Value: int64(42)}, {Key: "logId", Value: int64(102)},
+		{Key: "type", Value: int32(0)}, {Key: "message", Value: `{"feedType":1,"members":[{"userId":7,"userType":1},{"userId":8,"userType":2}]}`},
 	}}})
 	if err != nil {
 		t.Fatal(err)

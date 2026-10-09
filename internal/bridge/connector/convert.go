@@ -105,7 +105,9 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 			EventMeta: simplevent.EventMeta{
 				Type:      bridgev2.RemoteEventChatInfoChange,
 				PortalKey: makePortalKey(evt.ChatID, kc.login.ID),
-				Sender:    kc.selfSender(),
+				// Use the bot to avoid rejoining the departed ghost when
+				// the framework also removes its associated Matrix user.
+				Sender: bridgev2.EventSender{},
 			},
 			ChatInfoChange: &bridgev2.ChatInfoChange{MemberChanges: &bridgev2.ChatMemberList{MemberMap: members}},
 		}
@@ -204,7 +206,7 @@ func (kc *KakaoClient) memberChanges(ctx context.Context, chatID int64, identiti
 	ids := make([]int64, 0, len(identities))
 	seen := make(map[int64]struct{}, len(identities))
 	for _, identity := range identities {
-		if identity.UserID <= 0 || identity.UserID == kc.userID {
+		if identity.UserID <= 0 || join && identity.UserID == kc.userID {
 			continue
 		}
 		if _, ok := seen[identity.UserID]; ok {
@@ -216,7 +218,11 @@ func (kc *KakaoClient) memberChanges(ctx context.Context, chatID int64, identiti
 	if !join {
 		members := bridgev2.ChatMemberMap{}
 		for _, userID := range ids {
-			members.Set(bridgev2.ChatMember{EventSender: bridgev2.EventSender{Sender: makeUserID(userID)}, Membership: event.MembershipLeave})
+			sender := bridgev2.EventSender{Sender: makeUserID(userID)}
+			if userID == kc.userID {
+				sender = kc.selfSender()
+			}
+			members.Set(bridgev2.ChatMember{EventSender: sender, Membership: event.MembershipLeave})
 		}
 		return &bridgev2.ChatMemberList{MemberMap: members}, nil
 	}

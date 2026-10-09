@@ -1,0 +1,21 @@
+{
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk for Mac 26.8.0 arm64",
+    "date": "2026-10-09",
+    "method": "Isolated offline Mac Frida harness: synthetic type-zero LocoChatLog.message inputs through feed(), leaver()/invitees(), userId() and userType(); mapping dictionary inspected independently",
+    "doc": "research/bridge/GROUP-MEMBERSHIP.md"
+  },
+  "cases": [
+    {
+      "method": "DELMEM",
+      "message": "{\"feedType\":2,\"member\":{\"userId\":7,\"nickName\":\"Synthetic\"},\"kicked\":false,\"memorial\":false,\"hidden\":false}",
+      "members": [{"user_id":7,"user_type":0}]
+    },
+    {
+      "method": "NEWMEM",
+      "message": "{\"feedType\":1,\"inviter\":{\"userId\":8,\"nickName\":\"Synthetic\"},\"members\":[{\"userId\":7,\"nickName\":\"Synthetic\"}],\"byLink\":false}",
+      "members": [{"user_id":7,"user_type":0}]
+    }
+  ]
+}

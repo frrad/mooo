@@ -15,7 +15,11 @@ import (
 // names and message cursors. Topics are plaintext Matrix state, even in an
 // encrypted room; this projection is an operator-selected mapping.
 type KakaoPortalMetadata struct {
-	AnnouncementRevision int64 `json:"announcement_revision,omitempty"`
+	AnnouncementRevision   int64   `json:"announcement_revision,omitempty"`
+	SourceRemoved          bool    `json:"source_removed,omitempty"`
+	MembershipPending      bool    `json:"membership_pending,omitempty"`
+	MembershipRoster       []int64 `json:"membership_roster,omitempty"`
+	GroupMembershipManaged bool    `json:"group_membership_managed,omitempty"`
 }
 
 func (kc *KakaoClient) announcementInfo(ctx context.Context, portal *bridgev2.Portal, c kakaoClient) (*bridgev2.ChatInfo, error) {
@@ -114,6 +118,9 @@ func (kc *KakaoClient) refreshAnnouncements(ctx context.Context) error {
 			return err
 		}
 		if p == nil || p.MXID == "" || p.RoomType == database.RoomTypeDM {
+			continue
+		}
+		if meta, ok := p.Metadata.(*KakaoPortalMetadata); ok && meta != nil && meta.SourceRemoved {
 			continue
 		}
 		id, err := parseChatID(p.ID)

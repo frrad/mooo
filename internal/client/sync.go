@@ -171,8 +171,14 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 		progressed := false
 		for _, raw := range page.ChatLogs {
 			logID, err := syncmsg.LogID(raw)
-			if err != nil || logID < current || logID > targetMax {
+			if err != nil || logID < current {
 				return nil, ErrProtocol
+			}
+			// Membership-only observations show SYNCMSG may include a feed
+			// beyond the login ceiling. Do not deliver or commit outside the
+			// selected interval; roster reconciliation handles membership.
+			if logID > targetMax {
+				continue
 			}
 			// The server may treat cur as inclusive. Repeating exactly the
 			// committed boundary is harmless and is not emitted again.

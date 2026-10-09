@@ -385,3 +385,65 @@ func waitFor(t *testing.T, condition func() bool) {
 	}
 	t.Fatal("condition did not become true")
 }
+
+func TestUndecodableMembershipStopsRecoveryButReleasesOwner(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result), shutdownFailures: 1}
+	var opened atomic.Int32
+	kc, harness := newTestClient(t, func() (kakaoClient, error) {
+		opened.Add(1)
+		return fake, nil
+	})
+	kc.wait = func(context.Context, time.Duration) error { return nil }
+	kc.mu.Lock()
+	kc.client = fake
+	kc.cleanup = fake
+	kc.generation = 1
+	kc.mu.Unlock()
+	done := make(chan struct{})
+	go kc.run(fake, func() <-chan events.Result {
+		stream := make(chan events.Result, 1)
+		stream <- events.Result{Err: events.ErrUnidentifiableMembership}
+		close(stream)
+		return stream
+	}(), done, 1)
+	waitFor(t, func() bool {
+		fake.mu.Lock()
+		calls := fake.shutdownCalls
+		fake.mu.Unlock()
+		return calls >= 2
+	})
+	if opened.Load() != 0 {
+		t.Fatalf("recovery opened %d replacement clients", opened.Load())
+	}
+	if got := harness.lastState(); got.Error != stateGroupMembershipInvalid || got.StateEvent != status.StateUnknownError {
+		t.Fatalf("terminal state = %#v, want stable membership error", got)
+	}
+	kc.mu.Lock()
+	retained := kc.cleanup != nil
+	tries := kc.recoveryTry
+	kc.mu.Unlock()
+	if retained || tries != 0 {
+		t.Fatalf("cleanup=%v recovery attempts=%d, want released owner and no reconnect", retained, tries)
+	}
+}
+
+func TestRemovalBootstrapFailureRetainsActionableState(t *testing.T) {
+	fake := &fakeKakao{connectErr: errors.Join(errSourceAccessRemoved, errMembershipPending)}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.Connect(context.Background())
+	if got := harness.lastState(); got.Error != stateGroupAccessRemoved || got.StateEvent != status.StateUnknownError {
+		t.Fatalf("removal bootstrap state = %#v", got)
+	}
+	kc.Disconnect()
+}
+
+func TestConnectedTransportDoesNotHideRemovedGroupState(t *testing.T) {
+	fake := &fakeKakao{stream: make(chan events.Result)}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	kc.sourceBlocked = map[int64]error{testChatID: errSourceAccessRemoved}
+	kc.Connect(context.Background())
+	if got := harness.lastState(); got.Error != stateGroupAccessRemoved || got.StateEvent != status.StateUnknownError {
+		t.Fatalf("connected transport hid removed group: %#v", got)
+	}
+	kc.Disconnect()
+}
