@@ -37,6 +37,7 @@ type kakaoClient interface {
 	ResumeTargets(ctx context.Context) ([]syncmsg.Target, error)
 	CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error)
 	ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error)
+	MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error)
 	Members(ctx context.Context, chatID int64, userIDs []int64) ([]chatmeta.Member, error)
 	MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error)
 	SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error)
@@ -439,6 +440,9 @@ func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (
 	}
 	if err := kc.catchUp(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "catch-up", err: err}
+	}
+	if err := kc.refreshAnnouncements(ctx); err != nil {
+		return nil, bootstrapFailure{stage: "announcements", err: err}
 	}
 	stream, err := c.Events(ctx)
 	if err != nil {
@@ -1009,6 +1013,16 @@ func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 			roomType := database.RoomTypeDM
 			info.Type = &roomType
 			info.Members.OtherUserID = otherUserID
+		}
+	}
+	if data.Type == "MultiChat" {
+		announcement, err := kc.announcementInfo(ctx, portal, c)
+		if errors.Is(err, chatmeta.ErrUnsupportedAnnouncement) {
+			kc.log().Warn().Msg("Unsupported Boards announcement content; keeping current Matrix topic")
+		} else if err != nil {
+			return nil, err
+		} else {
+			info.Topic, info.ExtraUpdates = announcement.Topic, announcement.ExtraUpdates
 		}
 	}
 	return info, nil

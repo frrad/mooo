@@ -92,6 +92,8 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 		return kc.memberChange(evt.ChatID, evt.LogID, 0, []events.MemberIdentity{{UserID: evt.UserID, UserType: evt.UserType}}, false)
 	case events.ChatStatusChanged:
 		return kc.chatResync(evt.ChatID, 0, evt.PlusUserID)
+	case events.ChatMoimMetaChanged:
+		return kc.announcementResync(evt.ChatID)
 	case events.ChatMetaChanged:
 		return kc.chatResync(evt.ChatID, 0, evt.AuthorID)
 	case events.ChatLeft:

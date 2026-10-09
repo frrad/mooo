@@ -568,7 +568,7 @@ avatar corroborated by the peer's official Android profile view. See
 resource safety and official-chain gaps. PR #262 is merged; broader profile
 images, cache lifecycle and full official-chain parity remain open.
 
-- [ ] Bridge regular-group Boards announcements (`CHGMOMETAS`) after tracing
+- [x] Bridge regular-group TEXT Boards announcements to Matrix room topics, including live replacement/removal and reconnect snapshots. Rich announcements and outbound Boards editing remain separate work.
       Mac request/response, revision merge, database/UI state, removal and
       failure behavior. Owned native Announce showed all three clients; Matrix
       pin/topic projection is absent. Keep this separate from shared

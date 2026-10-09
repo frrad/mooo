@@ -25,5 +25,9 @@
     "native_banner": "Synthetic announcement",
     "native_boards_notice": true
   },
-  "mooo_deviation": "Unimplemented CHGMOMETAS projection: currently an unknown packet; no Matrix pin or topic update. This is an open feature gap, not resolved parity."
+  "mooo_projection": {
+    "matrix_topic": "Synthetic announcement",
+    "direction": "Kakao to Matrix",
+    "scope": "TEXT announcement; snapshot refresh required"
+  }
 }

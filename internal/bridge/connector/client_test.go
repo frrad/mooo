@@ -81,6 +81,8 @@ type fakeKakao struct {
 	memberList        chatmeta.MemberListResponse
 	memberListErr     error
 	metadataCalls     []string
+	moimResponse      chatmeta.MoimResponse
+	moimErr           error
 
 	catchupHoldUntilRelease bool
 }
@@ -98,6 +100,13 @@ func (f *fakeKakao) ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatIn
 	defer f.mu.Unlock()
 	f.metadataCalls = append(f.metadataCalls, fmt.Sprintf("ChatInfo(%d)", chatID))
 	return f.chatInfo, f.chatInfoErr
+}
+
+func (f *fakeKakao) MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error) {
+	if f.moimResponse.ChatID != 0 || f.moimErr != nil {
+		return f.moimResponse, f.moimErr
+	}
+	return chatmeta.MoimResponse{ChatID: chatID}, nil
 }
 
 func (f *fakeKakao) Members(ctx context.Context, chatID int64, userIDs []int64) ([]chatmeta.Member, error) {
