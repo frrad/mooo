@@ -4,8 +4,10 @@ SDK=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}
 EMU_DNS_SERVER=
 AVD_A=owned-test-a
 AVD_B=owned-test-b
+AVD_C=owned-test-c
 KEYCHAIN_A=owned-kakao-a
 KEYCHAIN_B=owned-kakao-b
+KEYCHAIN_C=owned-kakao-c
 # Set only for profiles whose normal login/required-policy steps are authorized.
 ALLOW_LOGIN=0
 ALLOW_REQUIRED_PRIVACY_POLICY=0
@@ -22,6 +24,7 @@ read_sms_code() {
   case "$profile" in
     a) export SMS_XMPP_JID="test-a@example.org" SMS_KEYCHAIN_SERVICE="owned-xmpp-a" ;;
     b) export SMS_XMPP_JID="test-b@example.org" SMS_KEYCHAIN_SERVICE="owned-xmpp-b" ;;
+    c) export SMS_XMPP_JID="test-c@example.org" SMS_KEYCHAIN_SERVICE="owned-xmpp-c" ;;
     *) return 1 ;;
   esac
   exec "$LAB_DIR/venv/bin/python" "$TOOL_DIR/sms_xmpp.py" "$marker"
