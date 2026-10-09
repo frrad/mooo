@@ -64,6 +64,18 @@ class EmulatorShellTests(unittest.TestCase):
         self.assertIn('shell am start', result.stderr)
         self.assertNotIn('monkey', result.stderr)
 
+    def test_explicit_dns_is_passed_to_cold_boot(self):
+        result = run('EMULATOR=/synthetic/emulator; AVD=synthetic; LOGDIR=/synthetic; EMU_DNS_SERVER=1.1.1.1; emulator_boot_command')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('-dns-server 1.1.1.1', result.stdout)
+        self.assertIn('-no-snapshot', result.stdout)
+        self.assertNotIn('-allow-host-audio', result.stdout)
+
+    def test_invalid_dns_never_emits_boot_command(self):
+        result = run('EMULATOR=/synthetic/emulator; AVD=synthetic; LOGDIR=/synthetic; EMU_DNS_SERVER=invalid; emulator_boot_command')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('/synthetic/emulator', result.stdout)
+
     def test_boot_timeout_never_launches(self):
         result = run('AVD=synthetic; find_serial() { SERIAL=synthetic; return 0; }; adb() { echo 0; }; sleep() { :; }; launch() { echo BAD_LAUNCH; }; cmd_up')
         self.assertNotEqual(result.returncode, 0)

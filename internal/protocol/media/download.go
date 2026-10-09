@@ -14,6 +14,22 @@ import (
 // only for observed audio attachments which do not carry one. Callers
 // separately validate their metadata and expiry units before fetching.
 func downloadResource(ctx context.Context, client *http.Client, rawURL string, size int64, checksum string) ([]byte, error) {
+	data, err := downloadBoundedResource(ctx, client, rawURL, size)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) < size {
+		return nil, ErrDownload
+	}
+	sum := sha1.Sum(data)
+	if checksum != "" && !strings.EqualFold(hex.EncodeToString(sum[:]), checksum) {
+		return nil, ErrChecksumMismatch
+	}
+	return data, nil
+}
+
+// downloadBoundedResource also handles contacts without an advertised size.
+func downloadBoundedResource(ctx context.Context, client *http.Client, rawURL string, size int64) ([]byte, error) {
 	if ctx == nil || client == nil || ctx.Err() != nil {
 		return nil, ErrDownload
 	}
@@ -53,15 +69,11 @@ func downloadResource(ctx context.Context, client *http.Client, rawURL string, s
 		return nil, ErrDownload
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, size+1))
-	if err != nil || int64(len(data)) < size {
+	if err != nil {
 		return nil, ErrDownload
 	}
 	if int64(len(data)) > size {
 		return nil, ErrInvalidAttachment
-	}
-	sum := sha1.Sum(data)
-	if checksum != "" && !strings.EqualFold(hex.EncodeToString(sum[:]), checksum) {
-		return nil, ErrChecksumMismatch
 	}
 	return data, nil
 }

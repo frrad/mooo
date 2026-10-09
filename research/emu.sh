@@ -1,6 +1,6 @@
 #!/bin/bash
 # Owned A/B emulator preparation. Configuration lives in .lab/emu-config.sh.
-# Usage: emu.sh up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo|send-video|send-audio|send-profile|send-file|send-album|send-sticker a|b [--login]
+# Usage: emu.sh up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo|send-video|send-audio|send-profile|send-contact|send-file|send-album|send-sticker a|b [--login]
 # ready (or up --login) permits one password submission and normal verification.
 # Configure explicit login and required-policy authorization before using auth.
 set -euo pipefail
@@ -16,7 +16,7 @@ LAB_DIR=$REPO_DIR/.lab
 TOOL_DIR=$REPO_DIR/tools/lab
 LOGDIR=${EMU_RUNTIME_DIR:-"$HOME/Library/Caches/mooo-lab/emu"}
 
-usage() { echo "usage: $0 up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo|send-video|send-audio|send-profile|send-file|send-album|send-sticker a|b [--login]" >&2; exit 2; }
+usage() { echo "usage: $0 up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo|send-video|send-audio|send-profile|send-contact|send-file|send-album|send-sticker a|b [--login]" >&2; exit 2; }
 
 profile() {
   case "$1" in
@@ -105,6 +105,20 @@ state() {
   python3 "$TOOL_DIR/emu_state.py" <<<"$ui"
 }
 
+# Explicit DNS is useful when a long-running emulator retains an old host
+# resolver after a network change. Never substitute a resolver silently.
+emulator_boot_command() {
+  local args=("$EMULATOR" -avd "$AVD" -no-snapshot -no-boot-anim)
+  if [ -n "${EMU_DNS_SERVER:-}" ]; then
+    python3 -c 'import ipaddress,sys; ipaddress.ip_address(sys.argv[1])' "$EMU_DNS_SERVER" >/dev/null 2>&1 || {
+      echo "EMU_DNS_SERVER must be a numeric IP address" >&2; return 1;
+    }
+    args+=(-dns-server "$EMU_DNS_SERVER")
+  fi
+  printf '%q ' "${args[@]}"
+  printf '> %q 2>&1' "$LOGDIR/emu-$AVD.log"
+}
+
 cmd_up() {
   if ! find_serial; then
     echo "booting $AVD"
@@ -112,7 +126,7 @@ cmd_up() {
     local boot_command
     : > "$LOGDIR/emu-$AVD.log"
     chmod 600 "$LOGDIR/emu-$AVD.log"
-    printf -v boot_command '%q -avd %q -no-snapshot -no-boot-anim >%q 2>&1' "$EMULATOR" "$AVD" "$LOGDIR/emu-$AVD.log"
+    boot_command=$(emulator_boot_command) || return 1
     tmux new-session -d -s "mooo-emu-$WHO" "$boot_command"
     for _ in $(seq 1 60); do find_serial && break; sleep 3; done
     find_serial || { echo "$AVD did not come up; see $LOGDIR/emu-$AVD.log" >&2; exit 1; }
@@ -437,6 +451,7 @@ main() {
     send-photo) cmd_chat_phone photo ;;
     send-video) cmd_chat_phone video ;;
     send-profile) cmd_chat_phone profile ;;
+    send-contact) cmd_chat_phone contact ;;
     send-audio) cmd_chat_phone audio ;;
     send-file) cmd_chat_phone file ;;
     send-album) cmd_chat_phone album ;;

@@ -186,6 +186,38 @@ def send_file(phone, peer, filename, sha256, receipt):
     raise ValueError('file outcome unconfirmed; preserve receipt and do not retry')
 
 
+def send_contact(phone, peer, name, receipt):
+    if Path(receipt).exists():
+        raise ValueError('previous attempt exists; inspect outcome without resending')
+    if not name.startswith('Mooo-Synthetic-') or len(name) > 128:
+        raise ValueError('precreated synthetic contact required')
+    root = phone.dump()
+    owned_chat(root, peer)
+    if control(root, 'message_edit_text').get('text', '') not in ('', 'Message'):
+        raise ValueError('composer not empty')
+    tap(phone, control(root, 'media_send_layout'))
+    root = phone.dump()
+    _, (x, y) = node_target(control(root, 'handle_container'))
+    phone.adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(max(200, y // 4)), '450')
+    tap(phone, clickable_text_parent(phone.dump(), 'Contacts'))
+    tap(phone, clickable_text_parent(phone.dump(), 'Send Contact'))
+    root = phone.dump()
+    if not any(n.get('package') == 'com.google.android.contacts' for n in root.iter('node')):
+        raise ValueError('owned contact picker unavailable; inspect permissions')
+    tap(phone, clickable_text_parent(root, name))
+    root = phone.dump()
+    if not all(any(n.get('text') == label for n in root.iter('node'))
+               for label in [name, 'Phone Number', 'Cell']):
+        raise ValueError('synthetic contact preview unconfirmed')
+    # The observed preview omits phone numbers from accessibility. The operator
+    # must precreate and verify this synthetic fixture; never select other names.
+    button = clickable_label(root, 'SEND')
+    reserve(receipt)
+    tap(phone, button)
+    owned_chat(phone.dump(), peer)
+    return 'synthetic-contact-submitted-once'
+
+
 def send_profile(phone, peer, bounds, description, receipt):
     if Path(receipt).exists():
         raise ValueError('previous attempt exists; inspect outcome without resending')
@@ -294,6 +326,8 @@ def main():
             result = send_text(phone, request['peer'], request['text'], request['receipt'])
         elif action == 'sticker':
             result = send_sticker(phone, request['peer'], request['receipt'])
+        elif action == 'contact':
+            result = send_contact(phone, request['peer'], request['name'], request['receipt'])
         elif action == 'profile':
             result = send_profile(phone, request['peer'], request['bounds'], request['description'], request['receipt'])
         elif action == 'audio':

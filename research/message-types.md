@@ -41,7 +41,7 @@ Naming unsupported constants is intentional and does not enable their payloads.
 | 1 | `Text` | Typed message |
 | 2 | `Photo` | Typed message |
 | 3 | `Video` | Typed direct-URL MP4; relay/high-quality forms remain gaps |
-| 4 | `Contact` | `UnsupportedMessage` notice |
+| 4 | `Contact` | Typed direct-URL vCard 3.0; other versions/resource forms remain gaps |
 | 5 | `Audio` | Typed observed direct-URL M4A; legacy/relay forms remain gaps |
 | 6 | `AnimatedEmoticon` | `UnsupportedMessage` notice |
 | 7 | `DigitalItemGift` | `UnsupportedMessage` notice |
