@@ -373,7 +373,8 @@ previous native/wire observation. Confidence is high for this enum and model
 chain; revision precedence, personal-name precedence, downstream database/UI
 consumers, and notification behavior are not established by this trace.
 
-Production names the consumed value `chatmeta.SharedMetaTitle`; unused enum
-members remain research facts until a consuming feature needs them. The wire
-model continues preserving unknown integer types rather than discarding them.
+The complete recovered enum is named in production with `SharedMeta`-prefixed
+constants, including `chatmeta.SharedMetaTitle`. Naming a type does not imply
+that its content or behavior is implemented. The wire model continues
+preserving unknown integer types rather than discarding them.
 No decompiled implementation is included in the repository.
