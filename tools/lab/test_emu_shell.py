@@ -22,6 +22,16 @@ def run(commands):
 
 
 class EmulatorShellTests(unittest.TestCase):
+    def test_c_profile_uses_its_own_explicit_configuration(self):
+        result = run('AVD_A=synthetic-a; KEYCHAIN_A=key-a; AVD_B=synthetic-b; KEYCHAIN_B=key-b; AVD_C=synthetic-c; KEYCHAIN_C=key-c; profile c; printf "%s/%s" "$AVD" "$SERVICE"')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, 'synthetic-c/key-c')
+
+    def test_c_profile_requires_configuration_instead_of_reusing_b(self):
+        result = run('AVD_B=synthetic-b; KEYCHAIN_B=key-b; unset AVD_C KEYCHAIN_C; profile c')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('configure AVD_C', result.stderr)
+
     def test_private_stdin_survives_adb_preflight(self):
         for command in ['cmd_chat_phone text', 'cmd_qr_phone code']:
             result = run('SERIAL=synthetic; ALLOW_TEST_MESSAGES=1; ALLOW_QR_ENROLLMENT=1; find_serial() { cat >/dev/null; }; assert_client_version() { cat >/dev/null; }; python3() { cat; }; ' + command + ' <<<synthetic-input')

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Owned A/B emulator preparation. Configuration lives in .lab/emu-config.sh.
-# Usage: emu.sh up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo|send-video|send-audio|send-profile|send-contact|send-location|send-file|send-album|send-sticker|send-poll|send-post|send-mini a|b [--login]
+# Owned A/B/C emulator preparation. Configuration lives in .lab/emu-config.sh.
+# Usage: emu.sh up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo|send-video|send-audio|send-profile|send-contact|send-location|send-file|send-album|send-sticker|send-poll|send-post|send-mini a|b|c [--login]
 # ready (or up --login) permits one password submission and normal verification.
 # Configure explicit login and required-policy authorization before using auth.
 set -euo pipefail
@@ -16,12 +16,13 @@ LAB_DIR=$REPO_DIR/.lab
 TOOL_DIR=$REPO_DIR/tools/lab
 LOGDIR=${EMU_RUNTIME_DIR:-"$HOME/Library/Caches/mooo-lab/emu"}
 
-usage() { echo "usage: $0 up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo|send-video|send-audio|send-profile|send-contact|send-location|send-file|send-album|send-sticker|send-poll|send-post|send-mini a|b [--login]" >&2; exit 2; }
+usage() { echo "usage: $0 up|status|down|login|finish|verify|ready|qr-approve|qr-code|qr-finish|send-text|send-photo|send-video|send-audio|send-profile|send-contact|send-location|send-file|send-album|send-sticker|send-poll|send-post|send-mini a|b|c [--login]" >&2; exit 2; }
 
 profile() {
   case "$1" in
     a) AVD=${AVD_A:?configure AVD_A}; SERVICE=${KEYCHAIN_A:?configure KEYCHAIN_A} ;;
     b) AVD=${AVD_B:?configure AVD_B}; SERVICE=${KEYCHAIN_B:?configure KEYCHAIN_B} ;;
+    c) AVD=${AVD_C:?configure AVD_C}; SERVICE=${KEYCHAIN_C:?configure KEYCHAIN_C} ;;
     *) usage ;;
   esac
 }
