@@ -174,8 +174,15 @@ func (kc *KakaoClient) PreHandleMatrixReaction(ctx context.Context, msg *bridgev
 }
 
 func (kc *KakaoClient) HandleMatrixReaction(ctx context.Context, msg *bridgev2.MatrixReaction) (*database.Reaction, error) {
+	if kc != nil {
+		kc.groupGate.Lock()
+		defer kc.groupGate.Unlock()
+	}
 	request, _, err := validateMatrixReaction(kc, msg)
 	if err != nil {
+		return nil, err
+	}
+	if err = kc.checkSourceAccess(ctx, request.ChatID, msg.Portal); err != nil {
 		return nil, err
 	}
 	api, err := kc.reactionClient()
@@ -195,6 +202,8 @@ func (kc *KakaoClient) HandleMatrixReactionRemove(ctx context.Context, msg *brid
 	if ctx == nil {
 		return errReactionLookup
 	}
+	kc.groupGate.Lock()
+	defer kc.groupGate.Unlock()
 	if msg.Event.Sender != kc.login.UserMXID {
 		return errReactionSender
 	}
@@ -208,6 +217,9 @@ func (kc *KakaoClient) HandleMatrixReactionRemove(ctx context.Context, msg *brid
 	portalChat, err := parseChatID(msg.Portal.ID)
 	if err != nil || portalChat != chatID || msg.Portal.Receiver != kc.login.ID {
 		return errReactionTarget
+	}
+	if err = kc.checkSourceAccess(ctx, chatID, msg.Portal); err != nil {
+		return err
 	}
 	if (msg.TargetReaction.Room.ID != "" && msg.TargetReaction.Room.ID != msg.Portal.ID) ||
 		(msg.TargetReaction.Room.Receiver != "" && msg.TargetReaction.Room.Receiver != kc.login.ID) {

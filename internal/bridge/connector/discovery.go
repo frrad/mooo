@@ -18,6 +18,7 @@ func (kc *KakaoClient) discoverGroups(ctx context.Context, c kakaoClient) error 
 		return err
 	}
 	seen := make(map[int64]struct{}, len(chats))
+	ordered := make([]int64, 0, len(chats))
 	for _, chat := range chats {
 		if chat.Type != "MultiChat" || chat.LinkID != 0 {
 			continue
@@ -29,7 +30,21 @@ func (kc *KakaoClient) discoverGroups(ctx context.Context, c kakaoClient) error 
 			continue
 		}
 		seen[chat.ChatID] = struct{}{}
-		evt, err := kc.groupDiscovery(ctx, c, chat.ChatID)
+		ordered = append(ordered, chat.ChatID)
+	}
+	// Revoke absent groups before a present room refresh can fail. The complete
+	// inventory has already been validated, so absence is authoritative.
+	if err = kc.reconcileMissingGroups(ctx, seen); err != nil {
+		return err
+	}
+	for _, chatID := range ordered {
+		if kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
+			if err = kc.refreshGroupMembership(ctx, c, chatID, true); err != nil {
+				return err
+			}
+			continue
+		}
+		evt, err := kc.groupDiscovery(ctx, c, chatID)
 		if err != nil {
 			return err
 		}

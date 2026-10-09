@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -26,10 +27,11 @@ import (
 
 type groupCreationMatrix struct {
 	bridgev2.MatrixConnector
-	mu       sync.Mutex
-	members  map[id.UserID]*event.MemberEventContent
-	name     string
-	failName bool
+	mu         sync.Mutex
+	members    map[id.UserID]*event.MemberEventContent
+	name       string
+	failName   bool
+	failMember id.UserID
 }
 
 func (m *groupCreationMatrix) Init(*bridgev2.Bridge) {}
@@ -38,6 +40,19 @@ func (m *groupCreationMatrix) BotIntent() bridgev2.MatrixAPI {
 }
 func (m *groupCreationMatrix) GhostIntent(user networkid.UserID) bridgev2.MatrixAPI {
 	return &groupCreationIntent{m: m, mxid: id.UserID("@kakao_" + user + ":test")}
+}
+
+func (m *groupCreationMatrix) IsGhostMXID(mxid id.UserID) bool {
+	_, ok := m.ParseGhostMXID(mxid)
+	return ok
+}
+
+func (m *groupCreationMatrix) ParseGhostMXID(mxid id.UserID) (networkid.UserID, bool) {
+	user := strings.TrimSuffix(strings.TrimPrefix(string(mxid), "@kakao_"), ":test")
+	if string(mxid) != "@kakao_"+user+":test" {
+		return "", false
+	}
+	return networkid.UserID(user), true
 }
 func (m *groupCreationMatrix) NewUserIntent(context.Context, id.UserID, string) (bridgev2.MatrixAPI, string, error) {
 	return nil, "", nil
@@ -100,6 +115,13 @@ func (i *groupCreationIntent) SendState(_ context.Context, _ id.RoomID, typ even
 		}
 		i.m.name = content.Parsed.(*event.RoomNameEventContent).Name
 	case event.StateMember:
+		// Matrix intents ensure their sender is joined before changing another user.
+		if id.UserID(key) != i.mxid {
+			i.m.members[i.mxid] = &event.MemberEventContent{Membership: event.MembershipJoin}
+		}
+		if i.m.failMember == id.UserID(key) {
+			return nil, errors.New("synthetic member failure")
+		}
 		member := *content.Parsed.(*event.MemberEventContent)
 		i.m.members[id.UserID(key)] = &member
 	}

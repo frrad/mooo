@@ -56,6 +56,18 @@ func TestRemoteChatLeftChangesOnlyLoggedInMembership(t *testing.T) {
 	}
 }
 
+func TestMemberRemovalOfCreatingAccountIsNotDiscarded(t *testing.T) {
+	kc, _ := newTestClient(t, nil)
+	changes, err := kc.memberChanges(context.Background(), testChatID, []events.MemberIdentity{{UserID: testSelfID}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, present := changes.MemberMap[makeUserID(testSelfID)]
+	if !present || member.Membership != event.MembershipLeave || !member.IsFromMe {
+		t.Fatalf("bridge-account removal lost: %+v", member)
+	}
+}
+
 func TestPartialRosterMembershipDeltasRemainExplicit(t *testing.T) {
 	fake := &fakeKakao{
 		chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: testChatID, DisplayUserIDs: []int64{testOtherID}, ActiveMemberCount: 3}},

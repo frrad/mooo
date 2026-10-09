@@ -54,6 +54,10 @@ const (
 
 var ErrMalformedEvent = errors.New("events: malformed event")
 
+// ErrUnidentifiableMembership requires delivery to stop: a rejected notice may
+// have revoked access, so later content cannot use the previous roster.
+var ErrUnidentifiableMembership = fmt.Errorf("%w: membership identity unavailable", ErrMalformedEvent)
+
 // ErrUnidentifiableMessage means a MSG packet could not be admitted because
 // its chat/log identity could not be established unambiguously. Callers must
 // stop delivery rather than inventing a cursor position or silently skip it.
@@ -516,7 +520,7 @@ func decodeKickout(body []byte) (Event, error) {
 
 func decodeMemberRemoved(body []byte) (Event, error) {
 	raw := bson.Raw(body)
-	if err := raw.Validate(); err != nil {
+	if err := raw.Validate(); err != nil || hasAnyDuplicateExcept(raw) {
 		return nil, ErrMalformedEvent
 	}
 	chatLogValue, err := raw.LookupErr("chatLog")
@@ -525,36 +529,24 @@ func decodeMemberRemoved(body []byte) (Event, error) {
 	}
 	chatLog := chatLogValue.Document()
 	chatID, err := exactInt64(chatLog, "chatId")
-	if err != nil {
+	if err != nil || chatID <= 0 {
 		return nil, ErrMalformedEvent
 	}
 	logID, err := exactInt64(chatLog, "logId")
+	if err != nil || logID <= 0 {
+		return nil, ErrMalformedEvent
+	}
+	members, err := membershipMessageMembers(chatLog, false)
 	if err != nil {
-		return nil, ErrMalformedEvent
+		return nil, err
 	}
-	feedValue, err := chatLog.LookupErr("feed")
-	if err != nil || feedValue.Type != bson.TypeEmbeddedDocument {
-		return nil, ErrMalformedEvent
-	}
-	leaverValue, err := feedValue.Document().LookupErr("leaver")
-	if err != nil || leaverValue.Type != bson.TypeEmbeddedDocument {
-		return nil, ErrMalformedEvent
-	}
-	leaver := leaverValue.Document()
-	userID, err := exactInt64(leaver, "userId")
-	if err != nil {
-		return nil, ErrMalformedEvent
-	}
-	userTypeValue, err := leaver.LookupErr("userType")
-	if err != nil || userTypeValue.Type != bson.TypeInt32 {
-		return nil, ErrMalformedEvent
-	}
-	return MemberRemoved{ChatID: chatID, LogID: logID, UserID: userID, UserType: userTypeValue.Int32()}, nil
+	member := members[0]
+	return MemberRemoved{ChatID: chatID, LogID: logID, UserID: member.UserID, UserType: member.UserType}, nil
 }
 
 func decodeMemberAdded(body []byte) (Event, error) {
 	raw := bson.Raw(body)
-	if err := raw.Validate(); err != nil {
+	if err := raw.Validate(); err != nil || hasAnyDuplicateExcept(raw) {
 		return nil, ErrMalformedEvent
 	}
 	chatLogValue, err := raw.LookupErr("chatLog")
@@ -563,40 +555,16 @@ func decodeMemberAdded(body []byte) (Event, error) {
 	}
 	chatLog := chatLogValue.Document()
 	chatID, err := exactInt64(chatLog, "chatId")
-	if err != nil {
+	if err != nil || chatID <= 0 {
 		return nil, ErrMalformedEvent
 	}
 	logID, err := exactInt64(chatLog, "logId")
+	if err != nil || logID <= 0 {
+		return nil, ErrMalformedEvent
+	}
+	members, err := membershipMessageMembers(chatLog, true)
 	if err != nil {
-		return nil, ErrMalformedEvent
-	}
-	feedValue, err := chatLog.LookupErr("feed")
-	if err != nil || feedValue.Type != bson.TypeEmbeddedDocument {
-		return nil, ErrMalformedEvent
-	}
-	inviteesValue, err := feedValue.Document().LookupErr("invitees")
-	if err != nil || inviteesValue.Type != bson.TypeArray {
-		return nil, ErrMalformedEvent
-	}
-	values, err := inviteesValue.Array().Values()
-	if err != nil {
-		return nil, ErrMalformedEvent
-	}
-	members := make([]MemberIdentity, 0, len(values))
-	for _, value := range values {
-		if value.Type != bson.TypeEmbeddedDocument {
-			return nil, ErrMalformedEvent
-		}
-		member := value.Document()
-		userID, err := exactInt64(member, "userId")
-		if err != nil {
-			return nil, ErrMalformedEvent
-		}
-		userTypeValue, err := member.LookupErr("userType")
-		if err != nil || userTypeValue.Type != bson.TypeInt32 {
-			return nil, ErrMalformedEvent
-		}
-		members = append(members, MemberIdentity{UserID: userID, UserType: userTypeValue.Int32()})
+		return nil, err
 	}
 	return MemberAdded{ChatID: chatID, LogID: logID, Members: members}, nil
 }

@@ -396,7 +396,7 @@ func decodeEventStreamWithTerminalStop(raw <-chan loco.Packet, output chan<- eve
 			return
 		}
 		event, err := events.DecodeForDelivery(packet)
-		if err != nil && packet.Header.Method == "MSG" {
+		if err != nil && (packet.Header.Method == "MSG" || errors.Is(err, events.ErrUnidentifiableMembership)) {
 			// Without a trustworthy position no later commit can prove that
 			// it did not cross this message. Stop admission and retain cursors.
 			if terminal != nil {

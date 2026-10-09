@@ -1,8 +1,10 @@
 # Membership and chat-change inventory
 
-Status: first-party decoder identity contracts plus bounded lifecycle evidence,
-2026-09-30. This note authorizes only the typed identity decoders described below;
-it forbids member persistence mutation, UI effects, retries, and reconnects.
+Status: bounded first-party model and lifecycle evidence, 2026-09-30;
+wire/model-boundary correction, 2026-10-09. This inventory records the original
+research scope. The subsequent membership implementation and its acceptance
+requirements are described in [GROUP-MEMBERSHIP.md](bridge/GROUP-MEMBERSHIP.md).
+The model property paths below are not literal embedded BSON wire fields.
 
 ## Inventory
 
@@ -19,7 +21,7 @@ that a command's full parity contract is understood.
 implementation-neutral but exact in type: `chatLog.chatId` and `chatLog.logId`
 are signed int64 values; its feed contains a `leaver` member; and that member
 contains signed int64 `userId`, signed int32 `userType`, and an optional string
-nickname. The proven identity path for a deletion event is therefore
+nickname. The internal model identity path for a deletion event is therefore
 `chatLog.feed.leaver.userId`, paired with the chat and log IDs. Other chat-log
 fields include a signed int32 raw/type value and optional message,
 attachment, supplement, and extra data, but they are not needed to identify
@@ -50,7 +52,7 @@ The manager callback schedules database work and consumes `chatLog.feed` and
 `feed.invitees`. Static calls then use `chatLog.chatId` to look up a chat room,
 conditionally request chat information, and pass a copied invitee collection
 through a member-update operation. A separate block turns the chat log into a
-chat-message/database operation. This establishes the wire identity path and
+chat-message/database operation. This establishes the internal model identity path and
 the persistence ownership boundary, but not the full state contract.
 The `CHATINFO` and `MEMBER` follow-up requests are specified in
 [`chat-metadata.md`](chat-metadata.md). Feed invitees and leavers use a
@@ -225,3 +227,12 @@ claims about official malformed-input equivalence.
 - Public transfer: only field names/types, ownership boundaries, and synthetic
   decoder identity behavior are recorded here. Private binary names, offsets,
   decompiler output, accounts, and message data are omitted.
+
+## Wire-boundary correction (2026-10-09)
+
+Owned-account observation and executed Mac accessor tests show that type-zero
+chat logs derive `feed` from JSON in `message`. The name mapping translates JSON
+`member` to the model's `leaver`, and `members` to `invitees`. Missing `userType`
+defaults to zero in the executed synthetic cases. Earlier embedded-feed parser
+fixtures were model-shaped static leads and did not establish wire parity.
+See [the corrected contract and regressions](bridge/GROUP-MEMBERSHIP.md#corrected-wire-to-model-boundary).

@@ -135,6 +135,7 @@ type KakaoClient struct {
 	sendState func(status.BridgeState)
 
 	groupGate      sync.Mutex
+	sourceBlocked  map[int64]error
 	mu             sync.Mutex
 	disconnectGate chan struct{}
 	client         kakaoClient
@@ -266,6 +267,18 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	if err != nil {
 		kc.shutdownBootstrap(c, "after connect failure", false)
 		kc.log().Err(err).Msg("Failed to connect to KakaoTalk")
+		if errors.Is(err, errSourceAccessRemoved) {
+			if kc.isCurrent(generation, ctx) {
+				kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupAccessRemoved})
+			}
+			return
+		}
+		if errors.Is(err, errMembershipPending) {
+			if kc.isCurrent(generation, ctx) {
+				kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupMembershipPending})
+			}
+			return
+		}
 		if errors.Is(err, errGroupCreateUnresolved) {
 			if kc.isCurrent(generation, ctx) {
 				kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupCreateUnresolved})
@@ -298,7 +311,7 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	kc.recoveryTry = 0
 	kc.cleanupRetryAttempts = 0
 	kc.mu.Unlock()
-	kc.sendState(status.BridgeState{StateEvent: status.StateConnected})
+	kc.sendReadyState()
 	go kc.run(c, stream, done, generation)
 }
 
@@ -517,6 +530,10 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 			continue
 		}
 		if result.Err != nil {
+			if errors.Is(result.Err, events.ErrUnidentifiableMembership) {
+				terminalErr = events.ErrUnidentifiableMembership
+				break
+			}
 			if isUnidentifiableMessageError(result.Err) {
 				terminalErr = unidentifiableMessageError()
 				break
@@ -538,8 +555,12 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	switch {
 	case stopping:
 	case terminalErr != nil:
-		kc.log().Error().Str("classification", string(stateUnidentifiableMsg)).Msg("Kakao message admission stopped; operator recovery is required")
-		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateUnidentifiableMsg})
+		classification := stateUnidentifiableMsg
+		if errors.Is(terminalErr, events.ErrUnidentifiableMembership) {
+			classification = stateGroupMembershipInvalid
+		}
+		kc.log().Error().Str("classification", string(classification)).Msg("Kakao event admission stopped; operator recovery is required")
+		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: classification})
 	case kickedOut:
 		kc.sendState(status.BridgeState{StateEvent: status.StateBadCredentials, Error: stateKickedOut})
 	case changeServer:
@@ -669,11 +690,44 @@ func shutdownWithRecoveryTimeout(c kakaoClient) error {
 func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 	kc.groupGate.Lock()
 	defer kc.groupGate.Unlock()
+	var removedChat int64
+	switch notice := evt.(type) {
+	case events.ChatLeft:
+		removedChat = notice.ChatID
+	case events.MemberRemoved:
+		if notice.UserID == kc.userID {
+			removedChat = notice.ChatID
+		}
+	}
+	if removedChat > 0 {
+		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupAccessRemoved})
+		if err := kc.recordSourceRemoval(context.Background(), removedChat); err != nil {
+			return false
+		}
+		// The departed account cannot authorize a metadata request. Apply only
+		// its explicit leave rather than fetching CHATINFO after removal.
+		evt = events.ChatLeft{ChatID: removedChat}
+	}
 	if err := kc.checkUnresolvedGroupCreates(); err != nil {
 		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupCreateUnresolved})
 		return false
 	}
+	if removedChat == 0 {
+		switch notice := evt.(type) {
+		case events.MemberAdded:
+			if handled, success := kc.managedMembershipEvent(context.Background(), c, notice.ChatID, true); handled {
+				return success
+			}
+		case events.MemberRemoved:
+			if handled, success := kc.managedMembershipEvent(context.Background(), c, notice.ChatID, false); handled {
+				return success
+			}
+		}
+	}
 	if reaction, ok := evt.(events.ReactionChanged); ok {
+		if kc.checkSourceAccess(context.Background(), reaction.ChatID, nil) != nil {
+			return false
+		}
 		remote, err := kc.reactionRemote(context.Background(), c, reaction)
 		if err != nil {
 			return kc.reportReactionFailure(reaction, err)
@@ -724,9 +778,18 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		return true
 	}
 	if notice, ok := evt.(events.ReadStateChanged); ok {
+		if kc.checkSourceAccess(context.Background(), notice.ChatID, nil) != nil {
+			return false
+		}
 		return kc.handleReadState(notice)
 	}
 	remote := kc.remoteEventFor(evt)
+	if remote != nil && removedChat == 0 {
+		chatID, parseErr := parseChatID(remote.GetPortalKey().ID)
+		if parseErr != nil || kc.checkSourceAccess(context.Background(), chatID, nil) != nil {
+			return false
+		}
+	}
 	if added, ok := evt.(events.MemberAdded); ok {
 		change := remote.(*chatInfoChangeEvent)
 		if err := kc.prepareMemberDiscovery(context.Background(), c, added.ChatID, change); err != nil {
@@ -738,12 +801,21 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		kc.log().Debug().Str("kind", string(evt.Kind())).Msg("Ignoring Kakao event not bridged yet")
 		return true
 	}
-	result := kc.queue(remote)
+	var result bridgev2.EventHandlingResult
+	if removedChat > 0 {
+		err := kc.applySourceLeave(context.Background(), removedChat)
+		result = bridgev2.EventHandlingResult{Success: err == nil, Error: err}
+	} else {
+		result = kc.queue(remote)
+	}
 	if !committable(result) {
 		kc.log().Warn().Err(result.Error).
 			Bool("success", result.Success).
 			Bool("queued", result.Queued).
 			Msg("Kakao message was not confirmed as bridged; leaving it uncommitted for replay")
+		return false
+	}
+	if removedChat > 0 && kc.verifySourceLeave(context.Background(), removedChat) != nil {
 		return false
 	}
 	// Membership and metadata events can be delivered to the bridge without
@@ -1172,6 +1244,11 @@ var matrixImageDownloader = downloadMatrixImageBounded
 // HandleMatrixMessage sends one plain text message. A failed or ambiguous
 // send is reported to Matrix and never retried.
 func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.MatrixMessage) (*bridgev2.MatrixMessageResponse, error) {
+	kc.groupGate.Lock()
+	defer kc.groupGate.Unlock()
+	if msg == nil || msg.Portal == nil || msg.Content == nil {
+		return nil, errSourceAccessRemoved
+	}
 	switch msg.Content.MsgType {
 	case event.MsgText, event.MsgNotice, event.MsgEmote, event.MsgImage:
 	default:
@@ -1179,6 +1256,9 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	}
 	chatID, err := parseChatID(msg.Portal.ID)
 	if err != nil {
+		return nil, err
+	}
+	if err = kc.checkSourceAccess(ctx, chatID, msg.Portal); err != nil {
 		return nil, err
 	}
 	if msg.ReplyTo == nil && msg.Content.RelatesTo != nil && msg.Content.RelatesTo.GetReplyTo() != "" {
