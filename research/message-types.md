@@ -59,7 +59,7 @@ Naming unsupported constants is intentional and does not enable their payloads.
 | 21 | `Nudge` | `UnsupportedMessage` notice |
 | 22 | `Spritecon` | `UnsupportedMessage` notice |
 | 23 | `SharpSearch` | `UnsupportedMessage` notice |
-| 24 | `Post` | `UnsupportedMessage` notice |
+| 24 | `Post` | Typed observed text-only board-post snapshot; rich/multimedia and board interactions remain gaps |
 | 25 | `AnimatedStickerEx` | `UnsupportedMessage` notice |
 | 26 | `Reply` | Typed message |
 | 27 | `MultiPhoto` | Typed URL-based album; resource-only forms remain gaps |

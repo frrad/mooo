@@ -5,7 +5,7 @@ from unittest.mock import patch
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file, send_audio, ensure_silent_emulator, send_profile, send_contact, send_location, send_poll, return_poll_to_chat
+from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file, send_audio, ensure_silent_emulator, send_profile, send_contact, send_location, send_poll, return_board_to_chat, send_post
 
 
 def frame(body):
@@ -107,15 +107,76 @@ class PollTests(unittest.TestCase):
     def test_return_waits_for_more_screen_and_uses_verified_back(self):
         more = frame('<node text="owned peer" bounds="[400,578][680,640]"/><node text="Events"/><node text="Polls"/><node text="Boards"/><node clickable="true" bounds="[0,136][147,283]"/>')
         p = FakePhone([frame(''), more, frame(''), chat()])
-        return_poll_to_chat(p, 'owned peer')
+        return_board_to_chat(p, 'owned peer')
         self.assertEqual(p.calls, [(('shell', 'input', 'tap', '73', '209'), None)])
 
     def test_return_never_backs_out_of_unknown_or_wrong_peer_screen(self):
         for root in [chat(title='other'), frame('<node text="other" bounds="[400,578][680,640]"/><node text="Events"/><node text="Polls"/><node text="Boards"/><node clickable="true" bounds="[0,136][147,283]"/>')]:
             p = FakePhone([root] * 4)
             with self.assertRaises(ValueError):
-                return_poll_to_chat(p, 'owned peer')
+                return_board_to_chat(p, 'owned peer')
             self.assertEqual(p.calls, [])
+
+
+class PostTests(unittest.TestCase):
+    text = 'Mooo-Synthetic-Post-Live'
+
+    def form(self, entered=False, selected=False):
+        return frame('<node resource-id="com.kakao.talk.moim:id/content_edit" text="' + (self.text if entered else 'Write something...') + '" bounds="[0,0][20,20]"/><node resource-id="com.kakao.talk.moim:id/notice_check" checked="' + ('true' if selected else 'false') + '" bounds="[0,0][20,20]"/><node text="DONE" clickable="true" bounds="[100,0][120,20]"/>')
+
+    def frames(self, success=True):
+        root = chat()
+        ET.SubElement(root, 'node', {'content-desc': 'More', 'clickable': 'true', 'bounds': '[0,0][20,20]'})
+        menu = frame('<node clickable="true" bounds="[0,0][20,20]"><node text="Boards"/></node>')
+        board = frame('<node content-desc="Create New" clickable="true" bounds="[0,0][20,20]"/>')
+        result = frame('<node content-desc="Create New" clickable="true" bounds="[0,0][20,20]"/><node content-desc="Back" clickable="true" bounds="[0,0][20,20]"/><node text="' + self.text + '"/>')
+        return [root, menu, board, self.form(), self.form(entered=True), self.form(entered=True)] + ([result, chat()] if success else [self.form(entered=True)] * 4)
+
+    def test_post_receipt_prevents_duplicate_even_if_result_uncertain(self):
+        for success in [True, False]:
+            with tempfile.TemporaryDirectory() as d:
+                receipt = Path(d) / 'post.json'
+                p = FakePhone(self.frames(success))
+                if success:
+                    self.assertEqual(send_post(p, 'owned peer', self.text, receipt), 'synthetic-post-submitted-once')
+                else:
+                    with self.assertRaises(ValueError):
+                        send_post(p, 'owned peer', self.text, receipt)
+                self.assertTrue(receipt.exists())
+                self.assertEqual(sum(args == ('shell', 'input', 'tap', '110', '10') for args, _ in p.calls), 1)
+                before = list(p.calls)
+                with self.assertRaises(ValueError):
+                    send_post(p, 'owned peer', self.text, receipt)
+                self.assertEqual(before, p.calls)
+
+    def test_post_wrong_peer_or_draft_never_navigates(self):
+        for root in [chat(title='other'), chat('draft')]:
+            with tempfile.TemporaryDirectory() as d:
+                p = FakePhone([root])
+                with self.assertRaises(ValueError):
+                    send_post(p, 'owned peer', self.text, Path(d) / 'post.json')
+                self.assertEqual(p.calls, [])
+
+    def test_announcement_or_changed_setting_never_submits(self):
+        for index in [3, 4]:
+            with tempfile.TemporaryDirectory() as d:
+                frames = self.frames()
+                frames[index] = self.form(entered=index == 4, selected=True)
+                p = FakePhone(frames)
+                receipt = Path(d) / 'post.json'
+                with self.assertRaises(ValueError):
+                    send_post(p, 'owned peer', self.text, receipt)
+                self.assertFalse(receipt.exists())
+                self.assertFalse(any(args == ('shell', 'input', 'tap', '110', '10') for args, _ in p.calls))
+
+    def test_existing_post_does_not_open_editor(self):
+        with tempfile.TemporaryDirectory() as d:
+            frames = self.frames()
+            ET.SubElement(frames[2], 'node', {'text': self.text})
+            p = FakePhone(frames)
+            with self.assertRaises(ValueError):
+                send_post(p, 'owned peer', self.text, Path(d) / 'post.json')
+            self.assertEqual(len(p.calls), 2)
 
 
 class ChatTests(unittest.TestCase):

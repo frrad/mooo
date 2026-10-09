@@ -358,7 +358,7 @@ def send_sticker(phone, peer, receipt):
     return 'selected-sticker-submitted-once'
 
 
-def return_poll_to_chat(phone, peer):
+def return_board_to_chat(phone, peer):
     # The chat More screen has an unlabeled Back control. An immediate keyevent
     # during the preceding activity transition can be lost; wait for its UI.
     for _ in range(4):
@@ -380,6 +380,57 @@ def return_poll_to_chat(phone, peer):
                     return
             raise ValueError('owned chat return unconfirmed; no further navigation')
     raise ValueError('poll return screen unconfirmed; no further navigation')
+
+
+def send_post(phone, peer, text, receipt):
+    if Path(receipt).exists():
+        raise ValueError('previous attempt exists; inspect outcome without resending')
+    if not isinstance(text, str) or not re.fullmatch(r'Mooo-Synthetic-[A-Za-z0-9._-]{1,256}', text):
+        raise ValueError('synthetic post text required')
+    root = phone.dump()
+    owned_chat(root, peer)
+    if control(root, 'message_edit_text').get('text', '') not in ('', 'Message'):
+        raise ValueError('composer not empty')
+    tap(phone, clickable_label(root, 'More'))
+    tap(phone, clickable_text_parent(phone.dump(), 'Boards'))
+    root = phone.dump()
+    if any(n.get('text') == text for n in root.iter('node')):
+        raise ValueError('synthetic post text already exists')
+    tap(phone, clickable_label(root, 'Create New'))
+    prefix = 'com.kakao.talk.moim:id/'
+
+    def field(root, name):
+        return unique([n for n in root.iter('node') if n.get('resource-id') == prefix + name])
+
+    root = phone.dump()
+    node = field(root, 'content_edit')
+    if node.get('text') != 'Write something...' or field(root, 'notice_check').get('checked') != 'false':
+        raise ValueError('empty non-announcement post unconfirmed')
+    tap(phone, node)
+    phone.adb('shell', 'IFS= read -r value; input text "$value"', text=(text + '\n').encode())
+    phone.adb('shell', 'input', 'keyevent', '4')
+    previous = None
+    button = None
+    for _ in range(4):
+        root = phone.dump()
+        if field(root, 'content_edit').get('text') != text or field(root, 'notice_check').get('checked') != 'false':
+            raise ValueError('post entry or announcement setting unconfirmed')
+        current = clickable_label(root, 'DONE')
+        if current.get('bounds') == previous:
+            button = current
+            break
+        previous = current.get('bounds')
+    if button is None:
+        raise ValueError('post submit control still moving')
+    reserve(receipt)
+    tap(phone, button)
+    for _ in range(4):
+        root = phone.dump()
+        if any(n.get('content-desc') == 'Create New' and n.get('clickable') == 'true' for n in root.iter('node')) and any(n.get('text') == text and n.get('resource-id') != prefix + 'content_edit' for n in root.iter('node')):
+            tap(phone, clickable_label(root, 'Back'))
+            return_board_to_chat(phone, peer)
+            return 'synthetic-post-submitted-once'
+    raise ValueError('post outcome unconfirmed; preserve receipt and do not retry')
 
 
 def send_poll(phone, peer, title, options, receipt):
@@ -438,7 +489,7 @@ def send_poll(phone, peer, title, options, receipt):
         root = phone.dump()
         if any(n.get('resource-id') == prefix + 'info_container' and n.get('content-desc', '').startswith(title + ',') for n in root.iter('node')):
             tap(phone, clickable_label(root, 'Back'))
-            return_poll_to_chat(phone, peer)
+            return_board_to_chat(phone, peer)
             return 'synthetic-poll-submitted-once'
     raise ValueError('poll outcome unconfirmed; preserve receipt and do not retry')
 
@@ -454,6 +505,8 @@ def main():
             result = send_sticker(phone, request['peer'], request['receipt'])
         elif action == 'poll':
             result = send_poll(phone, request['peer'], request['title'], request['options'], request['receipt'])
+        elif action == 'post':
+            result = send_post(phone, request['peer'], request['text'], request['receipt'])
         elif action == 'location':
             result = send_location(phone, request['peer'], request['latitude'], request['longitude'], request['address'], request['receipt'])
         elif action == 'contact':

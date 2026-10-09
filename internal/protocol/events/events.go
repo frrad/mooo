@@ -22,6 +22,7 @@ type Kind string
 
 const (
 	KindTextMessage        Kind = "text_message"
+	KindPostMessage        Kind = "post_message"
 	KindVoteMessage        Kind = "vote_message"
 	KindLocationMessage    Kind = "location_message"
 	KindProfileMessage     Kind = "profile_message"
@@ -76,6 +77,12 @@ type Result struct {
 // incoming MSG event. Metadata and unknown packets are not message cursors.
 func MessagePosition(event Event) (chatID, logID int64, ok bool) {
 	switch value := event.(type) {
+	case PostMessage:
+		return value.ChatID, value.LogID, true
+	case *PostMessage:
+		if value != nil {
+			return value.ChatID, value.LogID, true
+		}
 	case VoteMessage:
 		return value.ChatID, value.LogID, true
 	case *VoteMessage:
@@ -713,6 +720,8 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 		return nil, ErrMalformedEvent
 	}
 	switch messageType {
+	case messagetype.Post:
+		return decodePost(chatID, logID, chatLog)
 	case messagetype.Vote:
 		return decodeVote(chatID, logID, chatLog)
 	case messagetype.Location:
