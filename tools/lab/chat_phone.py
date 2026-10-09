@@ -494,6 +494,87 @@ def send_poll(phone, peer, title, options, receipt):
     raise ValueError('poll outcome unconfirmed; preserve receipt and do not retry')
 
 
+def send_mini(phone, peer, prefix, suffix, fallback, receipt):
+    """Select one free non-animated Mini in an owned empty chat; never retry."""
+    if Path(receipt).exists():
+        raise ValueError('previous attempt exists; inspect without resending')
+    if fallback != '(item)' or not all(re.fullmatch(r'[-A-Za-z0-9 ._()]{0,128}', s)
+                                      for s in (prefix, suffix)):
+        raise ValueError('bounded synthetic Mini text required')
+    if prefix and not prefix.startswith('Mooo-Synthetic'):
+        raise ValueError('synthetic prefix required')
+    root = phone.dump()
+    owned_chat(root, peer)
+    field = control(root, 'message_edit_text')
+    if field.get('text', '') not in ('', 'Message'):
+        raise ValueError('composer not empty')
+    if control(root, 'emoticon_button_layout').get('content-desc') != 'Open emoticon keyboard':
+        raise ValueError('Mini keyboard must start closed')
+    tap(phone, field)
+    if prefix:
+        phone.adb('shell', 'IFS= read -r value; input text "$value"', text=(prefix + '\n').encode())
+    root = phone.dump()
+    owned_chat(root, peer)
+    if control(root, 'message_edit_text').get('text', '') != prefix:
+        raise ValueError('Mini prefix unconfirmed')
+    tap(phone, control(root, 'emoticon_button_layout'))
+    root = phone.dump()
+    owned_chat(root, peer)
+    tap(phone, unique([n for n in root.iter('node') if n.get('text') == 'Mini']))
+    root = phone.dump()
+    owned_chat(root, peer)
+    tap(phone, clickable_label(root, 'Kakao Friends Basic Mini Face 1 Emoticons'))
+    root = phone.dump()
+    owned_chat(root, peer)
+    if not any(n.get('text') == 'Kakao Friends Basic Mini Face 1' for n in root.iter('node')):
+        raise ValueError('free Mini pack unconfirmed')
+    if control(root, 'message_edit_text').get('text', '') != prefix:
+        raise ValueError('Mini composer changed')
+    items = [n for n in root.iter('node') if n.get('resource-id') == 'com.kakao.talk.emoticon:id/root'
+             and n.get('content-desc') == '(item), Non-animated mini emoticon'
+             and n.get('clickable') == 'true' and n.get('enabled') != 'false']
+    if not items:
+        raise ValueError('non-animated Mini unavailable')
+    items.sort(key=lambda n: tuple(map(int, re.findall(r'\d+', n.get('bounds'))))[1::-1])
+    if sum(n.get('bounds') == items[0].get('bounds') for n in items) != 1:
+        raise ValueError('Mini item geometry ambiguous')
+    reserve(receipt)  # Before selecting an item: do not retry if client behavior changes.
+    tap(phone, items[0])
+    for _ in range(4):
+        root = phone.dump()
+        owned_chat(root, peer)
+        value = control(root, 'message_edit_text').get('text', '')
+        if value == prefix + fallback:
+            break
+        if value != prefix:
+            raise ValueError('Mini insertion changed source unexpectedly')
+    else:
+        raise ValueError('Mini insertion unconfirmed')
+    if suffix:
+        phone.adb('shell', 'IFS= read -r value; input text "$value"', text=(suffix + '\n').encode())
+    previous = None
+    for _ in range(4):
+        root = phone.dump()
+        owned_chat(root, peer)
+        if control(root, 'message_edit_text').get('text') != prefix + fallback + suffix:
+            raise ValueError('Mini source unconfirmed')
+        button = control(root, 'send_button_layout')
+        if button.get('enabled') == 'false':
+            raise ValueError('Mini send disabled')
+        if button.get('bounds') == previous:
+            break
+        previous = button.get('bounds')
+    else:
+        raise ValueError('Mini submit control still moving')
+    tap(phone, button)
+    for _ in range(4):
+        root = phone.dump()
+        owned_chat(root, peer)
+        if control(root, 'message_edit_text').get('text', '') in ('', 'Message'):
+            return 'synthetic-mini-submitted-once'
+    raise ValueError('Mini outcome unconfirmed; preserve receipt and do not retry')
+
+
 def main():
     try:
         adb, serial, action = sys.argv[1:]
@@ -507,6 +588,8 @@ def main():
             result = send_poll(phone, request['peer'], request['title'], request['options'], request['receipt'])
         elif action == 'post':
             result = send_post(phone, request['peer'], request['text'], request['receipt'])
+        elif action == 'mini':
+            result = send_mini(phone, request['peer'], request.get('prefix', ''), request.get('suffix', ''), request['fallback'], request['receipt'])
         elif action == 'location':
             result = send_location(phone, request['peer'], request['latitude'], request['longitude'], request['address'], request['receipt'])
         elif action == 'contact':

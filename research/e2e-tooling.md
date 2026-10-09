@@ -9,6 +9,15 @@ See [the Vote experiment and helper contract](vote.md#repeatable-owned-sender).
 non-announcement setting before submit, and returns to the selected owned chat.
 See [the Post experiment and helper contract](post.md#repeatable-owned-sender).
 
+`send-mini a|b` selects the first item of the free non-animated Basic Mini Face 1
+pack from an already-open owned chat with an empty composer and closed emoticon
+keyboard. Private stdin JSON supplies `peer`, `receipt`, `fallback: "(item)"` (UI fallback; explicit Enter can add a wire newline),
+and optional synthetic ASCII `prefix`/`suffix`. A nonempty prefix must start with
+`Mooo-Synthetic`. The helper waits for direct insertion and verifies source text, reserves the
+receipt before item selection, sends once, and checks composer clearing. A
+changed keyboard, recipient, fallback or uncertain outcome stops without retry.
+See [the Mini contract and acceptance work](mini-emoticons.md).
+
 Use `research/emu.sh` for the two owned lab profiles. The local `.lab/emu.sh`
 is a compatibility wrapper. Profile mappings, Keychain references, and SMS-line
 identities live in gitignored `.lab/emu-config.sh`; see

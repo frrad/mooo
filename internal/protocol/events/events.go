@@ -109,6 +109,12 @@ func MessagePosition(event Event) (chatID, logID int64, ok bool) {
 		}
 	case TextMessage:
 		return value.ChatID, value.LogID, true
+	case MiniTextMessage:
+		return value.ChatID, value.LogID, true
+	case *MiniTextMessage:
+		if value != nil {
+			return value.ChatID, value.LogID, true
+		}
 	case *TextMessage:
 		if value != nil {
 			return value.ChatID, value.LogID, true
@@ -737,10 +743,10 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 		if err != nil || messageValue.Type != bson.TypeString || !utf8.ValidString(messageValue.StringValue()) {
 			return nil, ErrMalformedEvent
 		}
-		return TextMessage{
+		return decodeMiniText(TextMessage{
 			ChatID: chatID, LogID: logID, Message: messageValue.StringValue(),
 			AuthorID: optionalInt64(chatLog, "authorId"), SentAt: optionalInt64(chatLog, "sendAt"),
-		}, nil
+		}, chatLog)
 	case media.PhotoType:
 		photo, err := media.DecodePhotoMessage(packet.Body)
 		if err != nil {

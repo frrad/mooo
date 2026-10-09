@@ -487,7 +487,9 @@ run required checks and secret scans, then merge through passing CI.
       produced type 12 and type 1 with `emojis`, respectively, rather than
       fixtures for 6/22/25. See [nudge.md](research/nudge.md) and the
       [free-pack audit](research/stickers.md). Mini resource/placement rendering
-      remains a separate rich-text gap.
+      is now implemented for observed nonanimated resources as ordered encrypted
+      text/image parts; animated resources and inline layout remain gaps. See
+      [mini-emoticons.md](research/mini-emoticons.md).
 - [ ] Audit remaining types against actual emitter/receiver availability;
       document evidence and blockers rather than claiming enum-only support.
 

@@ -5,7 +5,7 @@ from unittest.mock import patch
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file, send_audio, ensure_silent_emulator, send_profile, send_contact, send_location, send_poll, return_board_to_chat, send_post
+from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file, send_audio, ensure_silent_emulator, send_profile, send_contact, send_location, send_poll, return_board_to_chat, send_post, send_mini
 
 
 def frame(body):
@@ -482,3 +482,96 @@ class LocationTests(unittest.TestCase):
                 send_location(p, 'owned peer', 40.7484, -73.9857, 'Synthetic landmark', receipt)
             self.assertFalse(receipt.exists())
             self.assertFalse(any(args == ('shell', 'input', 'tap', '50', '10') for args, _ in p.calls))
+
+
+class MiniSendTests(unittest.TestCase):
+    def state(self, source='', mini=False, pack=False, item=False, enter=False):
+        r = chat()
+        next(n for n in r.iter('node') if n.get('resource-id') == 'com.kakao.talk:id/message_edit_text').set('text', source)
+        ET.SubElement(r, 'node', {'resource-id': 'com.kakao.talk:id/emoticon_button_layout', 'content-desc': 'Open emoticon keyboard', 'bounds': '[50,0][70,20]'})
+        if mini:
+            ET.SubElement(r, 'node', {'text': 'Mini', 'bounds': '[80,0][100,20]'})
+        if pack:
+            ET.SubElement(r, 'node', {'content-desc': 'Kakao Friends Basic Mini Face 1 Emoticons', 'clickable': 'true', 'bounds': '[100,0][120,20]'})
+        if item:
+            ET.SubElement(r, 'node', {'text': 'Kakao Friends Basic Mini Face 1'})
+            ET.SubElement(r, 'node', {'resource-id': 'com.kakao.talk.emoticon:id/root', 'content-desc': '(item), Non-animated mini emoticon', 'clickable': 'true', 'bounds': '[0,100][20,120]'})
+        if enter:
+            ET.SubElement(r, 'node', {'resource-id': 'com.kakao.talk.emoticon:id/btn_enter', 'content-desc': 'Enter', 'clickable': 'true', 'bounds': '[20,100][40,120]'})
+        return r
+
+    def frames(self):
+        p = 'Mooo-Synthetic (literal) before '
+        return [self.state(), self.state(p), self.state(p, mini=True),
+                self.state(p, pack=True), self.state(p, item=True),
+                self.state(p+'(item)'),
+                self.state(p+'(item) after'), self.state(p+'(item) after'), self.state()]
+
+    def test_single_send_and_existing_receipt(self):
+        with tempfile.TemporaryDirectory() as d:
+            Path(d).chmod(0o700)
+            receipt = Path(d)/'mini.json'
+            phone = FakePhone(self.frames())
+            self.assertEqual(send_mini(phone, 'owned peer', 'Mooo-Synthetic (literal) before ', ' after', '(item)', receipt), 'synthetic-mini-submitted-once')
+            self.assertTrue(receipt.exists())
+            self.assertEqual(sum(args == ('shell', 'input', 'tap', '30', '10') for args, _ in phone.calls), 1)
+            with self.assertRaises(ValueError):
+                send_mini(phone, 'owned peer', '', '', '(item)', receipt)
+
+    def test_changed_insertion_preserves_receipt_without_send(self):
+        with tempfile.TemporaryDirectory() as d:
+            Path(d).chmod(0o700)
+            frames = self.frames()
+            frames[5] = self.state('unexpected text')
+            phone = FakePhone(frames)
+            receipt = Path(d)/'mini.json'
+            with self.assertRaises(ValueError):
+                send_mini(phone, 'owned peer', 'Mooo-Synthetic (literal) before ', ' after', '(item)', receipt)
+            self.assertTrue(receipt.exists())
+            self.assertFalse(any(args == ('shell', 'input', 'tap', '30', '10') for args, _ in phone.calls))
+
+    def test_nonempty_composer_stops_before_attempt(self):
+        with tempfile.TemporaryDirectory() as d:
+            Path(d).chmod(0o700)
+            receipt = Path(d)/'mini.json'
+            phone = FakePhone([self.state('existing')])
+            with self.assertRaises(ValueError):
+                send_mini(phone, 'owned peer', '', '', '(item)', receipt)
+            self.assertEqual(phone.calls, [])
+            self.assertFalse(receipt.exists())
+
+
+class MiniObservedNewlineTests(unittest.TestCase):
+    def test_wire_newline_is_not_a_ui_fallback(self):
+        with tempfile.TemporaryDirectory() as d:
+            Path(d).chmod(0o700)
+            helper = MiniSendTests()
+            phone = FakePhone(helper.frames())
+            receipt = Path(d)/'mini.json'
+            with self.assertRaises(ValueError):
+                send_mini(phone, 'owned peer', 'Mooo-Synthetic (literal) before ', ' after', '(item)\n', receipt)
+            self.assertFalse(receipt.exists())
+            self.assertEqual(phone.calls, [])
+
+
+class MiniReadinessTests(unittest.TestCase):
+    def test_insertion_can_settle_before_one_send(self):
+        with tempfile.TemporaryDirectory() as d:
+            Path(d).chmod(0o700)
+            helper = MiniSendTests()
+            frames = helper.frames()
+            frames.insert(5, helper.state('Mooo-Synthetic (literal) before '))
+            phone = FakePhone(frames)
+            self.assertEqual(send_mini(phone, 'owned peer', 'Mooo-Synthetic (literal) before ', ' after', '(item)', Path(d)/'mini.json'), 'synthetic-mini-submitted-once')
+
+
+class MiniDirectInsertionTests(unittest.TestCase):
+    def test_existing_text_mini_inserts_without_enter(self):
+        with tempfile.TemporaryDirectory() as d:
+            Path(d).chmod(0o700)
+            helper = MiniSendTests()
+            frames = helper.frames()
+            frames[5] = helper.state('Mooo-Synthetic (literal) before (item)', enter=True)
+            phone = FakePhone(frames)
+            self.assertEqual(send_mini(phone, 'owned peer', 'Mooo-Synthetic (literal) before ', ' after', '(item)', Path(d)/'mini.json'), 'synthetic-mini-submitted-once')
+            self.assertFalse(any(args == ('shell', 'input', 'tap', '30', '110') for args, _ in phone.calls))
