@@ -11,7 +11,8 @@ import (
 func TestNamedUnsupportedMessageTypesPreserveIdentity(t *testing.T) {
 	for _, typ := range []int32{
 		messagetype.AnimatedEmoticon, messagetype.Spritecon, messagetype.AnimatedStickerEx,
-		messagetype.Vote, messagetype.Mvoip, messagetype.Universal,
+		messagetype.Schedule, messagetype.Mvoip, messagetype.Universal,
+		messagetype.Vote | messagetype.DeletedAllChatTypeFlag,
 		messagetype.Text | messagetype.DeletedAllChatTypeFlag,
 		messagetype.Text | messagetype.OpenLinkIllegalBlindFlag,
 		messagetype.Text | messagetype.SecretChatTypeFlag,

@@ -1,0 +1,22 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-09",
+    "method": "Owned A/B text poll creation, original secondary MSG capture and native receiver card/detail comparison; identifiers replaced",
+    "doc": "research/vote.md"
+  },
+  "attachment": {
+    "os": [
+      {"st": 1, "tt": "Mooo-Synthetic-Poll", "its": [{"tt": "Alpha"}, {"tt": "Beta"}, {"tt": "Gamma"}], "t": 9},
+      {"st": 4, "url": "kakaomoim://post?referer=b&chat_id=123&post_id=synthetic-post-id", "t": 2}
+    ],
+    "subtype": 1,
+    "title": "Mooo-Synthetic-Poll",
+    "voteId": 0,
+    "version": {"and": "11.1.0", "ios": "11.1.0", "mac": "3.7.5", "win": "4.2.0"}
+  },
+  "native_expected": {"title": "Mooo-Synthetic-Poll", "options": ["Alpha", "Beta", "Gamma"]},
+  "mooo_deviation": "Readable text snapshot rather than an interactive Kakao vote card; omit account-specific button URL and do not cast votes from Matrix.",
+  "mooo_expected": {"msgtype": "m.text", "body": "KakaoTalk poll: Mooo-Synthetic-Poll\n1. Alpha\n2. Beta\n3. Gamma"}
+}

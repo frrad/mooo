@@ -358,6 +358,91 @@ def send_sticker(phone, peer, receipt):
     return 'selected-sticker-submitted-once'
 
 
+def return_poll_to_chat(phone, peer):
+    # The chat More screen has an unlabeled Back control. An immediate keyevent
+    # during the preceding activity transition can be lost; wait for its UI.
+    for _ in range(4):
+        root = phone.dump()
+        if any(n.get('resource-id') == PREFIX + 'chat_room_root' for n in root.iter('node')):
+            owned_chat(root, peer)
+            return
+        labels = {n.get('text') for n in root.iter('node')}
+        headers = [n for n in root.iter('node') if n.get('text') == peer
+                   and re.fullmatch(r'\[\d+,\d+\]\[\d+,\d+\]', n.get('bounds', ''))
+                   and list(map(int, re.findall(r'\d+', n.get('bounds'))))[3] < 700]
+        if {'Events', 'Polls', 'Boards'} <= labels and len(headers) == 1:
+            tap(phone, unique([n for n in root.iter('node') if n.get('clickable') == 'true'
+                               and n.get('enabled') != 'false' and n.get('bounds') == '[0,136][147,283]']))
+            for _ in range(4):
+                root = phone.dump()
+                if any(n.get('resource-id') == PREFIX + 'chat_room_root' for n in root.iter('node')):
+                    owned_chat(root, peer)
+                    return
+            raise ValueError('owned chat return unconfirmed; no further navigation')
+    raise ValueError('poll return screen unconfirmed; no further navigation')
+
+
+def send_poll(phone, peer, title, options, receipt):
+    if Path(receipt).exists():
+        raise ValueError('previous attempt exists; inspect outcome without resending')
+    if not re.fullmatch(r'Mooo-Synthetic-[A-Za-z0-9._-]{1,80}', title):
+        raise ValueError('synthetic poll title required')
+    if not isinstance(options, list) or len(options) != 3 or not all(isinstance(s, str) and re.fullmatch(r'[A-Za-z0-9._-]{1,80}', s) for s in options) or len(set(options)) != 3:
+        raise ValueError('three distinct synthetic text options required')
+    root = phone.dump()
+    owned_chat(root, peer)
+    if control(root, 'message_edit_text').get('text', '') not in ('', 'Message'):
+        raise ValueError('composer not empty')
+    tap(phone, clickable_label(root, 'More'))
+    tap(phone, clickable_text_parent(phone.dump(), 'Polls'))
+    root = phone.dump()
+    if any(n.get('text') == title or n.get('content-desc', '').startswith(title + ',') for n in root.iter('node')):
+        raise ValueError('synthetic poll title already exists')
+    tap(phone, clickable_label(root, 'Create New'))
+    prefix = 'com.kakao.talk.moim:id/'
+
+    def field(root, name):
+        return unique([n for n in root.iter('node') if n.get('resource-id') == prefix + name])
+
+    root = phone.dump()
+    subject = field(root, 'poll_subject_edit')
+    items = [n for n in root.iter('node') if n.get('resource-id') == prefix + 'poll_item_title_edit']
+    if subject.get('text') != 'Title' or len(items) != 3 or any(n.get('text') != 'Enter an option.' for n in items):
+        raise ValueError('new empty poll form unconfirmed')
+    for name in ('poll_multi_select_check', 'poll_secret_check', 'poll_item_addable_check'):
+        if field(root, name).get('checked') != 'false':
+            raise ValueError('unexpected poll settings')
+    for index, value in enumerate([title] + options):
+        root = phone.dump()
+        node = field(root, 'poll_subject_edit') if index == 0 else unique([n for n in root.iter('node') if n.get('resource-id') == prefix + 'poll_item_title_edit'][index - 1:index])
+        tap(phone, node)
+        phone.adb('shell', 'IFS= read -r value; input text "$value"', text=(value + '\n').encode())
+        phone.adb('shell', 'input', 'keyevent', '4')
+    previous = None
+    button = None
+    for _ in range(4):
+        root = phone.dump()
+        if field(root, 'poll_subject_edit').get('text') != title or [n.get('text') for n in root.iter('node') if n.get('resource-id') == prefix + 'poll_item_title_edit'] != options:
+            raise ValueError('poll entry unconfirmed')
+        current = clickable_label(root, 'DONE')
+        bounds = current.get('bounds')
+        if bounds == previous:
+            button = current
+            break
+        previous = bounds
+    if button is None:
+        raise ValueError('poll submit control still moving')
+    reserve(receipt)
+    tap(phone, button)
+    for _ in range(4):
+        root = phone.dump()
+        if any(n.get('resource-id') == prefix + 'info_container' and n.get('content-desc', '').startswith(title + ',') for n in root.iter('node')):
+            tap(phone, clickable_label(root, 'Back'))
+            return_poll_to_chat(phone, peer)
+            return 'synthetic-poll-submitted-once'
+    raise ValueError('poll outcome unconfirmed; preserve receipt and do not retry')
+
+
 def main():
     try:
         adb, serial, action = sys.argv[1:]
@@ -367,6 +452,8 @@ def main():
             result = send_text(phone, request['peer'], request['text'], request['receipt'])
         elif action == 'sticker':
             result = send_sticker(phone, request['peer'], request['receipt'])
+        elif action == 'poll':
+            result = send_poll(phone, request['peer'], request['title'], request['options'], request['receipt'])
         elif action == 'location':
             result = send_location(phone, request['peer'], request['latitude'], request['longitude'], request['address'], request['receipt'])
         elif action == 'contact':

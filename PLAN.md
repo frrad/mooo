@@ -469,8 +469,15 @@ run required checks and secret scans, then merge through passing CI.
       not Link (9). The static receiver has multiple KakaoLink format branches;
       a controlled type-9 emitter and full-chain fixture remain pending. See
       [the emitter/receiver audit](research/link.md).
-- [ ] Schedule/Vote/Post (13/14/24), Nudge (21), and sticker variants (6/22/25):
+- [x] Vote (14): observed text-poll creation snapshots preserve titles and
+      ordered options through encrypted catch-up/live delivery and normal
+      restart. Zero legacy vote-ID placeholders have a live regression fixture;
+      interactive voting, results and lifecycle changes remain gaps. See
+      [vote.md](research/vote.md).
+- [ ] Schedule/Post (13/24), Nudge (21), and sticker variants (6/22/25):
       determine which controlled A/B UI flows are available without purchases.
+      The owned sender's Calendar creation was rejected by user protection
+      policy; no retry or Schedule fixture was produced.
 - [ ] Audit remaining types against actual emitter/receiver availability;
       document evidence and blockers rather than claiming enum-only support.
 
