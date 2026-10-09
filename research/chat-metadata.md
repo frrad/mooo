@@ -330,3 +330,50 @@ MultiChat, absent `m`, and a type-3 `chatMetas` entry with matching plain-string
 content. The connector previously fell back to display nicknames and now uses
 that shared name. Full name-consumer/persistence/notification parity remains
 untraced; see [the group validation](bridge/GROUP-MESSAGING-VALIDATION.md).
+
+## Android shared metadata enum (2026-10-09)
+
+Static inspection of the owned official Android 26.8.2 APK (version code
+29260820), classes10.dex, recovered the enum in `ChatSharedMeta.kt`
+(obfuscated class `awa`, nested enum `a`). Its constructor stores an explicit
+integer `type`; `getType` returns that value. These are wire values, not enum
+ordinals:
+
+| Official enum member | Wire value |
+| --- | ---: |
+| None | 0 |
+| Notice | 1 |
+| KakaoGroup | 2 |
+| Title | 3 |
+| Profile | 4 |
+| Tv | 5 |
+| Privilege | 6 |
+| TvLive | 7 |
+| PlustChatBackground | 8 |
+| DailyCard | 9 |
+| DailyCardProfile | 10 |
+| OpenLinkChannelChat | 13 |
+| OpenLinkBotCommand | 14 |
+| Warehouse | 15 |
+| Voiceroom | 16 |
+| VoiceroomCount | 17 |
+| Cecall | 18 |
+| CecallCount | 19 |
+| OpenLinkChatBackground | 20 |
+| ChatBot | 21 |
+| WebBanner | 22 |
+
+The JSON constructor reads `type` and resolves it by comparing the enum's
+stored wire values; unknown values resolve to None in that client. The shared
+metadata factory dispatches Title to `ChatTitleMeta.kt` (obfuscated `ybb`).
+Its title projection reads the inherited content, leaving the title unset for
+empty content and otherwise returning that content directly. This confirms the
+name and plain-string interpretation of the type-3 entry independently of the
+previous native/wire observation. Confidence is high for this enum and model
+chain; revision precedence, personal-name precedence, downstream database/UI
+consumers, and notification behavior are not established by this trace.
+
+Production names the consumed value `chatmeta.SharedMetaTitle`; unused enum
+members remain research facts until a consuming feature needs them. The wire
+model continues preserving unknown integer types rather than discarding them.
+No decompiled implementation is included in the repository.

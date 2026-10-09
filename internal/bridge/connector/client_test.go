@@ -1550,6 +1550,7 @@ func TestGetChatInfoUsesObservedSharedGroupName(t *testing.T) {
 	fake := &fakeKakao{
 		chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{
 			ChatID: testChatID, Type: "MultiChat", DisplayNicknames: []string{"Synthetic A", "Synthetic C"},
+			// Keep the observed wire value literal so this regression checks the constant mapping.
 			ChatMetas: []chatmeta.ChatMeta{{Type: 3, Revision: 42, AuthorID: testOtherID, Content: "Synthetic Group", UpdatedAt: 100}},
 		}},
 		memberList: chatmeta.MemberListResponse{MemberIDs: []int64{testSelfID, testOtherID, 9999}},
@@ -1574,7 +1575,7 @@ func TestGetChatInfoUsesObservedSharedGroupName(t *testing.T) {
 
 func TestChatNameSharedRevisionAndPersonalOverride(t *testing.T) {
 	data := chatmeta.ChatData{DisplayNicknames: []string{"Fallback"}, ChatMetas: []chatmeta.ChatMeta{
-		{Type: 3, Revision: 2, Content: "Latest"}, {Type: 3, Revision: 1, Content: "Older"}, {Type: 4, Revision: 3, Content: "Other kind"},
+		{Type: chatmeta.SharedMetaTitle, Revision: 2, Content: "Latest"}, {Type: chatmeta.SharedMetaTitle, Revision: 1, Content: "Older"}, {Type: 4, Revision: 3, Content: "Other kind"},
 	}}
 	if got := chatName(data); got != "Latest" {
 		t.Fatalf("name = %q", got)
@@ -1584,7 +1585,7 @@ func TestChatNameSharedRevisionAndPersonalOverride(t *testing.T) {
 		t.Fatalf("name = %q", got)
 	}
 	data.Meta = nil
-	data.ChatMetas = append(data.ChatMetas, chatmeta.ChatMeta{Type: 3, Revision: 4})
+	data.ChatMetas = append(data.ChatMetas, chatmeta.ChatMeta{Type: chatmeta.SharedMetaTitle, Revision: 4})
 	if got := chatName(data); got != "Fallback" {
 		t.Fatalf("cleared name = %q", got)
 	}
