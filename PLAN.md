@@ -3,6 +3,35 @@
 This is the working plan. Findings can reorder it; each phase should leave behind
 sanitized, reproducible evidence.
 
+Last code/evidence audit: 2026-10-09, committed baseline `8caaca0` (PR #267).
+Implementation, synthetic coverage, and owned-account acceptance are tracked
+separately; in-progress branches are not counted as shipped features.
+
+## Current feature gaps and next work
+
+The client and bridge already support client-owned QR enrollment, secure leased
+profiles, resumed login, durable commit/deduplication, bounded bridge reconnect,
+text/replies/photos/reactions, read-receipt routing, initial room/member metadata,
+operator chat listing and contact thumbnails. Inbound conversion additionally
+supports video, audio, files, contacts, profiles, locations, stickers, URL-based
+albums, text polls/posts and observed nonanimated Mini emoticons. Regular
+three-person encrypted Matrix text and normal restart recovery have passed.
+These are scoped capabilities, not full official-client parity.
+
+| Priority | Missing implementation or acceptance | Code/evidence boundary |
+|---|---|---|
+| 1 | Regular-group announcements; rename, join/leave and metadata lifecycle acceptance | `CHGMOMETAS` has no committed bridge projection; initial shared title/roster works. Membership handlers exist, but live mutations remain unvalidated. See [chat metadata](research/chat-metadata.md) and [group evidence](research/bridge/GROUP-MESSAGING-VALIDATION.md). |
+| 2 | Group photos, replies, reactions and media/restart acceptance | Direct-room evidence does not cover group behavior. Group acceptance currently proves text, initial identities/name/avatar and restart only. |
+| 3 | Live read-receipt and catch-up read-side-effect policy; operator malformed-message recovery; terminal/failure lifecycle acceptance | Routing, bounded recovery and ownership are implemented; `SYNCMSG cnt=0`, terminal events, Matrix failures and cleanup timeouts need controlled acceptance. Receive-header timeout and push receipts are not installed by default. |
+| 4 | Reproducible deployment acceptance and Matrix crypto recovery | Docker/configuration exist. Complete standard appservice installation and separate Beeper validation; test key rotation, missing keys/trust transitions and encrypted replies/reactions. |
+| 5 | Broader outbound messaging and interactive content | `HandleMatrixMessage` accepts text/notice/emote and JPEG/PNG photos only; image replies are rejected. Outbound video/audio/files/albums/stickers/cards/polls/posts, edits/deletions and poll/board actions have no supported connector path. |
+| 6 | Eligible unsupported formats and broader chat/contact scope | Link, Schedule, Nudge, SharpSearch, sticker variants, LargeVideo/LargeFile, call/business formats and Open/Team/Secret Chat need independent contracts/fixtures. Friend creation has a bounded API; full friend/contact synchronization remains open. |
+
+Keep opt-in historical backfill pending its read-side-effect policy. Continue
+Mac-first full-chain protocol research and production-fixture migration alongside
+these slices. Cloud backup/restore remains out of scope; paid or unavailable
+emitters are evidence blockers, not reasons to relabel supported messages.
+
 ## Phase 0 — foundation
 
 - [x] Choose Go, a public MIT-licensed repository, and a modular architecture.
@@ -64,11 +93,11 @@ Execution through first text send/receive follows
       changes, mutation identity, and reconnect lifecycle.
 - [x] Specify and validate one explicit outbound text send with safe idempotency
       and no automatic retry after ambiguous delivery.
-- [ ] Implement transport, framing, and serialization packages.
-- [ ] Implement credential/session storage interfaces with secure defaults.
-- [ ] Implement device login and reconnect state machines.
-- [ ] Add synchronization, then text receive/send, with read side effects
-      modeled explicitly.
+- [x] Implement transport, framing, and serialization packages.
+- [x] Implement credential/session storage interfaces with secure defaults.
+- [x] Implement device login and bridge-owned bounded reconnect state machines.
+- [x] Add synchronization and text receive/send with separate delivery, commit
+      and explicit read watermarks. Live catch-up read-side-effect policy remains open.
 - [ ] Specify and validate read-state semantics: DECUNREAD and NOTIREAD,
       explicit markAsRead/read-all routing through SYNCMSG, local CHATOFF
       teardown, and the required separation of delivery, commit, and read
@@ -90,16 +119,17 @@ Execution through first text send/receive follows
 - [x] Live-validate the mini/custom reaction detail endpoint and add it as a
       separate, Mac-compatible data source without conflating it with legacy
       reaction-member attribution.
-- [ ] Add a private versioned continuity checkpoint and make the long-running
+- [x] Add a private versioned continuity checkpoint and make the long-running
       Matrix/Beeper bridge the exclusive per-profile session owner. On bridge
       restart, perform one cursor-based resumed login rather than QR
       authorization or a retry loop.
 - [x] Implement the private versioned checkpoint, explicit application commit
       boundary, resumed `LOGINLIST` cursor inputs, duplicate suppression, and
       bounded no-progress-detecting `SYNCMSG` recovery with synthetic tests.
-- [ ] Live-validate the resume/catch-up boundary and wire the eventual bridge as
+- [x] Live-validate the normal restart resume/catch-up boundary and wire the bridge as
       the sole checkpoint committer and per-profile session owner.
-- [ ] Verify against the disposable account and add regression tests.
+- [x] Verify the implemented messaging/restart slices against disposable accounts
+      and add live-found regressions; broader lifecycle acceptance remains open.
 
 ### Durable parity implementation pipeline
 
@@ -348,27 +378,12 @@ LOGINLIST request. The future binding point is therefore between carriage
 assignment and reader startup, before LOGINLIST admission. The bridge reaches a
 Session only through `Client`; there is no second bridge-owned carriage owner.
 
-`Client.Close` currently holds `Client.mu` while calling `Session.Close`, then
-marks the checkpoint clean and releases the profile lease. A bounded worker
-join must not be added under that lock because worker callbacks can complete
-pending Session requests and may call higher-level code. A future context-aware
-Client shutdown should capture the Session while holding `Client.mu`, mark the
-Client closed, unlock, call `Session.Shutdown(ctx)`, and finalize the
-checkpoint and lease only after the join succeeds. If the deadline expires,
-the exclusive profile lease and checkpoint ownership must remain held so a
-later shutdown can retry the join; marking the Client closed must not discard
-the live Session reference. Existing `Close` call sites and test dials use
-interrupt-only cleanup and must remain valid until that API is approved.
-
-The integration tests belong at two levels. Session tests should exercise
-constructor binding, reader startup, status/config gates, UID correlation,
-worker joins, and terminal fan-out on scripted carriages. Client tests should
-inject a dialer returning that Session, assert one shared owner across
-concurrent operations, and verify bounded shutdown releases the session,
-checkpoint, and profile lease without holding `Client.mu` during the worker
-join. A timeout case must assert that the lease remains held and a later
-successful join releases it; a closed Client must reject new operations during
-that interval.
+`Client.Shutdown(ctx)` now interrupts and joins outside `Client.mu`, retaining
+checkpoint/profile ownership on deadline expiry for a later cleanup attempt.
+Production bridge shutdown uses the bounded owner path; client shutdown and
+connector blocked-delivery regressions cover retention and eventual release.
+The constructor status/config proposal above remains unimplemented: existing
+Session timeout seams and standalone owners do not establish default binding.
 
 ## Phase 4 — Matrix/Beeper bridge
 
@@ -386,10 +401,12 @@ Execution follows [`research/bridge/PLAN.md`](research/bridge/PLAN.md).
 - [ ] Complete the single-user alpha in bridge-plan execution order: lifecycle
       reliability, room/member metadata, QR enrollment, replies/photos/reactions,
       controlled reconnect, and deployment validation.
-- [ ] Add opt-in backfill and read receipts after settling read-state semantics.
+- [x] Implement bidirectional read-receipt routing with production regressions.
+- [ ] Live-validate read receipts and catch-up read effects; add opt-in backfill
+      only after its policy is settled.
 - [ ] Validate standard Matrix appservice deployment and Beeper compatibility.
-- [ ] Package for a single-user Linux homelab deployment without baking in any
-      operator-specific values.
+- [x] Package Docker/configuration for a single-user Linux homelab without
+      operator-specific values; full deployment acceptance remains open.
 
 ## Questions to resolve through evidence
 
@@ -417,7 +434,9 @@ normal bridge restart with retained keys. See
 The reusable `cmd/mooo-matrix-lab` companion records the harness parsing/login
 edge cases and prevents automatic repeat sends. Remaining acceptance includes
 key rotation/missing-key recovery/trust transitions, encrypted replies and
-reactions, Beeper deployment, and groups (third owned participant pending).
+reactions, Beeper deployment, and group media/replies/reactions. Regular three-person encrypted text and
+restart passed on 2026-10-09; see
+[group validation](research/bridge/GROUP-MESSAGING-VALIDATION.md).
 
 ### Inbound sticker acceptance (2026-10-08)
 
@@ -500,10 +519,10 @@ After the independently testable types land:
 
 - [x] Audit and implement operator-facing chat listing, including production
       callers, pagination/state reconciliation and owned-account E2E checks (PR #261).
-- [ ] Audit and implement contact profile-photo retrieval, including the official
-      profile/resource path, safe expiry/cache behavior and owned-account E2E
-      checks. Profile-card text support does not satisfy avatar retrieval.
-- [ ] Create a third disposable owned lab account C and begin multi-participant
+- [x] Audit and implement room-scoped contact profile-photo retrieval, using the traced
+      profile/resource path, fresh lookup without URL caching, bounded downloads
+      and owned-account E2E checks (PR #262). Full cache/consumer parity remains open.
+- [x] Create a third disposable owned lab account C and begin multi-participant
       chat testing, after the listing/profile-photo phase.
 
 Keep any
@@ -523,10 +542,10 @@ original emitter. See [sharp-search.md](research/sharp-search.md).
 
 Keep type 23 unsupported pending a controlled eligible share. Remaining paid,
 business, call and Open Chat formats still require their own owned emitters and
-fixtures; enum names do not establish E2E support. Proceed to the requested
-operator chat-list/profile-photo audit while preserving those type gaps for
-future eligible experiments. Account C and group work follow that operator
-phase as requested.
+fixtures; enum names do not establish E2E support. Operator chat listing and
+contact-photo retrieval have landed. Account C and initial regular-group text
+testing completed afterward; group lifecycle and broader media acceptance
+remain open.
 
 
 Operator listing audit: `Client.InitialChatData` is the current login's raw
@@ -538,15 +557,16 @@ without last messages, and expose incomplete list synchronization honestly.
 The new operator listing requests a complete zero-token login inventory while
 preserving committed message positions, and reduces each page in deletion-before-
 update order. See [operator-chat-list.md](research/operator-chat-list.md) for
-validation and remaining gates. Contact-photo retrieval is still pending; existing
-connector avatar download support alone does not satisfy that requirement.
+validation and remaining gates. Room-scoped contact-photo retrieval landed in PR #262; its observed absence
+and synthetic-avatar acceptance is separate from connector avatar support.
 
 Contact-photo implementation checkpoint: the room-scoped operator command and
 production API retrieve the current thumbnail from a single matching MEMBER
 profile. Owned acceptance covers absent default avatar and a synthetic uploaded
 avatar corroborated by the peer's official Android profile view. See
 [operator-contact-photo.md](research/operator-contact-photo.md) for exact scope,
-resource safety, official-chain gaps and remaining merge validation.
+resource safety and official-chain gaps. PR #262 is merged; broader profile
+images, cache lifecycle and full official-chain parity remain open.
 
 - [ ] Bridge regular-group Boards announcements (`CHGMOMETAS`) after tracing
       Mac request/response, revision merge, database/UI state, removal and

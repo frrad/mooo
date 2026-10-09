@@ -1,6 +1,6 @@
 # Matrix bridge plan
 
-Status: active work plan, updated 2026-10-07. Framework decision:
+Status: active work plan, updated 2026-10-09 (committed baseline `8caaca0`). Framework decision:
 [ADR 0003](../../docs/adr/0003-bridge-on-mautrix-bridgev2.md).
 
 ## Goals
@@ -62,36 +62,21 @@ were rejected/failed and were not retried. The 2026-10-07 fresh-QR A/B run
 validated other-participant direct text,
 photos, replies after restart, legacy/mini reaction attribution and removal,
 and one controlled automatic carriage recovery; see
-[direct acceptance](DIRECT-MESSAGING-VALIDATION.md). Groups are pending at the
-maintainer’s direction. Inbound encrypted Kakao-to-Matrix text, encrypted media
-parity, and broader fault recovery remain open. The framework supplies appservice,
-encryption, and double-puppeting machinery; that does not establish deployment
-validation for every homeserver or Beeper configuration.
+[direct acceptance](DIRECT-MESSAGING-VALIDATION.md). The 2026-10-07 encrypted direct-room trial subsequently validated text and exact
+photo bytes both ways with retained-key restart; see
+[encrypted evidence](ENCRYPTED-ROOM-VALIDATION.md). The 2026-10-09 regular
+three-person trial validated encrypted text both ways, initial shared name,
+complete identities/profile avatar, and offline restart uniqueness; see
+[group evidence](GROUP-MESSAGING-VALIDATION.md). These later records supersede
+the earlier pending statements for those specific scopes.
 
-The next milestone is a usable single-user alpha. Execute the work in this
-order; the B0–B4 sections below remain feature inventories rather than a strict
-phase sequence:
-
-1. **Reliability first (B0/B3):** finish bootstrap ownership and decoder
-   cancellation, then exercise the connector through the real scripted backend.
-   Cover disconnect during login/subscription, Matrix delivery failure, restart
-   replay, shutdown timeout, and exclusive profile ownership. A cleanup timeout
-   must retain the owner and block replacement until cleanup succeeds.
-2. **Recognizable conversations (B2):** wire the existing metadata APIs into
-   room names, avatars, ghost profiles, and initial membership; then implement
-   membership updates. Validate direct and group conversations separately.
-3. **Bridge-native enrollment (B1):** add QR login using the existing registration
-   service, including expiry, cancellation, approval states, and secure profile
-   persistence. Keep explicit profile import available.
-4. **Everyday messaging (B1):** add outbound replies, then photos both ways after
-   resolving inbound author/timestamp fields. Add reactions after defining
-   aggregate-to-per-sender reconciliation and lookup-failure behavior.
-5. **Controlled reconnect (B3):** add a single-owner state machine with bounded
-   backoff, catch-up before live delivery, and distinct server-change versus
-   revoked-session handling. Never retry an ambiguous outbound mutation.
-6. **Deployment (B4):** produce a Docker image, example configuration, persistent
-   volume and upgrade guidance, and validate a standard Matrix appservice
-   installation. Evaluate Beeper self-hosting separately before claiming support.
+The next milestone remains a usable single-user alpha. Prioritize regular-group
+announcements and lifecycle validation, group photos/replies/reactions, read and
+recovery acceptance, then complete deployment and crypto recovery acceptance.
+The [root plan](../../PLAN.md#current-feature-gaps-and-next-work) inventories
+broader outbound and unsupported-format gaps. B0–B4 below separate landed code
+from remaining acceptance; do not repeat enrollment or implementation merely
+because an earlier milestone described it as pending.
 
 Alpha acceptance requires QR enrollment, recognizable direct/group portals,
 text/replies/photos in both directions, tested reaction reconciliation, recovery
@@ -149,11 +134,12 @@ the live acceptance criteria. Avatars/membership updates (PR #173) and login
 collision protection (PR #175)
 have also merged with synthetic regression coverage. Reconnect (PR #172) has merged with real scripted recovery and shutdown
 regressions. Reactions (PR #179) have merged with actual framework
-failure/replay coverage; direct/group and live reaction acceptance remains open. Container
+failure/replay coverage; direct legacy/mini live acceptance has passed; group reaction acceptance remains open. Container
 packaging has merged
 (PR #170); startup and restart smoke evidence is recorded in
-[deployment validation](DEPLOYMENT-VALIDATION.md). Read receipts, historical backfill, cloud backup/restore,
-and full official-client parity remain outside this alpha goal.
+[deployment validation](DEPLOYMENT-VALIDATION.md). Read receipts are implemented with live acceptance pending. Historical backfill
+follows alpha; cloud backup/restore is out of scope. Full official-client parity
+remains a separate research objective.
 
 ## Phases
 
@@ -238,11 +224,10 @@ and full official-client parity remain outside this alpha goal.
       transfer deadlines, and persisted photo source metadata. Optional inbound
       author/timestamp fields have synthetic parser coverage; live encoding
       remains an explicit gap. Image replies are rejected.
-- [ ] Live-validate direct/group photo transfers, Matrix room E2EE media, and
-      author/timestamp attribution. Direct A/B photos and exact inbound original
-      PNG passed on 2026-10-07.
-      Group/E2EE-room media remain pending. The Docker attachment probe covered
-      encrypted media transport in an unencrypted portal only.
+- [x] Live-validate direct photos both ways in encrypted Matrix rooms, including
+      exact decrypted PNG bytes and retained-key restart (2026-10-07).
+- [ ] Validate group photos and broader author/timestamp encoding; direct
+      acceptance does not establish every official media form.
 - [x] Inbound reply conversion with chat-scoped source message IDs.
 - [x] Outbound replies with persisted source metadata, explicit missing-source
       rejection, chat/receiver guards, UTF-16-bounded previews, and single-attempt
@@ -269,18 +254,23 @@ and full official-client parity remain outside this alpha goal.
       info, members, and member lists are traced in
       [`chat-metadata.md`](../chat-metadata.md); friend/contact sync and the
       listed live-encoding gaps remain.
-- [ ] Client APIs for them, with synthetic fixtures.
-      `Client.ChatInfo`, `Client.Members`, and `Client.MemberList` exist
-      (`internal/protocol/chatmeta`); friend/contact sync APIs remain.
+- [x] Chat/member APIs with production regressions: `Client.ChatInfo`,
+      `Client.Members`, `Client.MemberList`, operator chat listing and room-scoped
+      contact thumbnails.
+- [ ] Complete full friend/contact synchronization; the bounded add-by-phone
+      path does not satisfy inventory/delta/profile synchronization.
 - [x] Initial portal names and member profiles/rosters from existing client APIs
       (PR #162). Complete versus partial membership is explicit; unrequested
       profiles and invalid IDs are rejected.
 - [x] Live-validate initial direct portal names, participant identities and roster
       in the 2026-10-07 A/B trial.
-- [ ] Live-validate group portal metadata; pending a third owned participant.
+- [x] Live-validate initial regular three-person shared name, complete roster,
+      distinct senders and a participant profile avatar (2026-10-09).
+- [ ] Validate group rename notifications, group avatars and lifecycle changes.
 - [x] Portal and ghost avatars, plus updates to existing portal metadata (PR #173).
       HTTPS CDN policy, byte bounds, and redacted failures are synthetic-tested;
-      direct/group live validation remains outstanding.
+      an owned synthetic participant avatar passed in the regular-group trial.
+      Group-avatar changes and broader update acceptance remain outstanding.
 - [x] Membership events: `NEWMEM`, `DELMEM`, `LEFT`, `CHGCHATST` (PR #173).
       Partial rosters preserve explicit joins/leaves even when profile lookup
       fails. Existing-portal live validation remains outstanding.
@@ -361,3 +351,19 @@ The implemented supervisor and its bounded policy are documented in
       persistent restart/offline catch-up with retained SDK keys. See
       [group validation](GROUP-MESSAGING-VALIDATION.md). Lifecycle membership
       mutations, group avatars, and Beeper-hosted acceptance remain gaps.
+
+## Additional committed capabilities and open scope
+
+Inbound media/cards added after the original B1 inventory include stickers,
+video/audio/files, contacts/profiles/locations, URL-based MultiPhoto, text-poll
+and board-post snapshots, and observed nonanimated Mini emoticons. Their
+scoped evidence and remaining forms are linked in the root plan. These inbound
+converters do not enable equivalent Matrix outbound sends or interactive actions.
+
+- [ ] Implement regular-group Boards announcement projection from `CHGMOMETAS`
+      after full Mac chain tracing; keep shared `CHGMETA` Notice separate.
+- [ ] Validate group replies/reactions/media, live membership changes and rename.
+- [ ] Validate Matrix key rotation, missing-key recovery/trust transitions and
+      encrypted reply/reaction behavior beyond retained-key text/media restart.
+- [ ] Add broader outbound kinds and edits/deletions only with traced contracts,
+      actual production consumers and appropriate owned-account acceptance.
