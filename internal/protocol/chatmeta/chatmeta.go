@@ -88,8 +88,10 @@ type RoomMeta struct {
 }
 
 // Shared metadata types recovered from Android 26.8.2 ChatSharedMeta.kt.
-// Values are explicit wire codes, not ordinals; 11 and 12 are absent.
-// Names retain the official enum spelling. See research/chat-metadata.md.
+// Values are explicit wire codes, not ordinals. Mac 26.8.0 additionally
+// consumes 11/12 as Live Talk info/member metadata; Android omits them.
+// Android names retain its enum spelling; Live Talk names describe Mac
+// projections rather than recovered enum symbols. See research/chat-metadata.md.
 const (
 	SharedMetaNone                   int32 = 0
 	SharedMetaNotice                 int32 = 1
@@ -102,6 +104,8 @@ const (
 	SharedMetaPlustChatBackground    int32 = 8
 	SharedMetaDailyCard              int32 = 9
 	SharedMetaDailyCardProfile       int32 = 10
+	SharedMetaLiveTalkInfo           int32 = 11 // Mac liveTalkInfo projection.
+	SharedMetaLiveTalkMember         int32 = 12 // Mac liveTalkMebmer projection.
 	SharedMetaOpenLinkChannelChat    int32 = 13
 	SharedMetaOpenLinkBotCommand     int32 = 14
 	SharedMetaWarehouse              int32 = 15

@@ -378,3 +378,68 @@ constants, including `chatmeta.SharedMetaTitle`. Naming a type does not imply
 that its content or behavior is implemented. The wire model continues
 preserving unknown integer types rather than discarding them.
 No decompiled implementation is included in the repository.
+
+## Mac cross-check and notice namespaces (2026-10-09)
+
+The authorized macOS 26.8.0 arm64 binary is the preferred reversing source.
+Android supplements it: its Java class identifiers are obfuscated, but retained
+Kotlin source-file metadata and enum member strings identify ChatSharedMeta.kt,
+ChatTitleMeta.kt, and Title. The recovered table above is specifically Android
+26.8.2; it is not a claim that every member name was recovered from Mac.
+
+The Mac NTChatMeta factory consumes the decoded LocoChatMeta type and copies
+revision, author, content, and updated timestamp into the persisted object.
+Its numeric branches independently corroborate these projections:
+
+| Wire type | Mac consumer/projection |
+| --- | --- |
+| 1 | content to noticeText; SQLite schema explicitly calls its default 1 NTChatMetaTypeNotice |
+| 2 | Kakao group ID/name/profile URLs |
+| 3 | groupNickname, whose LocoChatMeta getter returns content only for type 3 |
+| 4 | group profile thumbnail/full image URLs |
+| 11 | Live Talk title/on state via liveTalkInfo |
+| 12 | Live Talk member count via liveTalkMebmer (binary spelling) |
+| 13 | notice text recovery on fetch; alternate notice for time-chat links |
+| 15 | team/warehouse-related info |
+| 16, 17 | voice-room info and member count |
+| 18, 19 | VoIP call info and member count |
+| 20 | open-chat background image URL |
+| 21 | chat bots |
+
+Mac therefore fills Android's 11/12 gap. Production names these
+SharedMetaLiveTalkInfo and SharedMetaLiveTalkMember from the Mac projections;
+they are descriptive names, not recovered Mac enum symbols. Mac enum names and
+semantics for 0, 5–10, 14, and 22 remain unconfirmed. None of these non-title
+constants imply implemented feature support.
+
+The Mac room notice getter requests shared type 1; the notice model's isPinned
+parses its content as JSON and reads pin_notice through boolValue, returning
+false for empty/unparseable/missing/nonconvertible data. The separate
+isPinnedChatRoom predicate must not be confused with that notice pin.
+
+A controlled regular-group experiment on Android 26.8.2 used Announce on an
+existing synthetic text. All three native clients displayed an announcement
+banner and Boards detail. The bridge ignored the incoming unknown packet and
+Matrix received neither a pin update nor notice text in its topic. Removing and
+setting the announcement again produced CHGMOMETAS, not CHGMETA. Its metas
+array contained a type-1 entry with ct carrying JSON for a TEXT Boards post:
+notice=true, content and json_content matched the synthetic text, with post,
+owner, setter, revision, and creation metadata. Those private values were not
+published. SharedMetaNotice=1 and this Moim type 1 belong to different namespaces.
+CHATINFO did not return the announcement as a shared chatMetas entry.
+
+The Mac separately exposes doGetMoimMetaWithChatRoom:metaRevision:completion:
+and sends sendGetMoimMetaRequestWithChatId:types:completion: after comparing
+Moim revision state. The room push consumer merges the metas into the Moim model, then enters a
+synchronous database block. The notice-list updater inserts/replaces/removes
+meta entries and updates view/last-seen revision state; the notice factory
+constructs its view model from the Moim meta and room. Exact merge ordering,
+database block contents, UI invalidation, and failure branches remain untraced.
+These Moim push/update and notice-model chains are distinct
+from the shared metadata factory. Announcement bridging, removal/replacement,
+restart recovery, and mapping Boards IDs to Matrix pin targets are open gaps.
+The live test establishes native behavior and a missing bridge feature, not
+end-to-end announcement support or full Mac notice parity.
+
+The sanitized observed shape is recorded in
+[the announcement fixture](fixtures/chatmeta/observed-moim-announcement.json).
