@@ -336,6 +336,86 @@ func TestScriptedBackendResumedLoginUsesDurableCursors(t *testing.T) {
 	}
 }
 
+func TestScriptedBackendFullListPreservesDurableMessageCursors(t *testing.T) {
+	state := reusableTestState()
+	booking := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
+		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
+		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
+	)))
+	checkin := newScriptedBackend(t, false, expectRequest("CHECKIN", nil, statusDocument(
+		bson.E{Key: "host", Value: "carriage.invalid"}, bson.E{Key: "port", Value: int32(995)},
+	)))
+	carriage := newScriptedBackend(t, true, expectRequest("LOGINLIST", func(raw bson.Raw) error {
+		if err := requireInt64(raw, "lastTokenId", 0); err != nil {
+			return err
+		}
+		chatIDs, err := raw.LookupErr("chatIds")
+		if err != nil || chatIDs.Type != bson.TypeArray {
+			return errors.New("chatIds is not an array")
+		}
+		maxIDs, err := raw.LookupErr("maxIds")
+		if err != nil || maxIDs.Type != bson.TypeArray {
+			return errors.New("maxIds is not an array")
+		}
+		chatValues, _ := chatIDs.Array().Values()
+		maxValues, _ := maxIDs.Array().Values()
+		if len(chatValues) != 2 || len(maxValues) != 2 || chatValues[0].Int64() != 3 || maxValues[0].Int64() != 30 || chatValues[1].Int64() != 9 || maxValues[1].Int64() != 90 {
+			return fmt.Errorf("resume pairs = %v / %v", chatValues, maxValues)
+		}
+		lbk, err := raw.LookupErr("lbk")
+		if err != nil || lbk.Type != bson.TypeInt32 || lbk.Int32() != 6 {
+			return errors.New("lbk is not int32(6)")
+		}
+		return nil
+	}, statusDocument(
+		bson.E{Key: "chatDatas", Value: bson.A{}},
+		bson.E{Key: "eof", Value: true},
+		bson.E{Key: "lastTokenId", Value: int64(91)},
+		bson.E{Key: "lbk", Value: int32(8)},
+	)), holdBackendOpen())
+	dialers := sessionDialers{
+		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
+			switch host {
+			case bookingHost:
+				return booking.client, nil
+			case "checkin.invalid":
+				return checkin.client, nil
+			default:
+				return nil, fmt.Errorf("unexpected TLS host %q", host)
+			}
+		},
+		secure: func(_ context.Context, host string, _ int) (*wireConn, error) {
+			if host != "carriage.invalid" {
+				return nil, fmt.Errorf("unexpected secure host %q", host)
+			}
+			return carriage.client, nil
+		},
+	}
+	resume := continuity.Checkpoint{
+		Version: continuity.Version, LastTokenID: 77, LBK: 6,
+		Chats: []continuity.ChatCursor{{ChatID: 3, MaxLogID: 30}, {ChatID: 9, MaxLogID: 90}},
+	}
+	session, err := connectSessionWithResume(t.Context(), state, (OpenOptions{FullChatList: true}).loginResume(resume), dialers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	if session.loginCursor.lastTokenID == nil || *session.loginCursor.lastTokenID != 91 || session.loginCursor.lbk == nil || *session.loginCursor.lbk != 8 {
+		t.Fatalf("login cursor = %#v", session.loginCursor)
+	}
+	if resume.LastTokenID != 77 {
+		t.Fatal("full-list mode mutated the durable checkpoint")
+	}
+	chats, err := session.ListChats()
+	if err != nil || len(chats) != 0 {
+		t.Fatalf("completed empty full list: %v, %v", chats, err)
+	}
+	_ = session.Close()
+	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
+		backend.wait(t)
+	}
+}
+
 func TestScriptedBackendPartialLChatListKeepsDeltasWithoutAdvancingGlobalCursor(t *testing.T) {
 	state := reusableTestState()
 	booking := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
@@ -392,12 +472,86 @@ func TestScriptedBackendPartialLChatListKeepsDeltasWithoutAdvancingGlobalCursor(
 	if len(session.initialChatData) != 2 {
 		t.Fatalf("chat deltas = %d, want 2", len(session.initialChatData))
 	}
-	if len(session.loginCursor.observed) != 2 || len(session.loginCursor.deleted) != 1 || session.loginCursor.deleted[0] != 42 {
+	if len(session.loginCursor.observed) != 1 || session.loginCursor.observed[0].ChatID != 43 || len(session.loginCursor.deleted) != 1 || session.loginCursor.deleted[0] != 42 {
 		t.Fatalf("inventory delta = %#v", session.loginCursor)
 	}
 	if session.loginCursor.lastTokenID != nil || session.loginCursor.lbk != nil {
 		t.Fatalf("partial page advanced global cursor: %#v", session.loginCursor)
 	}
+	if session.loginCursor.replaceInventory {
+		t.Fatal("partial full-list request must not replace the known inventory")
+	}
+
+	_ = session.Close()
+	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
+		backend.wait(t)
+	}
+}
+
+func TestScriptedBackendFullPagedListRemovesEarlierRoom(t *testing.T) {
+	state := reusableTestState()
+	booking := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
+		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
+		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
+	)))
+	checkin := newScriptedBackend(t, false, expectRequest("CHECKIN", nil, statusDocument(
+		bson.E{Key: "host", Value: "carriage.invalid"}, bson.E{Key: "port", Value: int32(995)},
+	)))
+	carriage := newScriptedBackend(t, true,
+		expectRequest("LOGINLIST", nil, statusDocument(
+			bson.E{Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: int64(42)}}}},
+			bson.E{Key: "eof", Value: false},
+			bson.E{Key: "lastTokenId", Value: int64(11)},
+			bson.E{Key: "lastChatId", Value: int64(42)},
+			bson.E{Key: "lbk", Value: int32(3)},
+		)),
+		expectRequest("LCHATLIST", func(raw bson.Raw) error {
+			if err := requireInt64(raw, "lastTokenId", 11); err != nil {
+				return err
+			}
+			return requireInt64(raw, "lastChatId", 42)
+		}, bson.D{
+			{Key: "status", Value: int32(0)},
+			{Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: int64(43)}}}},
+			{Key: "delChatIds", Value: bson.A{int64(42)}},
+			{Key: "eof", Value: true},
+		}),
+		holdBackendOpen(),
+	)
+	dialers := sessionDialers{
+		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
+			switch host {
+			case bookingHost:
+				return booking.client, nil
+			case "checkin.invalid":
+				return checkin.client, nil
+			default:
+				return nil, fmt.Errorf("unexpected TLS host %q", host)
+			}
+		},
+		secure: func(_ context.Context, host string, _ int) (*wireConn, error) {
+			if host != "carriage.invalid" {
+				return nil, fmt.Errorf("unexpected secure host %q", host)
+			}
+			return carriage.client, nil
+		},
+	}
+	session, err := connectSessionWithResume(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	if len(session.initialChatData) != 2 {
+		t.Fatalf("chat deltas = %d, want 2", len(session.initialChatData))
+	}
+	if len(session.loginCursor.observed) != 1 || session.loginCursor.observed[0].ChatID != 43 || len(session.loginCursor.deleted) != 1 || session.loginCursor.deleted[0] != 42 {
+		t.Fatalf("inventory delta = %#v", session.loginCursor)
+	}
+	chats, err := session.ListChats()
+	if err != nil || len(chats) != 1 || chats[0].ChatID != 43 {
+		t.Fatalf("completed paged inventory: %#v, %v", chats, err)
+	}
+
 	_ = session.Close()
 	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
 		backend.wait(t)

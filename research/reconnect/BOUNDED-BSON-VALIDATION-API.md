@@ -128,8 +128,9 @@ its discrepancies must be reinterpreted or the shadow scoped per method.
 26.8.0, static trace.)
 
 Modes are `off`, `log` and `panic`. Test binaries default to `panic`, the lab
-CLI defaults to `panic`, and the bridge defaults to `log`
-(`network.bson_shadow.mode`). Panic is not used in the bridge because any
+research CLI defaults to `panic`. The operator `mooo-lab chats list` command
+and the bridge default to `log`
+(`network.bson_shadow.mode`). These operator defaults retain diagnostics because any
 remote sender able to trigger a discrepancy could otherwise crash it.
 `MOOO_BSON_SHADOW` overrides the default mode. Bodies above 1 MiB are skipped
 and counted.

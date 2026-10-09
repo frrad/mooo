@@ -318,6 +318,8 @@ func (s *Session) stopLifecycle() {
 }
 
 type loginCursor struct {
+	chatData         map[int64]bson.Raw
+	complete         bool
 	lastTokenID      *int64
 	lbk              *int32
 	observed         []continuity.ChatTarget
@@ -486,7 +488,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	if err != nil {
 		return nil, ErrLogin
 	}
-	cursor.replaceInventory = resume.LastTokenID == 0
+	cursor.replaceInventory = resume.LastTokenID == 0 && cursor.complete
 	session.initialChatData = chatData
 	session.loginCursor = cursor
 	if !session.finishBootstrap() {
@@ -1514,6 +1516,7 @@ func finishLoginSyncSession(ctx context.Context, session *Session, first []byte,
 			return nil, cursor, ErrProtocol
 		}
 		if eof {
+			cursor.complete = true
 			return chats, cursor, nil
 		}
 		lastTokenID, err := bsonInt64(page, "lastTokenId")
@@ -1556,25 +1559,8 @@ func updateLoginCursor(page bson.Raw, cursor *loginCursor, updateGlobal bool) er
 			cursor.lbk = &copy
 		}
 	}
-	if value, err := page.LookupErr("chatDatas"); err == nil {
-		if value.Type != bson.TypeArray {
-			return ErrProtocol
-		}
-		values, err := value.Array().Values()
-		if err != nil {
-			return ErrProtocol
-		}
-		for _, value := range values {
-			if value.Type != bson.TypeEmbeddedDocument {
-				return ErrProtocol
-			}
-			target, err := loginChatTarget(value.Document())
-			if err != nil {
-				return err
-			}
-			setLoginTarget(&cursor.observed, target)
-		}
-	}
+	// Apply each page in official deletion-before-chat-data order. A later
+	// deletion must remove an earlier page snapshot before session installation.
 	if value, err := page.LookupErr("delChatIds"); err == nil {
 		if value.Type != bson.TypeArray {
 			return ErrProtocol
@@ -1597,6 +1583,36 @@ func updateLoginCursor(page bson.Raw, cursor *loginCursor, updateGlobal bool) er
 				return ErrProtocol
 			}
 			cursor.deleted = append(cursor.deleted, chatID)
+			delete(cursor.chatData, chatID)
+			for i, target := range cursor.observed {
+				if target.ChatID == chatID {
+					cursor.observed = append(cursor.observed[:i], cursor.observed[i+1:]...)
+					break
+				}
+			}
+		}
+	}
+	if value, err := page.LookupErr("chatDatas"); err == nil {
+		if value.Type != bson.TypeArray {
+			return ErrProtocol
+		}
+		values, err := value.Array().Values()
+		if err != nil {
+			return ErrProtocol
+		}
+		for _, value := range values {
+			if value.Type != bson.TypeEmbeddedDocument {
+				return ErrProtocol
+			}
+			target, err := loginChatTarget(value.Document())
+			if err != nil {
+				return err
+			}
+			setLoginTarget(&cursor.observed, target)
+			if cursor.chatData == nil {
+				cursor.chatData = make(map[int64]bson.Raw)
+			}
+			cursor.chatData[target.ChatID] = append(bson.Raw(nil), value.Document()...)
 		}
 	}
 	return nil

@@ -509,7 +509,8 @@ func TestSessionComposesManagerAndAgentReceiptOwners(t *testing.T) {
 	}
 	session.dispatchPushReceipt(loco.Packet{Header: loco.Header{Method: "HINT"}, Body: []byte{1}})
 	deadline := time.After(time.Second)
-	for queue.count() == 0 {
+	// Wait for the complete cancel/send/schedule batch before draining it.
+	for queue.count() < 3 {
 		select {
 		case <-deadline:
 			t.Fatal("composed owner did not enqueue")

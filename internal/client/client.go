@@ -70,6 +70,19 @@ type Client struct {
 // Open acquires the profile's process-wide owner lease and creates a reusable
 // authenticated client without opening a network connection.
 func Open(statePath string, doer friends.Doer) (*Client, error) {
+	return OpenWithOptions(statePath, doer, OpenOptions{})
+}
+
+// OpenOptions selects explicit bootstrap behavior for an operator-owned profile.
+type OpenOptions struct {
+	// FullChatList requests a full inventory at the next login by using the
+	// documented zero list token. Message commit positions and LBK are retained.
+	FullChatList bool
+}
+
+// OpenWithOptions acquires the same exclusive profile lease as Open. It never
+// creates a parallel secondary session or changes committed message positions.
+func OpenWithOptions(statePath string, doer friends.Doer, options OpenOptions) (*Client, error) {
 	statePath = filepath.Clean(statePath)
 	store, err := authstate.Open(statePath)
 	if err != nil {
@@ -97,7 +110,7 @@ func Open(statePath string, doer friends.Doer) (*Client, error) {
 		return nil, err
 	}
 	client.checkpoint = checkpoint
-	resume := checkpoint.Snapshot()
+	resume := options.loginResume(checkpoint.Snapshot())
 	client.dial = func(ctx context.Context, state authstate.State) (*Session, error) {
 		return connectSessionWithResume(ctx, state, resume, productionSessionDialers())
 	}
@@ -823,4 +836,11 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		finish()
 		return interruptErr
 	}
+}
+
+func (o OpenOptions) loginResume(resume continuity.Checkpoint) continuity.Checkpoint {
+	if o.FullChatList {
+		resume.LastTokenID = 0
+	}
+	return resume
 }

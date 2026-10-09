@@ -535,6 +535,8 @@ persists `KnownChats` and applies explicit removals; its reopen/delta regression
 protects retention when a later login returns no chat data. The operator path
 must reconcile that inventory and resolve typed room metadata, including rooms
 without last messages, and expose incomplete list synchronization honestly.
-The current `mooo-lab` command package is offline auth-only; it has no chat-list
-or contact-photo command. Existing connector avatar download support alone does
-not satisfy operator contact-photo retrieval.
+The new operator listing requests a complete zero-token login inventory while
+preserving committed message positions, and reduces each page in deletion-before-
+update order. See [operator-chat-list.md](research/operator-chat-list.md) for
+validation and remaining gates. Contact-photo retrieval is still pending; existing
+connector avatar download support alone does not satisfy that requirement.
