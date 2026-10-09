@@ -291,3 +291,13 @@ chat accessibility; recipient verification occurs before opening it. Returning
 to that same owned chat confirms submission, while actual received audio is
 checked independently. Any uncertain attempt keeps its receipt and is never
 automatically repeated. Unknown permission screens stop the script.
+
+
+`send-profile` takes private stdin peer, exact picker-row bounds, exact owned
+profile accessibility description, and receipt. It begins in the verified owned
+chat with an empty composer, opens Contacts → Send KakaoTalk Profile, rejects
+existing selections, and checks the exact described row before selecting it.
+Exactly one checked entry and enabled OK are required. The exclusive durable
+receipt precedes OK; afterward the same owned chat must return. An ambiguous
+outcome preserves the receipt and forbids automatic resend. Profile labels may
+appear in accessibility descriptions rather than text.

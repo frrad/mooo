@@ -454,7 +454,9 @@ run required checks and secret scans, then merge through passing CI.
 - [x] Ordinary Video (3): controlled owned A/B encrypted delivery, exact received
       bytes/metadata, native receiver playback and restart verified; see
       [video.md](research/video.md).
-- [ ] Audio (5) and File (18): independently exercise owned picker/recording flows.
+- [x] Audio (5) and File (18): independently verified owned A/B encrypted
+      catch-up/live delivery, media metadata and exact bytes, retained keys and
+      restart uniqueness; landed separately in PRs #248 and #247.
 - [ ] Contact/Profile (4/17), Location (16), and Link (9): inspect available owned
       sharing flows, using synthetic non-identifying payloads where possible.
 - [ ] Schedule/Vote/Post (13/14/24), Nudge (21), and sticker variants (6/22/25):

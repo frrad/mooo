@@ -24,6 +24,8 @@ than failures. Their raw BSON is deliberately not exposed by the typed layer.
 - `VideoMessage`: observed ordinary type-3 direct-URL MP4; bounded native Matrix
   video conversion with seconds-to-milliseconds duration. Resource-only and
   high-quality selection remain explicit gaps.
+- `ProfileMessage`: type-17 shared identity, nickname and status; readable native
+  Matrix text. Avatar and Kakao View Profile actions remain gaps.
 - `AudioMessage`: observed type-5 direct-URL M4A, millisecond expiry/duration,
   bounded transfer and native Matrix `m.audio`; legacy/relay forms remain gaps.
 - `FileMessage`: observed ordinary type-18 direct-URL files, bounded download

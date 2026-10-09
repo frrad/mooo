@@ -1,0 +1,17 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-08",
+    "method": "Owned A selected its own profile from Send KakaoTalk Profile and sent once to B; scoped B MSG capture. Identifiers and permit replaced; observed blank images/status preserved.",
+    "doc": "research/profile.md"
+  },
+  "attachment": {
+    "userId": 42,
+    "nickName": "Synthetic Profile",
+    "fullProfileImageUrl": "",
+    "profileImageUrl": "",
+    "statusMessage": "",
+    "accessPermit": "00000000-0000-4000-8000-000000000000"
+  }
+}

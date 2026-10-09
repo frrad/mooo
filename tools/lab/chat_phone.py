@@ -186,6 +186,40 @@ def send_file(phone, peer, filename, sha256, receipt):
     raise ValueError('file outcome unconfirmed; preserve receipt and do not retry')
 
 
+def send_profile(phone, peer, bounds, description, receipt):
+    if Path(receipt).exists():
+        raise ValueError('previous attempt exists; inspect outcome without resending')
+    if not description or len(description) > 1024:
+        raise ValueError('exact owned profile description required')
+    root = phone.dump()
+    owned_chat(root, peer)
+    if control(root, 'message_edit_text').get('text', '') not in ('', 'Message'):
+        raise ValueError('composer not empty')
+    tap(phone, control(root, 'media_send_layout'))
+    root = phone.dump()
+    _, (x, y) = node_target(control(root, 'handle_container'))
+    phone.adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(max(200, y // 4)), '450')
+    tap(phone, clickable_text_parent(phone.dump(), 'Contacts'))
+    tap(phone, clickable_text_parent(phone.dump(), 'Send KakaoTalk Profile'))
+    root = phone.dump()
+    control(root, 'friends_pickerLayout')
+    if any(n.get('checked') == 'true' for n in root.iter('node')):
+        raise ValueError('existing profile selection')
+    row = unique([n for n in root.iter('node') if n.get('clickable') == 'true'
+                  and n.get('bounds') == bounds
+                  and any(c.get('content-desc') == description for c in n.iter('node'))])
+    tap(phone, row)
+    root = phone.dump()
+    control(root, 'friends_pickerLayout')
+    if sum(n.get('checked') == 'true' for n in root.iter('node')) != 1:
+        raise ValueError('single profile selection unconfirmed')
+    button = clickable_label(root, 'OK')
+    reserve(receipt)
+    tap(phone, button)
+    owned_chat(phone.dump(), peer)
+    return 'owned-profile-submitted-once'
+
+
 def ensure_silent_emulator(phone):
     avd = phone.adb('emu', 'avd', 'name').decode().splitlines()[0].strip()
     if avd not in ('mooo-lab', 'mooo-lab-b'):
@@ -260,6 +294,8 @@ def main():
             result = send_text(phone, request['peer'], request['text'], request['receipt'])
         elif action == 'sticker':
             result = send_sticker(phone, request['peer'], request['receipt'])
+        elif action == 'profile':
+            result = send_profile(phone, request['peer'], request['bounds'], request['description'], request['receipt'])
         elif action == 'audio':
             result = send_audio(phone, request['peer'], request['seconds'], request['receipt'])
         elif action == 'file':
