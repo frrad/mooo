@@ -72,8 +72,10 @@ group. Double-puppet roster convergence is not covered by the owned test setup.
 
 Owned acceptance described below covers peer departure offline and online,
 explicit rejoining, bridge-account departure and rejoining, exact encrypted
-traffic, native visibility, ordering and mapping stability. Final committed-head
-restart verification, CI and squash merge remain pending. No separate forced
+traffic, native visibility, ordering and mapping stability. Committed production code passed a final restart with all eleven mappings
+unchanged, one original room binding, the verified two-member roster and C
+left. The retained SDK decrypted both an earlier C event and the post-rejoin A
+event exactly. Required CI and squash merge remain pending. No separate forced
 administrator-removal experiment was performed; its decoded removal path has
 synthetic production coverage and first-party tracing, not observed parity.
 
@@ -141,7 +143,7 @@ the post-rejoin messages once. A subsequent live C departure converged to two
 members with C left on Matrix and no decoder error. The corrected membership-only restart reached connected state without another
 ordinary message, kept the two-member checkpoint and C's Matrix leave, retained
 one room binding, and left all nine prior message mappings unchanged. Full
-`make check` and worktree secret scanning passed. Final committed-head acceptance, CI and merge remain pending.
+`make check` and worktree secret scanning passed. Required CI and merge remain pending.
 
 ## Bridge-account departure and Matrix permissions
 
@@ -172,8 +174,9 @@ roster and cleared removal only after verified Matrix convergence. The post-rejo
 Matrix ghost. Both remaining native clients displayed it and the encrypted
 Matrix reply once. C remained left. All nine prior mapping rows were unchanged;
 exactly two ordered mappings were added, with no mapping for the encrypted send
-or native content submitted while the bridge account was absent. Final restart
-verification remains pending.
+or native content submitted while the bridge account was absent. The committed-code restart retained all eleven mappings and the same room,
+verified the roster again, and decrypted old and new content with retained SDK
+keys.
 
 Transport readiness preserves a removed or pending group's actionable state;
 a successful connection does not hide per-chat forwarding blocks. Verified live
