@@ -465,7 +465,10 @@ run required checks and secret scans, then merge through passing CI.
       landed in PR #251.
 - [x] Location (16): synthetic emulator GPS, native receiver map, exact received
       coordinates through encrypted catch-up/live delivery and restart verified.
-- [ ] Link (9): inspect the owned sharing flow and capture a controlled fixture.
+- [ ] Link (9): ordinary Android URL sharing was observed to emit Text (1),
+      not Link (9). The static receiver has multiple KakaoLink format branches;
+      a controlled type-9 emitter and full-chain fixture remain pending. See
+      [the emitter/receiver audit](research/link.md).
 - [ ] Schedule/Vote/Post (13/14/24), Nudge (21), and sticker variants (6/22/25):
       determine which controlled A/B UI flows are available without purchases.
 - [ ] Audit remaining types against actual emitter/receiver availability;
