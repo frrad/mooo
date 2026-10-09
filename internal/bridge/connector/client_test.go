@@ -81,6 +81,8 @@ type fakeKakao struct {
 	memberList        chatmeta.MemberListResponse
 	memberListErr     error
 	metadataCalls     []string
+
+	catchupHoldUntilRelease bool
 }
 
 func (f *fakeKakao) Connect(ctx context.Context) error { return f.connectErr }
@@ -147,10 +149,17 @@ func (f *fakeKakao) CatchUp(ctx context.Context, chatID, targetMax int64) ([]eve
 		f.catchupEnterOnce.Do(func() { close(entered) })
 	}
 	if release != nil {
-		select {
-		case <-release:
-		case <-ctx.Done():
-			return nil, ctx.Err()
+		if f.catchupHoldUntilRelease {
+			// A controlled bootstrap barrier keeps the old worker in flight even
+			// after Disconnect cancels its context. Scheduling cannot end the
+			// scenario before the test attempts a replacement.
+			<-release
+		} else {
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
 	}
 	return result.events, result.err
@@ -1077,11 +1086,14 @@ func TestDisconnectShutsDownBeforeJoiningUncooperativeBootstrap(t *testing.T) {
 func TestDisconnectDoesNotAdmitReplacementDuringBootstrap(t *testing.T) {
 	release := make(chan struct{})
 	entered := make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
 	fake := &fakeKakao{
-		stream:         make(chan events.Result),
-		resumeTargets:  []syncmsg.Target{{ChatID: testChatID, MaxLogID: 1}},
-		catchupEntered: entered,
-		catchupRelease: release,
+		stream:                  make(chan events.Result),
+		resumeTargets:           []syncmsg.Target{{ChatID: testChatID, MaxLogID: 1}},
+		catchupEntered:          entered,
+		catchupRelease:          release,
+		catchupHoldUntilRelease: true,
 	}
 	opens := 0
 	kc, _ := newTestClient(t, func() (kakaoClient, error) {
@@ -1103,7 +1115,7 @@ func TestDisconnectDoesNotAdmitReplacementDuringBootstrap(t *testing.T) {
 	if opens != 1 {
 		t.Fatalf("replacement opened during old bootstrap: opens=%d, want 1", opens)
 	}
-	close(release)
+	releaseOnce.Do(func() { close(release) })
 	select {
 	case <-connectDone:
 	case <-time.After(time.Second):
