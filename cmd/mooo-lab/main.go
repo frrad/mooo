@@ -38,7 +38,7 @@ func labShadowMode(args []string, configured string) (client.BSONShadowMode, err
 	}
 	if mode == client.BSONShadowDefault {
 		mode = client.BSONShadowPanic
-		if len(args) >= 2 && args[0] == "chats" && args[1] == "list" {
+		if len(args) >= 2 && ((args[0] == "chats" && args[1] == "list") || (args[0] == "contacts" && args[1] == "photo")) {
 			mode = client.BSONShadowLog
 		}
 	}
