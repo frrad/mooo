@@ -5,7 +5,7 @@ from unittest.mock import patch
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file, send_audio, ensure_silent_emulator, send_profile, send_contact, send_location
+from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file, send_audio, ensure_silent_emulator, send_profile, send_contact, send_location, send_poll, return_poll_to_chat
 
 
 def frame(body):
@@ -29,6 +29,93 @@ class FakePhone:
 
     def adb(self, *args, text=None):
         self.calls.append((args, text))
+
+
+class PollTests(unittest.TestCase):
+    title = 'Mooo-Synthetic-Poll-Live'
+    options = ['Alpha', 'Beta', 'Gamma']
+
+    def form(self, entered=False, selected=False):
+        prefix = 'com.kakao.talk.moim:id/'
+        r = frame('')
+        ET.SubElement(r, 'node', {'resource-id': prefix + 'poll_subject_edit', 'text': self.title if entered else 'Title', 'bounds': '[0,0][20,20]'})
+        for i, value in enumerate(self.options):
+            ET.SubElement(r, 'node', {'resource-id': prefix + 'poll_item_title_edit', 'text': value if entered else 'Enter an option.', 'bounds': f'[0,{30*i+30}][20,{30*i+50}]'})
+        for name in ['poll_multi_select_check', 'poll_secret_check', 'poll_item_addable_check']:
+            ET.SubElement(r, 'node', {'resource-id': prefix + name, 'checked': 'true' if selected else 'false', 'bounds': '[0,0][20,20]'})
+        ET.SubElement(r, 'node', {'text': 'DONE', 'clickable': 'true', 'bounds': '[100,0][120,20]'})
+        return r
+
+    def initial(self):
+        r = chat()
+        ET.SubElement(r, 'node', {'content-desc': 'More', 'clickable': 'true', 'bounds': '[0,0][20,20]'})
+        return r
+
+    def frames(self, success=True):
+        menu = frame('<node clickable="true" bounds="[0,0][20,20]"><node text="Polls"/></node>')
+        board = frame('<node content-desc="Create New" clickable="true" bounds="[0,0][20,20]"/>')
+        result = frame('<node resource-id="com.kakao.talk.moim:id/info_container" content-desc="' + self.title + ', 0 voted"/><node content-desc="Back" clickable="true" bounds="[0,0][20,20]"/>')
+        return [self.initial(), menu, board, self.form()] + [self.form()] * 4 + [self.form(entered=True)] * 2 + ([result, chat()] if success else [frame('<node text="Request rejected"/>')] * 4)
+
+    def test_poll_reserves_once_and_never_repeats_uncertain_outcome(self):
+        for success in [True, False]:
+            with tempfile.TemporaryDirectory() as d:
+                receipt = Path(d) / 'poll.json'
+                p = FakePhone(self.frames(success))
+                if success:
+                    self.assertEqual(send_poll(p, 'owned peer', self.title, self.options, receipt), 'synthetic-poll-submitted-once')
+                else:
+                    with self.assertRaises(ValueError):
+                        send_poll(p, 'owned peer', self.title, self.options, receipt)
+                self.assertTrue(receipt.exists())
+                self.assertEqual(sum(args == ('shell', 'input', 'tap', '110', '10') for args, _ in p.calls), 1)
+                before = list(p.calls)
+                with self.assertRaises(ValueError):
+                    send_poll(p, 'owned peer', self.title, self.options, receipt)
+                self.assertEqual(p.calls, before)
+
+    def test_wrong_peer_or_draft_never_navigates(self):
+        for r in [chat(title='other'), chat('existing')]:
+            with tempfile.TemporaryDirectory() as d:
+                p = FakePhone([r])
+                with self.assertRaises(ValueError):
+                    send_poll(p, 'owned peer', self.title, self.options, Path(d) / 'poll.json')
+                self.assertEqual(p.calls, [])
+
+    def test_nondefault_poll_flags_stop_before_entry_or_submit(self):
+        with tempfile.TemporaryDirectory() as d:
+            frames = self.frames()
+            frames[3] = self.form(selected=True)
+            p = FakePhone(frames)
+            receipt = Path(d) / 'poll.json'
+            with self.assertRaises(ValueError):
+                send_poll(p, 'owned peer', self.title, self.options, receipt)
+            self.assertFalse(receipt.exists())
+            self.assertFalse(any(data for _, data in p.calls))
+
+    def test_existing_poll_title_stops_before_form(self):
+        with tempfile.TemporaryDirectory() as d:
+            frames = self.frames()
+            ET.SubElement(frames[2], 'node', {'text': self.title})
+            p = FakePhone(frames)
+            receipt = Path(d) / 'poll.json'
+            with self.assertRaises(ValueError):
+                send_poll(p, 'owned peer', self.title, self.options, receipt)
+            self.assertFalse(receipt.exists())
+            self.assertEqual(len(p.calls), 2)
+
+    def test_return_waits_for_more_screen_and_uses_verified_back(self):
+        more = frame('<node text="owned peer" bounds="[400,578][680,640]"/><node text="Events"/><node text="Polls"/><node text="Boards"/><node clickable="true" bounds="[0,136][147,283]"/>')
+        p = FakePhone([frame(''), more, frame(''), chat()])
+        return_poll_to_chat(p, 'owned peer')
+        self.assertEqual(p.calls, [(('shell', 'input', 'tap', '73', '209'), None)])
+
+    def test_return_never_backs_out_of_unknown_or_wrong_peer_screen(self):
+        for root in [chat(title='other'), frame('<node text="other" bounds="[400,578][680,640]"/><node text="Events"/><node text="Polls"/><node text="Boards"/><node clickable="true" bounds="[0,136][147,283]"/>')]:
+            p = FakePhone([root] * 4)
+            with self.assertRaises(ValueError):
+                return_poll_to_chat(p, 'owned peer')
+            self.assertEqual(p.calls, [])
 
 
 class ChatTests(unittest.TestCase):

@@ -50,7 +50,7 @@ Naming unsupported constants is intentional and does not enable their payloads.
 | 11 | `Avatar` | `UnsupportedMessage` notice |
 | 12 | `Sticker` | Typed message |
 | 13 | `Schedule` | `UnsupportedMessage` notice |
-| 14 | `Vote` | `UnsupportedMessage` notice |
+| 14 | `Vote` | Typed observed text-poll creation snapshot; interactive voting and lifecycle changes remain gaps |
 | 15 | `CJ20121212` | `UnsupportedMessage` notice |
 | 16 | `Location` | Typed single location as native Matrix geo URI; OldLocation/live updates remain gaps |
 | 17 | `Profile` | Typed readable identity/status; avatar and profile actions remain gaps |

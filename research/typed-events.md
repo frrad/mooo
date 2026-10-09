@@ -32,6 +32,8 @@ than failures. Their raw BSON is deliberately not exposed by the typed layer.
   with millisecond expiry; native Matrix `m.file` with filename and media metadata.
 - `MultiPhotoMessage`: type-27 ordered photo arrays, bounded URL-based resources.
 - `StickerMessage`: types 12/20 and validated inbound resource metadata.
+- `VoteMessage`: type 14 observed text-poll creation title and ordered options;
+  navigation URLs and interactive voting are omitted.
 - `UnsupportedMessage`: chat ID, log ID, and numeric message type.
 - `ReactionChanged`: aggregate reaction items and the server revision from
   reaction metadata changes.

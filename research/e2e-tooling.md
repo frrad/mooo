@@ -1,5 +1,10 @@
 # E2E emulator preparation
 
+For controlled text-poll creation, `send-poll a|b` navigates from an already-open
+owned chat to a new poll, validates synthetic title/options and default settings,
+and reserves a private receipt before DONE. It never retries an uncertain send.
+See [the Vote experiment and helper contract](vote.md#repeatable-owned-sender).
+
 Use `research/emu.sh` for the two owned lab profiles. The local `.lab/emu.sh`
 is a compatibility wrapper. Profile mappings, Keychain references, and SMS-line
 identities live in gitignored `.lab/emu-config.sh`; see
