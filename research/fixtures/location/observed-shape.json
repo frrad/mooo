@@ -1,0 +1,16 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-09",
+    "method": "Owned A injected synthetic GPS at a public landmark, reapplied it after granting location permission, and tapped my-location. Guarded address bubble sent immediately to B; scoped MSG capture. No physical-device location used.",
+    "doc": "research/location.md"
+  },
+  "attachment": {
+    "lat": 40.74839971667198,
+    "lng": -73.98569975048304,
+    "a": "New York West 34th Street 20",
+    "t": "",
+    "c": true
+  }
+}

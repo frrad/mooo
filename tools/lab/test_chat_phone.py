@@ -5,7 +5,7 @@ from unittest.mock import patch
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file, send_audio, ensure_silent_emulator, send_profile, send_contact
+from chat_phone import clickable_label, send_text, photo_send, send_sticker, send_album, send_selected_media, send_file, send_audio, ensure_silent_emulator, send_profile, send_contact, send_location
 
 
 def frame(body):
@@ -302,3 +302,35 @@ class ContactTests(unittest.TestCase):
                     send_contact(phone, 'owned peer', 'Mooo-Synthetic-Contact', receipt)
                 self.assertFalse(receipt.exists())
                 self.assertFalse(any(args == ('shell', 'input', 'tap', '50', '10') for args, _ in phone.calls))
+
+
+class LocationTests(unittest.TestCase):
+    def frames(self, ready=True):
+        start = chat()
+        ET.SubElement(start, 'node', {'resource-id': 'com.kakao.talk:id/media_send_layout', 'bounds': '[0,0][20,20]'})
+        handle = frame('<node resource-id="com.kakao.talk:id/handle_container" bounds="[0,400][20,420]"/>')
+        menu = frame('<node text="Location" clickable="true" bounds="[0,0][20,20]"/>')
+        picker = frame('<node resource-id="com.kakao.talk:id/btn_my_location" bounds="[0,0][20,20]"/>')
+        default = frame('<node resource-id="com.kakao.talk:id/location_bubble" bounds="[40,0][60,20]"/><node resource-id="com.kakao.talk:id/location_address" text="Default location" bounds="[42,10][58,18]"/>')
+        selected = frame('<node resource-id="com.kakao.talk:id/location_bubble" bounds="[40,0][60,20]"/><node resource-id="com.kakao.talk:id/location_address" text="Synthetic landmark" bounds="[42,10][58,18]"/>')
+        return [start, handle, menu, picker, frame("<node/>"), default, selected, chat()] if ready else [start, handle, menu, picker] + [default] * 4
+
+    def test_location_reapplies_gps_waits_for_fixture_then_sends_once(self):
+        with tempfile.TemporaryDirectory() as d:
+            receipt = Path(d) / 'send.json'
+            p = FakePhone(self.frames())
+            send_location(p, 'owned peer', 40.7484, -73.9857, 'Synthetic landmark', receipt)
+            self.assertTrue(receipt.exists())
+            self.assertIn((('emu', 'geo', 'fix', '-73.9857', '40.7484'), None), p.calls)
+            self.assertEqual(sum(args == ('shell', 'input', 'tap', '50', '10') for args, _ in p.calls), 1)
+            with self.assertRaises(ValueError):
+                send_location(p, 'owned peer', 40.7484, -73.9857, 'Synthetic landmark', receipt)
+
+    def test_default_location_never_sends(self):
+        with tempfile.TemporaryDirectory() as d:
+            receipt = Path(d) / 'send.json'
+            p = FakePhone(self.frames(ready=False))
+            with self.assertRaises(ValueError):
+                send_location(p, 'owned peer', 40.7484, -73.9857, 'Synthetic landmark', receipt)
+            self.assertFalse(receipt.exists())
+            self.assertFalse(any(args == ('shell', 'input', 'tap', '50', '10') for args, _ in p.calls))
