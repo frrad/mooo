@@ -14,6 +14,7 @@ import (
 )
 
 const usage = `usage:
+  mooo-lab contacts photo --state ABSOLUTE_PATH --chat CHAT_ID --user USER_ID --output ABSOLUTE_PATH
   mooo-lab chats list --state ABSOLUTE_PATH --output ABSOLUTE_PATH
   mooo-lab auth init --state ABSOLUTE_PATH --device-name NAME --app-version VERSION --os-version VERSION --model MODEL
   mooo-lab auth inspect --state ABSOLUTE_PATH
@@ -35,6 +36,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if args[0] == "--help" || args[0] == "-h" {
 		_, _ = io.WriteString(stdout, usage)
 		return 0
+	}
+	if len(args) >= 2 && args[0] == "contacts" && args[1] == "photo" {
+		return runContactPhoto(args[2:], stdout, stderr, openContactPhotoClient)
 	}
 	if len(args) >= 2 && args[0] == "chats" && args[1] == "list" {
 		return runListChats(args[2:], stdout, stderr, openChatLister)

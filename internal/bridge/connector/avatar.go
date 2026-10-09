@@ -3,21 +3,19 @@ package connector
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
+
+	"github.com/frrad/mooo/internal/protocol/media"
 
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 )
 
-const maxAvatarBytes = 4 << 20
+const maxAvatarBytes = media.MaxAvatarBytes
 
-var errAvatarDownload = errors.New("connector: avatar download failed")
+var errAvatarDownload = media.ErrAvatarDownload
 
 func avatarFromURL(raw string) *bridgev2.Avatar {
 	if raw == "" {
@@ -36,47 +34,7 @@ func avatarFromURL(raw string) *bridgev2.Avatar {
 }
 
 func downloadAvatar(ctx context.Context, client *http.Client, raw string) ([]byte, error) {
-	if ctx == nil || client == nil || validateAvatarURL(raw) != nil {
-		return nil, errAvatarDownload
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
-	if err != nil {
-		return nil, errAvatarDownload
-	}
-	c := *client
-	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if validateAvatarURL(req.URL.String()) != nil || len(via) >= 5 {
-			return errAvatarDownload
-		}
-		return nil
-	}
-	resp, err := c.Do(req)
-	if err != nil {
-		return nil, errAvatarDownload
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK || (resp.Request != nil && validateAvatarURL(resp.Request.URL.String()) != nil) || resp.ContentLength > maxAvatarBytes {
-		return nil, errAvatarDownload
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxAvatarBytes+1))
-	if err != nil || len(data) > maxAvatarBytes {
-		return nil, errAvatarDownload
-	}
-	mime := http.DetectContentType(data)
-	if mime != "image/jpeg" && mime != "image/png" {
-		return nil, errAvatarDownload
-	}
-	return data, nil
+	return media.DownloadAvatar(ctx, client, raw)
 }
 
-func validateAvatarURL(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" || u.Path == "" {
-		return errAvatarDownload
-	}
-	host := strings.ToLower(u.Hostname())
-	if host != "kakaocdn.net" && !strings.HasSuffix(host, ".kakaocdn.net") {
-		return errAvatarDownload
-	}
-	return nil
-}
+func validateAvatarURL(raw string) error { return media.ValidateAvatarURL(raw) }

@@ -498,8 +498,8 @@ LargeFile (29) may be skipped when not live-testable per maintainer. LargeVideo
 
 After the independently testable types land:
 
-- [ ] Audit and implement operator-facing chat listing, including production
-      callers, pagination/state reconciliation and owned-account E2E checks.
+- [x] Audit and implement operator-facing chat listing, including production
+      callers, pagination/state reconciliation and owned-account E2E checks (PR #261).
 - [ ] Audit and implement contact profile-photo retrieval, including the official
       profile/resource path, safe expiry/cache behavior and owned-account E2E
       checks. Profile-card text support does not satisfy avatar retrieval.
@@ -540,3 +540,10 @@ preserving committed message positions, and reduces each page in deletion-before
 update order. See [operator-chat-list.md](research/operator-chat-list.md) for
 validation and remaining gates. Contact-photo retrieval is still pending; existing
 connector avatar download support alone does not satisfy that requirement.
+
+Contact-photo implementation checkpoint: the room-scoped operator command and
+production API retrieve the current thumbnail from a single matching MEMBER
+profile. Owned acceptance covers absent default avatar and a synthetic uploaded
+avatar corroborated by the peer's official Android profile view. See
+[operator-contact-photo.md](research/operator-contact-photo.md) for exact scope,
+resource safety, official-chain gaps and remaining merge validation.

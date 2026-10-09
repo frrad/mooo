@@ -22,3 +22,14 @@ func TestOperatorListingReportsShadowDiagnosticsWithoutRemotePanic(t *testing.T)
 		t.Fatal("research default weakened")
 	}
 }
+
+func TestOperatorContactPhotoReportsShadowDiagnostics(t *testing.T) {
+	mode, err := labShadowMode([]string{"contacts", "photo"}, "")
+	if err != nil || mode != client.BSONShadowLog {
+		t.Fatalf("photo mode=%v error=%v", mode, err)
+	}
+	mode, err = labShadowMode([]string{"contacts", "photo"}, "panic")
+	if err != nil || mode != client.BSONShadowPanic {
+		t.Fatal("explicit diagnostic mode overridden")
+	}
+}
