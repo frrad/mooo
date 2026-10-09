@@ -268,7 +268,7 @@ func TestReactionDeliveryEventsUsesIndividualOperationsAndPreservesUnknownRows(t
 	if err := db.Reaction.Upsert(ctx, unknown); err != nil {
 		t.Fatal(err)
 	}
-	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: db}}
+	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: db}}
 	kc := newKakaoClient(login, testSelfID, nil)
 	sync := &kakaoReactionSync{ReactionSync: simplevent.ReactionSync{EventMeta: simplevent.EventMeta{PortalKey: message.Room}, TargetMessage: message.ID, Reactions: &bridgev2.ReactionSyncData{Users: map[networkid.UserID]*bridgev2.ReactionSyncUser{}, HasAllUsers: true}}}
 	events, err := kc.reactionDeliveryEvents(ctx, sync)
@@ -310,7 +310,7 @@ func newFrameworkReactionFixture(t *testing.T, intent *frameworkReactionIntent) 
 		t.Fatal(err)
 	}
 	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: key, MXID: "!room:test"}, Bridge: bridge}
-	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: key.Receiver}, Bridge: bridge}
+	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: key.Receiver}, Bridge: bridge}
 	kc := newKakaoClient(login, testSelfID, nil)
 	return kc, portal, login, old, raw
 }
@@ -678,7 +678,7 @@ func TestReactionRevisionSuppressesStaleEventAfterSQLiteReopen(t *testing.T) {
 	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
 		Revision: 12, Members: map[reactions.Type][]int64{reactions.Heart: {42}}, Fields: map[string]json.RawMessage{"1": []byte(`[42]`)},
 	}}
-	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: db}}
+	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: db}}
 	kc := newKakaoClient(login, testSelfID, nil)
 	queued := 0
 	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
@@ -698,7 +698,7 @@ func TestReactionRevisionSuppressesStaleEventAfterSQLiteReopen(t *testing.T) {
 	}
 	defer func() { _ = reopened.RawDB.Close() }()
 	reopenedDB := database.New("test", (&KakaoConnector{}).GetDBMetaTypes(), reopened)
-	login2 := &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: reopenedDB}}
+	login2 := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: reopenedDB}}
 	kc2 := newKakaoClient(login2, testSelfID, nil)
 	kc2.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		queued++

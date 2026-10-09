@@ -114,7 +114,7 @@ func TestFrameworkInlineBlockedRemoteEventDisconnectLeavesSourceUncommitted(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), UserMXID: user.MXID}, Bridge: bridge, User: user}
+	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID), UserMXID: user.MXID}, Bridge: bridge, User: user}
 	var openMu sync.Mutex
 	openCount := 0
 	firstOpen := make(chan struct{})
@@ -282,7 +282,7 @@ func runFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T, gap eve
 		_ = raw.RawDB.Close()
 		t.Fatal(err)
 	}
-	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID)}, Bridge: bridge}
+	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: bridge}
 	kc := newKakaoClient(login, testSelfID, nil)
 	kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		// PortalInternals is the framework's synchronous test seam for driving
@@ -345,7 +345,7 @@ func runFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T, gap eve
 	if err != nil {
 		t.Fatal(err)
 	}
-	login2 := &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID)}, Bridge: bridge2}
+	login2 := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: bridge2}
 	kc2 := newKakaoClient(login2, testSelfID, nil)
 	var restartResult bridgev2.EventHandlingResult
 	kc2.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {

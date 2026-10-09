@@ -32,6 +32,8 @@ import (
 // the event loop and send paths can be tested without a Kakao backend.
 type kakaoClient interface {
 	Connect(ctx context.Context) error
+	CreateChat(context.Context, chat.CreateRequest) (chat.CreateResponse, error)
+	AddMembers(context.Context, chat.AddMembersRequest) (chat.AddMembersResponse, error)
 	ListChats(ctx context.Context) ([]chatmeta.ChatData, error)
 	Events(ctx context.Context) (<-chan events.Result, error)
 	CommitEvent(event events.Event) error
@@ -63,12 +65,13 @@ func openProfileClient(statePath string) (kakaoClient, error) {
 
 // Bridge state error codes reported by this connector.
 const (
-	stateProfileUnavailable status.BridgeStateErrorCode = "kakao-profile-unavailable"
-	stateConnectFailed      status.BridgeStateErrorCode = "kakao-connect-failed"
-	stateDisconnected       status.BridgeStateErrorCode = "kakao-disconnected"
-	stateUnidentifiableMsg  status.BridgeStateErrorCode = "kakao-unidentifiable-message"
-	stateKickedOut          status.BridgeStateErrorCode = "kakao-kicked-out"
-	stateChangeServer       status.BridgeStateErrorCode = "kakao-change-server"
+	stateProfileUnavailable    status.BridgeStateErrorCode = "kakao-profile-unavailable"
+	stateConnectFailed         status.BridgeStateErrorCode = "kakao-connect-failed"
+	stateGroupCreateUnresolved status.BridgeStateErrorCode = "kakao-group-create-unresolved"
+	stateDisconnected          status.BridgeStateErrorCode = "kakao-disconnected"
+	stateUnidentifiableMsg     status.BridgeStateErrorCode = "kakao-unidentifiable-message"
+	stateKickedOut             status.BridgeStateErrorCode = "kakao-kicked-out"
+	stateChangeServer          status.BridgeStateErrorCode = "kakao-change-server"
 )
 
 var terminalDisconnectTimeout = 5 * time.Second
@@ -102,12 +105,13 @@ func isUnidentifiableMessageError(err error) bool {
 
 func init() {
 	status.BridgeStateHumanErrors.Update(status.BridgeStateErrorMap{
-		stateProfileUnavailable: "The Kakao profile could not be opened; it may be in use by another process.",
-		stateConnectFailed:      "Connecting to KakaoTalk failed.",
-		stateDisconnected:       "The KakaoTalk session ended. Restart the bridge to reconnect.",
-		stateUnidentifiableMsg:  "Kakao delivered a message whose identity could not be established safely. Review the bridge logs and repair continuity before reconnecting.",
-		stateKickedOut:          "KakaoTalk ended this device's session.",
-		stateChangeServer:       "KakaoTalk requested a server change. Restart the bridge to reconnect.",
+		stateProfileUnavailable:    "The Kakao profile could not be opened; it may be in use by another process.",
+		stateConnectFailed:         "Connecting to KakaoTalk failed.",
+		stateGroupCreateUnresolved: "A group creation outcome or room binding is unresolved. Reconcile the selected Matrix room with the source group; do not repeat creation.",
+		stateDisconnected:          "The KakaoTalk session ended. Restart the bridge to reconnect.",
+		stateUnidentifiableMsg:     "Kakao delivered a message whose identity could not be established safely. Review the bridge logs and repair continuity before reconnecting.",
+		stateKickedOut:             "KakaoTalk ended this device's session.",
+		stateChangeServer:          "KakaoTalk requested a server change. Restart the bridge to reconnect.",
 	})
 }
 
@@ -130,6 +134,7 @@ type KakaoClient struct {
 	queue     func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult
 	sendState func(status.BridgeState)
 
+	groupGate      sync.Mutex
 	mu             sync.Mutex
 	disconnectGate chan struct{}
 	client         kakaoClient
@@ -261,6 +266,12 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	if err != nil {
 		kc.shutdownBootstrap(c, "after connect failure", false)
 		kc.log().Err(err).Msg("Failed to connect to KakaoTalk")
+		if errors.Is(err, errGroupCreateUnresolved) {
+			if kc.isCurrent(generation, ctx) {
+				kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupCreateUnresolved})
+			}
+			return
+		}
 		if isUnidentifiableMessageError(err) {
 			if kc.isCurrent(generation, ctx) {
 				kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateUnidentifiableMsg})
@@ -438,6 +449,9 @@ func shutdownKakaoClient(c kakaoClient) error {
 func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (<-chan events.Result, error) {
 	if err := c.Connect(ctx); err != nil {
 		return nil, bootstrapFailure{stage: "connect", err: err}
+	}
+	if err := kc.resumeGroupCreates(ctx, c); err != nil {
+		return nil, bootstrapFailure{stage: "group-create-recovery", err: err}
 	}
 	if err := kc.discoverGroups(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "group-discovery", err: err}
@@ -653,6 +667,12 @@ func shutdownWithRecoveryTimeout(c kakaoClient) error {
 }
 
 func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
+	kc.groupGate.Lock()
+	defer kc.groupGate.Unlock()
+	if err := kc.checkUnresolvedGroupCreates(); err != nil {
+		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupCreateUnresolved})
+		return false
+	}
 	if reaction, ok := evt.(events.ReactionChanged); ok {
 		remote, err := kc.reactionRemote(context.Background(), c, reaction)
 		if err != nil {

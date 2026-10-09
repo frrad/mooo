@@ -552,6 +552,18 @@ func (c *Client) CreateChat(ctx context.Context, request chat.CreateRequest) (ch
 	return session.CreateChat(ctx, request)
 }
 
+// AddMembers uses the existing profile session and sends the invitation once.
+func (c *Client) AddMembers(ctx context.Context, request chat.AddMembersRequest) (chat.AddMembersResponse, error) {
+	if _, err := request.MarshalBSON(); err != nil {
+		return chat.AddMembersResponse{}, err
+	}
+	session, err := c.ensureSession(ctx)
+	if err != nil {
+		return chat.AddMembersResponse{}, err
+	}
+	return session.AddMembers(ctx, request)
+}
+
 // SendText lazily connects once, then sends one text message without retrying
 // an ambiguous transport result.
 func (c *Client) SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error) {

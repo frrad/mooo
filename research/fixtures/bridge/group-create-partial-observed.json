@@ -1,0 +1,20 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "Owned KakaoTalk Android 26.8.2 accounts and existing Mac-class secondary profile",
+    "date": "2026-10-09",
+    "method": "One encrypted Matrix create command confirmed a source chat; fresh CHATINFO/MEMLIST/MEMBER showed creator and one selected member, with the other selected member absent. No ordinary message or second CREATE was sent. IDs/title replaced with synthetic values.",
+    "doc": "research/bridge/MATRIX-GROUP-CREATION.md"
+  },
+  "creator_id": 1000,
+  "participants": [2000, 4000],
+  "chat_data": {
+    "ChatID": 5000,
+    "Type": "MultiChat",
+    "ActiveMemberCount": 2,
+    "ChatMetas": [{"Type": 3, "Content": "Synthetic partial group"}]
+  },
+  "member_ids": [1000, 2000],
+  "expected_source_create_calls": 1,
+  "expected_bound": false
+}
