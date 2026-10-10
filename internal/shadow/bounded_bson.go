@@ -1,4 +1,4 @@
-package loco
+package shadow
 
 import (
 	"encoding/binary"
@@ -30,14 +30,14 @@ type BSONDecodeResult struct {
 }
 
 var (
-	ErrBSONDecodeBounds     = errors.New("loco: BSON decode bounds exceeded")
-	ErrBSONDecodeMalformed  = errors.New("loco: malformed BSON")
-	ErrBSONDecodeInvalidKey = errors.New("loco: invalid BSON key")
+	ErrBSONDecodeBounds     = errors.New("shadow: BSON decode bounds exceeded")
+	ErrBSONDecodeMalformed  = errors.New("shadow: malformed BSON")
+	ErrBSONDecodeInvalidKey = errors.New("shadow: invalid BSON key")
 )
 
-// DecodeObservedBSON decodes the source-supported BSON element subset for a
-// future typed notice validator. It is deliberately not wired into Packet or
-// Session decoding. The four-byte document length prefix is ignored, matching
+// DecodeObservedBSON decodes the source-supported BSON element subset. Only
+// the shadow comparison uses it; production decoding stays on mongo-driver.
+// The four-byte document length prefix is ignored, matching
 // the observed cursor; bounds still apply to the supplied Go slice.
 func DecodeObservedBSON(src []byte, options BSONDecodeOptions) (BSONDecodeResult, error) {
 	if options.MaxBytes <= 0 {

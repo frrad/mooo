@@ -8,7 +8,7 @@ import (
 
 func invoke(args ...string) (int, string, string) {
 	var stdout, stderr bytes.Buffer
-	code := Run(args, &stdout, &stderr)
+	code := Run(args, &stdout, &stderr, nil)
 	return code, stdout.String(), stderr.String()
 }
 

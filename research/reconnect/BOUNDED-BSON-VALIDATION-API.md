@@ -1,9 +1,9 @@
 # Bounded BSON validation API
 
-Status: used only as a shadow decoder. Production callers keep decoding with
-mongo-driver; `internal/protocol/bsonshadow` decodes every incoming body with
-both and reports differences (see "Shadow comparison" below). The observed
-decoder never changes what callers receive.
+Status: used only as an opt-in shadow decoder. Production callers keep
+decoding with mongo-driver; when configured, `internal/shadow` decodes every
+incoming body with both and reports differences (see "Shadow comparison"
+below). The observed decoder never changes what callers receive.
 
 The official `dictionaryWithBSONData:` cursor starts after the four-byte BSON
 document prefix and does not use the declared document length. The source
@@ -92,10 +92,11 @@ helper `0x10164bb54`, with the public bounded source contract in
 
 ## Shadow comparison
 
-`wireConn.readWithHeaderObserverAndProgress` is the single point every
-incoming LOCO packet passes through (session read loop, the synchronous login
-handshake and media connections). For each BSON body it runs
-`bsonshadow.Compare`, which decodes the body with mongo-driver (as `bson.D`,
+`wireConn.read` is the single point every incoming LOCO packet passes
+through (session read loop, the synchronous login handshake and media
+connections). It hands each packet to the optional
+`client.OpenOptions.PacketObserver`; `shadow.NewObserver` builds the observer
+that, for each BSON body, runs `shadow.Compare`, which decodes the body with mongo-driver (as `bson.D`,
 collapsed with struct-decoding semantics: a later duplicate key, including a
 null, replaces an earlier one) and with `DecodeObservedBSON`, then reports
 every field-level difference. Kinds: `mongo-rejects`, `official-rejects`,
@@ -127,13 +128,15 @@ its discrepancies must be reinterpreted or the shadow scoped per method.
 (Source: frrad/kakao research note on LOGINLIST `rp` and BSON binary, macOS
 26.8.0, static trace.)
 
-Modes are `off`, `log` and `panic`. Test binaries default to `panic`, the lab
-research CLI defaults to `panic`. The operator `mooo-lab chats list` and `mooo-lab contacts photo` commands
-and the bridge default to `log`
-(`network.bson_shadow.mode`). These operator defaults retain diagnostics because any
-remote sender able to trigger a discrepancy could otherwise crash it.
-`MOOO_BSON_SHADOW` overrides the default mode. Bodies above 1 MiB are skipped
-and counted.
+Modes are `off`, `log` and `panic`. The bridge defaults to `off` and enables
+the shadow only when `network.bson_shadow.mode` is set, so an unconfigured
+bridge decodes each packet once. The lab research CLI defaults to `panic`; the
+operator `mooo-lab chats list` and `mooo-lab contacts photo` commands default
+to `log`, because any remote sender able to trigger a discrepancy could
+otherwise crash them. `MOOO_BSON_SHADOW` overrides the lab default mode; the
+bridge reads only its config. Test packages opt in explicitly (the connector's
+scripted-backend integration tests run the shadow in `panic` mode). Bodies
+above 1 MiB are skipped.
 
 Test harnesses that decode mooo's own outgoing requests bypass the shadow: the
 first suite run flagged the LOGINLIST request's binary `rp` field, which the
