@@ -15,6 +15,7 @@ import (
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/continuity"
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/sessionlogin"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -34,6 +35,9 @@ var (
 	ErrClosed            = errors.New("client: session closed")
 	ErrProtocol          = errors.New("client: protocol error")
 )
+
+// fields reads LOCO response fields; callers map every failure to ErrProtocol.
+var fields = bsonfield.Reader{Err: ErrProtocol}
 
 type StatusError struct {
 	Command string
@@ -812,37 +816,10 @@ func (w *wireConn) readUnshadowed() (loco.Packet, error) {
 	}
 }
 
-func bsonInt64(raw bson.Raw, key string) (int64, error) {
-	value, err := raw.LookupErr(key)
-	if err != nil {
-		return 0, err
-	}
-	switch value.Type {
-	case bson.TypeInt32:
-		return int64(value.Int32()), nil
-	case bson.TypeInt64:
-		return value.Int64(), nil
-	default:
-		return 0, ErrProtocol
-	}
-}
-
 func responseStatus(packet loco.Packet) (int32, error) {
-	value, err := bson.Raw(packet.Body).LookupErr("status")
-	if err != nil {
+	status, ok, err := fields.Int32(bson.Raw(packet.Body), "status")
+	if err != nil || !ok {
 		return 0, ErrProtocol
 	}
-	var status int64
-	switch value.Type {
-	case bson.TypeInt32:
-		status = int64(value.Int32())
-	case bson.TypeInt64:
-		status = value.Int64()
-	default:
-		return 0, ErrProtocol
-	}
-	if status < -1<<31 || status > 1<<31-1 {
-		return 0, ErrProtocol
-	}
-	return int32(status), nil
+	return status, nil
 }
