@@ -159,6 +159,24 @@ func productionSessionDialers() sessionDialers {
 	return sessionDialers{tls: dialTLS, secure: dialSecure}
 }
 
+// observed returns dialers whose connections hand every incoming packet to
+// observer. A nil observer returns the dialers unchanged.
+func (d sessionDialers) observed(observer func(loco.Packet)) sessionDialers {
+	if observer == nil {
+		return d
+	}
+	wrap := func(dial wireDialer) wireDialer {
+		return func(ctx context.Context, host string, port int) (*wireConn, error) {
+			wire, err := dial(ctx, host, port)
+			if wire != nil {
+				wire.observer = observer
+			}
+			return wire, err
+		}
+	}
+	return sessionDialers{tls: wrap(d.tls), secure: wrap(d.secure)}
+}
+
 // connectSession performs GETCONF, CHECKIN, secure carriage setup, and
 // LOGINLIST from client-owned state. Client owns and reuses the result.
 func connectSession(ctx context.Context, state authstate.State) (*Session, error) {
@@ -680,6 +698,9 @@ type wireConn struct {
 	c        net.Conn
 	secure   *loco.SecureV3
 	producer *loco.Producer
+	// observer, when set, sees every incoming packet before dispatch. It is
+	// OpenOptions.PacketObserver; nil costs nothing.
+	observer func(loco.Packet)
 }
 
 func dialTLS(ctx context.Context, host string, port int) (*wireConn, error) {
@@ -746,16 +767,16 @@ func (w *wireConn) request(id uint32, method string, body []byte) (loco.Packet, 
 }
 
 // read is the single point every incoming LOCO packet passes through, so the
-// BSON shadow comparison runs here.
+// optional packet observer runs here.
 func (w *wireConn) read() (loco.Packet, error) {
-	packet, err := w.readUnshadowed()
-	if err == nil {
-		shadowDecode(packet)
+	packet, err := w.readFrame()
+	if err == nil && w.observer != nil {
+		w.observer(packet)
 	}
 	return packet, err
 }
 
-func (w *wireConn) readUnshadowed() (loco.Packet, error) {
+func (w *wireConn) readFrame() (loco.Packet, error) {
 	// Exact plain-transport reads naturally preserve split headers/bodies and
 	// leave any coalesced following frame for the next call.
 	if w.secure == nil {
@@ -777,7 +798,7 @@ func (w *wireConn) readUnshadowed() (loco.Packet, error) {
 		w.producer = loco.NewProducer(0, 0)
 	}
 	for {
-		if packet, ok, err := w.producer.Next(nil); err != nil {
+		if packet, ok, err := w.producer.Next(); err != nil {
 			return loco.Packet{}, err
 		} else if ok {
 			return packet, nil

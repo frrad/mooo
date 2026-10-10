@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/frrad/mooo/internal/client"
+	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
 type contactPhotoClient interface {
@@ -19,8 +20,8 @@ type contactPhotoClient interface {
 	Close() error
 }
 
-func openContactPhotoClient(path string) (contactPhotoClient, error) {
-	return client.Open(path, &http.Client{Timeout: 20 * time.Second})
+func openContactPhotoClient(path string, packetObserver func(loco.Packet)) (contactPhotoClient, error) {
+	return client.OpenWithOptions(path, &http.Client{Timeout: 20 * time.Second}, client.OpenOptions{PacketObserver: packetObserver})
 }
 
 func runContactPhoto(args []string, stdout, stderr io.Writer, open func(string) (contactPhotoClient, error)) int {

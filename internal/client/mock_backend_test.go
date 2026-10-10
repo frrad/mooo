@@ -1041,9 +1041,9 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 	}
 }
 
-// readRequest reads a request the client sent to a test server. The BSON
-// shadow compares bodies received from Kakao, so harness reads of mooo's own
+// readRequest reads a request the client sent to a test server. The packet
+// observer watches bodies received from Kakao, so harness reads of mooo's own
 // requests bypass it.
 func (w *wireConn) readRequest() (loco.Packet, error) {
-	return w.readUnshadowed()
+	return w.readFrame()
 }

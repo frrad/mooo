@@ -1,4 +1,4 @@
-package bsonshadow
+package shadow
 
 import (
 	"encoding/binary"

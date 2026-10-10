@@ -1,4 +1,4 @@
-package loco
+package shadow
 
 import (
 	"encoding/binary"

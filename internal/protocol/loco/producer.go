@@ -47,7 +47,7 @@ func (p *Producer) Feed(plaintext []byte, onHeader func(Header), onPacket func(P
 		return err
 	}
 	for {
-		packet, ok, err := p.Next(onHeader)
+		packet, ok, err := p.next(onHeader)
 		if err != nil || !ok {
 			return err
 		}
@@ -74,9 +74,12 @@ func (p *Producer) Append(plaintext []byte) error {
 	return nil
 }
 
-// Next delivers at most one complete packet. A header callback is delivered
-// once when its header becomes available, even if the body arrives later.
-func (p *Producer) Next(onHeader func(Header)) (Packet, bool, error) {
+// Next delivers at most one complete packet.
+func (p *Producer) Next() (Packet, bool, error) { return p.next(nil) }
+
+// next is Next with Feed's header callback, delivered once when a header
+// becomes available, even if the body arrives later.
+func (p *Producer) next(onHeader func(Header)) (Packet, bool, error) {
 	if p == nil || p.failed {
 		return Packet{}, false, ErrProducerFailed
 	}
