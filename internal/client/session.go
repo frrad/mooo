@@ -31,6 +31,23 @@ var (
 	ErrProtocol          = errors.New("client: protocol error")
 )
 
+// protocolErr reports a malformed or unexpected reply, naming the command
+// and the field or part that failed. errors.Is(err, ErrProtocol) holds.
+func protocolErr(command, field string) error {
+	return fmt.Errorf("%w: %s.%s", ErrProtocol, command, field)
+}
+
+// stageErr wraps a bootstrap or login failure with the stage that failed
+// and the cause's text. The cause is formatted with %v, not %w, so callers
+// classify the failure only by sentinel (errBootstrap or ErrLogin), exactly
+// as before the cause was attached: a network cause must not make a
+// rejected bootstrap look like a retryable transport error. Causes come
+// from net, tls, bson, loco framing and the booking/sessionlogin decoders,
+// none of which include request bodies or credentials.
+func stageErr(sentinel error, stage string, cause error) error {
+	return fmt.Errorf("%w: %s: %v", sentinel, stage, cause)
+}
+
 type StatusError struct {
 	Command string
 	Status  int32
@@ -197,31 +214,31 @@ func connectSession(ctx context.Context, state authstate.State, config sessionCo
 		return nil, errCredentialsAbsent
 	}
 	if dialers.tls == nil || dialers.secure == nil {
-		return nil, errBootstrap
+		return nil, fmt.Errorf("%w: dialers absent", errBootstrap)
 	}
 	wireUUID, err := state.Identity.WireDeviceUUID()
 	if err != nil {
-		return nil, errBootstrap
+		return nil, stageErr(errBootstrap, "device uuid", err)
 	}
 	bookingBody, err := (booking.GetConfRequest{
 		MCCMNC: "99999", Model: state.Identity.Metadata.DeviceModel, OS: "mac", UserID: state.Credentials.UserID,
 	}).MarshalBSON()
 	if err != nil {
-		return nil, errBootstrap
+		return nil, stageErr(errBootstrap, "getconf request", err)
 	}
 	bookingWire, err := dialers.tls(ctx, booking.Host, 443)
 	if err != nil {
-		return nil, errBootstrap
+		return nil, stageErr(errBootstrap, "getconf dial", err)
 	}
 	bookingReply, _, err := bookingWire.request(1, booking.GetConfCommand, bookingBody)
 	_ = bookingWire.close()
 	bookingStatus, statusErr := loco.Status(bookingReply)
-	if err != nil || statusErr != nil || bookingStatus != 0 {
-		return nil, errBootstrap
+	if cause := replyFailure(booking.GetConfCommand, err, statusErr, bookingStatus); cause != nil {
+		return nil, stageErr(errBootstrap, "getconf", cause)
 	}
 	hosts, ports, err := booking.DecodeBookingTargets(bookingReply.Body)
 	if err != nil {
-		return nil, errBootstrap
+		return nil, stageErr(errBootstrap, "getconf", err)
 	}
 
 	checkinBody, err := (booking.CheckinRequest{
@@ -229,19 +246,19 @@ func connectSession(ctx context.Context, state authstate.State, config sessionCo
 		MCCMNC: "99999", Lang: "en", CountryISO: "US", UseSub: true,
 	}).MarshalBSON()
 	if err != nil {
-		return nil, errBootstrap
+		return nil, stageErr(errBootstrap, "checkin request", err)
 	}
 	checkinReply, _, err := checkin(ctx, hosts, ports, checkinBody, dialers)
 	if err != nil {
-		return nil, errBootstrap
+		return nil, err
 	}
 	carriageHost, carriagePort, err := booking.DecodeCheckinEndpoint(checkinReply.Body)
 	if err != nil {
-		return nil, errBootstrap
+		return nil, stageErr(errBootstrap, "checkin", err)
 	}
 	carriage, err := dialers.secure(ctx, carriageHost, carriagePort)
 	if err != nil {
-		return nil, errBootstrap
+		return nil, stageErr(errBootstrap, "carriage dial", err)
 	}
 	if pingOptions.timeout <= 0 {
 		pingOptions.timeout = defaultPingRequestTimeout
@@ -284,23 +301,23 @@ func connectSession(ctx context.Context, state authstate.State, config sessionCo
 		ChatIDs: chatIDs, MaxIDs: maxIDs, LastTokenID: resume.LastTokenID, LBK: resume.LBK,
 	}).MarshalBSON()
 	if err != nil {
-		return nil, errBootstrap
+		return nil, stageErr(errBootstrap, "loginlist request", err)
 	}
 	session.startReadLoop()
 	loginReply, err := session.requestRaw(ctx, 2, "LOGINLIST", loginBody)
 	if err != nil {
-		return nil, ErrLogin
+		return nil, stageErr(ErrLogin, "loginlist", err)
 	}
 	status, err := loco.Status(loginReply)
 	if err != nil {
-		return nil, ErrLogin
+		return nil, stageErr(ErrLogin, "loginlist", err)
 	}
 	if !sessionlogin.ClassifyLoginStatus(status).Accepted() {
 		return nil, StatusError{Command: "LOGINLIST", Status: status}
 	}
 	chatData, cursor, err := finishLoginSyncSession(ctx, session, loginReply.Body, pingOptions.beforeBootstrapRequest)
 	if err != nil {
-		return nil, ErrLogin
+		return nil, stageErr(ErrLogin, "lchatlist", err)
 	}
 	cursor.replaceInventory = resume.LastTokenID == 0 && cursor.complete
 	session.initialChatData = chatData
@@ -367,7 +384,7 @@ func (s *session) request(ctx context.Context, command string, body []byte) (loc
 	}
 	status, err := loco.Status(reply)
 	if err != nil {
-		return reply, ErrProtocol
+		return reply, protocolErr(command, "status")
 	}
 	if status != 0 {
 		return reply, StatusError{Command: command, Status: status}
@@ -399,7 +416,7 @@ func (s *session) requestRaw(ctx context.Context, id uint32, command string, bod
 	}
 	if _, exists := s.pending[id]; exists {
 		s.mu.Unlock()
-		return loco.Packet{}, ErrProtocol
+		return loco.Packet{}, protocolErr(command, "packetId")
 	}
 	result := make(chan requestResult, 1)
 	s.pending[id] = pendingRequest{method: command, result: result}

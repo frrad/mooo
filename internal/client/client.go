@@ -113,7 +113,7 @@ func newClient(state authstate.State, doer macweb.Doer) (*Client, error) {
 		return nil, errCredentialsAbsent
 	}
 	if _, err := state.Identity.WireDeviceUUID(); err != nil {
-		return nil, errBootstrap
+		return nil, stageErr(errBootstrap, "device uuid", err)
 	}
 	if doer == nil {
 		doer = &http.Client{Timeout: 30 * time.Second}

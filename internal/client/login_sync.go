@@ -23,34 +23,54 @@ type loginCursor struct {
 	replaceInventory bool
 }
 
+// checkin tries each CHECKIN host and port in the official dial order and
+// returns the first accepted reply. When every attempt fails it reports the
+// last failure, tagged "checkin dial" or "checkin".
 func checkin(ctx context.Context, hosts []string, ports []int, body []byte, dialers sessionDialers) (loco.Packet, *wireConn, error) {
+	failure := errBootstrap
+	attempt := func(dial wireDialer, host string, port int) (loco.Packet, *wireConn, bool) {
+		wire, err := dial(ctx, host, port)
+		if err != nil {
+			failure = stageErr(errBootstrap, "checkin dial", err)
+			return loco.Packet{}, nil, false
+		}
+		reply, _, requestErr := wire.request(1, booking.CheckinCommand, body)
+		_ = wire.close()
+		status, statusErr := loco.Status(reply)
+		if cause := replyFailure(booking.CheckinCommand, requestErr, statusErr, status); cause != nil {
+			failure = stageErr(errBootstrap, "checkin", cause)
+			return loco.Packet{}, nil, false
+		}
+		return reply, wire, true
+	}
 	for _, host := range hosts {
 		for _, port := range append([]int{443}, ports...) {
-			wire, err := dialers.tls(ctx, host, port)
-			if err != nil {
-				continue
-			}
-			reply, _, requestErr := wire.request(1, booking.CheckinCommand, body)
-			_ = wire.close()
-			status, statusErr := loco.Status(reply)
-			if requestErr == nil && statusErr == nil && status == 0 {
+			if reply, wire, ok := attempt(dialers.tls, host, port); ok {
 				return reply, wire, nil
 			}
 		}
 		for _, port := range append(append([]int(nil), ports...), 995) {
-			wire, err := dialers.secure(ctx, host, port)
-			if err != nil {
-				continue
-			}
-			reply, _, requestErr := wire.request(1, booking.CheckinCommand, body)
-			_ = wire.close()
-			status, statusErr := loco.Status(reply)
-			if requestErr == nil && statusErr == nil && status == 0 {
+			if reply, wire, ok := attempt(dialers.secure, host, port); ok {
 				return reply, wire, nil
 			}
 		}
 	}
-	return loco.Packet{}, nil, errBootstrap
+	return loco.Packet{}, nil, failure
+}
+
+// replyFailure returns the first reason a single-reply exchange failed: the
+// request error, an unreadable status, or a nonzero status. It is nil when
+// the reply was accepted.
+func replyFailure(command string, requestErr, statusErr error, status int32) error {
+	switch {
+	case requestErr != nil:
+		return requestErr
+	case statusErr != nil:
+		return statusErr
+	case status != 0:
+		return StatusError{Command: command, Status: status}
+	}
+	return nil
 }
 
 // finishLoginSyncSession applies the LOGINLIST reply body first and follows
@@ -59,10 +79,11 @@ func finishLoginSyncSession(ctx context.Context, session *session, first []byte,
 	body := bson.Raw(first)
 	var chats []bson.Raw
 	var cursor loginCursor
+	command := "LOGINLIST"
 	for range 20 {
 		page, err := sessionlogin.DecodeLoginListPage(body)
 		if err != nil {
-			return nil, cursor, ErrProtocol
+			return nil, cursor, protocolErr(command, "page")
 		}
 		cursor.apply(page)
 		for _, chat := range page.Chats {
@@ -74,19 +95,23 @@ func finishLoginSyncSession(ctx context.Context, session *session, first []byte,
 		}
 		request, err := page.Next.MarshalBSON()
 		if err != nil {
-			return nil, cursor, ErrProtocol
+			return nil, cursor, protocolErr(sessionlogin.LChatListCommand, "request")
 		}
 		if beforeRequest != nil {
 			beforeRequest()
 		}
-		reply, err := session.requestRaw(ctx, 0, sessionlogin.LChatListCommand, request)
+		command = sessionlogin.LChatListCommand
+		reply, err := session.requestRaw(ctx, 0, command, request)
+		if err != nil {
+			return nil, cursor, stageErr(ErrProtocol, command, err)
+		}
 		replyStatus, statusErr := loco.Status(reply)
-		if err != nil || statusErr != nil || !sessionlogin.AcceptedLChatListStatus(replyStatus) {
-			return nil, cursor, ErrProtocol
+		if statusErr != nil || !sessionlogin.AcceptedLChatListStatus(replyStatus) {
+			return nil, cursor, protocolErr(command, "status")
 		}
 		body = reply.Body
 	}
-	return nil, cursor, ErrProtocol
+	return nil, cursor, protocolErr(sessionlogin.LChatListCommand, "pages")
 }
 
 // apply records one page: its deletions, then its chat data, then the global

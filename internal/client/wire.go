@@ -84,7 +84,7 @@ func (w *wireConn) request(id uint32, method string, body []byte) (loco.Packet, 
 		}
 		unsolicited = append(unsolicited, packet)
 	}
-	return loco.Packet{}, unsolicited, ErrProtocol
+	return loco.Packet{}, unsolicited, protocolErr(method, "reply")
 }
 
 // read is the single point every incoming LOCO packet passes through, so the

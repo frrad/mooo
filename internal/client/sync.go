@@ -66,10 +66,10 @@ func (c *Client) InitialSyncTargets(ctx context.Context) ([]syncmsg.Target, erro
 		}
 		target, parseErr := syncmsg.TargetFromChatData(raw)
 		if parseErr != nil {
-			return nil, ErrProtocol
+			return nil, protocolErr("LOGINLIST", "chatDatas")
 		}
 		if previous, ok := byChat[target.ChatID]; ok && previous != target.MaxLogID {
-			return nil, ErrProtocol
+			return nil, protocolErr("LOGINLIST", "chatDatas.l")
 		}
 		byChat[target.ChatID] = target.MaxLogID
 	}
@@ -160,7 +160,7 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 		for _, raw := range page.ChatLogs {
 			logID, err := syncmsg.LogID(raw)
 			if err != nil || logID < current {
-				return nil, ErrProtocol
+				return nil, protocolErr("SYNCMSG", "chatLogs.logId")
 			}
 			// Membership-only observations show SYNCMSG may include a feed
 			// beyond the login ceiling. Do not deliver or commit outside the

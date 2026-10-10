@@ -155,7 +155,7 @@ func (s *session) uploadToMediaServer(ctx context.Context, host string, port int
 	}
 	status, err := loco.Status(postPacket)
 	if err != nil {
-		return loco.Packet{}, ErrProtocol
+		return loco.Packet{}, protocolErr(command, "status")
 	}
 	if status != 0 {
 		return loco.Packet{}, StatusError{Command: command, Status: status}
@@ -187,13 +187,13 @@ func (s *session) uploadToMediaServer(ctx context.Context, host string, port int
 			return packet, nil
 		}
 	}
-	return loco.Packet{}, ErrProtocol
+	return loco.Packet{}, protocolErr(media.CompleteCommand, "reply")
 }
 
 func decodeMediaComplete(packet loco.Packet) (media.SendResult, error) {
 	status, err := loco.Status(packet)
 	if err != nil {
-		return media.SendResult{}, ErrProtocol
+		return media.SendResult{}, protocolErr(media.CompleteCommand, "status")
 	}
 	if status != 0 {
 		return media.SendResult{}, StatusError{Command: media.CompleteCommand, Status: status}
