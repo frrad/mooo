@@ -8,9 +8,15 @@ import (
 )
 
 // PostMessage preserves a text-only board-post snapshot, not board interaction.
+// PostMessage is a Boards post snapshot. Photos counts photo thumbnails,
+// PollTitle names an attached poll, and Unrendered counts post objects the
+// bridge does not summarize.
 type PostMessage struct {
 	ChatID, LogID, AuthorID, SentAt int64
 	Text                            string
+	Photos                          int
+	PollTitle                       string
+	Unrendered                      int
 }
 
 func (PostMessage) Kind() Kind         { return KindPostMessage }
@@ -33,20 +39,36 @@ func decodePost(chatID, logID int64, log bson.Raw) (Event, error) {
 	found := false
 	for _, raw := range a.Objects {
 		var object struct {
-			Type       int     `json:"t"`
-			Subtype    int     `json:"st"`
-			Content    *string `json:"ct"`
-			Structured *string `json:"jct"`
+			Type       int               `json:"t"`
+			Subtype    int               `json:"st"`
+			Content    *string           `json:"ct"`
+			Structured *string           `json:"jct"`
+			Thumbnails []json.RawMessage `json:"th"`
+			PollTitle  *string           `json:"tt"`
 		}
 		if json.Unmarshal(raw, &object) != nil {
 			return nil, ErrMalformedEvent
 		}
 		switch object.Type {
 		case 2:
-			// Preserve the snapshot without following or forwarding its board URL.
-			if object.Subtype != 1 {
+			// Preserve the snapshot without following or forwarding its board
+			// URL. Observed subtypes: 1 (post), 4 (poll post).
+			if object.Subtype < 0 {
 				return nil, ErrMalformedEvent
 			}
+		case 3:
+			// Observed on announcement posts; it carries no rendered text.
+		case 5:
+			// Photos: one thumbnail entry per photo.
+			if len(object.Thumbnails) == 0 || len(object.Thumbnails) > 64 {
+				return nil, ErrMalformedEvent
+			}
+			m.Photos += len(object.Thumbnails)
+		case 9:
+			if object.PollTitle == nil || !validEventString(*object.PollTitle) || len(*object.PollTitle) > 4<<10 || m.PollTitle != "" {
+				return nil, ErrMalformedEvent
+			}
+			m.PollTitle = *object.PollTitle
 		case 1:
 			if found || object.Structured == nil || !validBoundedEventJSON(*object.Structured) || (object.Content != nil && (!validEventString(*object.Content) || len(*object.Content) > 32<<10)) {
 				return nil, ErrMalformedEvent
@@ -87,10 +109,15 @@ func decodePost(chatID, logID int64, log bson.Raw) (Event, error) {
 			}
 			m.Text = text.String()
 		default:
-			return nil, ErrMalformedEvent
+			// Media, schedules, quizzes and future forms are counted, not
+			// dropped, so the post still reaches Matrix.
+			m.Unrendered++
 		}
 	}
-	if !found || strings.TrimSpace(m.Text) == "" {
+	if found && strings.TrimSpace(m.Text) == "" {
+		return nil, ErrMalformedEvent
+	}
+	if !found && m.Photos == 0 && strings.TrimSpace(m.PollTitle) == "" && m.Unrendered == 0 {
 		return nil, ErrMalformedEvent
 	}
 	return m, nil

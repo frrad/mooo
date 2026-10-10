@@ -109,8 +109,13 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       [group formats](research/bridge/GROUP-FORMATS.md).
 - [ ] Format follow-ups: a live unsupported-type message, Mini text,
       LargeVideo/LargeFile and resource-only albums in groups.
-- [ ] Rich announcement text summaries, replacement/clear/reconnect behavior and
-      preservation of current topic for unsupported content.
+- [x] Rich announcements (PR #283): IMAGE/POLL/VIDEO/FILE announcements summarize
+      to the topic in the Mac banner order, replacement/clear/reconnect accepted
+      live, content with nothing to show keeps the topic, and rich Boards posts
+      no longer become malformed notices:
+      [group announcements](research/bridge/GROUP-ANNOUNCEMENTS.md).
+- [ ] Announcement follow-ups: mentions and SCHEDULE D-day text, live VIDEO/FILE/
+      QUIZ/SCHEDULE announcements, multiple polls per post.
 - [ ] Explicit outbound announcements and supported Boards mutations with native
       permissions and safe rejected/ambiguous outcomes.
 - [ ] Supported outbound video/audio/files/albums with source limits and native
@@ -121,8 +126,8 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       notifications, source roles and management permissions; prevent personal
       settings from changing shared state and reject unsupported actions.
 
-Next active slice: rich announcements. Discovery through inbound formats
-shipped in PRs #270–282.
+Next active slice: outbound announcements and Boards mutations. Discovery
+through rich announcements shipped in PRs #270–283.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.

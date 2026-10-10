@@ -1,0 +1,30 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-10",
+    "method": "Owned A created two Boards posts marked as announcements in the owned encrypted A/B/C regular group (text with one photo; a poll with three options). A read-only SYNCMSG (cnt=0) page from the B secondary recorded each type-24 attachment's top-level keys and, per os object, its keys, t/st values and string lengths. Values here are synthetic.",
+    "doc": "research/bridge/GROUP-ANNOUNCEMENTS.md"
+  },
+  "cases": [
+    {
+      "name": "announcement post with text and one photo",
+      "attachment": {"os": [
+        {"t": 3, "st": 1, "fc": false, "u": {"synthetic": true}},
+        {"t": 5, "th": [{"synthetic": true}]},
+        {"t": 1, "ct": "Synthetic rich post", "jct": "[{\"type\":\"text\",\"text\":\"Synthetic rich post\"}]"},
+        {"t": 2, "st": 1, "url": "kakaomoim://post?synthetic"}
+      ], "version": {"and": "11.1.0"}},
+      "mooo_expected": "KakaoTalk post:\nSynthetic rich post\n[1 photo]"
+    },
+    {
+      "name": "announcement post with a poll",
+      "attachment": {"os": [
+        {"t": 3, "st": 1, "fc": false, "u": {"synthetic": true}},
+        {"t": 9, "st": 0, "tt": "Synthetic announcement poll", "its": [{"synthetic": 1}, {"synthetic": 2}, {"synthetic": 3}]},
+        {"t": 2, "st": 4, "url": "kakaomoim://post?synthetic"}
+      ], "subtype": 0, "title": "Synthetic announcement poll", "voteId": 7, "version": {"and": "11.1.0"}},
+      "mooo_expected": "KakaoTalk post:\nPoll: Synthetic announcement poll"
+    }
+  ]
+}

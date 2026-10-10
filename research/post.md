@@ -92,3 +92,9 @@ submit. A confirmed new post returns through the guarded board/More path to
 the same owned chat. Any uncertain outcome preserves the receipt and blocks
 automatic repeats. The helper does not grant permissions, change announcement
 settings, attach media, edit old posts or retry restricted actions.
+
+## Rich post objects (2026-10-10)
+
+Announcement posts with photos and polls, their observed object forms and the
+summarized Matrix rendering are recorded in
+[group announcements](bridge/GROUP-ANNOUNCEMENTS.md).

@@ -473,9 +473,10 @@ updateRevision and content `{}`. A TEXT post with notice=true projects its
 content to `m.room.topic`; empty/removal content clears it. The operator selected
 room topics knowing that Matrix state is plaintext even in an encrypted room.
 This is inbound only; changing a Matrix topic does not publish a Kakao Boards
-announcement. Unsupported rich posts keep the current topic and do not prevent
-ordinary group metadata from syncing. Rich announcement rendering and Boards
-post editing/deletion remain gaps.
+announcement. Rich announcements summarize to the topic (see
+[group announcements](bridge/GROUP-ANNOUNCEMENTS.md)); only content with nothing
+to show keeps the current topic, and it does not prevent ordinary group
+metadata from syncing. Boards post editing/deletion remain gaps.
 
 Controlled owned Android 26.8.2 observations through the original secondary
 profile and local Matrix homeserver verified native announce → exact topic,

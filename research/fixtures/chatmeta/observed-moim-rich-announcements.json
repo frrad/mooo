@@ -1,0 +1,24 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-10",
+    "method": "Owned A created two Boards posts marked as announcements in the owned encrypted A/B/C regular group (text with one photo; a poll with three options and no text) while a scoped read-only B push probe recorded each CHGMOMETAS meta's content key set, type, notice flag, subject or content and json_content element shapes. Identifiers, URLs and revisions are synthetic.",
+    "doc": "research/bridge/GROUP-ANNOUNCEMENTS.md"
+  },
+  "cases": [
+    {
+      "name": "image announcement with text",
+      "content": {"id": "synthetic-image-post", "owner_id": 101, "type": "IMAGE", "created_at": "2026-10-10T12:00:00.000Z", "revision": 50, "notice": true,
+        "content": "Synthetic rich announcement", "json_content": "[{\"type\":\"text\",\"text\":\"Synthetic rich announcement\"}]",
+        "thumbnail": "https://example.invalid/thumb.jpg", "thumbnail_large": "https://example.invalid/thumb-large.jpg"},
+      "mac_banner": "Synthetic rich announcement"
+    },
+    {
+      "name": "poll announcement without text",
+      "content": {"id": "synthetic-poll-post", "owner_id": 101, "type": "POLL", "created_at": "2026-10-10T12:01:00.000Z", "revision": 51, "notice": true,
+        "subject": "Synthetic announcement poll", "poll_count": 1, "closed_at": "2026-10-12T12:00:00.000Z"},
+      "mac_banner": "Synthetic announcement poll"
+    }
+  ]
+}
