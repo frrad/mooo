@@ -314,7 +314,7 @@ func newMessage[T any](
 				return converted, err
 			}
 			if _, ok := ctx.Value(historyDeliveryKey).(*historySendState); ok {
-				if err := markMatrixTransactions(portal, intent, id, converted); err != nil {
+				if err := markMatrixTransactions(portal, intent, id, converted, false); err != nil {
 					return nil, err
 				}
 			}

@@ -56,7 +56,7 @@ func TestHistoricalTransactionSurvivesLostResponseAndRestart(t *testing.T) {
 	send := func(volatile string) (string, error) {
 		// A new transport models restart; the original SDK-generated ID can change.
 		httpClient := &http.Client{Transport: newHistoryTransport(http.DefaultTransport)}
-		state := &historySendState{}
+		state := &historySendState{required: true}
 		state.set(transaction)
 		ctx := context.WithValue(t.Context(), historyDeliveryKey, state)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPut, server.URL+"/_matrix/client/v3/rooms/!selected:test/send/m.room.encrypted/"+volatile, strings.NewReader(`{"ciphertext":"synthetic"}`))
@@ -105,7 +105,7 @@ func TestHistoricalTransactionScopesPartsAndLeavesKeyRequestsAlone(t *testing.T)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
-	state := &historySendState{}
+	state := &historySendState{required: true}
 	state.set(first)
 	ctx := context.WithValue(t.Context(), historyDeliveryKey, state)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/_matrix/client/v3/keys/query", strings.NewReader("{}"))
@@ -182,7 +182,7 @@ func (p *historyEncryptionProbe) Encrypt(_ context.Context, _ id.RoomID, _ event
 	return nil
 }
 func TestHistoryCryptoSelectsPartAndRemovesPrivateMarkerBeforeDelegation(t *testing.T) {
-	state := &historySendState{}
+	state := &historySendState{required: true}
 	ctx := context.WithValue(t.Context(), historyDeliveryKey, state)
 	probe := &historyEncryptionProbe{}
 	crypto := &historyCrypto{Crypto: probe}
@@ -218,7 +218,7 @@ func TestHistoryPlaintextTransportRemovesMarkerAndPreservesRequest(t *testing.T)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
-	state := &historySendState{}
+	state := &historySendState{required: true}
 	ctx := context.WithValue(t.Context(), historyDeliveryKey, state)
 	data, err := json.Marshal(map[string]any{"body": "synthetic plain history", "msgtype": "m.text", historyPartMarker: transaction})
 	if err != nil {
@@ -301,5 +301,101 @@ func TestLiveTextTransactionSurvivesLostAcknowledgementAndReplay(t *testing.T) {
 	defer mu.Unlock()
 	if requests != 2 || len(applied) != 1 {
 		t.Fatal("live replay duplicated the applied Matrix event")
+	}
+}
+
+// The SDK gives a double puppet on another homeserver its own HTTP client,
+// which the bridge-wide transaction adapter cannot reach. Live delivery through
+// that intent must keep working with SDK transaction IDs; history, which relies
+// on stable IDs for explicit resume, must still refuse it before sending.
+func TestExternalDoublePuppetLiveTextIsDeliveredWithoutStableTransaction(t *testing.T) {
+	kc, _ := newHistoryTest(t)
+	portal, err := kc.login.Bridge.GetPortalByMXID(t.Context(), "!selected:test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	as := appservice.Create()
+	as.Registration = &appservice.Registration{}
+	externalClient, err := as.NewExternalMautrixClient("@owner:external.test", "synthetic-token", "https://external.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	puppet := as.NewIntentAPI("custom")
+	puppet.Client = externalClient
+	puppet.UserID = "@owner:external.test"
+	puppet.IsCustomPuppet = true
+	external := &matrix.ASIntent{Connector: &matrix.Connector{AS: as}, Matrix: puppet}
+
+	remote := kc.remoteEventFor(events.TextMessage{ChatID: 5000, LogID: 103, AuthorID: 1000, Message: "synthetic own live text"}).(bridgev2.RemoteMessage)
+	ctx := remote.(bridgev2.RemoteEventWithContextMutation).MutateContext(t.Context())
+	converted, err := remote.ConvertMessage(ctx, portal, external)
+	if err != nil {
+		t.Fatalf("live double-puppet conversion failed closed: %v", err)
+	}
+	if _, marked := converted.Parts[0].Extra[historyPartMarker]; marked {
+		t.Fatal("unreachable transaction marker would leak into the double-puppet event")
+	}
+	probe := &historyEncryptionProbe{}
+	content := &event.Content{Parsed: converted.Parts[0].Content, Raw: converted.Parts[0].Extra}
+	if err := (&historyCrypto{Crypto: probe}).Encrypt(ctx, "!selected:test", event.EventMessage, content); err != nil || probe.calls != 1 {
+		t.Fatalf("live double-puppet encryption: calls=%d err=%v", probe.calls, err)
+	}
+
+	historical := &historyMessage{RemoteMessage: kc.remoteEventFor(events.TextMessage{ChatID: 5000, LogID: 104, AuthorID: 1000, Message: "synthetic own history"}).(bridgev2.RemoteMessage), ctx: t.Context()}
+	if converted, err := historical.ConvertMessage(historical.MutateContext(t.Context()), portal, external); err == nil || converted != nil {
+		t.Fatal("history accepted an intent without stable transaction identity")
+	}
+}
+
+// A live handling context can carry sends other than the converted parts. An
+// unmarked send must keep its SDK transaction ID instead of inheriting the
+// previous part's stable ID, which the homeserver would deduplicate away.
+func TestLiveUnmarkedSendsKeepTheirOwnTransactions(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]string{"event_id": "$synthetic:test"})
+	}))
+	defer server.Close()
+	kc, _ := newHistoryTest(t)
+	remote := kc.remoteEventFor(events.TextMessage{ChatID: 5000, LogID: 103, AuthorID: 2000, Message: "synthetic live text"}).(bridgev2.RemoteMessage)
+	ctx := remote.(bridgev2.RemoteEventWithContextMutation).MutateContext(t.Context())
+	crypto := &historyCrypto{Crypto: &historyEncryptionProbe{}}
+	httpClient := &http.Client{Transport: newHistoryTransport(http.DefaultTransport)}
+	put := func(eventType, transaction, body string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, server.URL+"/_matrix/client/v3/rooms/!selected:test/send/"+eventType+"/"+transaction, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+	}
+
+	if err := crypto.Encrypt(ctx, "!selected:test", event.EventMessage, &event.Content{Raw: map[string]any{historyPartMarker: "mooo-history-part"}}); err != nil {
+		t.Fatal(err)
+	}
+	put(event.EventEncrypted.Type, "sdk-part", `{"ciphertext":"part"}`)
+	if err := crypto.Encrypt(ctx, "!selected:test", event.EventReaction, &event.Content{Raw: map[string]any{}}); err != nil {
+		t.Fatalf("unmarked live encryption: %v", err)
+	}
+	put(event.EventEncrypted.Type, "sdk-other-encrypted", `{"ciphertext":"other"}`)
+	put(event.EventMessage.Type, "sdk-other-plain", `{"body":"other","msgtype":"m.notice"}`)
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{
+		"/_matrix/client/v3/rooms/!selected:test/send/m.room.encrypted/mooo-history-part",
+		"/_matrix/client/v3/rooms/!selected:test/send/m.room.encrypted/sdk-other-encrypted",
+		"/_matrix/client/v3/rooms/!selected:test/send/m.room.message/sdk-other-plain",
+	}
+	if strings.Join(paths, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("send transactions:\n%s", strings.Join(paths, "\n"))
 	}
 }

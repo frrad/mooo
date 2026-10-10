@@ -28,9 +28,12 @@ const historyPartMarker = "com.frrad.mooo.history_transaction"
 
 // This per-event state is populated for each actual converted part, before
 // encryption or plaintext HTTP serialization. It never replaces an SDK intent.
+// History requires a stable identity for every send; live delivery uses one
+// when the intent's transport can apply it and otherwise keeps SDK IDs.
 type historySendState struct {
 	mu          sync.Mutex
 	transaction string
+	required    bool
 }
 
 func (s *historySendState) set(transaction string) {
@@ -51,7 +54,7 @@ func (h *historyMessage) MutateContext(ctx context.Context) context.Context {
 	}
 	bounded, cancel := context.WithCancel(ctx)
 	context.AfterFunc(h.ctx, cancel)
-	return context.WithValue(bounded, historyDeliveryKey, &historySendState{})
+	return context.WithValue(bounded, historyDeliveryKey, &historySendState{required: true})
 }
 func (h *historyMessage) ConvertMessage(ctx context.Context, p *bridgev2.Portal, intent bridgev2.MatrixAPI) (*bridgev2.ConvertedMessage, error) {
 	if _, ok := ctx.Value(historyDeliveryKey).(*historySendState); !ok {
@@ -78,7 +81,7 @@ func (h *historyMessage) ConvertMessage(ctx context.Context, p *bridgev2.Portal,
 	if len(converted.Parts) != 1 {
 		return nil, errors.New("connector: historical conversion requires exactly one part; multipart history is unsupported")
 	}
-	if err := markMatrixTransactions(p, intent, h.GetID(), converted); err != nil {
+	if err := markMatrixTransactions(p, intent, h.GetID(), converted, true); err != nil {
 		return nil, err
 	}
 	return converted, nil
@@ -86,7 +89,10 @@ func (h *historyMessage) ConvertMessage(ctx context.Context, p *bridgev2.Portal,
 
 // Live and historical delivery share transaction identity so an acknowledgement
 // lost at either boundary cannot duplicate the same source part during replay.
-func markMatrixTransactions(p *bridgev2.Portal, intent bridgev2.MatrixAPI, messageID networkid.MessageID, converted *bridgev2.ConvertedMessage) error {
+// A double puppet on another homeserver has its own SDK HTTP client that the
+// adapter cannot reach; unless required, its parts stay unmarked and keep SDK
+// transaction IDs rather than failing live delivery.
+func markMatrixTransactions(p *bridgev2.Portal, intent bridgev2.MatrixAPI, messageID networkid.MessageID, converted *bridgev2.ConvertedMessage, required bool) error {
 	if p == nil || p.Bridge == nil || intent == nil || messageID == "" {
 		return errors.New("connector: Matrix conversion has no stable identity")
 	}
@@ -95,7 +101,10 @@ func markMatrixTransactions(p *bridgev2.Portal, intent bridgev2.MatrixAPI, messa
 			return errors.New("connector: Matrix client unavailable")
 		}
 		if _, ok := as.Matrix.Client.Client.Transport.(*historyTransport); !ok {
-			return errors.New("connector: external Matrix intent has no stable transaction adapter")
+			if required {
+				return errors.New("connector: external Matrix intent has no stable transaction adapter")
+			}
+			return nil
 		}
 	}
 	seen := make(map[networkid.PartID]bool, len(converted.Parts))
@@ -153,9 +162,11 @@ type historyCrypto struct{ matrix.Crypto }
 func (c *historyCrypto) Encrypt(ctx context.Context, room id.RoomID, typ event.Type, content *event.Content) error {
 	if state, ok := ctx.Value(historyDeliveryKey).(*historySendState); ok {
 		transaction, _ := content.Raw[historyPartMarker].(string)
-		if transaction == "" {
+		if transaction == "" && state.required {
 			return errors.New("connector: historical encrypted send has no stable part identity")
 		}
+		// Clearing on an unmarked live send keeps it from inheriting the
+		// previous part's ID, which the homeserver would deduplicate away.
 		state.set(transaction)
 		delete(content.Raw, historyPartMarker)
 	}
@@ -210,7 +221,14 @@ func (t *historyTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			return nil, err
 		}
 		var payload map[string]json.RawMessage
-		if json.Unmarshal(data, &payload) != nil || json.Unmarshal(payload[historyPartMarker], &transaction) != nil || transaction == "" {
+		if json.Unmarshal(data, &payload) != nil {
+			return nil, errors.New("connector: Matrix plaintext send body is not an object")
+		}
+		if _, marked := payload[historyPartMarker]; !marked && !state.required {
+			// GetBody returned a copy; the original body is still unread.
+			return t.base.RoundTrip(req)
+		}
+		if json.Unmarshal(payload[historyPartMarker], &transaction) != nil || transaction == "" {
 			return nil, errors.New("connector: historical plaintext send has no stable part identity")
 		}
 		delete(payload, historyPartMarker)
@@ -226,6 +244,9 @@ func (t *historyTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		clone.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(data)), nil }
 	}
 	if transaction == "" {
+		if !state.required {
+			return t.base.RoundTrip(req)
+		}
 		return nil, errors.New("connector: historical Matrix send has no stable transaction identity")
 	}
 	urlCopy := *req.URL
