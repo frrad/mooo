@@ -50,7 +50,7 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       removal; prevent forwarding to removed members.
 - [x] Shared/personal group names and group avatar replacement/clearing (PR #273), with
       convergence and clear rejection of unsupported outbound changes.
-- [ ] Member profile refresh with stable ghosts and isolated profile failures.
+- [x] Member profile refresh with stable ghosts and isolated profile failures (PR #274).
 - [ ] Bounded opt-in historical backfill with durable progress, source visibility,
       ordering/deduplication, and observed read/unread policy.
 - [ ] Failure recovery and ambiguous sends: network/session/Matrix/media failures,
@@ -79,20 +79,18 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       notifications, source roles and management permissions; prevent personal
       settings from changing shared state and reject unsupported actions.
 
-First active slice: member identity and profile changes. Native discovery shipped
-in PR #270, Matrix creation in PR #271, membership/access in PR #272, and name/
-avatar mapping in PR #273. Metadata's owned acceptance and remaining native
-contract limits are recorded in
-[group metadata evidence](research/bridge/GROUP-NAME-AVATAR.md). Trace Mac member
-profile requests, refresh notices, persistence, consumers and failures. Preserve
-stable source IDs and ghosts while propagating supported nickname/avatar updates;
-handle unavailable profiles without fabricating fields or blocking the roster.
-Next implement bounded periodic refresh for existing managed regular groups
-using the traced MEMBER/MEMLIST flow. Serialize refresh with the event pump,
-retain unavailable profiles, skip source-removed rooms, and bound/cancel work
-on shutdown. Document the schedule as bridge policy while native background
-profile notifications remain untraced. Verify live nickname/avatar replacement
-and clearing on stable ghosts, encrypted A/B/C traffic, and restart before PR.
+First active slice: bounded opt-in historical backfill. Discovery, creation,
+membership, group metadata and member profiles shipped in PRs #270–274.
+Trace the Mac history request/response, callers, retention/join visibility,
+persistence, consumers and failure branches before choosing the retrieval path.
+Resolve the controlled SYNCMSG held-count/read-side-effect differential; existing
+direct-room observations do not establish group history behavior. Define explicit
+operator opt-in, a bounded selected interval and durable progress independent
+from live commit/read watermarks. Reconcile overlap through existing message
+identity mappings, resume interrupted delivery without duplicates, and report
+unavailable history rather than inventing messages or advancing past gaps.
+Acceptance requires owned A/B/C encrypted content/identity/order/deduplication,
+source-visible limits, interruption/restart and observed unread effects.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.
