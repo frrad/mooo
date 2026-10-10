@@ -902,6 +902,47 @@ func committable(result bridgev2.EventHandlingResult) bool {
 func (kc *KakaoClient) Disconnect() {
 	ctx, cancel := context.WithTimeout(context.Background(), terminalDisconnectTimeout)
 	defer cancel()
+	leave, ok := kc.enterDisconnect(ctx)
+	if !ok {
+		return
+	}
+	defer leave()
+	stop := kc.beginStop()
+	joinWorkers := func() { join(ctx, stop.retryDone, stop.cleanupRetryDone) }
+	c := stop.owner
+	if c == nil {
+		joinWorkers()
+		return
+	}
+	// A recovery cleanup already owns Shutdown. Wait for it, then release the
+	// lease without opening a replacement behind its back.
+	kc.mu.Lock()
+	busy := stop.ownedByOther && kc.retained.busy && kc.cleanup == c
+	cleanupDone := kc.retained.done
+	kc.mu.Unlock()
+	if busy && cleanupDone != nil {
+		select {
+		case <-cleanupDone:
+		case <-ctx.Done():
+			return
+		}
+		joinWorkers()
+		return
+	}
+	err := shutdownWithDeadline(ctx, c, stop.pumpDone)
+	if err != nil {
+		kc.log().Err(err).Msg("Failed to close Kakao client")
+	}
+	kc.mu.Lock()
+	kc.release(c, err)
+	kc.mu.Unlock()
+	joinWorkers()
+}
+
+// enterDisconnect admits one Disconnect at a time. A caller that is not
+// admitted before ctx ends gives up, so concurrent callers share one overall
+// timeout budget instead of queueing indefinitely.
+func (kc *KakaoClient) enterDisconnect(ctx context.Context) (leave func(), ok bool) {
 	kc.mu.Lock()
 	if kc.disconnectGate == nil {
 		kc.disconnectGate = make(chan struct{}, 1)
@@ -910,20 +951,40 @@ func (kc *KakaoClient) Disconnect() {
 	kc.mu.Unlock()
 	select {
 	case gate <- struct{}{}:
-		defer func() { <-gate }()
-		if err := ctx.Err(); err != nil {
-			return
+		if ctx.Err() != nil {
+			<-gate
+			return nil, false
 		}
+		return func() { <-gate }, true
 	case <-ctx.Done():
-		return
+		return nil, false
 	}
+}
+
+// stopPlan is what one Disconnect must shut down and join.
+type stopPlan struct {
+	// owner is the profile owner to shut down, nil when none remains.
+	owner kakaoClient
+	// pumpDone closes when the owner's event pump exits; nil when none runs.
+	pumpDone chan struct{}
+	// ownedByOther reports that a recovery cleanup was already shutting the
+	// owner down when Disconnect began.
+	ownedByOther bool
+	// retryDone and cleanupRetryDone join the stopped background workers.
+	retryDone, cleanupRetryDone <-chan struct{}
+}
+
+// beginStop ends the current lifecycle: it cancels the lifecycle context,
+// both workers and any connect attempt, supersedes the generation, and moves
+// the active client, if any, to the retained owner with a shutdown in flight.
+func (kc *KakaoClient) beginStop() stopPlan {
 	kc.mu.Lock()
+	defer kc.mu.Unlock()
 	if kc.lifecycleCancel != nil {
 		kc.lifecycleCancel()
 		kc.lifecycle, kc.lifecycleCancel = nil, nil
 	}
-	retryDone := kc.retry.stop()
-	cleanupRetryDone := kc.cleanupRetry.stop()
+	plan := stopPlan{retryDone: kc.retry.stop(), cleanupRetryDone: kc.cleanupRetry.stop()}
 	if kc.connectCancel != nil {
 		kc.connectCancel()
 	}
@@ -939,7 +1000,8 @@ func (kc *KakaoClient) Disconnect() {
 		// Retry cleanup must join that same worker before releasing ownership.
 		done = kc.retained.pumpDone
 	}
-	ownedByOther := c != nil && kc.retained.busy
+	plan.owner, plan.pumpDone = c, done
+	plan.ownedByOther = c != nil && kc.retained.busy
 	kc.stopping = true
 	kc.client = nil
 	kc.done = nil
@@ -949,55 +1011,30 @@ func (kc *KakaoClient) Disconnect() {
 	if c != nil {
 		kc.cleanup = c
 	}
-	kc.mu.Unlock()
-	joinWorkers := func() { join(ctx, retryDone, cleanupRetryDone) }
-	if c == nil {
-		joinWorkers()
-		return
-	}
-	// A recovery cleanup already owns Shutdown. Wait for it, then release the
-	// lease without opening a replacement behind its back.
-	kc.mu.Lock()
-	busy := ownedByOther && kc.retained.busy && kc.cleanup == c
-	cleanupDone := kc.retained.done
-	kc.mu.Unlock()
-	if busy && cleanupDone != nil {
-		select {
-		case <-cleanupDone:
-		case <-ctx.Done():
-			return
-		}
-		joinWorkers()
-		return
-	}
+	return plan
+}
+
+// shutdownWithDeadline shuts c down and then waits, within ctx's deadline,
+// for its event pump to exit. A pump that outlives the deadline is reported as
+// DeadlineExceeded so the owner stays retained until a later cleanup joins it.
+func shutdownWithDeadline(ctx context.Context, c kakaoClient, pumpDone chan struct{}) error {
 	err := c.Shutdown(ctx)
+	if err != nil || pumpDone == nil {
+		return err
+	}
 	deadline, hasDeadline := ctx.Deadline()
-	if err == nil && done != nil {
-		wait := time.Until(deadline)
-		if !hasDeadline || wait <= 0 {
-			err = context.DeadlineExceeded
-		} else {
-			timer := time.NewTimer(wait)
-			select {
-			case <-done:
-				if !timer.Stop() {
-					select {
-					case <-timer.C:
-					default:
-					}
-				}
-			case <-timer.C:
-				err = context.DeadlineExceeded
-			}
-		}
+	wait := time.Until(deadline)
+	if !hasDeadline || wait <= 0 {
+		return context.DeadlineExceeded
 	}
-	if err != nil {
-		kc.log().Err(err).Msg("Failed to close Kakao client")
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-pumpDone:
+		return nil
+	case <-timer.C:
+		return context.DeadlineExceeded
 	}
-	kc.mu.Lock()
-	kc.release(c, err)
-	kc.mu.Unlock()
-	joinWorkers()
 }
 
 func (kc *KakaoClient) IsLoggedIn() bool {
