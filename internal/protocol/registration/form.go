@@ -11,10 +11,6 @@ import (
 // reviewed Mac JSON request serializer.
 const RegistrationJSONContentType = "application/json"
 
-// RegistrationFormContentType is retained as a source-compatible alias while
-// the request types are renamed in a later API cleanup.
-const RegistrationFormContentType = RegistrationJSONContentType
-
 var (
 	// ErrInvalidFormRequest is deliberately static so request validation cannot
 	// echo a password, identifier, or other caller-provided value.
@@ -74,14 +70,14 @@ type QRGenerateRequest struct {
 // reviewed route and body only; callers still own HTTP clients, cookies,
 // ordinary platform headers, deadlines, and response decoding.
 type FormRequest struct {
-	Profile     HTTPRequestProfile
+	Route       Route
 	ContentType string
 	Body        []byte
 }
 
 func (r FormRequest) String() string {
-	return "FormRequest{route=" + string(r.Profile.Route) +
-		", method=" + string(r.Profile.Method) +
+	return "FormRequest{route=" + string(r.Route) +
+		", method=POST" +
 		", contentType=" + r.ContentType + ", body=<redacted>}"
 }
 
@@ -146,8 +142,7 @@ func BuildQRLoginRequest(request QRLoginRequest) (FormRequest, error) {
 }
 
 func buildFormRequest(route Route, values map[string]any) (FormRequest, error) {
-	profile, ok := ProfileFor(route)
-	if !ok {
+	if !knownRoute(route) {
 		return FormRequest{}, ErrInvalidFormRequest
 	}
 	body, err := marshalJSON(values)
@@ -158,7 +153,7 @@ func buildFormRequest(route Route, values map[string]any) (FormRequest, error) {
 		return FormRequest{}, ErrFormTooLarge
 	}
 	return FormRequest{
-		Profile:     profile,
+		Route:       route,
 		ContentType: RegistrationJSONContentType,
 		Body:        body,
 	}, nil

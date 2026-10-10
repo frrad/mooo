@@ -36,6 +36,8 @@ type QRGenerateResponse struct {
 	Presentation     QRPresentation
 }
 
+// String and GoString keep the QR payload URL, which carries the poll id,
+// out of %v/%#v output (for example an accidental log of the response).
 func (r QRGenerateResponse) String() string {
 	return "QRGenerateResponse{status=" + strconv.FormatInt(r.Status, 10) +
 		", url=<redacted>, remainingSeconds=" + strconv.FormatFloat(r.RemainingSeconds, 'g', -1, 64) + "}"
@@ -78,7 +80,9 @@ func DecodeQRGenerateResponse(httpStatus int, body []byte) (QRGenerateResponse, 
 
 // OptionalString preserves whether an observed string key was present without
 // making it required. Its value is accessible only through Value, while its
-// formatting methods are always redacted.
+// formatting methods are always redacted, and it marshals to an empty JSON
+// object, so a token cannot leak through fmt or a structured logger. Prefer
+// it over *string for secret-bearing fields.
 type OptionalString struct {
 	value   string
 	present bool
@@ -91,40 +95,15 @@ func (v OptionalString) Value() (string, bool) {
 func (v OptionalString) String() string   { return optionalMarker(v.present) }
 func (v OptionalString) GoString() string { return v.String() }
 
-// OptionalBool preserves explicit presence for the observed permanent field.
-type OptionalBool struct {
-	value   bool
-	present bool
-}
-
-func (v OptionalBool) Present() bool { return v.present }
-func (v OptionalBool) Value() (bool, bool) {
-	return v.value, v.present
-}
-func (v OptionalBool) String() string   { return optionalMarker(v.present) }
-func (v OptionalBool) GoString() string { return v.String() }
-
-// OptionalInt64 preserves explicit presence for user.userId.
-type OptionalInt64 struct {
-	value   int64
-	present bool
-}
-
-func (v OptionalInt64) Present() bool { return v.present }
-func (v OptionalInt64) Value() (int64, bool) {
-	return v.value, v.present
-}
-func (v OptionalInt64) String() string   { return optionalMarker(v.present) }
-func (v OptionalInt64) GoString() string { return v.String() }
-
 // QRLoginSuccess preserves the observed QR-login handoff fields without
 // asserting optionality or installing credentials. UserPresent distinguishes
-// an absent user object from an explicitly decoded object.
+// an absent user object from an explicitly decoded object; nil pointers mark
+// absent non-secret fields.
 type QRLoginSuccess struct {
 	Status             int64
-	Permanent          OptionalBool
+	Permanent          *bool
 	UserPresent        bool
-	UserID             OptionalInt64
+	UserID             *int64
 	AccessToken        OptionalString
 	RefreshToken       OptionalString
 	TokenType          OptionalString
@@ -157,7 +136,7 @@ func DecodeQRLoginSuccess(httpStatus int, body []byte) (QRLoginSuccess, error) {
 		if err != nil {
 			return QRLoginSuccess{}, err
 		}
-		result.Permanent = OptionalBool{value: value, present: true}
+		result.Permanent = &value
 	}
 	if raw, ok := object["user"]; ok {
 		user, err := decodeJSONObject(raw)
@@ -170,7 +149,7 @@ func DecodeQRLoginSuccess(httpStatus int, body []byte) (QRLoginSuccess, error) {
 			if err != nil {
 				return QRLoginSuccess{}, err
 			}
-			result.UserID = OptionalInt64{value: value, present: true}
+			result.UserID = &value
 		}
 	}
 	for key, destination := range map[string]*OptionalString{
@@ -191,18 +170,11 @@ func DecodeQRLoginSuccess(httpStatus int, body []byte) (QRLoginSuccess, error) {
 	return result, nil
 }
 
-// MinimumFieldsPresent reports only the smallest handoff set justified by the
-// current evidence. It does not install state, validate token contents, or
-// require any unresolved optional field.
-func (r QRLoginSuccess) MinimumFieldsPresent() bool {
-	return r.UserID.Present() && r.AccessToken.Present()
-}
-
 func (r QRLoginSuccess) String() string {
 	return "QRLoginSuccess{status=" + strconv.FormatInt(r.Status, 10) +
-		", permanent=" + optionalMarker(r.Permanent.present) +
+		", permanent=" + optionalMarker(r.Permanent != nil) +
 		", user=" + optionalMarker(r.UserPresent) +
-		", userID=" + optionalMarker(r.UserID.present) +
+		", userID=" + optionalMarker(r.UserID != nil) +
 		", accessToken=" + optionalMarker(r.AccessToken.present) +
 		", refreshToken=" + optionalMarker(r.RefreshToken.present) +
 		", tokenType=" + optionalMarker(r.TokenType.present) +
@@ -213,7 +185,8 @@ func (r QRLoginSuccess) String() string {
 func (r QRLoginSuccess) GoString() string { return r.String() }
 
 // RawJSONField retains bounded raw bytes and explicit presence while keeping
-// formatting redacted. Callers that intentionally need the bytes receive a
+// fmt and JSON output redacted (reason/response may echo server-side detail
+// such as a device-auth passcode). Callers that intentionally need the bytes receive a
 // defensive copy from Raw.
 type RawJSONField struct {
 	raw     []byte
@@ -269,7 +242,7 @@ func DecodeServerErrorEnvelope(body []byte) (ServerErrorEnvelope, error) {
 // values remain terminal unknown failures through the existing fail-closed
 // policy mapping.
 func (e ServerErrorEnvelope) QROutcome() Outcome {
-	return DecodeQROutcome64(e.Status)
+	return qrOutcome(e.Status)
 }
 
 func (e ServerErrorEnvelope) String() string {
