@@ -160,15 +160,15 @@ func TestClientConnectReusesOneSession(t *testing.T) {
 	}
 }
 
-func TestClientClosePreventsReconnect(t *testing.T) {
+func TestClientShutdownPreventsReconnect(t *testing.T) {
 	client, err := newClient(reusableTestState(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := client.Close(); err != nil {
+	if err := client.Shutdown(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if err := client.Connect(t.Context()); !errors.Is(err, ErrClientClosed) {
-		t.Fatalf("Connect after Close = %v, want ErrClientClosed", err)
+		t.Fatalf("Connect after Shutdown = %v, want ErrClientClosed", err)
 	}
 }
