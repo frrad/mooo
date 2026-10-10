@@ -577,7 +577,7 @@ Owned A/B text and photos passed both directions in an encrypted Matrix portal,
 including exact decrypted inbound PNG bytes and offline catch-up once after a
 normal bridge restart with retained keys. See
 [`ENCRYPTED-ROOM-VALIDATION.md`](research/bridge/ENCRYPTED-ROOM-VALIDATION.md).
-The reusable `cmd/mooo-matrix-lab` companion records the harness parsing/login
+The reusable `tools/matrix-lab` companion records the harness parsing/login
 edge cases and prevents automatic repeat sends. Remaining acceptance includes
 key rotation/missing-key recovery/trust transitions, encrypted replies and
 reactions, Beeper deployment, and group media/replies/reactions. Regular three-person encrypted text and
