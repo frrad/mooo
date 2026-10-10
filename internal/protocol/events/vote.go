@@ -2,12 +2,12 @@ package events
 
 import (
 	"encoding/json"
-	"io"
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/frrad/mooo/internal/protocol/bsonfield"
+	"github.com/frrad/mooo/internal/protocol/strictjson"
 )
 
 // VoteMessage is an inbound text-poll creation snapshot, not interactive voting.
@@ -25,16 +25,7 @@ func (m VoteMessage) GoString() string   { return m.String() }
 
 func decodeVote(chatID, logID int64, log bson.Raw) (Event, error) {
 	value, err := requiredString(log, "attachment")
-	if err != nil || len(value) > 64<<10 || !validEventString(value) {
-		return nil, ErrMalformedEvent
-	}
-	dec := json.NewDecoder(strings.NewReader(value))
-	dec.UseNumber()
-	budget := 1024
-	if err = validateBoundedJSON(dec, 0, &budget); err != nil {
-		return nil, err
-	}
-	if _, err = dec.Token(); err != io.EOF {
+	if err != nil || !validEventString(value) {
 		return nil, ErrMalformedEvent
 	}
 	var a struct {
@@ -45,7 +36,7 @@ func decodeVote(chatID, logID int64, log bson.Raw) (Event, error) {
 		Objects []json.RawMessage `json:"os"`
 	}
 	// Modern observed cards use zero as the legacy vote-ID placeholder.
-	if json.Unmarshal([]byte(value), &a) != nil || a.VoteID == nil || *a.VoteID < 0 || a.PostID != nil || a.Subtype != 1 || !validVoteText(a.Title, 1024) || len(a.Objects) == 0 || len(a.Objects) > 16 {
+	if strictjson.Unmarshal([]byte(value), &a, boundedEventJSON) != nil || a.VoteID == nil || *a.VoteID < 0 || a.PostID != nil || a.Subtype != 1 || !validVoteText(a.Title, 1024) || len(a.Objects) == 0 || len(a.Objects) > 16 {
 		return nil, ErrMalformedEvent
 	}
 	m := VoteMessage{ChatID: chatID, LogID: logID, AuthorID: bsonfield.Int64OrZero(log, "authorId"), SentAt: bsonfield.Int64OrZero(log, "sendAt"), Title: a.Title}
