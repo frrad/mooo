@@ -213,22 +213,21 @@ type KakaoClient struct {
 	// timeout leaves the event pump running. It must not be discarded when
 	// the active client fields are cleared: a later cleanup attempt must join
 	// the same generation before releasing the profile owner.
-	cleanupPumpDone      chan struct{}
-	cleanupDone          chan struct{}
-	cleanupBusy          bool
-	cleanupRetryCancel   context.CancelFunc
-	cleanupRetryID       uint64
+	cleanupPumpDone chan struct{}
+	cleanupDone     chan struct{}
+	cleanupBusy     bool
+	// cleanupRetry is the single delayed retry of a timed-out owner cleanup;
+	// cleanupRetryAttempts bounds it per connected session.
+	cleanupRetry         worker
 	cleanupRetryAttempts int
-	cleanupRetryDone     chan struct{}
 	connectCancel        context.CancelFunc
 	// lifecycle spans one Connect..Disconnect cycle, including bounded
 	// recovery reconnects. Disconnect cancels it before waiting for the event
 	// pump, which interrupts in-flight inbound conversions.
-	lifecycle            context.Context
-	lifecycleCancel      context.CancelFunc
-	retryCancel          context.CancelFunc
-	retryDone            chan struct{}
-	retryID              uint64
+	lifecycle       context.Context
+	lifecycleCancel context.CancelFunc
+	// retry waits out a recovery backoff and then reconnects.
+	retry                worker
 	generation           uint64
 	connectingGeneration uint64
 	recoveryTry          int
@@ -419,36 +418,20 @@ func (kc *KakaoClient) retryAfter(err error, generation uint64) bool {
 		return false
 	}
 	kc.mu.Lock()
+	defer kc.mu.Unlock()
 	if kc.stopping || kc.generation != generation || kc.recoveryTry >= maxRecoveryAttempts {
-		kc.mu.Unlock()
 		return false
 	}
 	attempt := kc.recoveryTry
 	kc.recoveryTry++
-	ctx, cancel := context.WithCancel(context.Background())
-	kc.retryID++
-	retryID := kc.retryID
-	kc.retryCancel = cancel
-	kc.retryDone = make(chan struct{})
-	retryDone := kc.retryDone
 	wait := kc.wait
 	delay := recoveryDelay(err, attempt)
-	kc.mu.Unlock()
-	go func() {
-		defer func() {
-			close(retryDone)
-			kc.mu.Lock()
-			if kc.retryID == retryID {
-				kc.retryCancel = nil
-				kc.retryDone = nil
-			}
-			kc.mu.Unlock()
-		}()
+	kc.retry.start(&kc.mu, func(ctx context.Context, retryID uint64) {
 		if err := wait(ctx, delay); err != nil {
 			return
 		}
 		kc.mu.Lock()
-		if kc.stopping || kc.generation != generation || kc.client != nil || kc.cleanup != nil || kc.retryID != retryID {
+		if kc.stopping || kc.generation != generation || kc.client != nil || kc.cleanup != nil || kc.retry.id != retryID {
 			kc.mu.Unlock()
 			return
 		}
@@ -466,7 +449,7 @@ func (kc *KakaoClient) retryAfter(err error, generation uint64) bool {
 			kc.connectCancel = nil
 		}
 		kc.mu.Unlock()
-	}()
+	})
 	return true
 }
 
@@ -740,34 +723,18 @@ func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generatio
 // retained; this is deliberately separate from the recovery attempt budget.
 func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, kickedOut, recover bool) {
 	kc.mu.Lock()
-	if kc.cleanup != c || kc.stopping || kc.cleanupRetryCancel != nil || kc.cleanupRetryAttempts >= 1 {
-		kc.mu.Unlock()
+	defer kc.mu.Unlock()
+	if kc.cleanup != c || kc.stopping || kc.cleanupRetry.running() || kc.cleanupRetryAttempts >= 1 {
 		return
 	}
 	kc.cleanupRetryAttempts++
-	ctx, cancel := context.WithCancel(context.Background())
-	kc.cleanupRetryCancel = cancel
-	kc.cleanupRetryDone = make(chan struct{})
-	cleanupRetryDone := kc.cleanupRetryDone
-	kc.cleanupRetryID++
-	retryID := kc.cleanupRetryID
 	wait := kc.wait
-	kc.mu.Unlock()
-	go func() {
-		defer func() {
-			close(cleanupRetryDone)
-			kc.mu.Lock()
-			if kc.cleanupRetryID == retryID {
-				kc.cleanupRetryCancel = nil
-				kc.cleanupRetryDone = nil
-			}
-			kc.mu.Unlock()
-		}()
+	kc.cleanupRetry.start(&kc.mu, func(ctx context.Context, retryID uint64) {
 		if err := wait(ctx, time.Second); err != nil {
 			return
 		}
 		kc.mu.Lock()
-		if kc.cleanup != c || kc.stopping || kc.cleanupRetryID != retryID {
+		if kc.cleanup != c || kc.stopping || kc.cleanupRetry.id != retryID {
 			kc.mu.Unlock()
 			return
 		}
@@ -794,7 +761,7 @@ func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, ki
 		if canRecover && !kickedOut && recover {
 			kc.retryAfter(client.ErrClosed, generation)
 		}
-	}()
+	})
 }
 
 func shutdownWithRecoveryTimeout(c kakaoClient) error {
@@ -1008,21 +975,8 @@ func (kc *KakaoClient) Disconnect() {
 		kc.lifecycleCancel()
 		kc.lifecycle, kc.lifecycleCancel = nil, nil
 	}
-	var retryDone chan struct{}
-	if kc.retryCancel != nil {
-		kc.retryCancel()
-		kc.retryCancel = nil
-		retryDone = kc.retryDone
-		kc.retryDone = nil
-	}
-	kc.retryID++
-	if kc.cleanupRetryCancel != nil {
-		kc.cleanupRetryCancel()
-		kc.cleanupRetryCancel = nil
-	}
-	cleanupRetryDone := kc.cleanupRetryDone
-	kc.cleanupRetryDone = nil
-	kc.cleanupRetryID++
+	retryDone := kc.retry.stop()
+	cleanupRetryDone := kc.cleanupRetry.stop()
 	if kc.connectCancel != nil {
 		kc.connectCancel()
 	}
@@ -1052,19 +1006,7 @@ func (kc *KakaoClient) Disconnect() {
 		kc.cleanup = c
 	}
 	kc.mu.Unlock()
-	joinWorkers := func() bool {
-		for _, worker := range []chan struct{}{retryDone, cleanupRetryDone} {
-			if worker == nil {
-				continue
-			}
-			select {
-			case <-worker:
-			case <-ctx.Done():
-				return false
-			}
-		}
-		return true
-	}
+	joinWorkers := func() { join(ctx, retryDone, cleanupRetryDone) }
 	if c == nil {
 		joinWorkers()
 		return
