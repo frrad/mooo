@@ -33,7 +33,7 @@ integration with that library; it adds no cryptographic implementation.
 The tester initially failed because JSON unmarshalling had not populated the
 SDK's parsed encrypted-event content. Repeated tester password logins also
 triggered local Synapse throttling. Both harness issues are covered by
-regressions in `cmd/mooo-matrix-lab`; see [the companion workflow](../matrix-lab.md).
+regressions in `tools/matrix-lab`; see [the companion workflow](../matrix-lab.md).
 The original message was retained and decrypted after the fix, without resend.
 
 ## Limits
