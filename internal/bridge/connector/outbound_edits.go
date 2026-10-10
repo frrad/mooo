@@ -3,9 +3,11 @@ package connector
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"maunium.net/go/mautrix/bridgev2"
+	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/event"
 
 	"github.com/frrad/mooo/internal/client"
@@ -131,9 +133,8 @@ func (kc *KakaoClient) HandleMatrixMessageRemove(ctx context.Context, msg *bridg
 	err = c.DeleteMessage(ctx, chat.DeleteRequest{ChatID: chatID, LogID: meta.LogID})
 	var status client.StatusError
 	switch {
-	case err == nil:
-		return nil
-	case errors.As(err, &status) && status.Status == chat.StatusAlreadyDeleted:
+	case err == nil, errors.As(err, &status) && status.Status == chat.StatusAlreadyDeleted:
+		kc.recordMatrixDeletion(ctx, msg.TargetMessage.ID)
 		return nil
 	case errors.As(err, &status) && status.Status == chat.StatusDeleteTimeExpired:
 		return deleteRejected("KakaoTalk refused: the time limit for deleting this message for everyone has passed.")
@@ -151,4 +152,32 @@ func deleteRejected(message string) error {
 		WithIsCertain(true).
 		WithMessage(message).
 		WithSendNotice(true)
+}
+
+// The redaction removes the message mapping. Outbound sends do not move the
+// delivery cursor, so catch-up can later deliver the deleted-flagged log; a
+// durable tombstone keeps it from reappearing as a placeholder.
+func matrixDeletionKey(kc *KakaoClient, messageID networkid.MessageID) string {
+	return fmt.Sprintf("kakao:matrix-deleted:%s:%s", kc.login.ID, messageID)
+}
+
+func (kc *KakaoClient) recordMatrixDeletion(ctx context.Context, messageID networkid.MessageID) {
+	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
+		return
+	}
+	db := kc.login.Bridge.DB.KV
+	if _, err := db.Exec(ctx, "INSERT INTO kv_store (bridge_id,key,value) VALUES ($1,$2,$3) ON CONFLICT (bridge_id,key) DO NOTHING", db.BridgeID, matrixDeletionKey(kc, messageID), fmt.Sprintf("%020d", time.Now().Unix())); err != nil {
+		kc.log().Warn().Err(err).Msg("Failed to record a Matrix deletion tombstone")
+	}
+}
+
+func (kc *KakaoClient) deletedFromMatrix(messageID networkid.MessageID) bool {
+	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	db := kc.login.Bridge.DB.KV
+	var value string
+	return db.QueryRow(ctx, "SELECT value FROM kv_store WHERE bridge_id=$1 AND key=$2", db.BridgeID, matrixDeletionKey(kc, messageID)).Scan(&value) == nil
 }

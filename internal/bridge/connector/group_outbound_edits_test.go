@@ -13,6 +13,7 @@ import (
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
+	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
@@ -222,5 +223,30 @@ func TestEditAndDeleteCapabilitiesCarryKakaoLimits(t *testing.T) {
 	if caps.Edit != event.CapLevelPartialSupport || caps.EditMaxAge == nil || caps.EditMaxAge.Duration != 24*time.Hour ||
 		caps.Delete != event.CapLevelPartialSupport || caps.DeleteMaxAge == nil || caps.DeleteMaxAge.Duration != 24*time.Hour {
 		t.Fatalf("caps edit=%v/%v delete=%v/%v", caps.Edit, caps.EditMaxAge, caps.Delete, caps.DeleteMaxAge)
+	}
+}
+
+// Regression (owned acceptance, 2026-10-10): a message sent and then deleted
+// from Matrix lost its mapping with the redaction; outbound sends do not move
+// the delivery cursor, so catch-up later delivered the deleted-flagged log
+// and the bridge posted a "deleted" placeholder the user never saw before.
+func TestCatchUpOfAMessageDeletedFromMatrixPostsNothing(t *testing.T) {
+	kc, backend, _ := newGroupCreationFramework(t)
+	kc.client = backend
+	countReservations(kc)
+	target := ownTarget(205, chat.TextType, time.Now())
+	if err := kc.HandleMatrixMessageRemove(context.Background(), matrixRemove(target, "$r-own")); err != nil {
+		t.Fatal(err)
+	}
+	queued := 0
+	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		queued++
+		return bridgev2.EventHandlingResultSuccess
+	}
+	if !kc.handleEvent(backend, events.DeletedMessage{ChatID: testChatID, LogID: 205, AuthorID: testSelfID, BaseType: chat.TextType}) {
+		t.Fatal("deleted log was not handled")
+	}
+	if queued != 0 || len(backend.committed()) != 1 {
+		t.Fatalf("queued=%d commits=%d", queued, len(backend.committed()))
 	}
 }
