@@ -3,71 +3,35 @@ package client
 import (
 	"context"
 
-	"go.mongodb.org/mongo-driver/v2/bson"
-
+	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
-	"github.com/frrad/mooo/internal/protocol/loco"
 )
-
-// GetMessagesCommand reads chosen chat logs by position. The Mac client uses
-// it to fetch messages edited while it was offline.
-const GetMessagesCommand = "GETMSGS"
-
-const maxGetMessages = 200
 
 // GetMessages reads the current chat logs for logIDs in one chat with one
 // GETMSGS request. Logs the server does not return are simply absent.
 func (s *Session) GetMessages(ctx context.Context, chatID int64, logIDs []int64) ([]events.Event, error) {
-	if chatID <= 0 || len(logIDs) == 0 || len(logIDs) > maxGetMessages {
-		return nil, ErrProtocol
-	}
-	chatIDs := make(bson.A, 0, len(logIDs))
-	logs := make(bson.A, 0, len(logIDs))
-	wanted := make(map[int64]bool, len(logIDs))
-	for _, logID := range logIDs {
-		if logID <= 0 {
-			return nil, ErrProtocol
-		}
-		chatIDs = append(chatIDs, chatID)
-		logs = append(logs, logID)
-		wanted[logID] = true
-	}
-	body, err := bson.Marshal(bson.D{{Key: "chatIds", Value: chatIDs}, {Key: "logIds", Value: logs}})
+	body, err := (chat.GetMessagesRequest{ChatID: chatID, LogIDs: logIDs}).MarshalBSON()
 	if err != nil {
 		return nil, ErrProtocol
 	}
-	reply, err := s.Request(ctx, GetMessagesCommand, body)
+	reply, err := s.Request(ctx, chat.GetMessagesCommand, body)
 	if err != nil {
 		return nil, err
 	}
-	value, err := bson.Raw(reply.Body).LookupErr("chatLogs")
+	chatLogs, err := chat.DecodeGetMessagesResponse(reply.Body)
 	if err != nil {
+		return nil, ErrProtocol
+	}
+	if chatLogs == nil {
 		return nil, nil
 	}
-	if value.Type != bson.TypeArray {
-		return nil, ErrProtocol
+	wanted := make(map[int64]bool, len(logIDs))
+	for _, logID := range logIDs {
+		wanted[logID] = true
 	}
-	values, err := value.Array().Values()
-	if err != nil {
-		return nil, ErrProtocol
-	}
-	result := make([]events.Event, 0, len(values))
-	for _, item := range values {
-		chatLog, ok := item.DocumentOK()
-		if !ok {
-			return nil, ErrProtocol
-		}
-		if nested, err := chatLog.LookupErr("chatId"); err == nil {
-			id, ok := nested.AsInt64OK()
-			if !ok || id != chatID {
-				return nil, ErrProtocol
-			}
-		}
-		wrapped, err := bson.Marshal(bson.D{{Key: "chatId", Value: chatID}, {Key: "chatLog", Value: chatLog}})
-		if err != nil {
-			return nil, ErrProtocol
-		}
-		event, err := events.DecodeForDelivery(loco.Packet{Header: loco.Header{Method: "MSG"}, Body: wrapped})
+	result := make([]events.Event, 0, len(chatLogs))
+	for _, chatLog := range chatLogs {
+		event, err := events.DecodeChatLog(chatID, chatLog)
 		if err != nil {
 			return nil, err
 		}

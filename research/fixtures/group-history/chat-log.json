@@ -1,0 +1,65 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-10",
+    "method": "Expected outputs are mooo's handling of bare SYNCMSG/GETMSGS chat logs, recorded when the MSG wrapping and nested chatId check moved from internal/client into events.DecodeChatLog; the nested check follows the existing SYNCMSG history rule. The official client has not run these inputs",
+    "doc": "research/bridge/GROUP-HISTORY.md"
+  },
+  "cases": [
+    {
+      "name": "log without a nested chatId decodes in the requested chat",
+      "chatId": 42,
+      "chatLog": {"logId": {"$numberLong": "101"}, "type": {"$numberInt": "1"}, "authorId": {"$numberLong": "2000"}, "message": "synthetic"},
+      "kind": "TextMessage", "logId": 101
+    },
+    {
+      "name": "matching int64 nested chatId",
+      "chatId": 42,
+      "chatLog": {"chatId": {"$numberLong": "42"}, "logId": {"$numberLong": "101"}, "type": {"$numberInt": "1"}, "message": "synthetic"},
+      "kind": "TextMessage", "logId": 101
+    },
+    {
+      "name": "matching int32 nested chatId",
+      "chatId": 42,
+      "chatLog": {"chatId": {"$numberInt": "42"}, "logId": {"$numberLong": "101"}, "type": {"$numberInt": "1"}, "message": "synthetic"},
+      "kind": "TextMessage", "logId": 101
+    },
+    {
+      "name": "null nested chatId is absent",
+      "chatId": 42,
+      "chatLog": {"chatId": null, "logId": {"$numberLong": "101"}, "type": {"$numberInt": "1"}, "message": "synthetic"},
+      "kind": "TextMessage", "logId": 101
+    },
+    {
+      "name": "nested chatId naming another chat is misdirected",
+      "chatId": 42,
+      "chatLog": {"chatId": {"$numberLong": "43"}, "logId": {"$numberLong": "101"}, "type": {"$numberInt": "1"}, "message": "synthetic"},
+      "error": "misdirected"
+    },
+    {
+      "name": "string nested chatId is misdirected",
+      "chatId": 42,
+      "chatLog": {"chatId": "42", "logId": {"$numberLong": "101"}, "type": {"$numberInt": "1"}, "message": "synthetic"},
+      "error": "misdirected"
+    },
+    {
+      "name": "double nested chatId is misdirected",
+      "chatId": 42,
+      "chatLog": {"chatId": {"$numberDouble": "42.0"}, "logId": {"$numberLong": "101"}, "type": {"$numberInt": "1"}, "message": "synthetic"},
+      "error": "misdirected"
+    },
+    {
+      "name": "unparseable content keeps its position as a gap",
+      "chatId": 42,
+      "chatLog": {"logId": {"$numberLong": "101"}, "type": {"$numberInt": "1"}, "message": {"$numberInt": "7"}},
+      "kind": "MessageGap", "logId": 101
+    },
+    {
+      "name": "log without a logId is unidentifiable",
+      "chatId": 42,
+      "chatLog": {"type": {"$numberInt": "1"}, "message": "synthetic"},
+      "error": "unidentifiable"
+    }
+  ]
+}
