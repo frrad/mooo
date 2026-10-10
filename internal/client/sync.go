@@ -116,11 +116,10 @@ func (c *Client) ResumeTargets(ctx context.Context) ([]syncmsg.Target, error) {
 		return nil, ErrProtocol
 	}
 	state := checkpoint.Snapshot()
-	commits := state.Chats
 	result := make([]syncmsg.Target, 0)
 	for _, target := range targets {
-		committed := committedMax(commits, target.ChatID)
-		start := firstDeliveryStart(state.DeliveryStarts, target.ChatID)
+		committed := state.CommittedMax(target.ChatID)
+		start := state.FirstDeliveryStart(target.ChatID)
 		if (committed > 0 && target.MaxLogID > committed) || (committed == 0 && start > 0 && target.MaxLogID >= start) {
 			result = append(result, target)
 		}
@@ -149,14 +148,14 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 		return nil, ErrProtocol
 	}
 	checkpointState := checkpoint.Snapshot()
-	current := committedMax(checkpointState.Chats, chatID)
+	current := checkpointState.CommittedMax(chatID)
 	if current == 0 {
-		if start := firstDeliveryStart(checkpointState.DeliveryStarts, chatID); start > 0 {
+		if start := checkpointState.FirstDeliveryStart(chatID); start > 0 {
 			current = start - 1
 		}
 	}
 	if current >= targetMax {
-		if hasGapThrough(checkpointState.HistoryGaps, chatID, targetMax) {
+		if checkpointState.HasGapThrough(chatID, targetMax) {
 			if err := c.checkpointWrite(func(checkpoint *continuity.Store) error { return checkpoint.ResolveGapThrough(chatID, targetMax) }); err != nil {
 				return nil, err
 			}
@@ -208,7 +207,7 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 			progressed = true
 		}
 		if current == targetMax {
-			if hasGapThrough(checkpointState.HistoryGaps, chatID, targetMax) {
+			if checkpointState.HasGapThrough(chatID, targetMax) {
 				if err := c.checkpointWrite(func(checkpoint *continuity.Store) error { return checkpoint.ResolveGapThrough(chatID, targetMax) }); err != nil {
 					return nil, err
 				}
@@ -230,26 +229,4 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 		return nil, errors.Join(ErrGapUnresolved, err)
 	}
 	return nil, ErrGapUnresolved
-}
-
-func hasGapThrough(gaps []continuity.HistoryGap, chatID, logID int64) bool {
-	index := sort.Search(len(gaps), func(i int) bool { return gaps[i].ChatID >= chatID })
-	return index < len(gaps) && gaps[index].ChatID == chatID && gaps[index].FromLogID <= logID
-}
-
-func committedMax(cursors []continuity.ChatCursor, chatID int64) int64 {
-	index := sort.Search(len(cursors), func(i int) bool { return cursors[i].ChatID >= chatID })
-	if index < len(cursors) && cursors[index].ChatID == chatID {
-		return cursors[index].MaxLogID
-	}
-	return 0
-}
-
-func firstDeliveryStart(starts []continuity.DeliveryStart, chatID int64) int64 {
-	for _, start := range starts {
-		if start.ChatID == chatID {
-			return start.FirstLogID
-		}
-	}
-	return 0
 }
