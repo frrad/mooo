@@ -531,6 +531,7 @@ func convertPhoto(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 	}
 	if file != nil {
 		content.File = file
+		content.URL = ""
 	}
 	content.Info = &event.FileInfo{MimeType: mimeType, Size: len(data), Width: int(attachment.Width), Height: int(attachment.Height)}
 	converted := &bridgev2.ConvertedMessage{Parts: []*bridgev2.ConvertedMessagePart{{Type: event.EventMessage, Content: content}}}
