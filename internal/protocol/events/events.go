@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -84,118 +85,25 @@ type Result struct {
 	Err   error
 }
 
+// Position is the durable per-chat resume position of a message event.
+type Position struct{ ChatID, LogID int64 }
+
+type positioned interface{ Position() Position }
+
 // MessagePosition returns the durable per-chat resume position carried by an
 // incoming MSG event. Metadata and unknown packets are not message cursors.
 func MessagePosition(event Event) (chatID, logID int64, ok bool) {
-	switch value := event.(type) {
-	case PostMessage:
-		return value.ChatID, value.LogID, true
-	case *PostMessage:
-		if value != nil {
-			return value.ChatID, value.LogID, true
-		}
-	case VoteMessage:
-		return value.ChatID, value.LogID, true
-	case *VoteMessage:
-		if value != nil {
-			return value.ChatID, value.LogID, true
-		}
-	case MessageEdited:
-		return value.ChatID, value.LogID, true
-	case MessageDeleted:
-		return value.ChatID, value.LogID, true
-	case DeletedMessage:
-		return value.ChatID, value.LogID, true
-	case MessageGap:
-		return value.ChatID, value.LogID, true
-	case *MessageGap:
-		if value != nil {
-			return value.ChatID, value.LogID, true
-		}
-	case LocationMessage:
-		return value.ChatID, value.LogID, true
-	case *LocationMessage:
-		if value != nil {
-			return value.ChatID, value.LogID, true
-		}
-	case ProfileMessage:
-		return value.ChatID, value.LogID, true
-	case *ProfileMessage:
-		if value != nil {
-			return value.ChatID, value.LogID, true
-		}
-	case TextMessage:
-		return value.ChatID, value.LogID, true
-	case MiniTextMessage:
-		return value.ChatID, value.LogID, true
-	case *MiniTextMessage:
-		if value != nil {
-			return value.ChatID, value.LogID, true
-		}
-	case *TextMessage:
-		if value != nil {
-			return value.ChatID, value.LogID, true
-		}
-	case ReplyMessage:
-		return value.ChatID, value.LogID, true
-	case *ReplyMessage:
-		if value != nil {
-			return value.ChatID, value.LogID, true
-		}
-	case PhotoMessage:
-		return value.Message.ChatID, value.Message.LogID, true
-	case *PhotoMessage:
-		if value == nil {
-			return 0, 0, false
-		}
-		return value.Message.ChatID, value.Message.LogID, true
-	case ContactMessage:
-		return value.Message.ChatID, value.Message.LogID, true
-	case *ContactMessage:
-		if value != nil {
-			return value.Message.ChatID, value.Message.LogID, true
-		}
-	case FileMessage:
-		return value.Message.ChatID, value.Message.LogID, true
-	case *FileMessage:
-		if value != nil {
-			return value.Message.ChatID, value.Message.LogID, true
-		}
-	case AudioMessage:
-		return value.Message.ChatID, value.Message.LogID, true
-	case *AudioMessage:
-		if value != nil {
-			return value.Message.ChatID, value.Message.LogID, true
-		}
-		return 0, 0, false
-	case VideoMessage:
-		return value.Message.ChatID, value.Message.LogID, true
-	case *VideoMessage:
-		if value != nil {
-			return value.Message.ChatID, value.Message.LogID, true
-		}
-	case MultiPhotoMessage:
-		return value.Message.ChatID, value.Message.LogID, true
-	case *MultiPhotoMessage:
-		if value != nil {
-			return value.Message.ChatID, value.Message.LogID, true
-		}
-	case StickerMessage:
-		return value.ChatID, value.LogID, true
-	case *StickerMessage:
-		if value != nil {
-			return value.ChatID, value.LogID, true
-		}
-	case UnsupportedMessage:
-		return value.ChatID, value.LogID, true
-	case *UnsupportedMessage:
-		if value != nil {
-			return value.ChatID, value.LogID, true
-		}
-	default:
+	p, ok := event.(positioned)
+	if !ok || isNilPointer(event) {
 		return 0, 0, false
 	}
-	return 0, 0, false
+	pos := p.Position()
+	return pos.ChatID, pos.LogID, true
+}
+
+func isNilPointer(event Event) bool {
+	v := reflect.ValueOf(event)
+	return v.Kind() == reflect.Pointer && v.IsNil()
 }
 
 type TextMessage struct {
@@ -208,8 +116,9 @@ type TextMessage struct {
 	Revision int64
 }
 
-func (TextMessage) Kind() Kind { return KindTextMessage }
-func (TextMessage) isEvent()   {}
+func (TextMessage) Kind() Kind           { return KindTextMessage }
+func (m TextMessage) Position() Position { return Position{m.ChatID, m.LogID} }
+func (TextMessage) isEvent()             {}
 
 func (m TextMessage) String() string {
 	return fmt.Sprintf("TextMessage{chatId=%d, logId=%d, authorId=%d, message=<redacted>}", m.ChatID, m.LogID, m.AuthorID)
@@ -244,8 +153,9 @@ type ReplyMessage struct {
 	Attachment ReplyAttachment
 }
 
-func (ReplyMessage) Kind() Kind { return KindReplyMessage }
-func (ReplyMessage) isEvent()   {}
+func (ReplyMessage) Kind() Kind           { return KindReplyMessage }
+func (m ReplyMessage) Position() Position { return Position{m.ChatID, m.LogID} }
+func (ReplyMessage) isEvent()             {}
 
 func (m ReplyMessage) String() string {
 	return fmt.Sprintf("ReplyMessage{chatId=%d, logId=%d, authorId=%d, sourceLogId=%d, message=<redacted>, sourceMessage=<redacted>}", m.ChatID, m.LogID, m.AuthorID, m.Source.LogID)
@@ -259,42 +169,58 @@ type StickerMessage struct {
 	Attachment                      media.StickerAttachment
 }
 
-func (StickerMessage) Kind() Kind         { return KindStickerMessage }
-func (StickerMessage) isEvent()           {}
-func (StickerMessage) String() string     { return "StickerMessage{<redacted>}" }
-func (m StickerMessage) GoString() string { return m.String() }
+func (StickerMessage) Kind() Kind           { return KindStickerMessage }
+func (m StickerMessage) Position() Position { return Position{m.ChatID, m.LogID} }
+func (StickerMessage) isEvent()             {}
+func (StickerMessage) String() string       { return "StickerMessage{<redacted>}" }
+func (m StickerMessage) GoString() string   { return m.String() }
 
 type ContactMessage struct{ Message media.ContactMessage }
 
-func (ContactMessage) Kind() Kind         { return KindContactMessage }
+func (ContactMessage) Kind() Kind { return KindContactMessage }
+func (m ContactMessage) Position() Position {
+	return Position{m.Message.ChatID, m.Message.LogID}
+}
 func (ContactMessage) isEvent()           {}
 func (ContactMessage) String() string     { return "ContactMessage{<redacted>}" }
 func (m ContactMessage) GoString() string { return m.String() }
 
 type FileMessage struct{ Message media.FileMessage }
 
-func (FileMessage) Kind() Kind         { return KindFileMessage }
+func (FileMessage) Kind() Kind { return KindFileMessage }
+func (m FileMessage) Position() Position {
+	return Position{m.Message.ChatID, m.Message.LogID}
+}
 func (FileMessage) isEvent()           {}
 func (FileMessage) String() string     { return "FileMessage{<redacted>}" }
 func (m FileMessage) GoString() string { return m.String() }
 
 type AudioMessage struct{ Message media.AudioMessage }
 
-func (AudioMessage) Kind() Kind         { return KindAudioMessage }
+func (AudioMessage) Kind() Kind { return KindAudioMessage }
+func (m AudioMessage) Position() Position {
+	return Position{m.Message.ChatID, m.Message.LogID}
+}
 func (AudioMessage) isEvent()           {}
 func (AudioMessage) String() string     { return "AudioMessage{<redacted>}" }
 func (m AudioMessage) GoString() string { return m.String() }
 
 type VideoMessage struct{ Message media.VideoMessage }
 
-func (VideoMessage) Kind() Kind         { return KindVideoMessage }
+func (VideoMessage) Kind() Kind { return KindVideoMessage }
+func (m VideoMessage) Position() Position {
+	return Position{m.Message.ChatID, m.Message.LogID}
+}
 func (VideoMessage) isEvent()           {}
 func (VideoMessage) String() string     { return "VideoMessage{<redacted>}" }
 func (m VideoMessage) GoString() string { return m.String() }
 
 type MultiPhotoMessage struct{ Message media.MultiPhotoMessage }
 
-func (MultiPhotoMessage) Kind() Kind         { return KindMultiPhotoMessage }
+func (MultiPhotoMessage) Kind() Kind { return KindMultiPhotoMessage }
+func (m MultiPhotoMessage) Position() Position {
+	return Position{m.Message.ChatID, m.Message.LogID}
+}
 func (MultiPhotoMessage) isEvent()           {}
 func (MultiPhotoMessage) String() string     { return "MultiPhotoMessage{<redacted>}" }
 func (m MultiPhotoMessage) GoString() string { return m.String() }
@@ -304,7 +230,10 @@ type PhotoMessage struct {
 }
 
 func (PhotoMessage) Kind() Kind { return KindPhotoMessage }
-func (PhotoMessage) isEvent()   {}
+func (m PhotoMessage) Position() Position {
+	return Position{m.Message.ChatID, m.Message.LogID}
+}
+func (PhotoMessage) isEvent() {}
 
 func (m PhotoMessage) String() string {
 	return fmt.Sprintf("PhotoMessage{chatId=%d, logId=%d, attachment=<redacted>}", m.Message.ChatID, m.Message.LogID)
@@ -318,8 +247,9 @@ type UnsupportedMessage struct {
 	Type   int32
 }
 
-func (UnsupportedMessage) Kind() Kind { return KindUnsupportedMessage }
-func (UnsupportedMessage) isEvent()   {}
+func (UnsupportedMessage) Kind() Kind           { return KindUnsupportedMessage }
+func (m UnsupportedMessage) Position() Position { return Position{m.ChatID, m.LogID} }
+func (UnsupportedMessage) isEvent()             {}
 
 type ReactionItem struct {
 	ID    string
