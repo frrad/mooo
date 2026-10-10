@@ -39,6 +39,7 @@ func TestDecodeQRGenerateResponseRejectsInvalidStatusURLDelayAndFraming(t *testi
 		{name: "missing URL id", code: 200, body: []byte(`{"status":0,"url":"synthetic://host?other=x","remainingSeconds":1}`), want: ErrMissingQRID},
 		{name: "trailing JSON", code: 200, body: []byte(`{"status":0,"url":"synthetic://host?id=x","remainingSeconds":1}{}`), want: ErrInvalidJSONResponse},
 		{name: "top-level array", code: 200, body: []byte(`[]`), want: ErrInvalidJSONResponse},
+		{name: "duplicate status", code: 200, body: []byte(`{"status":0,"status":0,"url":"synthetic://host?id=x","remainingSeconds":1}`), want: ErrInvalidJSONResponse},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -92,6 +93,9 @@ func TestDecodeQRLoginSuccessRejectsWrongTypesStatusAndFraming(t *testing.T) {
 		{name: "overflow user ID", code: 200, body: `{"status":0,"user":{"userId":9223372036854775808}}`, want: ErrWrongJSONType},
 		{name: "wrong token", code: 200, body: `{"status":0,"accessToken":false}`, want: ErrWrongJSONType},
 		{name: "trailing JSON", code: 200, body: `{"status":0}{}`, want: ErrInvalidJSONResponse},
+		{name: "duplicate status", code: 200, body: `{"status":1,"status":0}`, want: ErrInvalidJSONResponse},
+		{name: "duplicate token", code: 200, body: `{"status":0,"accessToken":"a","accessToken":"b"}`, want: ErrInvalidJSONResponse},
+		{name: "duplicate user ID", code: 200, body: `{"status":0,"user":{"userId":1,"userId":2}}`, want: ErrInvalidJSONResponse},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -136,6 +140,7 @@ func TestDecodeServerErrorEnvelopeStrictStatusAndBounds(t *testing.T) {
 		{name: "wrong status", body: `{"status":"29"}`, want: ErrWrongJSONType},
 		{name: "trailing", body: `{"status":29}{}`, want: ErrInvalidJSONResponse},
 		{name: "top-level null", body: `null`, want: ErrInvalidJSONResponse},
+		{name: "duplicate status", body: `{"status":-100,"status":29}`, want: ErrInvalidJSONResponse},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -1,13 +1,13 @@
 package registration
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
 	"math"
 	"strconv"
 	"strings"
+
+	"github.com/frrad/mooo/internal/protocol/strictjson"
 )
 
 // Registration JSON is decoded only from bounded in-memory bodies. This is a
@@ -254,20 +254,16 @@ func (e ServerErrorEnvelope) String() string {
 
 func (e ServerErrorEnvelope) GoString() string { return e.String() }
 
+// registrationJSON checks a response object's own keys; nested objects are
+// checked when a decoder descends into them.
+var registrationJSON = strictjson.Limits{MaxBytes: MaxRegistrationJSONBytes}
+
 func decodeJSONObject(body []byte) (map[string]json.RawMessage, error) {
-	if len(body) == 0 {
-		return nil, ErrInvalidJSONResponse
-	}
-	if len(body) > MaxRegistrationJSONBytes {
-		return nil, ErrJSONBodyTooLarge
-	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
 	var object map[string]json.RawMessage
-	if err := decoder.Decode(&object); err != nil || object == nil {
-		return nil, ErrInvalidJSONResponse
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
+	if err := strictjson.Unmarshal(body, &object, registrationJSON); err != nil {
+		if errors.Is(err, strictjson.ErrTooLarge) {
+			return nil, ErrJSONBodyTooLarge
+		}
 		return nil, ErrInvalidJSONResponse
 	}
 	return object, nil

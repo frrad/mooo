@@ -6,8 +6,6 @@
 package macweb
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/frrad/mooo/internal/protocol/strictjson"
 )
 
 // maxProfileValue bounds every profile value carried in a header.
@@ -116,18 +116,10 @@ func Do(d Doer, req *http.Request, maxBody int64) ([]byte, error) {
 }
 
 // DecodeJSONObject decodes exactly one JSON object into v and rejects any
-// other top-level value or trailing data.
+// other top-level value, a duplicate top-level key, or trailing data. Callers
+// bound the body size through Do.
 func DecodeJSONObject(body []byte, v any) error {
-	trimmed := bytes.TrimLeft(body, " \t\r\n")
-	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return ErrInvalidJSON
-	}
-	decoder := json.NewDecoder(bytes.NewReader(trimmed))
-	if err := decoder.Decode(v); err != nil {
-		return ErrInvalidJSON
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+	if strictjson.Unmarshal(body, v, strictjson.Limits{}) != nil {
 		return ErrInvalidJSON
 	}
 	return nil

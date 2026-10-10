@@ -2,15 +2,13 @@ package media
 
 import (
 	"context"
-	"encoding/json"
-	"io"
 	"net/http"
-	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
+	"github.com/frrad/mooo/internal/protocol/strictjson"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -38,37 +36,12 @@ func DecodeAudioMessage(env chatlog.Envelope) (AudioMessage, error) {
 	}
 	log := env.Log
 	v, err := log.LookupErr("attachment")
-	if err != nil || v.Type != bson.TypeString || len(v.StringValue()) > 64<<10 || !utf8.ValidString(v.StringValue()) {
+	if err != nil || v.Type != bson.TypeString || !utf8.ValidString(v.StringValue()) {
 		return AudioMessage{}, ErrInvalidMessage
 	}
 	text := v.StringValue()
-	dec := json.NewDecoder(strings.NewReader(text))
-	token, err := dec.Token()
-	if err != nil || token != json.Delim('{') {
-		return AudioMessage{}, ErrInvalidMessage
-	}
-	seen := map[string]bool{}
-	for dec.More() {
-		token, err = dec.Token()
-		key, ok := token.(string)
-		if err != nil || !ok || seen[key] || len(seen) >= 64 {
-			return AudioMessage{}, ErrInvalidMessage
-		}
-		seen[key] = true
-		var field json.RawMessage
-		if dec.Decode(&field) != nil {
-			return AudioMessage{}, ErrInvalidMessage
-		}
-	}
-	if _, err = dec.Token(); err != nil {
-		return AudioMessage{}, ErrInvalidMessage
-	}
-	var extra any
-	if dec.Decode(&extra) != io.EOF {
-		return AudioMessage{}, ErrInvalidMessage
-	}
 	var a AudioAttachment
-	if json.Unmarshal([]byte(text), &a) != nil || !validAudioAttachment(a) {
+	if strictjson.Unmarshal([]byte(text), &a, attachmentJSON) != nil || !validAudioAttachment(a) {
 		return AudioMessage{}, ErrInvalidMessage
 	}
 	return AudioMessage{ChatID: env.ChatID, LogID: env.LogID, AuthorID: env.AuthorID, SentAt: env.SentAt, Attachment: a}, nil
