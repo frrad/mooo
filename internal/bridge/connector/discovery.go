@@ -2,12 +2,10 @@ package connector
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
-	"maunium.net/go/mautrix/bridgev2/simplevent"
 )
 
 // discoverGroups uses the completed full login inventory, never a resumed
@@ -38,67 +36,21 @@ func (kc *KakaoClient) discoverGroups(ctx context.Context, c kakaoClient) error 
 		return err
 	}
 	for _, chatID := range ordered {
-		if kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
-			if err = kc.refreshGroupMembership(ctx, c, chatID, true); err != nil {
-				return err
-			}
-			continue
-		}
-		evt, err := kc.groupDiscovery(ctx, c, chatID)
-		if err != nil {
+		if err = kc.refreshGroupMembership(ctx, c, chatID, true); err != nil {
 			return err
-		}
-		if result := kc.queue(evt); !committable(result) {
-			return errors.New("group discovery was not confirmed as bridged")
 		}
 	}
 	return nil
-}
-
-func (kc *KakaoClient) groupDiscovery(ctx context.Context, c chatMetaAPI, chatID int64) (*simplevent.ChatResync, error) {
-	key := makePortalKey(chatID, kc.login.ID)
-	p := &bridgev2.Portal{Portal: &database.Portal{PortalKey: key}}
-	if kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
-		existing, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, key)
-		if err != nil {
-			return nil, err
-		}
-		if existing != nil {
-			p.Portal = existing
-		}
-	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	info, err := kc.chatInfoFromClient(ctx, p, c, true)
-	if err != nil {
-		return nil, err
-	}
-	return &simplevent.ChatResync{
-		EventMeta: simplevent.EventMeta{Type: bridgev2.RemoteEventChatResync, PortalKey: key, Sender: kc.selfSender(), CreatePortal: true},
-		GetChatInfoFunc: func(ctx context.Context, portal *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
-			if ctx == nil {
-				return nil, bridgev2.ErrNotLoggedIn
-			}
-			if portal == nil || portal.PortalKey != key {
-				return nil, errChatInfoMismatch
-			}
-			return info, nil
-		},
-	}, nil
 }
 
 // Validate creation metadata before setting CreatePortal: bridgev2 may fall back
 // to NetworkAPI.GetChatInfo if an event provider fails during room creation.
 func (kc *KakaoClient) prepareMemberDiscovery(ctx context.Context, c chatMetaAPI, chatID int64, evt *chatInfoChangeEvent) error {
 	key := makePortalKey(chatID, kc.login.ID)
-	if kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
-		p, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, key)
-		if err != nil {
-			return err
-		}
-		if p != nil && p.MXID != "" {
-			return nil
-		}
+	if p, err := kc.store.portalByKey(ctx, key); err != nil {
+		return err
+	} else if p != nil && p.MXID != "" {
+		return nil
 	}
 	p := &bridgev2.Portal{Portal: &database.Portal{PortalKey: key}}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)

@@ -70,7 +70,7 @@ func TestGetMessagesRejectsALogFromAnotherChat(t *testing.T) {
 	go session.readLoop()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if _, err := session.GetMessages(ctx, 42, []int64{101}); !errors.Is(err, ErrProtocol) {
+	if _, err := session.GetMessages(ctx, 42, []int64{101}); !errors.Is(err, events.ErrChatLogMisdirected) {
 		t.Fatalf("err = %v", err)
 	}
 	backend.wait(t)

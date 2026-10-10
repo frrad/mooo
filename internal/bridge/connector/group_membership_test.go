@@ -34,14 +34,14 @@ func TestMembershipCheckpointKeepsForwardingPausedUntilDepartedGhostLeaves(t *te
 		t.Fatalf("unapplied leave: %v", err)
 	}
 	kc.sourceBlocked = nil
-	if err = kc.checkSourceAccess(ctx, 5000, p); !errors.Is(err, errMembershipPending) {
+	if err = kc.checkSourceAccess(ctx, 5000); !errors.Is(err, errMembershipPending) {
 		t.Fatalf("pending checkpoint lost after reload: %v", err)
 	}
 	matrix.members["@kakao_4000:test"] = &event.MemberEventContent{Membership: event.MembershipLeave}
 	if err = kc.refreshGroupMembership(ctx, backend, 5000, false); err != nil {
 		t.Fatal(err)
 	}
-	if err = kc.checkSourceAccess(ctx, 5000, p); err != nil {
+	if err = kc.checkSourceAccess(ctx, 5000); err != nil {
 		t.Fatalf("converged membership still blocked: %v", err)
 	}
 }
@@ -66,7 +66,7 @@ func TestSourceRejoinClearsRemovalOnlyWithFreshRosterAndMatrixConvergence(t *tes
 	if err = kc.refreshGroupMembership(ctx, backend, 5000, false); err == nil {
 		t.Fatal("source roster alone cleared access")
 	}
-	if err = kc.checkSourceAccess(ctx, 5000, p); err == nil {
+	if err = kc.checkSourceAccess(ctx, 5000); err == nil {
 		t.Fatal("unjoined Matrix identities allowed forwarding")
 	}
 	for _, mxid := range []string{"@kakao_1000:test", "@kakao_2000:test", "@kakao_4000:test"} {
@@ -75,7 +75,7 @@ func TestSourceRejoinClearsRemovalOnlyWithFreshRosterAndMatrixConvergence(t *tes
 	if err = kc.refreshGroupMembership(ctx, backend, 5000, false); err != nil {
 		t.Fatal(err)
 	}
-	if err = kc.checkSourceAccess(ctx, 5000, p); err != nil {
+	if err = kc.checkSourceAccess(ctx, 5000); err != nil {
 		t.Fatal(err)
 	}
 	if backend.invites != 0 || backend.creates != 0 {
@@ -101,7 +101,7 @@ func TestMissingManagedGroupPersistsRemovalBeforeVerifyingMatrixLeave(t *testing
 		t.Fatalf("unapplied leave: %v", err)
 	}
 	kc.sourceBlocked = nil
-	if err = kc.checkSourceAccess(ctx, 5000, p); !errors.Is(err, errSourceAccessRemoved) {
+	if err = kc.checkSourceAccess(ctx, 5000); !errors.Is(err, errSourceAccessRemoved) {
 		t.Fatalf("removal lost after reload: %v", err)
 	}
 	matrix.members[kc.login.UserMXID] = &event.MemberEventContent{Membership: event.MembershipJoin}
@@ -115,7 +115,7 @@ func TestMissingManagedGroupPersistsRemovalBeforeVerifyingMatrixLeave(t *testing
 	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}); err != nil {
 		t.Fatal(err)
 	}
-	if err = kc.checkSourceAccess(ctx, 5000, p); !errors.Is(err, errSourceAccessRemoved) {
+	if err = kc.checkSourceAccess(ctx, 5000); !errors.Is(err, errSourceAccessRemoved) {
 		t.Fatalf("Matrix leave restored source access: %v", err)
 	}
 }
@@ -145,7 +145,7 @@ func TestPeerRemovalFrameworkFailureKeepsCheckpointPending(t *testing.T) {
 		t.Fatalf("failed peer leave: %v", err)
 	}
 	kc.sourceBlocked = nil
-	if err = kc.checkSourceAccess(ctx, 5000, p); !errors.Is(err, errMembershipPending) {
+	if err = kc.checkSourceAccess(ctx, 5000); !errors.Is(err, errMembershipPending) {
 		t.Fatalf("checkpoint lost: %v", err)
 	}
 	matrix.failMember = ""

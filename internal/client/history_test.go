@@ -55,7 +55,7 @@ func TestHistoryPageRejectsAnotherRoomBeforeReturningAnyEvents(t *testing.T) {
 		bson.D{{Key: "chatId", Value: int64(43)}, {Key: "logId", Value: int64(103)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "foreign"}},
 	}})))
 	api := testContinuityClient(t, checkpoint, backend)
-	if page, err := api.ReadHistoryPage(t.Context(), 42, 100, 103, 1); !errors.Is(err, ErrProtocol) || len(page.Events) != 0 {
+	if page, err := api.ReadHistoryPage(t.Context(), 42, 100, 103, 1); !errors.Is(err, events.ErrChatLogMisdirected) || len(page.Events) != 0 {
 		t.Fatalf("foreign history escaped: %+v %v", page, err)
 	}
 	backend.wait(t)

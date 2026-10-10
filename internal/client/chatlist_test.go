@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/sessionlogin"
 )
 
 func TestListChatsDecodesFullInventoryIncludingEmptyRooms(t *testing.T) {
@@ -46,9 +48,9 @@ func TestListChatsFailsOnMalformedRoomInsteadOfDroppingIt(t *testing.T) {
 }
 
 func TestListCompletionOnlyFollowsSuccessfulEOF(t *testing.T) {
-	page := mustBSON(bson.D{{Key: "status", Value: int32(0)}, {Key: "eof", Value: true}, {Key: "chatDatas", Value: bson.A{}}})
 	for _, status := range []int32{0, -305, -310} {
-		_, cursor, err := finishLoginSyncSession(context.Background(), nil, page, status, nil)
+		page := mustBSON(bson.D{{Key: "status", Value: status}, {Key: "eof", Value: true}, {Key: "chatDatas", Value: bson.A{}}})
+		_, cursor, err := finishLoginSyncSession(context.Background(), nil, page, nil)
 		if err != nil || cursor.complete != (status == 0) {
 			t.Fatalf("status %d completion=%v error=%v", status, cursor.complete, err)
 		}
@@ -58,14 +60,16 @@ func TestListCompletionOnlyFollowsSuccessfulEOF(t *testing.T) {
 func TestLaterListPageDeletionRemovesEarlierRecoveryTarget(t *testing.T) {
 	var cursor loginCursor
 	first := mustBSON(bson.D{
+		{Key: "status", Value: int32(-310)}, {Key: "eof", Value: false},
 		{Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: int64(42)}}}},
 	})
-	second := mustBSON(bson.D{{Key: "delChatIds", Value: bson.A{int64(42)}}})
-	if err := updateLoginCursor(first, &cursor, false); err != nil {
-		t.Fatal(err)
-	}
-	if err := updateLoginCursor(second, &cursor, true); err != nil {
-		t.Fatal(err)
+	second := mustBSON(bson.D{{Key: "status", Value: int32(0)}, {Key: "eof", Value: true}, {Key: "delChatIds", Value: bson.A{int64(42)}}})
+	for _, body := range []bson.Raw{first, second} {
+		page, err := sessionlogin.DecodeLoginListPage(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cursor.apply(page)
 	}
 	if len(cursor.observed) != 0 {
 		t.Fatal("later deletion retained the earlier page target")
@@ -89,7 +93,7 @@ func fullChatListSession(t *testing.T, rooms []bson.Raw) *session {
 		values = append(values, room)
 	}
 	page := mustBSON(bson.D{{Key: "status", Value: int32(0)}, {Key: "eof", Value: true}, {Key: "chatDatas", Value: values}})
-	raw, cursor, err := finishLoginSyncSession(t.Context(), nil, page, 0, nil)
+	raw, cursor, err := finishLoginSyncSession(t.Context(), nil, page, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,14 +104,16 @@ func fullChatListSession(t *testing.T, rooms []bson.Raw) *session {
 func TestListChatsAppliesPageDeletionBeforeRecreationAndLatestMetadata(t *testing.T) {
 	var cursor loginCursor
 	pages := []bson.D{
-		{{Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: int64(42)}, {Key: "t", Value: "DirectChat"}}, bson.D{{Key: "c", Value: int64(43)}, {Key: "t", Value: "DirectChat"}}}}},
-		{{Key: "delChatIds", Value: bson.A{int64(42), int64(43)}}, {Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: int64(42)}, {Key: "t", Value: "MultiChat"}, {Key: "a", Value: int32(3)}}}}},
-		{{Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: int64(42)}, {Key: "t", Value: "MultiChat"}, {Key: "a", Value: int32(4)}}}}},
+		{{Key: "status", Value: int32(-310)}, {Key: "eof", Value: false}, {Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: int64(42)}, {Key: "t", Value: "DirectChat"}}, bson.D{{Key: "c", Value: int64(43)}, {Key: "t", Value: "DirectChat"}}}}},
+		{{Key: "status", Value: int32(-310)}, {Key: "eof", Value: false}, {Key: "delChatIds", Value: bson.A{int64(42), int64(43)}}, {Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: int64(42)}, {Key: "t", Value: "MultiChat"}, {Key: "a", Value: int32(3)}}}}},
+		{{Key: "status", Value: int32(-310)}, {Key: "eof", Value: false}, {Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: int64(42)}, {Key: "t", Value: "MultiChat"}, {Key: "a", Value: int32(4)}}}}},
 	}
-	for _, page := range pages {
-		if err := updateLoginCursor(mustBSON(page), &cursor, false); err != nil {
+	for _, body := range pages {
+		page, err := sessionlogin.DecodeLoginListPage(mustBSON(body))
+		if err != nil {
 			t.Fatal(err)
 		}
+		cursor.apply(page)
 	}
 	cursor.complete, cursor.replaceInventory = true, true
 	s := &session{loginCursor: cursor}

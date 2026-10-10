@@ -133,11 +133,11 @@ func decodeEditPush(packet loco.Packet) (Event, error) {
 	if err != nil || value.Type != bson.TypeEmbeddedDocument {
 		return nil, ErrMalformedEvent
 	}
-	body, err := bson.Marshal(bson.D{{Key: "chatId", Value: edit.ChatID}, {Key: "chatLog", Value: value.Document()}})
+	modifiedPacket, err := chatLogPacket(edit.ChatID, value.Document())
 	if err != nil {
 		return nil, ErrMalformedEvent
 	}
-	modified, err := decodeMessage(loco.Packet{Header: loco.Header{Method: "MSG"}, Body: body})
+	modified, err := decodeMessage(modifiedPacket)
 	if err != nil {
 		return nil, ErrMalformedEvent
 	}

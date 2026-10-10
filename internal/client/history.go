@@ -5,9 +5,7 @@ import (
 	"errors"
 
 	"github.com/frrad/mooo/internal/protocol/events"
-	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
-	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // HistoryPage is uncommitted history from an explicitly selected interval.
@@ -48,25 +46,7 @@ func decodeHistoryPage(request syncmsg.Request, response syncmsg.Response, limit
 			continue
 		}
 		// A nested room identity, when present, must not redirect historical content.
-		if v, err := raw.LookupErr("chatId"); err == nil && v.Type != bson.TypeNull {
-			var id int64
-			switch v.Type {
-			case bson.TypeInt64:
-				id = v.Int64()
-			case bson.TypeInt32:
-				id = int64(v.Int32())
-			default:
-				return HistoryPage{}, ErrProtocol
-			}
-			if id != request.ChatID {
-				return HistoryPage{}, ErrProtocol
-			}
-		}
-		body, err := bson.Marshal(bson.D{{Key: "chatId", Value: request.ChatID}, {Key: "chatLog", Value: bson.Raw(raw)}})
-		if err != nil {
-			return HistoryPage{}, ErrProtocol
-		}
-		event, err := events.DecodeForDelivery(loco.Packet{Header: loco.Header{Method: "MSG"}, Body: body})
+		event, err := events.DecodeChatLog(request.ChatID, raw)
 		if err != nil {
 			return HistoryPage{}, err
 		}

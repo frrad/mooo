@@ -15,7 +15,7 @@ import (
 func TestAddFriendByPhoneRequiresCredentials(t *testing.T) {
 	_, err := addFriendByPhone(context.Background(), nil, authstate.State{}, friends.AddByPhoneRequest{})
 	if !errors.Is(err, errCredentialsAbsent) {
-		t.Fatalf("AddFriendByPhone error = %v, want ErrCredentialsAbsent", err)
+		t.Fatalf("AddFriendByPhone error = %v, want errCredentialsAbsent", err)
 	}
 }
 
