@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -395,10 +397,39 @@ func convertText(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.M
 
 func convertReply(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.ReplyMessage) (*bridgev2.ConvertedMessage, error) {
 	converted := messageWithMetadata(event.MsgText, msg.Message, newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, chat.ReplyType, msg.Message, 0))
-	if msg.Source.LogID > 0 {
-		converted.ReplyTo = &networkid.MessageOptionalPartID{MessageID: makeMessageID(msg.ChatID, msg.Source.LogID)}
+	if msg.Source.LogID <= 0 {
+		return converted, nil
 	}
+	target := networkid.MessageOptionalPartID{MessageID: makeMessageID(msg.ChatID, msg.Source.LogID)}
+	if replySourceMissing(ctx, portal, target) && msg.Source.Message != "" {
+		// The framework drops a relation to an unbridged message. Keep the
+		// context Kakao embedded in the reply as a quote instead.
+		content := converted.Parts[0].Content
+		content.Body = quotedReplyBody(msg.Source.Message) + "\n\n" + msg.Message
+		content.Format = event.FormatHTML
+		content.FormattedBody = "<blockquote>" + htmlLines(msg.Source.Message) + "</blockquote>" + htmlLines(msg.Message)
+		return converted, nil
+	}
+	converted.ReplyTo = &target
 	return converted, nil
+}
+
+// replySourceMissing reports a reply source confirmed absent from this
+// portal's messages. Lookup failures leave the relation to the framework.
+func replySourceMissing(ctx context.Context, portal *bridgev2.Portal, target networkid.MessageOptionalPartID) bool {
+	if portal == nil || portal.Portal == nil || portal.Bridge == nil || portal.Bridge.DB == nil {
+		return false
+	}
+	row, err := portal.Bridge.DB.Message.GetFirstOrSpecificPartByID(ctx, portal.Receiver, target)
+	return err == nil && row == nil
+}
+
+func quotedReplyBody(source string) string {
+	return "> " + strings.ReplaceAll(source, "\n", "\n> ")
+}
+
+func htmlLines(text string) string {
+	return strings.ReplaceAll(html.EscapeString(text), "\n", "<br>")
 }
 
 func convertNotice(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, notice string) (*bridgev2.ConvertedMessage, error) {
