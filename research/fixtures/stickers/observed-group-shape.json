@@ -1,0 +1,17 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-10",
+    "method": "Owned C sent one free static sticker into the owned encrypted A/B/C regular group while a scoped read-only B MSG push probe recorded the chat-log and attachment key sets, value kinds and the name and MIME values. Paths are synthetic.",
+    "doc": "research/bridge/GROUP-FORMATS.md"
+  },
+  "type": 12,
+  "message": "",
+  "attachment": {
+    "name": "(Emoticons)",
+    "path": "synthetic/emot_group_001.png",
+    "type": "image/png",
+    "emoticonItemPath": "synthetic/emot_group_001.png"
+  }
+}
