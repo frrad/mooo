@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/frrad/mooo/internal/protocol/loco"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 )
 
 func awaitWireReadError(t *testing.T, results <-chan error) error {
@@ -110,11 +111,11 @@ func TestWireReadSecureReassemblesChunkedEnvelope(t *testing.T) {
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 	key := bytes.Repeat([]byte{0x42}, loco.V3KeySize)
-	clientSecure, err := loco.NewSecureV3WithKey(key, bytes.NewReader(bytes.Repeat([]byte{1}, 64)), 0)
+	clientSecure, err := testloco.NewKeyedSecureV3(key, bytes.NewReader(bytes.Repeat([]byte{1}, 64)), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverSecure, err := loco.NewSecureV3WithKey(key, bytes.NewReader(bytes.Repeat([]byte{2}, 64)), 0)
+	serverSecure, err := testloco.NewKeyedSecureV3(key, bytes.NewReader(bytes.Repeat([]byte{2}, 64)), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,11 +155,11 @@ func TestWireReadSecureAuthFailure(t *testing.T) {
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 	key := bytes.Repeat([]byte{0x42}, loco.V3KeySize)
-	clientSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	clientSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	serverSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,11 +193,11 @@ func TestWireReadSecureCoalescedEnvelopePreservesOrder(t *testing.T) {
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 	key := bytes.Repeat([]byte{0x51}, loco.V3KeySize)
-	clientSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	clientSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	serverSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,11 +246,11 @@ func TestWireReadSecurePacketSplitAcrossEnvelopes(t *testing.T) {
 			defer func() { _ = clientConn.Close() }()
 			defer func() { _ = serverConn.Close() }()
 			key := bytes.Repeat([]byte{0x61}, loco.V3KeySize)
-			clientSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+			clientSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
-			serverSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+			serverSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -298,11 +299,11 @@ func TestWireReadSecureAuthFailureAfterPartialPlaintext(t *testing.T) {
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 	key := bytes.Repeat([]byte{0x71}, loco.V3KeySize)
-	clientSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	clientSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	serverSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,11 +351,11 @@ func TestWireReadSecureZeroPrefixIsSkipped(t *testing.T) {
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 	key := bytes.Repeat([]byte{0x81}, loco.V3KeySize)
-	clientSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	clientSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	serverSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,11 +401,11 @@ func TestWireReadSecurePartialPlaintextEOF(t *testing.T) {
 			defer func() { _ = clientConn.Close() }()
 			defer func() { _ = serverConn.Close() }()
 			key := bytes.Repeat([]byte{0xA1}, loco.V3KeySize)
-			clientSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+			clientSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
-			serverSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+			serverSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
