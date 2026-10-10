@@ -192,7 +192,10 @@ func TestDeleteFeedForAnAlreadyDeletedPlaceholderIsCommittedWithoutRedaction(t *
 		t.Fatal(err)
 	}
 	queued := 0
-	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult { queued++; return bridgev2.EventHandlingResultSuccess }
+	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		queued++
+		return bridgev2.EventHandlingResultSuccess
+	}
 	if !kc.handleEvent(backend, events.MessageDeleted{ChatID: testChatID, LogID: 204, AuthorID: 2000, TargetLogID: 203}) {
 		t.Fatal("delete feed for a placeholder was not handled")
 	}
