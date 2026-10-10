@@ -1,11 +1,11 @@
 # Encrypted Matrix lab companion
 
-`cmd/mooo-matrix-lab` exercises the pinned mautrix-go `CryptoHelper` against an
+`tools/matrix-lab` exercises the pinned mautrix-go `CryptoHelper` against an
 operator-owned localhost homeserver and an existing encrypted portal. It uses
 normal login, sync, encryption, decryption and media APIs; it does not rewrite
 bridge mappings or implement another cryptographic layer.
 
-Build with `GOFLAGS='-tags=goolm' go build ./cmd/mooo-matrix-lab`. Run `--help`
+Build with `GOFLAGS='-tags=goolm' go build -o mooo-matrix-lab ./tools/matrix-lab`. Run `--help`
 for the private file inputs. Keep the password, pickle key, crypto SQLite DB,
 device credentials, event fixtures and receipts outside the repository, inside
 an owner-only directory. Password and pickle files must be owner-only. Supply

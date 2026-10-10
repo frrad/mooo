@@ -82,20 +82,90 @@ func main() {
 		fmt.Println("validated")
 		return
 	}
-	if kind := run(o); kind != "ok" {
-		fail(kind, nil)
+	if err := run(o); err != nil {
+		fail(exitKind(err), err)
 	}
 	fmt.Println(*op + "_ok")
 }
 
-func run(o options) (kind string) {
+// Each failure the companion reports maps to exactly one sentinel. The
+// sentinel's text is printed as "failure:<kind>" and is part of the CLI
+// contract consumed by private lab scripts.
+var (
+	errInvalid                = errors.New("invalid")
+	errPickleKeyFile          = errors.New("pickle_key_file")
+	errClient                 = errors.New("client")
+	errCryptoHelper           = errors.New("crypto_helper")
+	errCryptoClose            = errors.New("crypto_close")
+	errCryptoInit             = errors.New("crypto_init")
+	errCredentials            = errors.New("credentials")
+	errCredentialsMismatch    = errors.New("credentials_mismatch")
+	errDeviceMismatch         = errors.New("device_mismatch")
+	errCredentialsUnavailable = errors.New("credentials_unavailable")
+	errLoginIdentityMismatch  = errors.New("login_identity_mismatch")
+	errCredentialsRateLimited = errors.New("credentials_rate_limited")
+	errCredentialsForbidden   = errors.New("credentials_forbidden")
+	errSync                   = errors.New("sync")
+	errSyncUnobserved         = errors.New("sync_unobserved")
+	errRoomState              = errors.New("room_state")
+	errEventFile              = errors.New("event_file")
+	errEventJSON              = errors.New("event_json")
+	errDecryptMismatch        = errors.New("decrypt_mismatch")
+	errDecrypt                = errors.New("decrypt")
+	errExpectedFile           = errors.New("expected_file")
+	errExpectedJSON           = errors.New("expected_json")
+	errMediaPlaintextURL      = errors.New("media_plaintext_url")
+	errMediaURI               = errors.New("media_uri")
+	errMediaDownload          = errors.New("media_download")
+	errMediaDecrypt           = errors.New("media_decrypt")
+	errMediaMismatch          = errors.New("media_mismatch")
+	errMediaMissing           = errors.New("media_missing")
+	errAttemptReceipt         = errors.New("attempt_receipt")
+	errBodyFile               = errors.New("body_file")
+	errEncrypt                = errors.New("encrypt")
+	errSend                   = errors.New("send")
+	errReceipt                = errors.New("receipt")
+	errFile                   = errors.New("file")
+	errFileShape              = errors.New("file_shape")
+	errUpload                 = errors.New("upload")
+)
+
+var exitKinds = []error{
+	errInvalid, errPickleKeyFile, errClient, errCryptoHelper, errCryptoClose, errCryptoInit,
+	errCredentials, errCredentialsMismatch, errDeviceMismatch, errCredentialsUnavailable,
+	errLoginIdentityMismatch, errCredentialsRateLimited, errCredentialsForbidden,
+	errSync, errSyncUnobserved, errRoomState,
+	errEventFile, errEventJSON, errDecryptMismatch, errDecrypt, errExpectedFile, errExpectedJSON,
+	errMediaPlaintextURL, errMediaURI, errMediaDownload, errMediaDecrypt, errMediaMismatch, errMediaMissing,
+	errAttemptReceipt, errBodyFile, errEncrypt, errSend, errReceipt, errFile, errFileShape, errUpload,
+}
+
+// exitKind maps an operation error to its reported failure kind. An error
+// that wraps no sentinel is reported as "invalid".
+func exitKind(err error) string {
+	for _, sentinel := range exitKinds {
+		if errors.Is(err, sentinel) {
+			return sentinel.Error()
+		}
+	}
+	return errInvalid.Error()
+}
+
+// labClient is the authenticated SDK state shared by every connected operation.
+type labClient struct {
+	cli    *mautrix.Client
+	helper *cryptohelper.CryptoHelper
+	room   id.RoomID
+}
+
+func run(o options) (err error) {
 	pickle, err := readPrivate(o.pickleFile)
 	if err != nil {
-		return "pickle_key_file"
+		return errPickleKeyFile
 	}
 	cli, err := mautrix.NewClient(o.homeserver, id.UserID(o.user), "")
 	if err != nil {
-		return "client"
+		return errClient
 	}
 	cli.Log = zerolog.Nop()
 	cli.Syncer = &failFastSyncer{DefaultSyncer: mautrix.NewDefaultSyncer()}
@@ -105,180 +175,221 @@ func run(o options) (kind string) {
 	cli.ResponseSizeLimit = 4 << 20
 	helper, err := cryptohelper.NewCryptoHelper(cli, []byte(pickle), o.cryptoDB)
 	if err != nil {
-		return "crypto_helper"
+		return errCryptoHelper
 	}
 	defer func() {
-		if closeErr := helper.Close(); closeErr != nil && kind == "ok" {
-			kind = "crypto_close"
+		if closeErr := helper.Close(); closeErr != nil && err == nil {
+			err = errCryptoClose
 		}
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), o.timeout)
 	defer cancel()
 	if err = authenticate(ctx, cli, o); err != nil {
-		switch err.Error() {
-		case "credentials mismatch", "device mismatch", "credentials unavailable", "login identity mismatch":
-			return strings.ReplaceAll(err.Error(), " ", "_")
-		}
-		if errors.Is(err, mautrix.MLimitExceeded) {
-			var resp mautrix.RespError
-			if errors.As(err, &resp) {
-				if ms, ok := resp.ExtraData["retry_after_ms"].(float64); ok {
-					fmt.Fprintf(os.Stderr, "retry_after_ms:%.0f\n", ms)
-				}
-			}
-			return "credentials_rate_limited"
-		}
-		if errors.Is(err, mautrix.MForbidden) {
-			return "credentials_forbidden"
-		}
-		return "credentials"
+		return authenticationFailure(err)
 	}
 	if err = helper.Init(ctx); err != nil {
-		return "crypto_init"
+		return errCryptoInit
 	}
+	lab := labClient{cli: cli, helper: helper, room: id.RoomID(o.room)}
 	switch o.op {
 	case "startup":
-		return "ok"
+		return startup()
 	case "sync":
-		var observed atomic.Bool
-		syncer := cli.Syncer.(*failFastSyncer)
-		syncCtx, cancelSync := context.WithCancel(ctx)
-		defer cancelSync()
-		var processed atomic.Bool
-		syncer.processed = func() {
-			processed.Store(true)
-			cancelSync()
-		}
-		cli.Syncer.(mautrix.ExtensibleSyncer).OnSync(func(context.Context, *mautrix.RespSync, string) bool { observed.Store(true); return true })
-		err = cli.SyncWithContext(syncCtx)
-		if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-			return "sync"
-		}
-		if !observed.Load() || !processed.Load() {
-			return "sync_unobserved"
-		}
-		if err := preflightRoom(ctx, cli, id.RoomID(o.room)); err != nil {
-			return "room_state"
-		}
-		return "ok"
+		return lab.syncRoom(ctx)
 	case "decrypt":
-		data, readErr := os.ReadFile(o.input)
-		if readErr != nil {
-			return "event_file"
-		}
-		var evt event.Event
-		if parseEncryptedEvent(data, &evt) != nil {
-			return "event_json"
-		}
-		if evt.Type != event.EventEncrypted {
-			return "decrypt_mismatch"
-		}
-		decrypted, decErr := helper.Decrypt(ctx, &evt)
-		if decErr != nil {
-			return "decrypt"
-		}
-		expectedData, readErr := os.ReadFile(o.expected)
-		if readErr != nil {
-			return "expected_file"
-		}
-		var expected expectedMessage
-		if json.Unmarshal(expectedData, &expected) != nil || expected.Body == "" || (expected.EventType != "m.sticker" && expected.Type == "") {
-			return "expected_json"
-		}
-		if decrypted.RoomID != id.RoomID(o.room) || !matchesExpected(decrypted, expected) {
-			return "decrypt_mismatch"
-		}
-		content := decrypted.Content.Parsed.(*event.MessageEventContent)
-
-		if expected.SHA256 != "" && content.URL != "" {
-			return "media_plaintext_url"
-		}
-		if expected.SHA256 != "" && content.File != nil {
-			uri, parseErr := content.File.URL.Parse()
-			if parseErr != nil {
-				return "media_uri"
-			}
-			resp, downloadErr := cli.Download(ctx, uri)
-			if downloadErr != nil || resp == nil || resp.Body == nil {
-				return "media_download"
-			}
-			data, readErr := io.ReadAll(io.LimitReader(resp.Body, 4<<20+1))
-			_ = resp.Body.Close()
-			if readErr != nil || len(data) > 4<<20 {
-				return "media_download"
-			}
-			if content.File.DecryptInPlace(data) != nil {
-				return "media_decrypt"
-			}
-			sum := sha256.Sum256(data)
-			if hex.EncodeToString(sum[:]) != strings.ToLower(expected.SHA256) {
-				return "media_mismatch"
-			}
-		} else if expected.SHA256 != "" {
-			return "media_missing"
-		}
-		return "ok"
+		return lab.decrypt(ctx, o)
 	case "send-text":
-		if reserveAttempt(o.receipt) != nil {
-			return "attempt_receipt"
-		}
-		if err := preflightRoom(ctx, cli, id.RoomID(o.room)); err != nil {
-			return "room_state"
-		}
-		body, readErr := os.ReadFile(o.input)
-		if readErr != nil || len(bytes.TrimSpace(body)) == 0 || len(body) > 4<<10 {
-			return "body_file"
-		}
-		content := &event.MessageEventContent{MsgType: event.MsgText, Body: string(body)}
-		encrypted, encErr := helper.Encrypt(ctx, id.RoomID(o.room), event.EventMessage, content)
-		if encErr != nil {
-			return "encrypt"
-		}
-		resp, sendErr := cli.SendMessageEvent(ctx, id.RoomID(o.room), event.EventEncrypted, encrypted)
-		if sendErr != nil {
-			return "send"
-		}
-		if o.receipt != "" && (resp == nil || writeReceipt(o.receipt, string(resp.EventID)) != nil) {
-			return "receipt"
-		}
-		return "ok"
+		return lab.sendText(ctx, o)
 	case "send-file":
-		if reserveAttempt(o.receipt) != nil {
-			return "attempt_receipt"
-		}
-		if err := preflightRoom(ctx, cli, id.RoomID(o.room)); err != nil {
-			return "room_state"
-		}
-		plain, readErr := os.ReadFile(o.input)
-		if readErr != nil || len(plain) == 0 || len(plain) > 4<<20 {
-			return "file"
-		}
-		config, format, decodeErr := image.DecodeConfig(bytes.NewReader(plain))
-		if decodeErr != nil || format != "png" || config.Width != 64 || config.Height != 64 {
-			return "file_shape"
-		}
-		file := attachment.NewEncryptedFile()
-		file.EncryptInPlace(plain)
-		upload, uploadErr := cli.UploadMedia(ctx, mautrix.ReqUploadMedia{ContentBytes: plain, ContentType: "application/octet-stream", FileName: filepath.Base(o.input)})
-		if uploadErr != nil {
-			return "upload"
-		}
-		content := &event.MessageEventContent{MsgType: event.MsgImage, Body: filepath.Base(o.input), Info: &event.FileInfo{MimeType: "image/png", Width: 64, Height: 64, Size: len(plain)}, File: &event.EncryptedFileInfo{EncryptedFile: *file, URL: id.ContentURIString(upload.ContentURI.String())}}
-		encrypted, encErr := helper.Encrypt(ctx, id.RoomID(o.room), event.EventMessage, content)
-		if encErr != nil {
-			return "encrypt"
-		}
-		resp, sendErr := cli.SendMessageEvent(ctx, id.RoomID(o.room), event.EventEncrypted, encrypted)
-		if sendErr != nil {
-			return "send"
-		}
-		if resp == nil || writeReceipt(o.receipt, string(resp.EventID)) != nil {
-			return "receipt"
-		}
-		return "ok"
+		return lab.sendFile(ctx, o)
 	default:
-		return "invalid"
+		return errInvalid
 	}
+}
+
+// authenticationFailure classifies an authenticate error. Identity sentinels
+// pass through; homeserver rate limits also report the retry hint on stderr.
+func authenticationFailure(err error) error {
+	for _, sentinel := range []error{errCredentialsMismatch, errDeviceMismatch, errCredentialsUnavailable, errLoginIdentityMismatch} {
+		if errors.Is(err, sentinel) {
+			return sentinel
+		}
+	}
+	if errors.Is(err, mautrix.MLimitExceeded) {
+		var resp mautrix.RespError
+		if errors.As(err, &resp) {
+			if ms, ok := resp.ExtraData["retry_after_ms"].(float64); ok {
+				fmt.Fprintf(os.Stderr, "retry_after_ms:%.0f\n", ms)
+			}
+		}
+		return errCredentialsRateLimited
+	}
+	if errors.Is(err, mautrix.MForbidden) {
+		return errCredentialsForbidden
+	}
+	return errCredentials
+}
+
+// startup succeeds once authentication and crypto initialisation have.
+func startup() error {
+	return nil
+}
+
+func (l labClient) syncRoom(ctx context.Context) error {
+	var observed atomic.Bool
+	syncer := l.cli.Syncer.(*failFastSyncer)
+	syncCtx, cancelSync := context.WithCancel(ctx)
+	defer cancelSync()
+	var processed atomic.Bool
+	syncer.processed = func() {
+		processed.Store(true)
+		cancelSync()
+	}
+	l.cli.Syncer.(mautrix.ExtensibleSyncer).OnSync(func(context.Context, *mautrix.RespSync, string) bool { observed.Store(true); return true })
+	err := l.cli.SyncWithContext(syncCtx)
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+		return errSync
+	}
+	if !observed.Load() || !processed.Load() {
+		return errSyncUnobserved
+	}
+	if err := preflightRoom(ctx, l.cli, l.room); err != nil {
+		return errRoomState
+	}
+	return nil
+}
+
+func (l labClient) decrypt(ctx context.Context, o options) error {
+	data, err := os.ReadFile(o.input)
+	if err != nil {
+		return errEventFile
+	}
+	var evt event.Event
+	if parseEncryptedEvent(data, &evt) != nil {
+		return errEventJSON
+	}
+	if evt.Type != event.EventEncrypted {
+		return errDecryptMismatch
+	}
+	decrypted, err := l.helper.Decrypt(ctx, &evt)
+	if err != nil {
+		return errDecrypt
+	}
+	expectedData, err := os.ReadFile(o.expected)
+	if err != nil {
+		return errExpectedFile
+	}
+	var expected expectedMessage
+	if json.Unmarshal(expectedData, &expected) != nil || expected.Body == "" || (expected.EventType != "m.sticker" && expected.Type == "") {
+		return errExpectedJSON
+	}
+	if decrypted.RoomID != l.room || !matchesExpected(decrypted, expected) {
+		return errDecryptMismatch
+	}
+	content := decrypted.Content.Parsed.(*event.MessageEventContent)
+	if expected.SHA256 == "" {
+		return nil
+	}
+	if content.URL != "" {
+		return errMediaPlaintextURL
+	}
+	if content.File == nil {
+		return errMediaMissing
+	}
+	return l.verifyMedia(ctx, content.File, expected.SHA256)
+}
+
+// verifyMedia downloads and decrypts an encrypted attachment and compares its
+// plaintext SHA-256 with the expected hex digest.
+func (l labClient) verifyMedia(ctx context.Context, file *event.EncryptedFileInfo, wantSHA256 string) error {
+	uri, err := file.URL.Parse()
+	if err != nil {
+		return errMediaURI
+	}
+	resp, err := l.cli.Download(ctx, uri)
+	if err != nil || resp == nil || resp.Body == nil {
+		return errMediaDownload
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20+1))
+	_ = resp.Body.Close()
+	if err != nil || len(data) > 4<<20 {
+		return errMediaDownload
+	}
+	if file.DecryptInPlace(data) != nil {
+		return errMediaDecrypt
+	}
+	sum := sha256.Sum256(data)
+	if hex.EncodeToString(sum[:]) != strings.ToLower(wantSHA256) {
+		return errMediaMismatch
+	}
+	return nil
+}
+
+func (l labClient) sendText(ctx context.Context, o options) error {
+	if reserveAttempt(o.receipt) != nil {
+		return errAttemptReceipt
+	}
+	if err := preflightRoom(ctx, l.cli, l.room); err != nil {
+		return errRoomState
+	}
+	body, err := os.ReadFile(o.input)
+	if err != nil || len(bytes.TrimSpace(body)) == 0 || len(body) > 4<<10 {
+		return errBodyFile
+	}
+	content := &event.MessageEventContent{MsgType: event.MsgText, Body: string(body)}
+	resp, err := l.sendEncrypted(ctx, content)
+	if err != nil {
+		return err
+	}
+	if o.receipt != "" && (resp == nil || writeReceipt(o.receipt, string(resp.EventID)) != nil) {
+		return errReceipt
+	}
+	return nil
+}
+
+func (l labClient) sendFile(ctx context.Context, o options) error {
+	if reserveAttempt(o.receipt) != nil {
+		return errAttemptReceipt
+	}
+	if err := preflightRoom(ctx, l.cli, l.room); err != nil {
+		return errRoomState
+	}
+	plain, err := os.ReadFile(o.input)
+	if err != nil || len(plain) == 0 || len(plain) > 4<<20 {
+		return errFile
+	}
+	config, format, err := image.DecodeConfig(bytes.NewReader(plain))
+	if err != nil || format != "png" || config.Width != 64 || config.Height != 64 {
+		return errFileShape
+	}
+	file := attachment.NewEncryptedFile()
+	file.EncryptInPlace(plain)
+	upload, err := l.cli.UploadMedia(ctx, mautrix.ReqUploadMedia{ContentBytes: plain, ContentType: "application/octet-stream", FileName: filepath.Base(o.input)})
+	if err != nil {
+		return errUpload
+	}
+	content := &event.MessageEventContent{MsgType: event.MsgImage, Body: filepath.Base(o.input), Info: &event.FileInfo{MimeType: "image/png", Width: 64, Height: 64, Size: len(plain)}, File: &event.EncryptedFileInfo{EncryptedFile: *file, URL: id.ContentURIString(upload.ContentURI.String())}}
+	resp, err := l.sendEncrypted(ctx, content)
+	if err != nil {
+		return err
+	}
+	if resp == nil || writeReceipt(o.receipt, string(resp.EventID)) != nil {
+		return errReceipt
+	}
+	return nil
+}
+
+// sendEncrypted Megolm-encrypts content for the portal room and sends it.
+func (l labClient) sendEncrypted(ctx context.Context, content *event.MessageEventContent) (*mautrix.RespSendEvent, error) {
+	encrypted, err := l.helper.Encrypt(ctx, l.room, event.EventMessage, content)
+	if err != nil {
+		return nil, errEncrypt
+	}
+	resp, err := l.cli.SendMessageEvent(ctx, l.room, event.EventEncrypted, encrypted)
+	if err != nil {
+		return nil, errSend
+	}
+	return resp, nil
 }
 
 func validate(o options) error {
@@ -430,7 +541,7 @@ func authenticate(ctx context.Context, cli *mautrix.Client, o options) error {
 	if value, err := readPrivate(o.credentials); err == nil {
 		var creds deviceCredentials
 		if json.Unmarshal([]byte(value), &creds) != nil || creds.User != id.UserID(o.user) || creds.Device != id.DeviceID(o.device) || creds.Token == "" {
-			return errors.New("credentials mismatch")
+			return errCredentialsMismatch
 		}
 		cli.AccessToken, cli.DeviceID = creds.Token, creds.Device
 		who, err := cli.Whoami(ctx)
@@ -438,11 +549,11 @@ func authenticate(ctx context.Context, cli *mautrix.Client, o options) error {
 			return err
 		}
 		if who.UserID != creds.User || who.DeviceID != creds.Device {
-			return errors.New("device mismatch")
+			return errDeviceMismatch
 		}
 		return nil
 	} else if _, statErr := os.Lstat(o.credentials); !os.IsNotExist(statErr) {
-		return errors.New("credentials unavailable")
+		return errCredentialsUnavailable
 	}
 	password, err := readPrivate(o.passwordFile)
 	if err != nil {
@@ -453,7 +564,7 @@ func authenticate(ctx context.Context, cli *mautrix.Client, o options) error {
 		return err
 	}
 	if resp.UserID != id.UserID(o.user) || resp.DeviceID != id.DeviceID(o.device) || resp.AccessToken == "" {
-		return errors.New("login identity mismatch")
+		return errLoginIdentityMismatch
 	}
 	data, err := json.Marshal(deviceCredentials{resp.UserID, resp.DeviceID, resp.AccessToken})
 	if err != nil {
