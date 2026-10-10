@@ -2,7 +2,6 @@ package connector
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
@@ -12,29 +11,16 @@ import (
 )
 
 func convertVideo(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.VideoMessage) (*bridgev2.ConvertedMessage, error) {
-	ctx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)
-	defer cancel()
 	v := msg.Message
 	a := v.Attachment
-	metadata := newKakaoMessageMetadata(v.ChatID, v.LogID, v.AuthorID, messagetype.Video, "[video]", 0)
-	data, err := media.DownloadVideo(ctx, photoHTTPClient, a)
-	if err != nil {
-		if category, ok := deterministicPhotoFailure(err); ok {
-			metadata.ConversionGap = category
-			return messageWithMetadata(event.MsgNotice, fmt.Sprintf("A KakaoTalk video could not be displayed (%s).", category), metadata), nil
-		}
-		return nil, errPhotoTransfer
-	}
-	uri, file, err := intent.UploadMedia(ctx, portal.MXID, data, "video.mp4", "video/mp4")
-	if err != nil {
-		return nil, errPhotoTransfer
-	}
-	content := &event.MessageEventContent{MsgType: event.MsgVideo, Body: "video.mp4", FileName: "video.mp4", URL: uri, File: file, Info: &event.FileInfo{MimeType: "video/mp4", Size: len(data), Width: int(a.Width), Height: int(a.Height), Duration: int(a.Duration * 1000)}}
-	if a.Comment != "" {
-		content.Body = a.Comment
-	}
-	if file != nil {
-		content.URL = ""
-	}
-	return &bridgev2.ConvertedMessage{Parts: []*bridgev2.ConvertedMessagePart{{Type: event.EventMessage, Content: content, DBMetadata: metadata}}}, nil
+	return convertAttachment(ctx, portal, intent, attachmentSpec{
+		kind: "video", failedTo: "displayed", msgType: event.MsgVideo, body: a.Comment,
+		metadata:    newKakaoMessageMetadata(v.ChatID, v.LogID, v.AuthorID, messagetype.Video, "[video]", 0),
+		transferErr: errPhotoTransfer,
+		download: func(ctx context.Context) (attachmentMedia, error) {
+			data, err := media.DownloadVideo(ctx, photoHTTPClient, a)
+			info := event.FileInfo{Width: int(a.Width), Height: int(a.Height), Duration: int(a.Duration * 1000)}
+			return attachmentMedia{data: data, name: "video.mp4", mime: "video/mp4", info: info}, err
+		},
+	})
 }
