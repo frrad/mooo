@@ -3,8 +3,6 @@ package media
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -13,6 +11,7 @@ import (
 
 	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
+	"github.com/frrad/mooo/internal/protocol/strictjson"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -39,37 +38,12 @@ func DecodeContactMessage(env chatlog.Envelope) (ContactMessage, error) {
 	}
 	log := env.Log
 	v, err := log.LookupErr("attachment")
-	if err != nil || v.Type != bson.TypeString || len(v.StringValue()) > 64<<10 || !utf8.ValidString(v.StringValue()) {
+	if err != nil || v.Type != bson.TypeString || !utf8.ValidString(v.StringValue()) {
 		return ContactMessage{}, ErrInvalidMessage
 	}
 	text := v.StringValue()
-	dec := json.NewDecoder(strings.NewReader(text))
-	token, err := dec.Token()
-	if err != nil || token != json.Delim('{') {
-		return ContactMessage{}, ErrInvalidMessage
-	}
-	seen := map[string]bool{}
-	for dec.More() {
-		token, err = dec.Token()
-		key, ok := token.(string)
-		if err != nil || !ok || seen[key] || len(seen) >= 64 {
-			return ContactMessage{}, ErrInvalidMessage
-		}
-		seen[key] = true
-		var field json.RawMessage
-		if dec.Decode(&field) != nil {
-			return ContactMessage{}, ErrInvalidMessage
-		}
-	}
-	if _, err = dec.Token(); err != nil {
-		return ContactMessage{}, ErrInvalidMessage
-	}
-	var extra any
-	if dec.Decode(&extra) != io.EOF {
-		return ContactMessage{}, ErrInvalidMessage
-	}
 	var a ContactAttachment
-	if json.Unmarshal([]byte(text), &a) != nil || !validContactAttachment(a) {
+	if strictjson.Unmarshal([]byte(text), &a, attachmentJSON) != nil || !validContactAttachment(a) {
 		return ContactMessage{}, ErrInvalidMessage
 	}
 	return ContactMessage{ChatID: env.ChatID, LogID: env.LogID, AuthorID: env.AuthorID, SentAt: env.SentAt, Attachment: a}, nil
