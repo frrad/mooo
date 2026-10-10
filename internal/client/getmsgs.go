@@ -40,9 +40,6 @@ func (s *Session) GetMessages(ctx context.Context, chatID int64, logIDs []int64)
 	if err != nil {
 		return nil, err
 	}
-	if status, err := responseStatus(reply); err != nil || status != 0 {
-		return nil, StatusError{Command: GetMessagesCommand, Status: status}
-	}
 	value, err := bson.Raw(reply.Body).LookupErr("chatLogs")
 	if err != nil {
 		return nil, nil

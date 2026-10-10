@@ -220,7 +220,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	}
 	bookingReply, _, err := booking.request(1, "GETCONF", bookingBody)
 	_ = booking.close()
-	bookingStatus, statusErr := responseStatus(bookingReply)
+	bookingStatus, statusErr := loco.Status(bookingReply)
 	if err != nil || statusErr != nil || bookingStatus != 0 {
 		return nil, ErrBootstrap
 	}
@@ -302,7 +302,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	if err != nil {
 		return nil, ErrLogin
 	}
-	status, err := responseStatus(loginReply)
+	status, err := loco.Status(loginReply)
 	if err != nil {
 		return nil, ErrLogin
 	}
@@ -376,7 +376,7 @@ func (s *Session) Request(ctx context.Context, command string, body []byte) (loc
 	if err != nil {
 		return loco.Packet{}, err
 	}
-	status, err := responseStatus(reply)
+	status, err := loco.Status(reply)
 	if err != nil {
 		return reply, ErrProtocol
 	}
@@ -834,12 +834,4 @@ func (w *wireConn) readFrame() (loco.Packet, error) {
 			return loco.Packet{}, err
 		}
 	}
-}
-
-func responseStatus(packet loco.Packet) (int32, error) {
-	status, ok, err := fields.Int32(bson.Raw(packet.Body), "status")
-	if err != nil || !ok {
-		return 0, ErrProtocol
-	}
-	return status, nil
 }

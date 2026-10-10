@@ -30,7 +30,7 @@ func checkin(ctx context.Context, hosts []string, ports []int, body []byte, dial
 			}
 			reply, _, requestErr := wire.request(1, "CHECKIN", body)
 			_ = wire.close()
-			status, statusErr := responseStatus(reply)
+			status, statusErr := loco.Status(reply)
 			if requestErr == nil && statusErr == nil && status == 0 {
 				return reply, wire, nil
 			}
@@ -42,7 +42,7 @@ func checkin(ctx context.Context, hosts []string, ports []int, body []byte, dial
 			}
 			reply, _, requestErr := wire.request(1, "CHECKIN", body)
 			_ = wire.close()
-			status, statusErr := responseStatus(reply)
+			status, statusErr := loco.Status(reply)
 			if requestErr == nil && statusErr == nil && status == 0 {
 				return reply, wire, nil
 			}
@@ -171,7 +171,7 @@ func finishLoginSyncSession(ctx context.Context, session *Session, first []byte,
 			beforeRequest()
 		}
 		reply, err := session.requestRaw(ctx, 0, "LCHATLIST", body)
-		replyStatus, statusErr := responseStatus(reply)
+		replyStatus, statusErr := loco.Status(reply)
 		if err != nil || statusErr != nil || (replyStatus != 0 && replyStatus != -310) {
 			return nil, cursor, ErrProtocol
 		}

@@ -114,17 +114,6 @@ func TestUpdateLoginCursorCapturesInventoryAndDeletion(t *testing.T) {
 	}
 }
 
-func TestResponseStatusUsesBSONStatus(t *testing.T) {
-	body, err := bson.Marshal(bson.D{{Key: "status", Value: int32(-328)}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	status, err := responseStatus(loco.Packet{Header: loco.Header{Status: 0}, Body: body})
-	if err != nil || status != -328 {
-		t.Fatalf("responseStatus = (%d, %v), want (-328, nil)", status, err)
-	}
-}
-
 func TestBookingTargets(t *testing.T) {
 	body, err := bson.Marshal(bson.D{
 		{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"a.example", "b.example"}}}},
