@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -13,6 +11,7 @@ import (
 
 	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
+	"github.com/frrad/mooo/internal/protocol/strictjson"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -45,37 +44,12 @@ func DecodeVideoMessage(env chatlog.Envelope) (VideoMessage, error) {
 	}
 	log := env.Log
 	v, err := log.LookupErr("attachment")
-	if err != nil || v.Type != bson.TypeString || len(v.StringValue()) > 64<<10 {
+	if err != nil || v.Type != bson.TypeString {
 		return VideoMessage{}, ErrInvalidMessage
 	}
 	text := v.StringValue()
-	dec := json.NewDecoder(strings.NewReader(text))
-	token, err := dec.Token()
-	if err != nil || token != json.Delim('{') {
-		return VideoMessage{}, ErrInvalidMessage
-	}
-	seen := map[string]bool{}
-	for dec.More() {
-		token, err = dec.Token()
-		key, ok := token.(string)
-		if err != nil || !ok || seen[key] || len(seen) >= 64 {
-			return VideoMessage{}, ErrInvalidMessage
-		}
-		seen[key] = true
-		var field json.RawMessage
-		if dec.Decode(&field) != nil {
-			return VideoMessage{}, ErrInvalidMessage
-		}
-	}
-	if _, err = dec.Token(); err != nil {
-		return VideoMessage{}, ErrInvalidMessage
-	}
-	var extra any
-	if dec.Decode(&extra) != io.EOF {
-		return VideoMessage{}, ErrInvalidMessage
-	}
 	var a VideoAttachment
-	if json.Unmarshal([]byte(text), &a) != nil || !validVideoAttachment(a) {
+	if strictjson.Unmarshal([]byte(text), &a, attachmentJSON) != nil || !validVideoAttachment(a) {
 		return VideoMessage{}, ErrInvalidMessage
 	}
 	return VideoMessage{ChatID: env.ChatID, LogID: env.LogID, AuthorID: env.AuthorID, SentAt: env.SentAt, Attachment: a}, nil

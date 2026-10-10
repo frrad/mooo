@@ -4,15 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"image"
-	"io"
 	"net/http"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
+	"github.com/frrad/mooo/internal/protocol/strictjson"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -38,33 +37,7 @@ func DecodeMultiPhotoMessage(env chatlog.Envelope) (MultiPhotoMessage, error) {
 	}
 	log := env.Log
 	value, err := log.LookupErr("attachment")
-	if err != nil || value.Type != bson.TypeString || len(value.StringValue()) > 128<<10 {
-		return MultiPhotoMessage{}, ErrInvalidMessage
-	}
-	attachmentText := value.StringValue()
-	dec := json.NewDecoder(strings.NewReader(attachmentText))
-	token, err := dec.Token()
-	if err != nil || token != json.Delim('{') {
-		return MultiPhotoMessage{}, ErrInvalidMessage
-	}
-	seen := map[string]bool{}
-	for dec.More() {
-		token, err = dec.Token()
-		key, ok := token.(string)
-		if err != nil || !ok || seen[key] || len(seen) >= 64 {
-			return MultiPhotoMessage{}, ErrInvalidMessage
-		}
-		seen[key] = true
-		var field json.RawMessage
-		if dec.Decode(&field) != nil {
-			return MultiPhotoMessage{}, ErrInvalidMessage
-		}
-	}
-	if _, err = dec.Token(); err != nil {
-		return MultiPhotoMessage{}, ErrInvalidMessage
-	}
-	var extra any
-	if dec.Decode(&extra) != io.EOF {
+	if err != nil || value.Type != bson.TypeString {
 		return MultiPhotoMessage{}, ErrInvalidMessage
 	}
 	var a struct {
@@ -79,7 +52,7 @@ func DecodeMultiPhotoMessage(env chatlog.Envelope) (MultiPhotoMessage, error) {
 		Thumbnails []string `json:"thumbnailUrls"`
 		ExpiresAt  int64    `json:"expire"`
 	}
-	if json.Unmarshal([]byte(value.StringValue()), &a) != nil {
+	if strictjson.Unmarshal([]byte(value.StringValue()), &a, albumJSON) != nil {
 		return MultiPhotoMessage{}, ErrInvalidMessage
 	}
 	n := len(a.URLs)
