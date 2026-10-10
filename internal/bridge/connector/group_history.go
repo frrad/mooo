@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 	"maunium.net/go/mautrix/bridgev2"
@@ -18,10 +17,6 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
-
-type groupHistorySource interface {
-	ReadHistoryPage(context.Context, int64, int64, int64, int) (client.HistoryPage, error)
-}
 
 type groupHistoryProgress struct {
 	After          int64 `json:"after"`
@@ -96,8 +91,7 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 	c := kc.client
 	stopping := kc.stopping
 	kc.mu.Unlock()
-	source, ok := c.(groupHistorySource)
-	if !ok || stopping {
+	if c == nil || stopping {
 		return false, bridgev2.ErrNotLoggedIn
 	}
 	p, err := kc.login.Bridge.GetPortalByMXID(ctx, room)
@@ -169,17 +163,13 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 			// Read rooms can omit CHATINFO's last-log fields. The original
 			// account's login inventory (including observed live maxima) still
 			// supplies a bounded ceiling; Matrix mappings are never authority.
-			if inventory, ok := c.(interface {
-				InitialSyncTargets(context.Context) ([]syncmsg.Target, error)
-			}); ok {
-				targets, inventoryErr := inventory.InitialSyncTargets(ctx)
-				if inventoryErr != nil {
-					return false, errors.New("connector: history source inventory unavailable")
-				}
-				for _, target := range targets {
-					if target.ChatID == chatID && target.MaxLogID > ceiling {
-						ceiling = target.MaxLogID
-					}
+			targets, inventoryErr := c.InitialSyncTargets(ctx)
+			if inventoryErr != nil {
+				return false, errors.New("connector: history source inventory unavailable")
+			}
+			for _, target := range targets {
+				if target.ChatID == chatID && target.MaxLogID > ceiling {
+					ceiling = target.MaxLogID
 				}
 			}
 		}
@@ -192,7 +182,7 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 			return false, err
 		}
 		limit := min(progress.Remaining, int(syncmsg.MaxPageSize))
-		page, err := source.ReadHistoryPage(ctx, chatID, progress.After, progress.Through, limit)
+		page, err := c.ReadHistoryPage(ctx, chatID, progress.After, progress.Through, limit)
 		if err != nil {
 			return false, errors.New("connector: source history unavailable or request outcome unresolved; not retried")
 		}

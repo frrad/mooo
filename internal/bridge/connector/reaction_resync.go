@@ -9,16 +9,11 @@ import (
 	"maunium.net/go/mautrix/bridgev2/database"
 
 	"github.com/frrad/mooo/internal/protocol/events"
-	"github.com/frrad/mooo/internal/protocol/reactions"
 )
 
 // reactionResyncPages bounds one chat's resync per connection; a longer
 // backlog continues from the persisted cursor on the next connection.
 const reactionResyncPages = 10
-
-type reactionMetaSyncer interface {
-	ReactionMetaSync(ctx context.Context, chatID, cur int64) (reactions.SyncMetaPage, error)
-}
 
 func reactionResyncKey(login string, chatID int64) database.Key {
 	return database.Key(fmt.Sprintf("kakao:reaction-sync:%s:%d", login, chatID))
@@ -31,8 +26,7 @@ func reactionResyncKey(login string, chatID int64) database.Key {
 // path and its revision guards, so replay is idempotent. A failure leaves the
 // chat's cursor for the next connection and never blocks message delivery.
 func (kc *KakaoClient) resyncReactions(ctx context.Context, c kakaoClient) {
-	syncer, ok := c.(reactionMetaSyncer)
-	if !ok || kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
+	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
 		return
 	}
 	db := kc.login.Bridge.DB
@@ -49,13 +43,13 @@ func (kc *KakaoClient) resyncReactions(ctx context.Context, c kakaoClient) {
 		if err != nil || chatID <= 0 || kc.checkSourceAccess(ctx, chatID, nil) != nil {
 			continue
 		}
-		if err := kc.resyncChatReactions(ctx, c, syncer, db, portal, chatID); err != nil {
+		if err := kc.resyncChatReactions(ctx, c, db, portal, chatID); err != nil {
 			kc.log().Warn().Err(err).Int64("kakao_chat_id", chatID).Msg("Reaction resync stopped; cursor retained")
 		}
 	}
 }
 
-func (kc *KakaoClient) resyncChatReactions(ctx context.Context, c kakaoClient, syncer reactionMetaSyncer, db *database.Database, portal *database.Portal, chatID int64) error {
+func (kc *KakaoClient) resyncChatReactions(ctx context.Context, c kakaoClient, db *database.Database, portal *database.Portal, chatID int64) error {
 	key := reactionResyncKey(string(kc.login.ID), chatID)
 	cur, _ := strconv.ParseInt(db.KV.Get(ctx, key), 10, 64)
 	if cur <= 0 {
@@ -75,7 +69,7 @@ func (kc *KakaoClient) resyncChatReactions(ctx context.Context, c kakaoClient, s
 	}
 	for range reactionResyncPages {
 		pageCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		page, err := syncer.ReactionMetaSync(pageCtx, chatID, cur)
+		page, err := c.ReactionMetaSync(pageCtx, chatID, cur)
 		cancel()
 		if err != nil {
 			return err
