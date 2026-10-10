@@ -16,7 +16,7 @@ import (
 
 type chatLister interface {
 	ListChats(context.Context) ([]chatmeta.ChatData, error)
-	Close() error
+	Shutdown(context.Context) error
 }
 
 type chatSummary struct {
@@ -61,7 +61,7 @@ func runListChats(args []string, stdout, stderr io.Writer, open func(string) (ch
 	closed := false
 	defer func() {
 		if !closed {
-			_ = c.Close()
+			_ = shutdownProfile(c)
 		}
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -71,7 +71,7 @@ func runListChats(args []string, stdout, stderr io.Writer, open func(string) (ch
 		return commandError(stderr, "complete chat listing failed")
 	}
 	closed = true
-	if c.Close() != nil {
+	if shutdownProfile(c) != nil {
 		return commandError(stderr, "selected profile cleanup failed")
 	}
 	result := make([]chatSummary, 0, len(chats))
