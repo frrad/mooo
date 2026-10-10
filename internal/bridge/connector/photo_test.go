@@ -163,6 +163,18 @@ func TestConvertPhotoEncryptedRoomSendsFileWithoutURL(t *testing.T) {
 	assertEncryptedPhotoContent(t, converted.Parts[0].Content)
 }
 
+// A MatrixAPI that returns both a plain URL and encrypted file info violates
+// the bridgev2 contract; photos drop the plain URL like every other attachment.
+func TestConvertPhotoEncryptedRoomDropsPlainURLFromIntent(t *testing.T) {
+	msg := encryptedRoomPhotoFixture(t)
+	portal := &bridgev2.Portal{Portal: &bridgev2database.Portal{MXID: "!encrypted:test"}}
+	converted, err := convertPhoto(context.Background(), portal, &encryptedPhotoMatrixAPI{plainURL: "mxc://synthetic/plain-photo"}, msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEncryptedPhotoContent(t, converted.Parts[0].Content)
+}
+
 func TestConvertPhotoDeterministicFailureBecomesPersistableNotice(t *testing.T) {
 	msg := events.PhotoMessage{Message: media.PhotoMessage{
 		ChatID: testChatID, LogID: 77, AuthorID: testOtherID,
