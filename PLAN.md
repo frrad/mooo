@@ -53,7 +53,7 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
 - [x] Member profile refresh with stable ghosts and isolated profile failures (PR #274).
 - [x] Bounded opt-in historical backfill (PR #275) with durable progress, source visibility,
       ordering/deduplication, and observed read/unread policy.
-- [x] Failure recovery and ambiguous sends (PR 7): delivery pause and bounded
+- [x] Failure recovery and ambiguous sends (PR #276): delivery pause and bounded
       replay, Matrix refusal and multipart commit checks, stable live/history
       transaction IDs, first-delivery replay floor, catch-up retry during a
       continuing outage, one Kakao send per Matrix event, explicit unconfirmed
@@ -91,7 +91,7 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
 
 Next active slice: group JPEG/PNG photos, including the media faults carried
 from failure recovery. Discovery through failure recovery shipped in PRs
-#270–275 and PR 7.
+#270–276.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.
