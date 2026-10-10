@@ -35,11 +35,6 @@ var (
 	errReactionTargetMissing = errors.New("connector: reaction target message missing")
 )
 
-type reactionAPI interface {
-	React(context.Context, reactions.Request) (reactions.Response, error)
-	ReactionMembers(context.Context, int64, int64) (reactions.MembersResponse, error)
-}
-
 var _ bridgev2.ReactionHandlingNetworkAPI = (*KakaoClient)(nil)
 
 // legacyReaction is one of KakaoTalk's six legacy reaction selections.
@@ -92,11 +87,7 @@ func (kc *KakaoClient) reactionClient() (reactionAPI, error) {
 	if c == nil {
 		return nil, bridgev2.ErrNotLoggedIn
 	}
-	reaction, ok := c.(reactionAPI)
-	if !ok {
-		return nil, errors.New("connector: Kakao client does not support reactions")
-	}
-	return reaction, nil
+	return c, nil
 }
 
 func validateMatrixReaction(kc *KakaoClient, msg *bridgev2.MatrixReaction) (reactions.Request, legacyReaction, error) {
@@ -331,10 +322,6 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 			return nil, errReactionUnsupported
 		}
 	}
-	api, ok := c.(reactionAPI)
-	if !ok {
-		return nil, errors.New("connector: Kakao client does not support reaction attribution")
-	}
 	if parent == nil {
 		parent = context.Background()
 	}
@@ -347,7 +334,7 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 	if change.Revision <= stored {
 		return nil, nil
 	}
-	members, err := api.ReactionMembers(ctx, change.ChatID, change.LogID)
+	members, err := c.ReactionMembers(ctx, change.ChatID, change.LogID)
 	if err != nil {
 		return nil, err
 	}
@@ -380,13 +367,7 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 	}
 	appliedRevision := members.Revision
 	if change.MetadataType == 2 {
-		miniAPI, ok := c.(interface {
-			MiniReactionDetails(context.Context, int64, int64, int64) (reactions.DetailsResponse, error)
-		})
-		if !ok {
-			return nil, errReactionUnsupported
-		}
-		mini, err := miniAPI.MiniReactionDetails(ctx, change.ChatID, change.LinkID, change.LogID)
+		mini, err := c.MiniReactionDetails(ctx, change.ChatID, change.LinkID, change.LogID)
 		if err != nil {
 			return nil, err
 		}
