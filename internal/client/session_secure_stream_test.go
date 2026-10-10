@@ -7,17 +7,18 @@ import (
 	"time"
 
 	"github.com/frrad/mooo/internal/protocol/loco"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 )
 
 func TestSessionSecureCoalescedEnvelopeDispatchesBothPackets(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	_ = serverConn.SetDeadline(time.Now().Add(time.Second))
 	key := bytes.Repeat([]byte{0x91}, loco.V3KeySize)
-	clientSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	clientSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverSecure, err := loco.NewSecureV3WithKey(key, nil, 0)
+	serverSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
