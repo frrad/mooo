@@ -21,7 +21,7 @@ func init() {
 
 // Transport readiness does not mean all source chats are authorized.
 func (kc *KakaoClient) sendReadyState() {
-	kc.mu.Lock()
+	kc.cacheMu.Lock()
 	classification := status.BridgeStateErrorCode("")
 	for _, blocked := range kc.sourceBlocked {
 		if errors.Is(blocked, errSourceAccessRemoved) {
@@ -32,7 +32,7 @@ func (kc *KakaoClient) sendReadyState() {
 			classification = stateGroupMembershipPending
 		}
 	}
-	kc.mu.Unlock()
+	kc.cacheMu.Unlock()
 	if classification != "" {
 		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: classification})
 	} else {
@@ -145,12 +145,12 @@ func (kc *KakaoClient) reconcileMissingGroups(ctx context.Context, seen map[int6
 }
 
 func (kc *KakaoClient) recordSourceRemoval(ctx context.Context, chatID int64) error {
-	kc.mu.Lock()
+	kc.cacheMu.Lock()
 	if kc.sourceBlocked == nil {
 		kc.sourceBlocked = map[int64]error{}
 	}
 	kc.sourceBlocked[chatID] = errSourceAccessRemoved
-	kc.mu.Unlock()
+	kc.cacheMu.Unlock()
 	portal, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(chatID, kc.login.ID))
 	if err != nil {
 		return err
@@ -163,9 +163,9 @@ func (kc *KakaoClient) recordSourceRemoval(ctx context.Context, chatID int64) er
 }
 
 func (kc *KakaoClient) checkSourceAccess(ctx context.Context, chatID int64) error {
-	kc.mu.Lock()
+	kc.cacheMu.Lock()
 	blocked := kc.sourceBlocked[chatID]
-	kc.mu.Unlock()
+	kc.cacheMu.Unlock()
 	if blocked != nil {
 		return blocked
 	}

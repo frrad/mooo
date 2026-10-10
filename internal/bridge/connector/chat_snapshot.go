@@ -144,8 +144,8 @@ func (kc *KakaoClient) cacheProfiles(profiles []chatmeta.Member, requested []int
 		wanted[userID] = struct{}{}
 	}
 	accepted := make([]chatmeta.Member, 0, len(profiles))
-	kc.mu.Lock()
-	defer kc.mu.Unlock()
+	kc.cacheMu.Lock()
+	defer kc.cacheMu.Unlock()
 	for _, profile := range profiles {
 		if _, ok := wanted[profile.UserID]; !ok || profile.UserID <= 0 || profile.UserID == kc.userID {
 			continue

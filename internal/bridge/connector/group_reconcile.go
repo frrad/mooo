@@ -99,25 +99,12 @@ func (kc *KakaoClient) reconcileGroup(ctx context.Context, room id.RoomID, chatI
 	}
 	c, err := kc.metadataClient()
 	if err != nil {
-		kc.mu.Lock()
-		busy := kc.stopping || kc.connecting || kc.cleanup != nil
-		kc.mu.Unlock()
-		if busy || kc.open == nil {
-			return nil, errors.New("connector: profile cleanup or connection is still in progress")
-		}
-		c, err = kc.open()
+		c, err = kc.openDetached()
 		if err != nil {
 			return nil, err
 		}
 		defer func() {
-			closeCtx, closeCancel := context.WithTimeout(context.Background(), recoveryCleanupTimeout)
-			defer closeCancel()
-			if closeErr := c.Shutdown(closeCtx); closeErr != nil {
-				kc.mu.Lock()
-				if kc.cleanup == nil {
-					kc.cleanup = c
-				}
-				kc.mu.Unlock()
+			if kc.releaseDetached(c) != nil {
 				result = nil
 				resultErr = errors.New("connector: reconciliation profile shutdown failed; disconnect the login to finish cleanup")
 			}

@@ -38,7 +38,7 @@ func TestWireIdentityFailureReportsTerminalStateAndDoesNotRecover(t *testing.T) 
 		t.Fatalf("wire identity state = %#v, want terminal identity code", state)
 	}
 	kc.mu.Lock()
-	retrying := kc.retryCancel != nil
+	retrying := kc.retry.running()
 	kc.mu.Unlock()
 	if retrying {
 		t.Fatal("wire identity failure scheduled automatic recovery")
