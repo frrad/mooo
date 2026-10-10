@@ -29,6 +29,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 )
 
@@ -486,7 +487,7 @@ func observedPhotoEvent(t *testing.T, withCaption bool) (events.PhotoMessage, []
 	fixture.Attachment["mt"] = "image/png"
 	attachment, _ := json.Marshal(fixture.Attachment)
 	body, err := bson.Marshal(bson.D{{Key: "chatId", Value: testChatID}, {Key: "chatLog", Value: bson.D{
-		{Key: "logId", Value: int64(150)}, {Key: "authorId", Value: testOtherID}, {Key: "type", Value: int32(media.PhotoType)},
+		{Key: "logId", Value: int64(150)}, {Key: "authorId", Value: testOtherID}, {Key: "type", Value: int32(messagetype.Photo)},
 		{Key: "message", Value: fixture.ChatLogMessage}, {Key: "attachment", Value: string(attachment)}, {Key: "sendAt", Value: int32(1700000150)},
 	}}})
 	if err != nil {
@@ -554,7 +555,7 @@ func TestObservedGroupPhotoJPEGUsesRegisteredMIMEType(t *testing.T) {
 	fixture.Attachment["cs"] = hex.EncodeToString(sum[:])
 	attachment, _ := json.Marshal(fixture.Attachment)
 	body, _ := bson.Marshal(bson.D{{Key: "chatId", Value: testChatID}, {Key: "chatLog", Value: bson.D{
-		{Key: "logId", Value: int64(151)}, {Key: "authorId", Value: testOtherID}, {Key: "type", Value: int32(media.PhotoType)}, {Key: "attachment", Value: string(attachment)},
+		{Key: "logId", Value: int64(151)}, {Key: "authorId", Value: testOtherID}, {Key: "type", Value: int32(messagetype.Photo)}, {Key: "attachment", Value: string(attachment)},
 	}}})
 	decoded, err := events.DecodeForDelivery(loco.Packet{Header: loco.Header{Method: "MSG"}, Body: body})
 	if err != nil {

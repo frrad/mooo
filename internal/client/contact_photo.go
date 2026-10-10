@@ -17,14 +17,12 @@ var ErrContactProfileUnavailable = errors.New("client: contact profile unavailab
 // current thumbnail. It does not persist URLs or retry failed requests. Empty
 // photos are distinct from missing profiles; self-profile lookup is unsupported.
 func (c *Client) ContactProfilePhoto(ctx context.Context, chatID, userID int64, downloadClient *http.Client) ([]byte, error) {
-	if c == nil || ctx == nil || chatID <= 0 || userID <= 0 || downloadClient == nil {
+	if chatID <= 0 || userID <= 0 || downloadClient == nil {
 		return nil, ErrProtocol
 	}
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return session.ContactProfilePhoto(ctx, chatID, userID, downloadClient)
+	return withSession(c, ctx, func(session *Session) ([]byte, error) {
+		return session.ContactProfilePhoto(ctx, chatID, userID, downloadClient)
+	})
 }
 
 func (s *Session) ContactProfilePhoto(ctx context.Context, chatID, userID int64, downloadClient *http.Client) ([]byte, error) {
@@ -34,15 +32,7 @@ func (s *Session) ContactProfilePhoto(ctx context.Context, chatID, userID int64,
 	if userID == s.userID {
 		return nil, ErrContactProfileUnavailable
 	}
-	body, err := (chatmeta.MemberRequest{ChatID: chatID, MemberIDs: []int64{userID}}).MarshalBSON()
-	if err != nil {
-		return nil, err
-	}
-	reply, err := s.Request(ctx, chatmeta.MemberCommand, body)
-	if err != nil {
-		return nil, err
-	}
-	response, err := chatmeta.DecodeMemberResponse(reply.Body)
+	response, err := call(s, ctx, chatmeta.MemberCommand, chatmeta.MemberRequest{ChatID: chatID, MemberIDs: []int64{userID}}, chatmeta.DecodeMemberResponse)
 	if err != nil {
 		return nil, err
 	}

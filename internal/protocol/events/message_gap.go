@@ -18,8 +18,9 @@ type MessageGap struct {
 	Type                            int32
 }
 
-func (MessageGap) Kind() Kind { return KindMessageGap }
-func (MessageGap) isEvent()   {}
+func (MessageGap) Kind() Kind           { return KindMessageGap }
+func (m MessageGap) Position() Position { return Position{m.ChatID, m.LogID} }
+func (MessageGap) isEvent()             {}
 
 // DecodeForDelivery preserves deterministic content failures as explicit gaps.
 // Decode remains the strict protocol parser. An invalid or ambiguous identity

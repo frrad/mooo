@@ -13,6 +13,7 @@ import (
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 const matrixImageTransferTimeout = 30 * time.Second
@@ -121,7 +122,7 @@ func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c outboundAPI, inten
 	if err != nil {
 		return nil, outboundAcceptedWithoutPosition(err)
 	}
-	return kc.sentMessage(chatID, logID, sendAt, media.PhotoType, "[image]"), nil
+	return kc.sentMessage(chatID, logID, sendAt, messagetype.Photo, "[image]"), nil
 }
 
 // sendMatrixUpload sends one Matrix file, video or audio as a KakaoTalk file
@@ -219,7 +220,7 @@ func (kc *KakaoClient) sendMatrixAlbum(ctx context.Context, c outboundAPI, inten
 	if response.LogID <= 0 {
 		return nil, outboundAcceptedWithoutPosition(errors.New("KakaoTalk accepted the album without a log ID"))
 	}
-	return kc.sentMessage(chatID, response.LogID, response.SendAt, media.MultiPhotoType, "[album]"), nil
+	return kc.sentMessage(chatID, response.LogID, response.SendAt, messagetype.MultiPhoto, "[album]"), nil
 }
 
 // uploadRejectedStatus reports a file KakaoTalk would not accept. Nothing was

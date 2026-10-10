@@ -52,7 +52,7 @@ func (kc *KakaoClient) HandleMatrixEdit(ctx context.Context, msg *bridgev2.Matri
 		return certainRefusal(errEditNotAllowed, "KakaoTalk only allows editing your own messages; the edit was not sent.")
 	case meta.Type&messagetype.DeletedAllChatTypeFlag != 0:
 		return certainRefusal(errEditNotAllowed, "This KakaoTalk message was deleted and cannot be edited.")
-	case meta.Type != chat.TextType:
+	case meta.Type != messagetype.Text:
 		return certainRefusal(errEditNotAllowed, "The bridge can only edit KakaoTalk text messages; the edit was not sent.")
 	case time.Since(msg.EditTarget.Timestamp) > kakaoEditWindow:
 		return certainRefusal(errEditNotAllowed, "KakaoTalk only allows editing messages for 24 hours; the edit was not sent.")

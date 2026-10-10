@@ -25,6 +25,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"github.com/frrad/mooo/internal/protocol/reactions"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 )
@@ -1524,7 +1525,7 @@ func (kc *KakaoClient) sendMatrixText(ctx context.Context, c outboundAPI, chatID
 		body = "* " + body
 	}
 	var response chat.WriteResponse
-	sentType := chat.TextType
+	sentType := messagetype.Text
 	if msg.ReplyTo != nil {
 		target, err := replyTargetFor(msg.ReplyTo, msg.Portal.PortalKey)
 		if err != nil {
@@ -1537,7 +1538,7 @@ func (kc *KakaoClient) sendMatrixText(ctx context.Context, c outboundAPI, chatID
 		if err != nil {
 			return nil, outboundSendError(err)
 		}
-		sentType = chat.ReplyType
+		sentType = messagetype.Reply
 	} else {
 		if err := kc.beginOutbound(ctx, msg); err != nil {
 			return nil, err
