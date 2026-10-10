@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 func TestPrepareUploadClassifiesByExtensionLikeTheMacClient(t *testing.T) {
@@ -14,12 +16,12 @@ func TestPrepareUploadClassifiesByExtensionLikeTheMacClient(t *testing.T) {
 		wantType int32
 		wantExt  string
 	}{
-		{"synthetic.txt", FileType, "txt"},
-		{"Synthetic.PDF", FileType, "pdf"},
-		{"voice.m4a", FileType, "m4a"},
-		{"clip.MP4", VideoType, "mp4"},
-		{"clip.mov", VideoType, "mov"},
-		{"no-extension", FileType, ""},
+		{"synthetic.txt", messagetype.File, "txt"},
+		{"Synthetic.PDF", messagetype.File, "pdf"},
+		{"voice.m4a", messagetype.File, "m4a"},
+		{"clip.MP4", messagetype.Video, "mp4"},
+		{"clip.mov", messagetype.Video, "mov"},
+		{"no-extension", messagetype.File, ""},
 	}
 	for _, tc := range cases {
 		upload, err := PrepareUpload(tc.name, []byte("synthetic bytes"), "")
@@ -81,7 +83,7 @@ func TestUploadShipAndPostCarryTypeNameAndCaption(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw := bson.Raw(ship)
-	if raw.Lookup("c").Int64() != 42 || raw.Lookup("t").Int32() != VideoType || raw.Lookup("s").Int64() != int64(len("synthetic video")) ||
+	if raw.Lookup("c").Int64() != 42 || raw.Lookup("t").Int32() != messagetype.Video || raw.Lookup("s").Int64() != int64(len("synthetic video")) ||
 		raw.Lookup("cs").StringValue() != upload.Checksum || raw.Lookup("e").StringValue() != "mp4" || raw.Lookup("ex").StringValue() != "{}" {
 		t.Fatalf("SHIP = %v", raw)
 	}
@@ -90,7 +92,7 @@ func TestUploadShipAndPostCarryTypeNameAndCaption(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw = bson.Raw(post)
-	if raw.Lookup("t").Int32() != VideoType || raw.Lookup("f").StringValue() != "clip.mp4" || raw.Lookup("k").StringValue() != "synthetic-ticket" ||
+	if raw.Lookup("t").Int32() != messagetype.Video || raw.Lookup("f").StringValue() != "clip.mp4" || raw.Lookup("k").StringValue() != "synthetic-ticket" ||
 		raw.Lookup("w").Int32() != 0 || raw.Lookup("h").Int32() != 0 || raw.Lookup("ex").StringValue() != `{"cmt":"synthetic caption"}` ||
 		raw.Lookup("s").Int64() != int64(len("synthetic video")) || raw.Lookup("c").Int64() != 42 || raw.Lookup("u").Int64() != 7 {
 		t.Fatalf("POST = %v", raw)
@@ -105,7 +107,7 @@ func TestUploadShipAndPostCarryTypeNameAndCaption(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw = bson.Raw(post)
-	if raw.Lookup("t").Int32() != FileType || raw.Lookup("f").StringValue() != "synthetic.txt" || raw.Lookup("ex").StringValue() != "{}" {
+	if raw.Lookup("t").Int32() != messagetype.File || raw.Lookup("f").StringValue() != "synthetic.txt" || raw.Lookup("ex").StringValue() != "{}" {
 		t.Fatalf("file POST = %v", raw)
 	}
 }

@@ -5,23 +5,25 @@ import (
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 func TestModifyRequestCarriesTheOriginalTypeAndNewText(t *testing.T) {
-	body, err := (ModifyRequest{ChatID: 42, LogID: 101, Type: TextType, Message: "synthetic edit", Extra: "{}"}).MarshalBSON()
+	body, err := (ModifyRequest{ChatID: 42, LogID: 101, Type: messagetype.Text, Message: "synthetic edit", Extra: "{}"}).MarshalBSON()
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw := bson.Raw(body)
-	if raw.Lookup("chatId").Int64() != 42 || raw.Lookup("logId").Int64() != 101 || raw.Lookup("type").Int32() != TextType ||
+	if raw.Lookup("chatId").Int64() != 42 || raw.Lookup("logId").Int64() != 101 || raw.Lookup("type").Int32() != messagetype.Text ||
 		raw.Lookup("msg").StringValue() != "synthetic edit" || raw.Lookup("extra").StringValue() != "{}" {
 		t.Fatalf("MODIFYMSG = %v", raw)
 	}
 	for _, bad := range []ModifyRequest{
-		{ChatID: 42, LogID: 101, Type: TextType, Message: "", Extra: "{}"},
-		{ChatID: 0, LogID: 101, Type: TextType, Message: "x", Extra: "{}"},
-		{ChatID: 42, LogID: 0, Type: TextType, Message: "x", Extra: "{}"},
-		{ChatID: 42, LogID: 101, Type: TextType, Message: "x", Extra: "not json"},
+		{ChatID: 42, LogID: 101, Type: messagetype.Text, Message: "", Extra: "{}"},
+		{ChatID: 0, LogID: 101, Type: messagetype.Text, Message: "x", Extra: "{}"},
+		{ChatID: 42, LogID: 0, Type: messagetype.Text, Message: "x", Extra: "{}"},
+		{ChatID: 42, LogID: 101, Type: messagetype.Text, Message: "x", Extra: "not json"},
 	} {
 		if _, err := bad.MarshalBSON(); !errors.Is(err, ErrInvalidMessage) && !errors.Is(err, ErrInvalidChatID) && !errors.Is(err, ErrInvalidMessageID) {
 			t.Fatalf("%+v accepted: %v", bad, err)

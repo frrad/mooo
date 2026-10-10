@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 func syntheticAlbum(t *testing.T, n int) []Image {
@@ -28,7 +30,7 @@ func TestAlbumShipListsEachPhotoInOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw := bson.Raw(body)
-	if raw.Lookup("c").Int64() != 42 || raw.Lookup("t").Int32() != MultiPhotoType || raw.Lookup("ex").StringValue() != "{}" {
+	if raw.Lookup("c").Int64() != 42 || raw.Lookup("t").Int32() != messagetype.MultiPhoto || raw.Lookup("ex").StringValue() != "{}" {
 		t.Fatalf("MSHIP = %v", raw)
 	}
 	var decoded struct {
@@ -85,7 +87,7 @@ func TestAlbumItemPostCarriesNoChatOrExtra(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw := bson.Raw(body)
-	if raw.Lookup("u").Int64() != 7 || raw.Lookup("k").StringValue() != "k1" || raw.Lookup("t").Int32() != MultiPhotoType ||
+	if raw.Lookup("u").Int64() != 7 || raw.Lookup("k").StringValue() != "k1" || raw.Lookup("t").Int32() != messagetype.MultiPhoto ||
 		raw.Lookup("s").Int64() != int64(len(image.Data)) || raw.Lookup("dt").Int32() != 2 || raw.Lookup("nt").Int32() != 0 {
 		t.Fatalf("MPOST = %v", raw)
 	}

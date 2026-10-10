@@ -9,7 +9,8 @@ import (
 	"maunium.net/go/mautrix/bridgev2/networkid"
 
 	"github.com/frrad/mooo/internal/protocol/chat"
-	"github.com/frrad/mooo/internal/protocol/media"
+
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 var (
@@ -99,7 +100,7 @@ func replyTargetFor(message *database.Message, portal networkid.PortalKey) (chat
 		return chat.ReplyTarget{}, errCrossChatReply
 	}
 	preview := metadata.Preview
-	if metadata.Type == media.PhotoType {
+	if metadata.Type == messagetype.Photo {
 		// Android's reply to a photo sends this summary (observed).
 		preview = "Photo"
 	}

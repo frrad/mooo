@@ -17,8 +17,6 @@ import (
 )
 
 const (
-	FileType  = messagetype.File
-	VideoType = messagetype.Video
 	// MaxUploadBytes bounds an outbound file or video. The Mac client allows
 	// 300 MiB by default; mooo buffers uploads in memory and keeps its 64 MiB
 	// receive policy for sends too.
@@ -81,11 +79,11 @@ func ClassifyUpload(name, comment string) (Upload, error) {
 	if deniedExtensions[ext] {
 		return Upload{}, ErrDeniedExtension
 	}
-	typ := FileType
+	typ := messagetype.File
 	if videoExtensions[ext] {
-		typ = VideoType
+		typ = messagetype.Video
 	}
-	if typ == FileType && comment != "" {
+	if typ == messagetype.File && comment != "" {
 		return Upload{}, ErrCaptionNotSupported
 	}
 	if !ValidCaption(comment) {
@@ -113,7 +111,7 @@ func PrepareUpload(name string, data []byte, comment string) (Upload, error) {
 }
 
 func (u Upload) valid() bool {
-	return (u.Type == FileType || u.Type == VideoType) && len(u.Data) > 0 && u.Name != "" && len(u.Checksum) == 40
+	return (u.Type == messagetype.File || u.Type == messagetype.Video) && len(u.Data) > 0 && u.Name != "" && len(u.Checksum) == 40
 }
 
 type UploadShipRequest struct {

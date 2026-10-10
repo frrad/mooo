@@ -11,13 +11,12 @@ import (
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/event"
 
-	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 func bridgedTextPart(chatID, logID, author int64, text string, revision int64) *database.Message {
-	meta := newKakaoMessageMetadata(chatID, logID, author, chat.TextType, text, 0)
+	meta := newKakaoMessageMetadata(chatID, logID, author, messagetype.Text, text, 0)
 	meta.Revision = revision
 	return &database.Message{ID: makeMessageID(chatID, logID), SenderID: makeUserID(author), Metadata: meta}
 }
@@ -82,7 +81,7 @@ func TestInboundDeleteRemovesTargetAsTheDeleter(t *testing.T) {
 
 func TestDeletedMessageBecomesPlaceholderWithoutContent(t *testing.T) {
 	kc, _ := newTestClient(t, nil)
-	deleted := events.DeletedMessage{ChatID: testChatID, LogID: 203, AuthorID: 2000, BaseType: chat.TextType}
+	deleted := events.DeletedMessage{ChatID: testChatID, LogID: 203, AuthorID: 2000, BaseType: messagetype.Text}
 	remote, ok := kc.remoteEventFor(deleted).(bridgev2.RemoteMessage)
 	if !ok || remote.GetID() != makeMessageID(testChatID, 203) {
 		t.Fatalf("deleted message maps to %T", kc.remoteEventFor(deleted))
@@ -163,7 +162,7 @@ func TestCatchUpEditFetchesTheEditedMessageBeforeQueueing(t *testing.T) {
 func TestDeleteFeedForAnAlreadyDeletedPlaceholderIsCommittedWithoutRedaction(t *testing.T) {
 	kc, backend, _ := newGroupCreationFramework(t)
 	ctx := context.Background()
-	placeholder := newKakaoMessageMetadata(testChatID, 203, 2000, chat.TextType|messagetype.DeletedAllChatTypeFlag, "[deleted]", 0)
+	placeholder := newKakaoMessageMetadata(testChatID, 203, 2000, messagetype.Text|messagetype.DeletedAllChatTypeFlag, "[deleted]", 0)
 	if err := kc.login.Bridge.DB.Message.Insert(ctx, &database.Message{
 		BridgeID: kc.login.Bridge.ID, ID: makeMessageID(testChatID, 203), MXID: "$placeholder",
 		Room: makePortalKey(testChatID, kc.login.ID), SenderID: makeUserID(2000), SenderMXID: "@kakao_2000:test",
