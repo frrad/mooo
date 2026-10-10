@@ -9,7 +9,6 @@ import (
 )
 
 const (
-	ReplyType            = messagetype.Reply
 	maxReplyPreviewUTF16 = 100
 )
 
@@ -60,7 +59,7 @@ func (r ReplyRequest) MarshalBSON() ([]byte, error) {
 		return nil, ErrInvalidMessage
 	}
 	return (WriteRequest{
-		ChatID: r.ChatID, Message: r.Message, Type: ReplyType, Extra: string(extra),
+		ChatID: r.ChatID, Message: r.Message, Type: messagetype.Reply, Extra: string(extra),
 	}).MarshalBSON()
 }
 

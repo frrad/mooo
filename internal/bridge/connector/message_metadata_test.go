@@ -13,13 +13,13 @@ import (
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 
-	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 func TestKakaoMessageMetadataRoundTripsThroughJSON(t *testing.T) {
-	original := newKakaoMessageMetadata(3000, 11, 2000, chat.TextType, strings.Repeat("x", 120), 0)
+	original := newKakaoMessageMetadata(3000, 11, 2000, messagetype.Text, strings.Repeat("x", 120), 0)
 	encoded, err := json.Marshal(original)
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestKakaoMessageMetadataPersistsThroughBridgeDatabase(t *testing.T) {
 		}
 	}
 	// Ordinary source metadata must survive the same database path as gap metadata.
-	sourceMetadata := newKakaoMessageMetadata(3000, 10, 2000, chat.TextType, "persisted", 0)
+	sourceMetadata := newKakaoMessageMetadata(3000, 10, 2000, messagetype.Text, "persisted", 0)
 	insertAndCheck(&database.Message{
 		BridgeID: "test", ID: makeMessageID(3000, 10), PartID: "0", MXID: "$source-event",
 		Room: makePortalKey(3000, "1000"), SenderID: makeUserID(2000), SenderMXID: "@sender:test",
@@ -119,7 +119,7 @@ func TestReactionRevisionSurvivesSQLiteCloseAndReopen(t *testing.T) {
 	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO portal (bridge_id,id,receiver,mxid,parent_id,parent_receiver,relay_bridge_id,relay_login_id,other_user_id,name,topic,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,topic_set,name_is_custom,in_space,message_request,room_type,disappear_type,disappear_timer,cap_state,metadata) VALUES ('test','3000','1000',NULL,NULL,'','','','', '', '', '', '', '',0,0,0,0,0,0,'',NULL,NULL,NULL,'{}')`); err != nil {
 		t.Fatal(err)
 	}
-	want := newKakaoMessageMetadata(3000, 11, 2000, chat.TextType, "persisted", 0)
+	want := newKakaoMessageMetadata(3000, 11, 2000, messagetype.Text, "persisted", 0)
 	want.ReactionRevision = 12
 	want.MiniReactionRevision = 3
 	message := &database.Message{

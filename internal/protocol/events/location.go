@@ -17,10 +17,11 @@ type LocationMessage struct {
 	Current                         bool
 }
 
-func (LocationMessage) Kind() Kind         { return KindLocationMessage }
-func (LocationMessage) isEvent()           {}
-func (LocationMessage) String() string     { return "LocationMessage{<redacted>}" }
-func (m LocationMessage) GoString() string { return m.String() }
+func (LocationMessage) Kind() Kind           { return KindLocationMessage }
+func (m LocationMessage) Position() Position { return Position{m.ChatID, m.LogID} }
+func (LocationMessage) isEvent()             {}
+func (LocationMessage) String() string       { return "LocationMessage{<redacted>}" }
+func (m LocationMessage) GoString() string   { return m.String() }
 func decodeLocation(chatID, logID int64, log bson.Raw) (Event, error) {
 	value, err := requiredString(log, "attachment")
 	if err != nil || !validEventString(value) {
