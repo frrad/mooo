@@ -60,3 +60,6 @@ downstream UI/failure consumer. Ghidra merged adjacent default/mini function
 boundaries, so its combined decompilation is not an executable oracle. Live
 observations support these specific compatibility paths, not full official
 persistence or failure parity. No public prior art was used.
+
+Regular-group per-member behavior, Android quick-reaction item IDs and offline
+resync are recorded in [group reactions](GROUP-REACTIONS.md).
