@@ -3,16 +3,12 @@ package connector
 import (
 	"context"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/rs/zerolog"
-	"go.mau.fi/util/dbutil"
-	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
@@ -23,63 +19,6 @@ import (
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
 )
-
-type frameworkPersistenceIntent struct {
-	bridgev2.MatrixAPI
-	err     error
-	calls   int
-	entered chan struct{}
-	release chan struct{}
-	done    chan struct{}
-	once    sync.Once
-}
-
-func (f *frameworkPersistenceIntent) GetMXID() id.UserID   { return "@bot:test" }
-func (f *frameworkPersistenceIntent) IsDoublePuppet() bool { return false }
-func (f *frameworkPersistenceIntent) EnsureInvited(context.Context, id.RoomID, id.UserID) error {
-	return nil
-}
-func (f *frameworkPersistenceIntent) EnsureJoined(context.Context, id.RoomID, ...bridgev2.EnsureJoinedParams) error {
-	return nil
-}
-func (f *frameworkPersistenceIntent) SendMessage(context.Context, id.RoomID, event.Type, *event.Content, *bridgev2.MatrixSendExtra) (*mautrix.RespSendEvent, error) {
-	f.calls++
-	if f.entered != nil {
-		close(f.entered)
-		<-f.release
-		if f.done != nil {
-			f.once.Do(func() { close(f.done) })
-		}
-	}
-	if f.err != nil {
-		return nil, f.err
-	}
-	return &mautrix.RespSendEvent{EventID: id.EventID(fmt.Sprintf("$gap-%d", f.calls))}, nil
-}
-
-type frameworkPersistenceMatrixConnector struct {
-	bridgev2.MatrixConnector
-	intent bridgev2.MatrixAPI
-}
-
-func (f *frameworkPersistenceMatrixConnector) Init(*bridgev2.Bridge)         {}
-func (f *frameworkPersistenceMatrixConnector) BotIntent() bridgev2.MatrixAPI { return f.intent }
-func (f *frameworkPersistenceMatrixConnector) NewUserIntent(context.Context, id.UserID, string) (bridgev2.MatrixAPI, string, error) {
-	return f.intent, "", nil
-}
-func (f *frameworkPersistenceMatrixConnector) GhostIntent(networkid.UserID) bridgev2.MatrixAPI {
-	return f.intent
-}
-
-type frameworkPersistenceNetworkConnector struct{ bridgev2.NetworkConnector }
-
-func (f *frameworkPersistenceNetworkConnector) Init(*bridgev2.Bridge) {}
-func (f *frameworkPersistenceNetworkConnector) GetDBMetaTypes() database.MetaTypes {
-	return (&KakaoConnector{}).GetDBMetaTypes()
-}
-func (f *frameworkPersistenceNetworkConnector) GetCapabilities() *bridgev2.NetworkGeneralCapabilities {
-	return &bridgev2.NetworkGeneralCapabilities{}
-}
 
 func TestFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T) {
 	gap := events.PhotoMessage{Message: media.PhotoMessage{ChatID: testChatID, LogID: 100, AuthorID: testOtherID, SentAt: 1700000000, Attachment: media.PhotoAttachment{Size: 1, Checksum: "0000000000000000000000000000000000000000", MediaType: "image/jpeg", URL: "https://talk.kakaocdn.net/file", ExpiresAt: 1}}}
@@ -93,23 +32,19 @@ func TestFrameworkMessageGapFailureReplayAndRestartDedup(t *testing.T) {
 
 func TestFrameworkInlineBlockedRemoteEventDisconnectLeavesSourceUncommitted(t *testing.T) {
 	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "bridge.db")
-	raw, err := dbutil.NewWithDialect(dbPath, "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Register database cleanup first: later worker cleanup runs before this.
-	t.Cleanup(func() { _ = raw.RawDB.Close() })
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	done := make(chan struct{})
-	var releaseOnce sync.Once
+	var releaseOnce, doneOnce sync.Once
 	var streamCloseOnce sync.Once
-	intent := &frameworkPersistenceIntent{err: errors.New("blocked delivery released as failure"), entered: entered, release: release, done: done}
-	bridge, err := newFrameworkConversionBridge(ctx, raw, intent)
-	if err != nil {
-		t.Fatal(err)
-	}
+	intent := &recordingIntent{onSendMessage: func(context.Context, event.Type, *event.Content) error {
+		close(entered)
+		<-release
+		doneOnce.Do(func() { close(done) })
+		return errors.New("blocked delivery released as failure")
+	}}
+	// The bridge registers database cleanup first: later worker cleanup runs before it.
+	bridge, _ := newFrameworkBridge(t, frameworkOpts{intent: intent})
 	user, err := bridge.GetUserByMXID(ctx, id.UserID("@owner:test"))
 	if err != nil {
 		t.Fatal(err)
@@ -267,19 +202,11 @@ func runFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T, gap eve
 	t.Helper()
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "bridge.db")
-	intent := &frameworkPersistenceIntent{err: errors.New("synthetic Matrix send failure")}
-	raw, err := dbutil.NewWithDialect(dbPath, "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	bridge, err := newFrameworkConversionBridge(ctx, raw, intent)
-	if err != nil {
-		_ = raw.RawDB.Close()
-		t.Fatal(err)
-	}
+	sendErr := errors.New("synthetic Matrix send failure")
+	intent := &recordingIntent{onSendMessage: func(context.Context, event.Type, *event.Content) error { return sendErr }}
+	bridge, raw := newFrameworkBridge(t, frameworkOpts{path: dbPath, intent: intent})
 	portal, err := bridge.GetPortalByKey(ctx, makePortalKey(testChatID, makeUserLoginID(testSelfID)))
 	if err != nil {
-		_ = raw.RawDB.Close()
 		t.Fatal(err)
 	}
 	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: bridge}
@@ -304,7 +231,7 @@ func runFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T, gap eve
 		t.Fatalf("database rows after failed notice = %d, want 0", len(got))
 	}
 
-	intent.err = nil
+	sendErr = nil
 	if !kc.handleEvent(fake, gap) {
 		t.Fatal("replayed Matrix notice was not handled")
 	}
@@ -331,16 +258,8 @@ func runFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T, gap eve
 	if err := raw.RawDB.Close(); err != nil {
 		t.Fatal(err)
 	}
-	raw2, err := dbutil.NewWithDialect(dbPath, "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = raw2.RawDB.Close() }()
-	intent2 := &frameworkPersistenceIntent{}
-	bridge2, err := newFrameworkConversionBridge(ctx, raw2, intent2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	intent2 := &recordingIntent{}
+	bridge2, _ := newFrameworkBridge(t, frameworkOpts{path: dbPath, intent: intent2})
 	portal2, err := bridge2.GetPortalByKey(ctx, makePortalKey(testChatID, makeUserLoginID(testSelfID)))
 	if err != nil {
 		t.Fatal(err)
@@ -359,8 +278,8 @@ func runFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T, gap eve
 	if !restartResult.Ignored {
 		t.Fatalf("restart replay result = %+v, want ignored duplicate", restartResult)
 	}
-	if intent2.calls != 0 {
-		t.Fatalf("restart duplicate sent Matrix message %d times", intent2.calls)
+	if got := intent2.sentCount(event.Type{}); got != 0 {
+		t.Fatalf("restart duplicate sent Matrix message %d times", got)
 	}
 	rows2, err := bridge2.DB.Message.GetAllPartsByID(ctx, login2.ID, gapID)
 	if err != nil {
@@ -373,26 +292,4 @@ func runFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T, gap eve
 	if !ok || metadata2.ConversionGap != wantGap {
 		t.Fatalf("reloaded metadata = %#v, want conversion gap %q", rows2[0].Metadata, wantGap)
 	}
-}
-
-func newFrameworkConversionBridge(ctx context.Context, raw *dbutil.Database, intent bridgev2.MatrixAPI) (*bridgev2.Bridge, error) {
-	return newFrameworkBridge(ctx, raw, &frameworkPersistenceMatrixConnector{intent: intent})
-}
-
-func newFrameworkBridge(ctx context.Context, raw *dbutil.Database, matrix bridgev2.MatrixConnector) (*bridgev2.Bridge, error) {
-	bridge := bridgev2.NewBridge(networkid.BridgeID("test"), raw, zerolog.Nop(), nil, matrix, &frameworkPersistenceNetworkConnector{}, func(*bridgev2.Bridge) bridgev2.CommandProcessor { return nil })
-	bridge.BackgroundCtx = context.Background()
-	if err := bridge.DB.Upgrade(ctx); err != nil {
-		return nil, err
-	}
-	if _, err := raw.RawDB.ExecContext(ctx, `INSERT OR IGNORE INTO ghost (bridge_id,id,name,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,contact_info_set,is_bot,identifiers,extra_profile,metadata) VALUES ('test','2000','sender','','','',1,1,0,0,'[]',NULL,'{}')`); err != nil {
-		return nil, err
-	}
-	portal := makePortalKey(testChatID, makeUserLoginID(testSelfID))
-	portalMXID := "!room:test"
-	_, err := raw.RawDB.ExecContext(ctx, `INSERT OR IGNORE INTO portal (bridge_id,id,receiver,mxid,parent_id,parent_receiver,relay_bridge_id,relay_login_id,other_user_id,name,topic,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,topic_set,name_is_custom,in_space,message_request,room_type,disappear_type,disappear_timer,cap_state,metadata) VALUES ('test',?,'1000',?,NULL,'','','','', '', '', '', '', '',0,0,0,0,0,0,'',NULL,NULL,NULL,'{}')`, portal.ID, portalMXID)
-	if err != nil {
-		return nil, fmt.Errorf("insert portal: %w", err)
-	}
-	return bridge, nil
 }

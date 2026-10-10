@@ -60,9 +60,8 @@ func TestObservedQuickReactionMiniItemsUseEmoji(t *testing.T) {
 // same account's mini reaction (for example added on the phone) stays.
 func TestOutboundLegacyReactionKeepsSendersMiniReaction(t *testing.T) {
 	ctx := context.Background()
-	intent := &frameworkReactionIntent{}
-	kc, portal, login, old, raw := newFrameworkReactionFixture(t, intent)
-	defer func() { _ = raw.RawDB.Close() }()
+	intent := &recordingIntent{}
+	kc, portal, login, old := newFrameworkReactionFixture(t, intent)
 	if err := kc.login.Bridge.DB.Reaction.Delete(ctx, old); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +93,7 @@ func TestOutboundLegacyReactionKeepsSendersMiniReaction(t *testing.T) {
 	if len(backend.requests) != 1 || backend.requests[0].Type != reactions.Like {
 		t.Fatalf("Kakao mutations = %#v, want one Like", backend.requests)
 	}
-	if got := countFrameworkEvents(intent.types, event.EventRedaction); got != 1 {
+	if got := intent.sentCount(event.EventRedaction); got != 1 {
 		t.Fatalf("Matrix redactions = %d, want only the replaced legacy reaction", got)
 	}
 	miniRow, err := kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(ctx, kc.login.ID, old.MessageID, mini.SenderID, mini.EmojiID)
@@ -126,12 +125,8 @@ func syncedMeta(t *testing.T, logID, revision int64, content string) json.RawMes
 // applied. Metas for unbridged messages are skipped.
 func TestReconnectResyncsReactionsChangedWhileOffline(t *testing.T) {
 	ctx := context.Background()
-	intent := &frameworkReactionIntent{}
-	kc, portal, login, old, raw := newFrameworkReactionFixture(t, intent)
-	defer func() { _ = raw.RawDB.Close() }()
-	if _, err := raw.RawDB.ExecContext(ctx, `UPDATE portal SET mxid='!room:test'`); err != nil {
-		t.Fatal(err)
-	}
+	intent := &recordingIntent{}
+	kc, portal, login, old := newFrameworkReactionFixture(t, intent)
 	if err := kc.login.Bridge.DB.Reaction.Delete(ctx, old); err != nil {
 		t.Fatal(err)
 	}
@@ -174,12 +169,8 @@ func TestReconnectResyncsReactionsChangedWhileOffline(t *testing.T) {
 
 func TestResyncFailureInReactionApplyKeepsCursor(t *testing.T) {
 	ctx := context.Background()
-	intent := &frameworkReactionIntent{}
-	kc, portal, login, _, raw := newFrameworkReactionFixture(t, intent)
-	defer func() { _ = raw.RawDB.Close() }()
-	if _, err := raw.RawDB.ExecContext(ctx, `UPDATE portal SET mxid='!room:test'`); err != nil {
-		t.Fatal(err)
-	}
+	intent := &recordingIntent{}
+	kc, portal, login, _ := newFrameworkReactionFixture(t, intent)
 	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, err: errors.New("synthetic members failure")}
 	backend.reactionPages = []reactions.SyncMetaPage{{Items: []json.RawMessage{syncedMeta(t, 99, 600, `{"2":1}`)}, Last: true}}
 	kc.client = backend

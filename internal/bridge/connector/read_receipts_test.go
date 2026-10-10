@@ -4,20 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/rs/zerolog"
-	"go.mau.fi/util/dbutil"
 	"go.mongodb.org/mongo-driver/v2/bson"
-	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
-	"maunium.net/go/mautrix/bridgev2/networkid"
-	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
 	"github.com/frrad/mooo/internal/client"
@@ -26,69 +19,11 @@ import (
 	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 )
 
-type readReceiptMark struct {
-	room    id.RoomID
-	eventID id.EventID
-}
-
-// readReceiptIntent is one Matrix identity in the framework read-receipt
-// tests. It records receipts so the tests can tell a ghost's receipt from the
-// double-puppeted user's.
-type readReceiptIntent struct {
-	bridgev2.MatrixAPI
-	mxid  id.UserID
-	mu    sync.Mutex
-	sent  int
-	marks []readReceiptMark
-}
-
-func (r *readReceiptIntent) GetMXID() id.UserID   { return r.mxid }
-func (r *readReceiptIntent) IsDoublePuppet() bool { return false }
-func (r *readReceiptIntent) EnsureInvited(context.Context, id.RoomID, id.UserID) error {
-	return nil
-}
-func (r *readReceiptIntent) EnsureJoined(context.Context, id.RoomID, ...bridgev2.EnsureJoinedParams) error {
-	return nil
-}
-func (r *readReceiptIntent) SendMessage(context.Context, id.RoomID, event.Type, *event.Content, *bridgev2.MatrixSendExtra) (*mautrix.RespSendEvent, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.sent++
-	return &mautrix.RespSendEvent{EventID: id.EventID(fmt.Sprintf("$%s-%d", r.mxid.Localpart(), r.sent))}, nil
-}
-func (r *readReceiptIntent) MarkRead(_ context.Context, room id.RoomID, eventID id.EventID, _ time.Time) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.marks = append(r.marks, readReceiptMark{room: room, eventID: eventID})
-	return nil
-}
-func (r *readReceiptIntent) markedEvents() []readReceiptMark {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]readReceiptMark(nil), r.marks...)
-}
-
-type readReceiptMatrixConnector struct {
-	bridgev2.MatrixConnector
-	bot   *readReceiptIntent
-	user  *readReceiptIntent
-	ghost *readReceiptIntent
-}
-
-func (m *readReceiptMatrixConnector) Init(*bridgev2.Bridge)         {}
-func (m *readReceiptMatrixConnector) BotIntent() bridgev2.MatrixAPI { return m.bot }
-func (m *readReceiptMatrixConnector) NewUserIntent(context.Context, id.UserID, string) (bridgev2.MatrixAPI, string, error) {
-	return m.user, "", nil
-}
-func (m *readReceiptMatrixConnector) GhostIntent(networkid.UserID) bridgev2.MatrixAPI {
-	return m.ghost
-}
-
 type readReceiptFramework struct {
 	kc     *KakaoClient
 	bridge *bridgev2.Bridge
 	login  *bridgev2.UserLogin
-	matrix *readReceiptMatrixConnector
+	matrix *frameworkMatrix
 	queued int
 }
 
@@ -97,20 +32,13 @@ type readReceiptFramework struct {
 func newReadReceiptFramework(t *testing.T) *readReceiptFramework {
 	t.Helper()
 	ctx := context.Background()
-	raw, err := dbutil.NewWithDialect(filepath.Join(t.TempDir(), "bridge.db"), "sqlite3")
-	if err != nil {
-		t.Fatal(err)
+	// Separate identities tell a ghost's receipt from the double-puppeted user's.
+	matrix := &frameworkMatrix{
+		bot:   &recordingIntent{mxid: "@bot:test"},
+		user:  &recordingIntent{mxid: "@owner:test"},
+		ghost: &recordingIntent{mxid: "@ghost:test"},
 	}
-	t.Cleanup(func() { _ = raw.RawDB.Close() })
-	matrix := &readReceiptMatrixConnector{
-		bot:   &readReceiptIntent{mxid: "@bot:test"},
-		user:  &readReceiptIntent{mxid: "@owner:test"},
-		ghost: &readReceiptIntent{mxid: "@ghost:test"},
-	}
-	bridge, err := newFrameworkBridge(ctx, raw, matrix)
-	if err != nil {
-		t.Fatal(err)
-	}
+	bridge, raw := newFrameworkBridge(t, frameworkOpts{matrix: matrix})
 	if _, err := raw.RawDB.ExecContext(ctx, `INSERT OR IGNORE INTO ghost (bridge_id,id,name,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,contact_info_set,is_bot,identifiers,extra_profile,metadata) VALUES ('test','1000','self','','','',1,1,0,0,'[]',NULL,'{}')`); err != nil {
 		t.Fatal(err)
 	}

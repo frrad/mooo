@@ -6,13 +6,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
-	"go.mau.fi/util/dbutil"
-	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/status"
@@ -26,49 +22,11 @@ import (
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
-// capturingIntent records the Matrix message content the framework sends.
-type capturingIntent struct {
-	*frameworkPersistenceIntent
-	mu      sync.Mutex
-	sent    []*event.MessageEventContent
-	sticker []*event.MessageEventContent
-}
-
-func (c *capturingIntent) SendMessage(ctx context.Context, room id.RoomID, typ event.Type, content *event.Content, extra *bridgev2.MatrixSendExtra) (*mautrix.RespSendEvent, error) {
-	c.mu.Lock()
-	if parsed, ok := content.Parsed.(*event.MessageEventContent); ok {
-		c.sent = append(c.sent, parsed)
-		if typ == event.EventSticker {
-			c.sticker = append(c.sticker, parsed)
-		}
-	}
-	c.mu.Unlock()
-	return c.frameworkPersistenceIntent.SendMessage(ctx, room, typ, content, extra)
-}
-
-func (c *capturingIntent) UploadMedia(_ context.Context, _ id.RoomID, _ []byte, _, _ string) (id.ContentURIString, *event.EncryptedFileInfo, error) {
-	return "mxc://example/sticker", nil, nil
-}
-
-func (c *capturingIntent) stickers() []*event.MessageEventContent {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return append([]*event.MessageEventContent(nil), c.sticker...)
-}
-
-func newReplyFramework(t *testing.T) (*KakaoClient, *capturingIntent) {
+func newReplyFramework(t *testing.T) (*KakaoClient, *recordingIntent) {
 	t.Helper()
 	ctx := context.Background()
-	raw, err := dbutil.NewWithDialect(filepath.Join(t.TempDir(), "bridge.db"), "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = raw.RawDB.Close() })
-	intent := &capturingIntent{frameworkPersistenceIntent: &frameworkPersistenceIntent{}}
-	bridge, err := newFrameworkConversionBridge(ctx, raw, intent)
-	if err != nil {
-		t.Fatal(err)
-	}
+	intent := &recordingIntent{}
+	bridge, _ := newFrameworkBridge(t, frameworkOpts{intent: intent})
 	user, err := bridge.GetUserByMXID(ctx, id.UserID("@owner:test"))
 	if err != nil {
 		t.Fatal(err)
@@ -90,10 +48,10 @@ func TestInboundGroupReplyToBridgedSourceRelatesWithoutFallback(t *testing.T) {
 	if !kc.handleEvent(fake, source) || !kc.handleEvent(fake, reply) {
 		t.Fatal("source or reply was not committed")
 	}
-	if len(intent.sent) != 2 {
-		t.Fatalf("Matrix events = %d, want 2", len(intent.sent))
+	if len(intent.sentContents()) != 2 {
+		t.Fatalf("Matrix events = %d, want 2", len(intent.sentContents()))
 	}
-	got := intent.sent[1]
+	got := intent.sentContents()[1]
 	if got.Body != "group reply text" || got.RelatesTo == nil || got.RelatesTo.GetReplyTo() == "" {
 		t.Fatalf("reply content body=%q relates=%+v", got.Body, got.RelatesTo)
 	}
@@ -110,10 +68,10 @@ func TestInboundGroupReplyToMissingSourceQuotesEmbeddedPreview(t *testing.T) {
 	if !kc.handleEvent(fake, reply) {
 		t.Fatal("reply was not committed")
 	}
-	if len(intent.sent) != 1 {
-		t.Fatalf("Matrix events = %d, want 1", len(intent.sent))
+	if len(intent.sentContents()) != 1 {
+		t.Fatalf("Matrix events = %d, want 1", len(intent.sentContents()))
 	}
-	got := intent.sent[0]
+	got := intent.sentContents()[0]
 	if got.RelatesTo != nil && got.RelatesTo.GetReplyTo() != "" {
 		t.Fatalf("missing source produced a Matrix relation to %s", got.RelatesTo.GetReplyTo())
 	}
@@ -209,7 +167,12 @@ func TestInboundStickerReplyBecomesStickerReply(t *testing.T) {
 	if !kc.handleEvent(fake, source) || !kc.handleEvent(fake, reply) {
 		t.Fatal("source or sticker reply was not committed")
 	}
-	stickers := intent.stickers()
+	var stickers []*event.MessageEventContent
+	for _, m := range intent.sentMessages() {
+		if m.typ == event.EventSticker {
+			stickers = append(stickers, m.content.Parsed.(*event.MessageEventContent))
+		}
+	}
 	if len(stickers) != 1 {
 		t.Fatalf("Matrix stickers = %d, want 1", len(stickers))
 	}
@@ -231,7 +194,7 @@ func TestInboundUnsupportedReplyAttachmentBecomesNotice(t *testing.T) {
 	if !kc.handleEvent(fake, source) || !kc.handleEvent(fake, reply) {
 		t.Fatal("source or reply was not committed")
 	}
-	got := intent.sent[1]
+	got := intent.sentContents()[1]
 	if got.MsgType != event.MsgNotice || !strings.Contains(got.Body, "type 71") || got.RelatesTo == nil || got.RelatesTo.GetReplyTo() == "" {
 		t.Fatalf("unsupported attachment reply = %+v", got)
 	}

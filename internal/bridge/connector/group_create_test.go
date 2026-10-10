@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/frrad/mooo/internal/protocol/chat"
-	"go.mau.fi/util/dbutil"
 	"maunium.net/go/mautrix/bridgev2/database"
-	"path/filepath"
 	"testing"
 
 	"maunium.net/go/mautrix/bridgev2"
@@ -36,15 +34,7 @@ func TestGroupCreationValidationBeforeMutation(t *testing.T) {
 
 func TestGroupCreationJournalSurvivesReloadAndSuppressesCREATE(t *testing.T) {
 	ctx := context.Background()
-	raw, err := dbutil.NewWithDialect(filepath.Join(t.TempDir(), "journal.db"), "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = raw.RawDB.Close() }()
-	br, err := newFrameworkConversionBridge(ctx, raw, &frameworkPersistenceIntent{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	br, raw := newFrameworkBridge(t, frameworkOpts{})
 	user, err := br.GetUserByMXID(ctx, id.UserID("@owner:test"))
 	if err != nil {
 		t.Fatal(err)

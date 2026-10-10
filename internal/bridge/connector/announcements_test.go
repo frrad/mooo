@@ -4,12 +4,9 @@ import (
 	"context"
 	"errors"
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
-	"go.mau.fi/util/dbutil"
-	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/event"
-	"maunium.net/go/mautrix/id"
 	"path/filepath"
 	"testing"
 	"time"
@@ -65,36 +62,17 @@ func TestAnnouncementRejectsUnsupportedAndConflictingContent(t *testing.T) {
 	}
 }
 
-type announcementIntent struct {
-	frameworkPersistenceIntent
-	topics []string
-	fail   bool
-}
-
-func (i *announcementIntent) SendState(_ context.Context, _ id.RoomID, typ event.Type, _ string, content *event.Content, _ time.Time) (*mautrix.RespSendEvent, error) {
-	if typ == event.StateTopic {
-		i.topics = append(i.topics, content.Parsed.(*event.TopicEventContent).Topic)
-		if i.fail {
-			return nil, errors.New("synthetic topic failure")
-		}
-	}
-	return &mautrix.RespSendEvent{EventID: "$state:test"}, nil
-}
-func (f *frameworkPersistenceNetworkConnector) GetName() bridgev2.BridgeName {
-	return (&KakaoConnector{}).GetName()
-}
 func TestAnnouncementFrameworkPersistenceFailureRetryAndDedup(t *testing.T) {
 	ctx := context.Background()
-	raw, err := dbutil.NewWithDialect(filepath.Join(t.TempDir(), "bridge.db"), "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = raw.RawDB.Close() }()
-	intent := &announcementIntent{fail: true}
-	b, err := newFrameworkConversionBridge(ctx, raw, intent)
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := filepath.Join(t.TempDir(), "bridge.db")
+	fail := true
+	intent := &recordingIntent{onSendState: func(typ event.Type, _ string, _ *event.Content) error {
+		if typ == event.StateTopic && fail {
+			return errors.New("synthetic topic failure")
+		}
+		return nil
+	}}
+	b, _ := newFrameworkBridge(t, frameworkOpts{path: path, intent: intent})
 	p, err := b.GetPortalByKey(ctx, makePortalKey(testChatID, makeUserLoginID(testSelfID)))
 	if err != nil {
 		t.Fatal(err)
@@ -120,21 +98,18 @@ func TestAnnouncementFrameworkPersistenceFailureRetryAndDedup(t *testing.T) {
 		t.Fatalf("persisted failed send: %+v", stored)
 	}
 	// Reload through a new bridge, using the real database metadata decoder.
-	b2, err := newFrameworkConversionBridge(ctx, raw, intent)
-	if err != nil {
-		t.Fatal(err)
-	}
+	b2, _ := newFrameworkBridge(t, frameworkOpts{path: path, intent: intent})
 	p2, err := b2.GetPortalByKey(ctx, p.PortalKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent.fail = false
+	fail = false
 	apply(p2)
-	if !p2.TopicSet || len(intent.topics) != 2 {
+	if !p2.TopicSet || len(intent.topics()) != 2 {
 		t.Fatal("same revision did not retry")
 	}
 	apply(p2)
-	if len(intent.topics) != 2 {
+	if len(intent.topics()) != 2 {
 		t.Fatal("duplicate resent topic")
 	}
 	m.UpdateRevision = 44
@@ -150,7 +125,7 @@ func TestAnnouncementFrameworkPersistenceFailureRetryAndDedup(t *testing.T) {
 	m.UpdateRevision = 42
 	m.Content = `{"type":"TEXT","notice":true,"content":"stale"}`
 	apply(p2)
-	if len(intent.topics) != 3 {
+	if len(intent.topics()) != 3 {
 		t.Fatal("stale revision resent topic")
 	}
 }

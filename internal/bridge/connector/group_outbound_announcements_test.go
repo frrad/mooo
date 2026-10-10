@@ -3,11 +3,9 @@ package connector
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"github.com/rs/zerolog"
-	"go.mau.fi/util/dbutil"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/event"
@@ -15,16 +13,8 @@ import (
 
 func TestMatrixTopicChangeIsRejectedOnceAndRestoresKakaoAnnouncement(t *testing.T) {
 	ctx := context.Background()
-	raw, err := dbutil.NewWithDialect(filepath.Join(t.TempDir(), "bridge.db"), "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = raw.RawDB.Close() }()
-	bot := &announcementIntent{}
-	br, err := newFrameworkConversionBridge(ctx, raw, bot)
-	if err != nil {
-		t.Fatal(err)
-	}
+	bot := &recordingIntent{}
+	br, _ := newFrameworkBridge(t, frameworkOpts{intent: bot})
 	portal, err := br.GetPortalByKey(ctx, makePortalKey(testChatID, makeUserLoginID(testSelfID)))
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +30,7 @@ func TestMatrixTopicChangeIsRejectedOnceAndRestoresKakaoAnnouncement(t *testing.
 		t.Fatal("Matrix topic changes have no explicit handling path")
 	}
 	for _, requested := range []string{"Synthetic Matrix topic", ""} {
-		bot.topics = nil
+		bot.reset()
 		changed, err := topics.HandleMatrixRoomTopic(ctx, &bridgev2.MatrixRoomTopic{
 			MatrixEventBase: bridgev2.MatrixEventBase[*event.TopicEventContent]{
 				Event:   &event.Event{Type: event.StateTopic},
@@ -61,8 +51,8 @@ func TestMatrixTopicChangeIsRejectedOnceAndRestoresKakaoAnnouncement(t *testing.
 		if portal.Topic != "Synthetic Kakao announcement" {
 			t.Fatalf("topic %q changed the portal topic to %q", requested, portal.Topic)
 		}
-		if len(bot.topics) != 1 || bot.topics[0] != "Synthetic Kakao announcement" {
-			t.Fatalf("topic %q restored Matrix topics %q", requested, bot.topics)
+		if topics := bot.topics(); len(topics) != 1 || topics[0] != "Synthetic Kakao announcement" {
+			t.Fatalf("topic %q restored Matrix topics %q", requested, topics)
 		}
 	}
 	if len(backend.calls) != 0 || len(backend.sends) != 0 || len(backend.replies) != 0 || backend.imageCalls != 0 {

@@ -3,12 +3,10 @@ package connector
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/rs/zerolog"
-	"go.mau.fi/util/dbutil"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/event"
@@ -22,7 +20,7 @@ import (
 type matrixInviteHarness struct {
 	kc        *KakaoClient
 	fake      *fakeKakao
-	bot       *membershipIntent
+	bot       *recordingIntent
 	portal    *bridgev2.Portal
 	ghost     *bridgev2.Ghost
 	refreshes []int64
@@ -31,16 +29,8 @@ type matrixInviteHarness struct {
 func newMatrixInviteHarness(t *testing.T, fake *fakeKakao) *matrixInviteHarness {
 	t.Helper()
 	ctx := context.Background()
-	raw, err := dbutil.NewWithDialect(filepath.Join(t.TempDir(), "bridge.db"), "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = raw.RawDB.Close() })
-	bot := &membershipIntent{mxid: "@bot:test"}
-	br, err := newFrameworkConversionBridge(ctx, raw, bot)
-	if err != nil {
-		t.Fatal(err)
-	}
+	bot := &recordingIntent{}
+	br, _ := newFrameworkBridge(t, frameworkOpts{intent: bot})
 	portal, err := br.GetPortalByKey(ctx, makePortalKey(testChatID, makeUserLoginID(testSelfID)))
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +39,7 @@ func newMatrixInviteHarness(t *testing.T, fake *fakeKakao) *matrixInviteHarness 
 	h.kc = newKakaoClient(&bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}}, Bridge: br, Log: zerolog.Nop()}, newBridgeStore(br.DB), testSelfID, nil)
 	h.kc.client = fake
 	h.kc.refreshMembership = func(_ kakaoClient, chatID int64) { h.refreshes = append(h.refreshes, chatID) }
-	h.ghost = &bridgev2.Ghost{Ghost: &database.Ghost{ID: makeUserID(testOtherID)}, Intent: &membershipIntent{mxid: "@kakao_2000:test"}}
+	h.ghost = &bridgev2.Ghost{Ghost: &database.Ghost{ID: makeUserID(testOtherID)}, Intent: &recordingIntent{mxid: "@kakao_2000:test"}}
 	return h
 }
 
@@ -81,8 +71,8 @@ func TestMatrixInviteOfKakaoUserSendsOneAddMem(t *testing.T) {
 	if len(h.fake.invites) != 1 || h.fake.invites[0].ChatID != testChatID || len(h.fake.invites[0].MemberIDs) != 1 || h.fake.invites[0].MemberIDs[0] != testOtherID {
 		t.Fatalf("ADDMEM requests = %+v", h.fake.invites)
 	}
-	if len(h.bot.members) != 0 {
-		t.Fatalf("accepted invite was revoked: %q", h.bot.members)
+	if len(h.bot.memberChanges()) != 0 {
+		t.Fatalf("accepted invite was revoked: %q", h.bot.memberChanges())
 	}
 	if len(h.refreshes) != 1 || h.refreshes[0] != testChatID {
 		t.Fatalf("roster refreshes = %v", h.refreshes)
@@ -116,8 +106,8 @@ func TestMatrixInviteRefusedByKakaoIsReportedAndRevoked(t *testing.T) {
 		if !errors.As(err, &status) || status.Status != event.MessageStatusFail || !status.IsCertain || !status.SendNotice || !strings.Contains(status.Message, tc.message) {
 			t.Fatalf("status %d: err = %v", tc.status, err)
 		}
-		if len(h.bot.members) != 1 || h.bot.members[0] != "@kakao_2000:test:leave" {
-			t.Fatalf("status %d: refused invite not revoked: %q", tc.status, h.bot.members)
+		if len(h.bot.memberChanges()) != 1 || h.bot.memberChanges()[0] != "@kakao_2000:test:leave" {
+			t.Fatalf("status %d: refused invite not revoked: %q", tc.status, h.bot.memberChanges())
 		}
 		if len(fake.invites) != 1 || len(h.refreshes) != 0 {
 			t.Fatalf("status %d: invites=%d refreshes=%v", tc.status, len(fake.invites), h.refreshes)
@@ -145,8 +135,8 @@ func TestMatrixInviteWithUnknownOutcomeDefersToSourceRoster(t *testing.T) {
 		if !errors.As(err, &status) || status.Status != event.MessageStatusFail || status.IsCertain || !status.SendNotice || !strings.Contains(status.Message, tc.message) {
 			t.Fatalf("%s: err = %v", tc.label, err)
 		}
-		if len(fake.invites) != 1 || len(h.bot.members) != 0 {
-			t.Fatalf("%s: invites=%d member changes=%q", tc.label, len(fake.invites), h.bot.members)
+		if len(fake.invites) != 1 || len(h.bot.memberChanges()) != 0 {
+			t.Fatalf("%s: invites=%d member changes=%q", tc.label, len(fake.invites), h.bot.memberChanges())
 		}
 		if len(h.refreshes) != 1 || h.refreshes[0] != testChatID {
 			t.Fatalf("%s: roster refreshes = %v", tc.label, h.refreshes)
@@ -163,8 +153,8 @@ func TestMatrixInviteOfExistingKakaoMemberSendsNothing(t *testing.T) {
 	if err := h.invite("$invite:test"); err != nil {
 		t.Fatalf("invite of existing member rejected: %v", err)
 	}
-	if len(fake.invites) != 0 || len(h.bot.members) != 0 {
-		t.Fatalf("invites=%+v member changes=%q", fake.invites, h.bot.members)
+	if len(fake.invites) != 0 || len(h.bot.memberChanges()) != 0 {
+		t.Fatalf("invites=%+v member changes=%q", fake.invites, h.bot.memberChanges())
 	}
 	if len(h.refreshes) != 1 || h.refreshes[0] != testChatID {
 		t.Fatalf("roster refreshes = %v", h.refreshes)
@@ -194,8 +184,8 @@ func TestMatrixInviteOutsideRegularGroupsIsRejected(t *testing.T) {
 		if len(fake.invites) != 0 || len(h.refreshes) != 0 {
 			t.Fatalf("%s: invites=%+v refreshes=%v", tc.label, fake.invites, h.refreshes)
 		}
-		if len(h.bot.members) != 1 || h.bot.members[0] != "@kakao_2000:test:leave" {
-			t.Fatalf("%s: invite not revoked: %q", tc.label, h.bot.members)
+		if len(h.bot.memberChanges()) != 1 || h.bot.memberChanges()[0] != "@kakao_2000:test:leave" {
+			t.Fatalf("%s: invite not revoked: %q", tc.label, h.bot.memberChanges())
 		}
 	}
 }
