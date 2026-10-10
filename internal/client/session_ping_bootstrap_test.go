@@ -104,7 +104,7 @@ func TestConnectSessionArmsPingOnlyAfterLoginCompletion(t *testing.T) {
 		},
 	}
 	clock := &queuedTimerClock{}
-	session, err := connectSessionWithResumeOptions(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers, pingSessionOptions{clock: clock, interval: time.Second, timeout: time.Second})
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: pingSessionOptions{clock: clock, interval: time.Second, timeout: time.Second}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
 		},
 	}
 	clock := &queuedTimerClock{}
-	session, err := connectSessionWithResumeOptions(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers, pingSessionOptions{clock: clock, interval: time.Second, timeout: 20 * time.Millisecond})
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: pingSessionOptions{clock: clock, interval: time.Second, timeout: 20 * time.Millisecond}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +289,7 @@ func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.
 		err     error
 	}, 1)
 	go func() {
-		connected, err := connectSessionWithResumeOptions(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers, pingSessionOptions{clock: clock, interval: time.Second, timeout: time.Second, beforeBootstrapRequest: func() { close(gapReady); <-allowLchat }})
+		connected, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: pingSessionOptions{clock: clock, interval: time.Second, timeout: time.Second, beforeBootstrapRequest: func() { close(gapReady); <-allowLchat }}})
 		result <- struct {
 			session *session
 			err     error

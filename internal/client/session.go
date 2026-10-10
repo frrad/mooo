@@ -184,17 +184,23 @@ func (d sessionDialers) observed(observer func(loco.Packet)) sessionDialers {
 	return sessionDialers{tls: wrap(d.tls), secure: wrap(d.secure)}
 }
 
+// sessionConfig selects how connectSession bootstraps one session: the login
+// resume checkpoint, the transport dialers and the keepalive ping policy.
+type sessionConfig struct {
+	resume  continuity.Checkpoint
+	dialers sessionDialers
+	ping    pingSessionOptions
+}
+
+// realtimePingOptions is the production keepalive policy.
+func realtimePingOptions() pingSessionOptions {
+	return pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout}
+}
+
 // connectSession performs GETCONF, CHECKIN, secure carriage setup, and
 // LOGINLIST from client-owned state. Client owns and reuses the result.
-func connectSession(ctx context.Context, state authstate.State) (*session, error) {
-	return connectSessionWithResumeOptions(ctx, state, continuity.Checkpoint{Version: continuity.Version}, productionSessionDialers(), pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout})
-}
-
-func connectSessionWithResume(ctx context.Context, state authstate.State, resume continuity.Checkpoint, dialers sessionDialers) (*session, error) {
-	return connectSessionWithResumeOptions(ctx, state, resume, dialers, pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout})
-}
-
-func connectSessionWithResumeOptions(ctx context.Context, state authstate.State, resume continuity.Checkpoint, dialers sessionDialers, pingOptions pingSessionOptions) (*session, error) {
+func connectSession(ctx context.Context, state authstate.State, config sessionConfig) (*session, error) {
+	resume, dialers, pingOptions := config.resume, config.dialers, config.ping
 	if ctx == nil || state.Credentials == nil {
 		return nil, errCredentialsAbsent
 	}

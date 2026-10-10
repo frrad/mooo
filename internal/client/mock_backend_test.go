@@ -324,7 +324,7 @@ func TestScriptedBackendResumedLoginUsesDurableCursors(t *testing.T) {
 		Version: continuity.Version, LastTokenID: 77, LBK: 6,
 		Chats: []continuity.ChatCursor{{ChatID: 3, MaxLogID: 30}, {ChatID: 9, MaxLogID: 90}},
 	}
-	session, err := connectSessionWithResume(t.Context(), state, resume, dialers)
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: resume, dialers: dialers, ping: realtimePingOptions()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +397,7 @@ func TestScriptedBackendFullListPreservesDurableMessageCursors(t *testing.T) {
 		Version: continuity.Version, LastTokenID: 77, LBK: 6,
 		Chats: []continuity.ChatCursor{{ChatID: 3, MaxLogID: 30}, {ChatID: 9, MaxLogID: 90}},
 	}
-	session, err := connectSessionWithResume(t.Context(), state, (OpenOptions{FullChatList: true}).loginResume(resume), dialers)
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: (OpenOptions{FullChatList: true}).loginResume(resume), dialers: dialers, ping: realtimePingOptions()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +466,7 @@ func TestScriptedBackendPartialLChatListKeepsDeltasWithoutAdvancingGlobalCursor(
 			return carriage.client, nil
 		},
 	}
-	session, err := connectSessionWithResume(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers)
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: realtimePingOptions()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -538,7 +538,7 @@ func TestScriptedBackendFullPagedListRemovesEarlierRoom(t *testing.T) {
 			return carriage.client, nil
 		},
 	}
-	session, err := connectSessionWithResume(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers)
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: realtimePingOptions()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -570,7 +570,7 @@ func TestScriptedBackendLoginAlreadyCurrentDoesNotPageOrAdvanceGlobalCursor(t *t
 		{Key: "lastChatId", Value: int64(42)},
 		{Key: "lbk", Value: int32(8)},
 	})
-	session, err := connectSessionWithResume(t.Context(), reusableTestState(), continuity.Checkpoint{Version: continuity.Version}, dialers)
+	session, err := connectSession(t.Context(), reusableTestState(), sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: realtimePingOptions()})
 	if err != nil {
 		t.Fatal(err)
 	}

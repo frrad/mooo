@@ -22,7 +22,7 @@ func decodeEventStreamWithTerminal(raw <-chan loco.Packet, output chan<- events.
 }
 
 func connectSessionWithDialers(ctx context.Context, state authstate.State, dialers sessionDialers) (*session, error) {
-	return connectSessionWithResume(ctx, state, continuity.Checkpoint{Version: continuity.Version}, dialers)
+	return connectSession(ctx, state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: realtimePingOptions()})
 }
 
 func (s *session) readLoop() {

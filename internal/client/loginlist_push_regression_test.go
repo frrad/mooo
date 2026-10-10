@@ -75,7 +75,7 @@ func TestConnectSessionPreservesMessagesBeforeLoginListReply(t *testing.T) {
 			return carriage.client, nil
 		},
 	}
-	session, err := connectSessionWithResumeOptions(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers, pingSessionOptions{})
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: pingSessionOptions{}})
 	if err != nil {
 		t.Fatal(err)
 	}

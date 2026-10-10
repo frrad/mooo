@@ -9,7 +9,7 @@ import (
 )
 
 // This file holds the bootstrap target parsing and the LOGINLIST/LCHATLIST
-// page synchronization that connectSessionWithResumeOptions drives.
+// page synchronization that connectSession drives.
 
 type loginCursor struct {
 	chatData         map[int64]bson.Raw

@@ -103,7 +103,7 @@ func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*
 	client.checkpoint = checkpoint
 	resume := options.loginResume(checkpoint.Snapshot())
 	client.dial = func(ctx context.Context, state authstate.State) (*session, error) {
-		return connectSessionWithResume(ctx, state, resume, productionSessionDialers().observed(options.PacketObserver))
+		return connectSession(ctx, state, sessionConfig{resume: resume, dialers: productionSessionDialers().observed(options.PacketObserver), ping: realtimePingOptions()})
 	}
 	return client, nil
 }
@@ -120,7 +120,10 @@ func newClient(state authstate.State, doer macweb.Doer) (*Client, error) {
 	}
 	credentials := state.Credentials.Clone()
 	state.Credentials = &credentials
-	return &Client{state: state, http: doer, dial: connectSession}, nil
+	dial := func(ctx context.Context, state authstate.State) (*session, error) {
+		return connectSession(ctx, state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: productionSessionDialers(), ping: realtimePingOptions()})
+	}
+	return &Client{state: state, http: doer, dial: dial}, nil
 }
 
 // Connect establishes the client's session if needed. Repeated calls after
