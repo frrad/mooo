@@ -12,19 +12,8 @@ func TestRepositoryHasNoNewModelOnlyTests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	allowed, err := ReadAllowlist(filepath.Join("testdata", "model-only-allowlist.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, path := range offenders {
-		if !slices.Contains(allowed, path) {
-			t.Errorf("%s references no production code; exercise mooo instead of a model (see research/parity-fixtures.md)", path)
-		}
-	}
-	for _, path := range allowed {
-		if !slices.Contains(offenders, path) {
-			t.Errorf("%s is no longer a model-only test; remove it from testdata/model-only-allowlist.txt", path)
-		}
+		t.Errorf("%s references no production code; exercise mooo instead of a model (see research/parity-fixtures.md)", path)
 	}
 }
 
@@ -119,20 +108,5 @@ func TestSupportOnly(t *testing.T) { _ = loco.Script{} }
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("ModelOnlyTests() = %q, want %q", got, want)
-	}
-}
-
-func TestReadAllowlistSkipsCommentsAndBlankLines(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "allow.txt")
-	if err := os.WriteFile(path, []byte("# header\n\n internal/a_test.go \n# note\ninternal/b_test.go\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, err := ReadAllowlist(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"internal/a_test.go", "internal/b_test.go"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("ReadAllowlist() = %q, want %q", got, want)
 	}
 }

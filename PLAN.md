@@ -304,7 +304,9 @@ behaviour those fixtures describe.
 
 - [x] Record the policy in `AGENTS.md` and `research/parity-fixtures.md`, and add
       the `internal/testpolicy` lint with a shrink-only allowlist.
-- [x] Delete the 45 model-only tests and empty the allowlist.
+- [x] Delete the 45 model-only tests and empty the allowlist (the empty
+      allowlist itself was removed in code-structure-plan A3; the lint now
+      rejects every model-only test).
 - [x] Delete test-only production code with no planned consumer: the
       pre-QR passcode registration state machine and coordinator, the
       sessionlogin ping-intent, ping-status, status-handler, send-order,
