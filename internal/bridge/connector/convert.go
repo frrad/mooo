@@ -55,36 +55,31 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 	case events.MiniTextMessage:
 		return kc.miniTextEvent(evt)
 	case events.PostMessage:
-		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, convertPost)
+		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, convertPost)
 	case events.VoteMessage:
-		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, convertVote)
+		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, convertVote)
 	case events.LocationMessage:
-		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, convertLocation)
+		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, convertLocation)
 	case events.ProfileMessage:
-		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, convertProfile)
+		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, convertProfile)
 	case events.TextMessage:
-		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, convertText)
+		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, convertText)
 	case events.ReplyMessage:
-		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, convertReply)
+		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, convertReply)
 	case events.StickerMessage:
-		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, convertSticker)
+		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, convertSticker)
 	case events.ContactMessage:
-		c := evt.Message
-		return newMessage(kc.messageMeta(c.ChatID, c.LogID, c.AuthorID, c.SentAt), makeMessageID(c.ChatID, c.LogID), evt, convertContact)
+		return messageEvent(kc, evt.Position(), evt.Message.AuthorID, evt.Message.SentAt, evt, convertContact)
 	case events.FileMessage:
-		f := evt.Message
-		return newMessage(kc.messageMeta(f.ChatID, f.LogID, f.AuthorID, f.SentAt), makeMessageID(f.ChatID, f.LogID), evt, convertFile)
+		return messageEvent(kc, evt.Position(), evt.Message.AuthorID, evt.Message.SentAt, evt, convertFile)
 	case events.AudioMessage:
-		a := evt.Message
-		return newMessage(kc.messageMeta(a.ChatID, a.LogID, a.AuthorID, a.SentAt), makeMessageID(a.ChatID, a.LogID), evt, convertAudio)
+		return messageEvent(kc, evt.Position(), evt.Message.AuthorID, evt.Message.SentAt, evt, convertAudio)
 	case events.VideoMessage:
-		a := evt.Message
-		return newMessage(kc.messageMeta(a.ChatID, a.LogID, a.AuthorID, a.SentAt), makeMessageID(a.ChatID, a.LogID), evt, convertVideo)
+		return messageEvent(kc, evt.Position(), evt.Message.AuthorID, evt.Message.SentAt, evt, convertVideo)
 	case events.MultiPhotoMessage:
 		return kc.albumEvent(evt)
 	case events.PhotoMessage:
-		chatID, logID := evt.Message.ChatID, evt.Message.LogID
-		return newMessage(kc.messageMeta(chatID, logID, evt.Message.AuthorID, evt.Message.SentAt), makeMessageID(chatID, logID), evt, convertPhoto)
+		return messageEvent(kc, evt.Position(), evt.Message.AuthorID, evt.Message.SentAt, evt, convertPhoto)
 	case events.MessageEdited:
 		return kc.editEvent(evt)
 	case events.MessageDeleted:
@@ -94,12 +89,12 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 	case events.MessageGap:
 		metadata := newKakaoMessageMetadata(evt.ChatID, evt.LogID, evt.AuthorID, evt.Type, "[message unavailable]", 0)
 		metadata.ConversionGap = "malformed_payload"
-		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), noticeData{
+		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, noticeData{
 			Body: "A KakaoTalk message could not be displayed (malformed_payload).", Metadata: metadata,
 		}, convertNoticeWithMetadata)
 	case events.UnsupportedMessage:
 		notice := fmt.Sprintf("A KakaoTalk message of unsupported type %d was sent.", evt.Type)
-		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, 0, 0), makeMessageID(evt.ChatID, evt.LogID), noticeData{
+		return messageEvent(kc, evt.Position(), 0, 0, noticeData{
 			Body: notice, Metadata: newKakaoMessageMetadata(evt.ChatID, evt.LogID, 0, evt.Type, "", 0),
 		}, convertNoticeWithMetadata)
 	case events.MemberAdded:
@@ -305,6 +300,17 @@ func (kc *KakaoClient) gapNotice(chatID, targetMax int64) bridgev2.RemoteEvent {
 	id := networkid.MessageID(fmt.Sprintf("gap:%d:%d", chatID, targetMax))
 	return newMessage(kc.messageMeta(chatID, 0, 0, 0), id,
 		"Some KakaoTalk messages sent while the bridge was disconnected could not be recovered.", convertNotice)
+}
+
+// messageEvent builds the remote message event for the Kakao message at pos.
+func messageEvent[T any](
+	kc *KakaoClient,
+	pos events.Position,
+	authorID, sentAt int64,
+	data T,
+	convert func(context.Context, *bridgev2.Portal, bridgev2.MatrixAPI, T) (*bridgev2.ConvertedMessage, error),
+) *simplevent.Message[T] {
+	return newMessage(kc.messageMeta(pos.ChatID, pos.LogID, authorID, sentAt), makeMessageID(pos.ChatID, pos.LogID), data, convert)
 }
 
 func newMessage[T any](
