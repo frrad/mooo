@@ -324,7 +324,7 @@ func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room
 	if err != nil {
 		return nil, err
 	}
-	info, err := kc.chatInfoFromClient(ctx, portal, c, true)
+	info, snap, err := kc.chatInfoFromClient(ctx, portal, c, chatInfoOptions{regularGroupOnly: true})
 	if err != nil {
 		return nil, err
 	}
@@ -333,20 +333,15 @@ func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room
 	for _, participant := range attempt.Participants {
 		expected[makeUserID(participant)] = true
 	}
-	rawRoster, err := kc.creationSourceRoster(ctx, c, attempt.ChatID, attempt.Participants)
+	rawRoster, err := kc.creationSourceRoster(snap.roster, attempt.Participants)
 	if err != nil {
 		return nil, err
 	}
 	if len(rawRoster) != len(expected) {
 		return nil, errors.New("connector: source roster is incomplete for group binding")
 	}
-	if info.Members == nil || !info.Members.IsFull || len(info.Members.MemberMap) != len(expected) {
-		return nil, errors.New("connector: created group roster differs from selected participants")
-	}
-	for userID := range info.Members.MemberMap {
-		if !expected[userID] {
-			return nil, errors.New("connector: created group has an unselected source participant")
-		}
+	if err = kc.rosterMatches(snap, expected, false); err != nil {
+		return nil, fmt.Errorf("connector: created group roster differs from selected participants: %w", err)
 	}
 	if portal.MXID != "" && portal.MXID != room {
 		return nil, errors.New("connector: source group is already bound to another Matrix room; reconcile explicitly")
@@ -382,17 +377,13 @@ func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room
 
 // creationSourceRoster checks source identities independently of the framework's
 // member map, which includes the local account even when MEMLIST omits it.
-func (kc *KakaoClient) creationSourceRoster(ctx context.Context, c chatMetaAPI, chatID int64, participants []int64) (map[int64]bool, error) {
-	roster, err := c.MemberList(ctx, chatID, 0)
-	if err != nil {
-		return nil, err
-	}
+func (kc *KakaoClient) creationSourceRoster(roster []int64, participants []int64) (map[int64]bool, error) {
 	allowed := map[int64]bool{kc.userID: true}
 	for _, participant := range participants {
 		allowed[participant] = true
 	}
 	actual := map[int64]bool{}
-	for _, member := range roster.MemberIDs {
+	for _, member := range roster {
 		if member <= 0 || actual[member] || !allowed[member] {
 			return nil, errors.New("connector: source roster contains an invalid, duplicate or unselected identity")
 		}

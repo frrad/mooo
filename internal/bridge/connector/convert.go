@@ -123,7 +123,8 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 				if err != nil {
 					return nil, err
 				}
-				return kc.chatInfoFromClient(ctx, portal, c, false, true)
+				info, _, err := kc.chatInfoFromClient(ctx, portal, c, chatInfoOptions{requirePersonalMeta: true})
+				return info, err
 			}
 			return resync
 		}
@@ -275,17 +276,7 @@ func (kc *KakaoClient) memberChanges(ctx context.Context, chatID int64, identiti
 	if err != nil {
 		return &bridgev2.ChatMemberList{MemberMap: members}, nil
 	}
-	requested := make(map[int64]struct{}, len(ids))
-	for _, id := range ids {
-		requested[id] = struct{}{}
-	}
-	for _, profile := range profiles {
-		if _, ok := requested[profile.UserID]; !ok || profile.UserID <= 0 || profile.UserID == kc.userID {
-			continue
-		}
-		kc.mu.Lock()
-		kc.profiles[profile.UserID] = profile
-		kc.mu.Unlock()
+	for _, profile := range kc.cacheProfiles(profiles, ids) {
 		member := members[makeUserID(profile.UserID)]
 		member.UserInfo = userInfoForMember(profile)
 		members[makeUserID(profile.UserID)] = member
