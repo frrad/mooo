@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/reactions"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 )
 
@@ -101,6 +103,15 @@ type fakeKakao struct {
 	metadataCalls     []string
 	moimResponse      chatmeta.MoimResponse
 	moimErr           error
+	chatOnRoom        map[int64]chatmeta.ChatOnRoomResponse
+	chatOnRoomCalls   []int64
+	chatOnRoomErr     error
+	fetchResults      [][]events.Event
+	fetchRequests     [][]int64
+	fetchErr          error
+	reactionPages     []reactions.SyncMetaPage
+	reactionCursors   []int64
+	reactionSyncErr   error
 
 	catchupHoldUntilRelease bool
 }
@@ -1644,4 +1655,62 @@ func (f *fakeKakao) CreateChat(context.Context, chat.CreateRequest) (chat.Create
 
 func (f *fakeKakao) AddMembers(context.Context, chat.AddMembersRequest) (chat.AddMembersResponse, error) {
 	return chat.AddMembersResponse{}, errors.New("unexpected invitation")
+}
+
+// ChatOnRoom serves the configured CHATONROOM watermarks.
+func (f *fakeKakao) ChatOnRoom(_ context.Context, chatID int64) (chatmeta.ChatOnRoomResponse, error) {
+	f.chatOnRoomCalls = append(f.chatOnRoomCalls, chatID)
+	if f.chatOnRoomErr != nil {
+		return chatmeta.ChatOnRoomResponse{}, f.chatOnRoomErr
+	}
+	return f.chatOnRoom[chatID], nil
+}
+
+// GetMessages serves the configured GETMSGS results in order.
+func (f *fakeKakao) GetMessages(_ context.Context, chatID int64, logIDs []int64) ([]events.Event, error) {
+	f.fetchRequests = append(f.fetchRequests, append([]int64{chatID}, logIDs...))
+	if f.fetchErr != nil {
+		return nil, f.fetchErr
+	}
+	if len(f.fetchResults) == 0 {
+		return nil, nil
+	}
+	got := f.fetchResults[0]
+	f.fetchResults = f.fetchResults[1:]
+	return got, nil
+}
+
+func (f *fakeKakao) ReadHistoryPage(context.Context, int64, int64, int64, int) (client.HistoryPage, error) {
+	return client.HistoryPage{}, errors.New("unexpected history read")
+}
+
+func (f *fakeKakao) InitialSyncTargets(context.Context) ([]syncmsg.Target, error) {
+	return nil, nil
+}
+
+func (f *fakeKakao) React(context.Context, reactions.Request) (reactions.Response, error) {
+	return reactions.Response{}, errors.New("unexpected reaction")
+}
+
+func (f *fakeKakao) ReactionMembers(context.Context, int64, int64) (reactions.MembersResponse, error) {
+	return reactions.MembersResponse{}, errors.New("unexpected reaction lookup")
+}
+
+func (f *fakeKakao) MiniReactionDetails(context.Context, int64, int64, int64) (reactions.DetailsResponse, error) {
+	return reactions.DetailsResponse{}, errors.New("unexpected mini reaction lookup")
+}
+
+// ReactionMetaSync serves the configured resync pages and records the
+// requested cursors; with no pages left it reports an empty final page.
+func (f *fakeKakao) ReactionMetaSync(_ context.Context, _ int64, cur int64) (reactions.SyncMetaPage, error) {
+	f.reactionCursors = append(f.reactionCursors, cur)
+	if f.reactionSyncErr != nil {
+		return reactions.SyncMetaPage{}, f.reactionSyncErr
+	}
+	if len(f.reactionPages) == 0 {
+		return reactions.SyncMetaPage{Items: []json.RawMessage{}, Last: true}, nil
+	}
+	page := f.reactionPages[0]
+	f.reactionPages = f.reactionPages[1:]
+	return page, nil
 }

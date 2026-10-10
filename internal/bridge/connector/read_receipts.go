@@ -15,7 +15,6 @@ import (
 	"maunium.net/go/mautrix/bridgev2/simplevent"
 
 	"github.com/frrad/mooo/internal/client"
-	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 )
 
@@ -189,18 +188,13 @@ func classifyReadReceiptFailure(cause error) error {
 	}
 }
 
-type chatOnRoomReader interface {
-	ChatOnRoom(ctx context.Context, chatID int64) (chatmeta.ChatOnRoomResponse, error)
-}
-
 // recoverReadWatermarks bridges member reads that happened while the bridge
 // was away. Read notices are live-only; CHATONROOM returns every active
 // member's watermark and, in owned observation, acknowledged nothing. Each
 // watermark passes the same forward-only guard as a live notice. Failures
 // are logged and never block the connection.
-func (kc *KakaoClient) recoverReadWatermarks(ctx context.Context, c kakaoClient) {
-	reader, ok := c.(chatOnRoomReader)
-	if !ok || kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
+func (kc *KakaoClient) recoverReadWatermarks(ctx context.Context, c chatMetaAPI) {
+	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
 		return
 	}
 	portals, err := kc.login.Bridge.DB.Portal.GetAllWithMXID(ctx)
@@ -217,7 +211,7 @@ func (kc *KakaoClient) recoverReadWatermarks(ctx context.Context, c kakaoClient)
 			continue
 		}
 		requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		room, err := reader.ChatOnRoom(requestCtx, chatID)
+		room, err := c.ChatOnRoom(requestCtx, chatID)
 		cancel()
 		if err != nil || room.ChatID != chatID {
 			kc.log().Warn().Int64("kakao_chat_id", chatID).Msg("Read watermark recovery skipped for chat")

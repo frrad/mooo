@@ -22,7 +22,7 @@ type KakaoPortalMetadata struct {
 	GroupMembershipManaged bool    `json:"group_membership_managed,omitempty"`
 }
 
-func (kc *KakaoClient) announcementInfo(ctx context.Context, portal *bridgev2.Portal, c kakaoClient) (*bridgev2.ChatInfo, error) {
+func (kc *KakaoClient) announcementInfo(ctx context.Context, portal *bridgev2.Portal, c chatMetaAPI) (*bridgev2.ChatInfo, error) {
 	chatID, err := parseChatID(portal.ID)
 	if err != nil {
 		return nil, err

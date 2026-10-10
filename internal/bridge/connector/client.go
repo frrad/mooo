@@ -26,25 +26,39 @@ import (
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/reactions"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 )
 
-// kakaoClient is the subset of client.Client the connector uses. It exists so
-// the event loop and send paths can be tested without a Kakao backend.
-type kakaoClient interface {
+// The connector depends on client.Client through these role interfaces so
+// the event loop and send paths can be tested without a Kakao backend. Every
+// method is required: a missing one is a compile error, never a silently
+// skipped feature.
+
+// sessionAPI owns the connection and the live event stream.
+type sessionAPI interface {
 	Connect(ctx context.Context) error
-	CreateChat(context.Context, chat.CreateRequest) (chat.CreateResponse, error)
-	AddMembers(context.Context, chat.AddMembersRequest) (chat.AddMembersResponse, error)
-	ListChats(ctx context.Context) ([]chatmeta.ChatData, error)
 	Events(ctx context.Context) (<-chan events.Result, error)
 	CommitEvent(event events.Event) error
 	ResumeTargets(ctx context.Context) ([]syncmsg.Target, error)
 	CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error)
+	Close() error
+	Shutdown(ctx context.Context) error
+}
+
+// chatMetaAPI reads chat inventory, metadata and rosters.
+type chatMetaAPI interface {
+	ListChats(ctx context.Context) ([]chatmeta.ChatData, error)
 	ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error)
 	PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.RoomMeta, error)
 	MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error)
 	Members(ctx context.Context, chatID int64, userIDs []int64) ([]chatmeta.Member, error)
 	MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error)
+	ChatOnRoom(ctx context.Context, chatID int64) (chatmeta.ChatOnRoomResponse, error)
+}
+
+// outboundAPI sends and mutates messages and chats on Kakao.
+type outboundAPI interface {
 	SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error)
 	SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error)
 	SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error)
@@ -53,9 +67,35 @@ type kakaoClient interface {
 	ModifyMessage(ctx context.Context, request chat.ModifyRequest) (int64, error)
 	DeleteMessage(ctx context.Context, request chat.DeleteRequest) error
 	MarkRead(ctx context.Context, chatID, watermark int64) (syncmsg.Response, error)
-	Close() error
-	Shutdown(ctx context.Context) error
+	CreateChat(context.Context, chat.CreateRequest) (chat.CreateResponse, error)
+	AddMembers(context.Context, chat.AddMembersRequest) (chat.AddMembersResponse, error)
 }
+
+// reactionAPI mutates and reads message reactions.
+type reactionAPI interface {
+	React(context.Context, reactions.Request) (reactions.Response, error)
+	ReactionMembers(ctx context.Context, chatID, logID int64) (reactions.MembersResponse, error)
+	MiniReactionDetails(ctx context.Context, chatID, linkID, logID int64) (reactions.DetailsResponse, error)
+	ReactionMetaSync(ctx context.Context, chatID, cur int64) (reactions.SyncMetaPage, error)
+}
+
+// historyAPI reads message history by range or position.
+type historyAPI interface {
+	ReadHistoryPage(ctx context.Context, chatID, after, through int64, limit int) (client.HistoryPage, error)
+	GetMessages(ctx context.Context, chatID int64, logIDs []int64) ([]events.Event, error)
+	InitialSyncTargets(ctx context.Context) ([]syncmsg.Target, error)
+}
+
+// kakaoClient is everything the connector uses from client.Client.
+type kakaoClient interface {
+	sessionAPI
+	chatMetaAPI
+	outboundAPI
+	reactionAPI
+	historyAPI
+}
+
+var _ kakaoClient = (*client.Client)(nil)
 
 type bootstrapFailure struct {
 	stage string
@@ -899,7 +939,7 @@ func (kc *KakaoClient) ignoredMessageHasMapping(ctx context.Context, message bri
 	if err != nil || len(parts) == 0 {
 		return false
 	}
-	if multipart, ok := message.(interface{ ExpectedPartIDs() []networkid.PartID }); ok {
+	if multipart, ok := message.(expectedPartsMessage); ok {
 		mapped := make(map[networkid.PartID]bool, len(parts))
 		for _, part := range parts {
 			mapped[part.PartID] = true
@@ -1112,7 +1152,7 @@ func (kc *KakaoClient) getChatInfo(ctx context.Context, portal *bridgev2.Portal,
 	return kc.chatInfoFromClient(ctx, portal, c, regularGroupOnly)
 }
 
-func (kc *KakaoClient) chatInfoFromClient(ctx context.Context, portal *bridgev2.Portal, c kakaoClient, regularGroupOnly bool, requirePersonal ...bool) (*bridgev2.ChatInfo, error) {
+func (kc *KakaoClient) chatInfoFromClient(ctx context.Context, portal *bridgev2.Portal, c chatMetaAPI, regularGroupOnly bool, requirePersonal ...bool) (*bridgev2.ChatInfo, error) {
 	chatID, err := parseChatID(portal.ID)
 	if err != nil {
 		return nil, err
@@ -1592,7 +1632,7 @@ func outboundAcceptedWithoutPosition(err error) error {
 // reserves the event's single source send, so a failed fetch or an image
 // KakaoTalk cannot accept never consumes the reservation or reaches Kakao.
 // Disconnect interrupts the transfer through the connection lifecycle.
-func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c kakaoClient, intent bridgev2.MatrixAPI, chatID int64, content *event.MessageEventContent, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
+func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c outboundAPI, intent bridgev2.MatrixAPI, chatID int64, content *event.MessageEventContent, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)
 	defer cancel()
 	if lifecycle := kc.connectionLifecycle(); lifecycle != nil {
@@ -1655,7 +1695,7 @@ var errUnsupportedUploadReply = errors.New("connector: KakaoTalk has no file, vi
 // sendMatrixUpload sends one Matrix file, video or audio as a KakaoTalk file
 // or video. Name, type and size are checked before the download, the bytes
 // are validated before the durable reservation, and the upload runs once.
-func (kc *KakaoClient) sendMatrixUpload(ctx context.Context, c kakaoClient, intent bridgev2.MatrixAPI, chatID int64, content *event.MessageEventContent, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
+func (kc *KakaoClient) sendMatrixUpload(ctx context.Context, c outboundAPI, intent bridgev2.MatrixAPI, chatID int64, content *event.MessageEventContent, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, matrixUploadTransferTimeout)
 	defer cancel()
 	if lifecycle := kc.connectionLifecycle(); lifecycle != nil {
@@ -1706,7 +1746,7 @@ func (kc *KakaoClient) sendMatrixUpload(ctx context.Context, c kakaoClient, inte
 // Mac client, a single photo is sent as an ordinary photo. Every photo is
 // fetched and validated before the durable reservation, and the album is
 // sent once.
-func (kc *KakaoClient) sendMatrixAlbum(ctx context.Context, c kakaoClient, intent bridgev2.MatrixAPI, chatID int64, content *event.MessageEventContent, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
+func (kc *KakaoClient) sendMatrixAlbum(ctx context.Context, c outboundAPI, intent bridgev2.MatrixAPI, chatID int64, content *event.MessageEventContent, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
 	images, caption := content.BeeperGalleryImages, content.BeeperGalleryCaption
 	if len(images) == 1 && images[0] != nil {
 		single := *images[0]
