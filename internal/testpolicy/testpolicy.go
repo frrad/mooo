@@ -13,7 +13,6 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -154,22 +153,4 @@ func topLevelNames(file *ast.File) map[string]bool {
 	delete(names, "_")
 	delete(names, "init")
 	return names
-}
-
-// ReadAllowlist reads one repository-relative path per line, ignoring blank
-// lines and lines starting with '#'.
-func ReadAllowlist(path string) ([]string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var entries []string
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		entries = append(entries, line)
-	}
-	return entries, nil
 }
