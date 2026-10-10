@@ -52,12 +52,12 @@ func TestSessionExplicitRequestIDRejectsPendingCollision(t *testing.T) {
 	session := newSession(nil)
 	session.wire = &wireConn{}
 	session.nextID = 2
-	session.pending[2] = waiter
+	session.pending[2] = pendingRequest{method: "PING", result: waiter}
 	_, err := session.requestRaw(context.Background(), 2, "LCHATLIST", nil)
 	if err != ErrProtocol {
 		t.Fatalf("requestRaw collision error = %v, want %v", err, ErrProtocol)
 	}
-	if got := session.pending[2]; got != waiter {
+	if got := session.pending[2]; got.result != waiter {
 		t.Fatal("requestRaw collision replaced the existing waiter")
 	}
 }

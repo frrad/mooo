@@ -18,11 +18,9 @@ func TestSessionReaderRoutesWrongMethodAndCompletesMatchingUID(t *testing.T) {
 	defer func() { _ = serverConn.Close() }()
 	waiter := make(chan requestResult, 1)
 	s := &Session{
-		wire:                &wireConn{c: clientConn},
-		pushes:              make(chan loco.Packet, 2),
-		pending:             map[uint32]chan requestResult{17: waiter},
-		pendingByUniqueID:   map[string]chan requestResult{"PING.17": waiter},
-		pendingUniqueIDByID: map[uint32]string{17: "PING.17"},
+		wire:    &wireConn{c: clientConn},
+		pushes:  make(chan loco.Packet, 2),
+		pending: map[uint32]pendingRequest{17: {method: "PING", result: waiter}},
 	}
 	go s.readLoop()
 	wrong, err := (loco.Packet{Header: loco.Header{PacketID: 17, Method: "PUSH"}}).MarshalBinary(0)
@@ -144,16 +142,11 @@ func TestSessionUIDCorrelationDoesNotDeleteReusedPacketID(t *testing.T) {
 	oldWaiter := make(chan requestResult, 1)
 	newWaiter := make(chan requestResult, 1)
 	s := &Session{
-		pending:             map[uint32]chan requestResult{17: oldWaiter},
-		pendingByUniqueID:   map[string]chan requestResult{"PING.17": oldWaiter},
-		pendingUniqueIDByID: map[uint32]string{17: "PING.17"},
+		pending: map[uint32]pendingRequest{17: {method: "PING", result: oldWaiter}},
 	}
-	delete(s.pendingByUniqueID, "PING.17")
-	s.pending[17] = newWaiter
-	s.pendingByUniqueID["LCHATLIST.17"] = newWaiter
-	s.pendingUniqueIDByID[17] = "LCHATLIST.17"
+	s.pending[17] = pendingRequest{method: "LCHATLIST", result: newWaiter}
 	s.removePending(17, oldWaiter)
-	if s.pending[17] != newWaiter || s.pendingByUniqueID["LCHATLIST.17"] != newWaiter {
+	if s.pending[17].result != newWaiter || s.pending[17].method != "LCHATLIST" {
 		t.Fatal("late old cancellation removed reused completion")
 	}
 	if s.dispatchPacket(loco.Packet{Header: loco.Header{PacketID: 17, Method: "PING"}}) {
@@ -175,9 +168,7 @@ func TestSessionUIDCorrelationDoesNotDeleteReusedPacketID(t *testing.T) {
 func TestSessionDispatchPacketRequiresMethodInUniqueID(t *testing.T) {
 	waiter := make(chan requestResult, 1)
 	s := &Session{
-		pending:             map[uint32]chan requestResult{17: waiter},
-		pendingByUniqueID:   map[string]chan requestResult{"PING.17": waiter},
-		pendingUniqueIDByID: map[uint32]string{17: "PING.17"},
+		pending: map[uint32]pendingRequest{17: {method: "PING", result: waiter}},
 	}
 
 	wrong := loco.Packet{Header: loco.Header{PacketID: 17, Method: "PUSH"}}

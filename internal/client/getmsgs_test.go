@@ -34,7 +34,7 @@ func TestGetMessagesReadsEditedMessagesByLogID(t *testing.T) {
 	})
 	session := &Session{
 		wire: backend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
-		pending: make(map[uint32]chan requestResult), userID: 7, appVersion: "26.8.0",
+		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 	}
 	go session.readLoop()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -65,7 +65,7 @@ func TestGetMessagesRejectsALogFromAnotherChat(t *testing.T) {
 	})
 	session := &Session{
 		wire: backend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
-		pending: make(map[uint32]chan requestResult), userID: 7, appVersion: "26.8.0",
+		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 	}
 	go session.readLoop()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
