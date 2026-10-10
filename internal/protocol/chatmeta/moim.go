@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"strings"
 )
 
 // Moim metadata belongs to Boards, independently of shared chat metadata.
@@ -96,9 +97,12 @@ func (m MoimMeta) Announcement() (Announcement, error) {
 		return Announcement{}, nil
 	}
 	var p struct {
-		Type    string `json:"type"`
-		Notice  bool   `json:"notice"`
-		Content string `json:"content"`
+		Type        string `json:"type"`
+		Notice      bool   `json:"notice"`
+		Content     string `json:"content"`
+		JSONContent string `json:"json_content"`
+		Subject     string `json:"subject"`
+		PollCount   int64  `json:"poll_count"`
 	}
 	if json.Unmarshal([]byte(m.Content), &p) != nil {
 		return Announcement{}, fmt.Errorf("%w: announcement JSON", ErrInvalidResponse)
@@ -106,8 +110,57 @@ func (m MoimMeta) Announcement() (Announcement, error) {
 	if !p.Notice {
 		return Announcement{}, nil
 	}
-	if p.Type != "TEXT" {
+	text := announcementSummary(p.Type, p.JSONContent, p.Content, p.Subject, p.PollCount)
+	if text == "" {
+		// The official client shows an update prompt here; the bridge keeps
+		// the current topic instead.
 		return Announcement{}, ErrUnsupportedAnnouncement
 	}
-	return Announcement{Active: true, Text: p.Content}, nil
+	return Announcement{Active: true, Text: text}, nil
+}
+
+// announcementSummary follows the Mac banner order: structured text, then
+// content, then subject (a poll post with several polls adds a count), then
+// a sentence for posted media.
+func announcementSummary(postType, structured, content, subject string, pollCount int64) string {
+	if text := structuredAnnouncementText(structured); text != "" {
+		return text
+	}
+	if content != "" {
+		return content
+	}
+	if subject != "" {
+		if postType == "POLL" && pollCount >= 2 {
+			return fmt.Sprintf("%s and %d more", subject, pollCount-1)
+		}
+		return subject
+	}
+	switch postType {
+	case "IMAGE":
+		return "The photo has been posted as an announcement."
+	case "VIDEO":
+		return "The video has been posted as an announcement."
+	case "FILE":
+		return "The file has been posted as an announcement."
+	}
+	return ""
+}
+
+// structuredAnnouncementText joins the text of json_content elements.
+// Malformed structured content falls back to the plain fields.
+func structuredAnnouncementText(structured string) string {
+	if len(structured) <= 2 {
+		return ""
+	}
+	var elements []struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal([]byte(structured), &elements) != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, e := range elements {
+		b.WriteString(e.Text)
+	}
+	return b.String()
 }

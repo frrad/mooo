@@ -53,7 +53,7 @@ func TestAnnouncementTopicRevisionsAndRemoval(t *testing.T) {
 }
 func TestAnnouncementRejectsUnsupportedAndConflictingContent(t *testing.T) {
 	p := &bridgev2.Portal{Portal: &database.Portal{Metadata: &KakaoPortalMetadata{}}}
-	m := chatmeta.MoimMeta{Type: 1, UpdateRevision: 43, Content: `{"notice":true,"type":"IMAGE","content":"private opaque data"}`}
+	m := chatmeta.MoimMeta{Type: 1, UpdateRevision: 43, Content: `{"notice":true,"type":"FUTURE"}`}
 	if _, err := announcementTopicInfo(p, []chatmeta.MoimMeta{m}); err == nil {
 		t.Fatal("unsupported content accepted")
 	}
@@ -164,7 +164,7 @@ func TestGetChatInfoAnnouncementSnapshotAndUnsupportedContent(t *testing.T) {
 	if err != nil || info.Topic == nil || *info.Topic != "Synthetic announcement" {
 		t.Fatalf("snapshot info=%+v err=%v", info, err)
 	}
-	fake.moimResponse.Metas[0].Content = `{"type":"IMAGE","notice":true}`
+	fake.moimResponse.Metas[0].Content = `{"type":"FUTURE","notice":true}`
 	info, err = kc.GetChatInfo(context.Background(), p)
 	if err != nil || info.Topic != nil || info.Name == nil || *info.Name != "Synthetic group" {
 		t.Fatalf("unsupported announcement blocked group metadata: %+v %v", info, err)

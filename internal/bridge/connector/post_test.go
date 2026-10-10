@@ -99,8 +99,6 @@ func TestPostMalformedLayersAndUnknownFormsKeepGapIdentity(t *testing.T) {
 		"duplicate outer discriminator":    strings.Replace(base, `"t": 1`, `"t":1,"t":2`, 1),
 		"duplicate nested text":            strings.Replace(base, `\"text\":\"Mooo-Synthetic-Post-Capture\"`, `\"text\":\"Mooo-Synthetic-Post-Capture\",\"text\":\"different\"`, 1),
 		"unknown element":                  strings.Replace(base, `\"type\":\"text\"`, `\"type\":\"user\"`, 1),
-		"unknown object":                   strings.Replace(base, `"t": 1`, `"t":99`, 1),
-		"wrong button subtype":             strings.Replace(base, `"st": 1`, `"st":9`, 1),
 		"oversized":                        strings.Repeat(" ", 64<<10) + base,
 		"trailing":                         base + `{}`,
 		"malformed structured no fallback": `{"os":[{"t":1,"ct":"must not hide error","jct":"not JSON"}]}`,
@@ -129,5 +127,26 @@ func TestPostMalformedLayersAndUnknownFormsKeepGapIdentity(t *testing.T) {
 				t.Fatal("post gap lost delivery identity")
 			}
 		})
+	}
+}
+
+// Unknown post objects and unobserved link subtypes are counted and shown,
+// not turned into a malformed-payload gap.
+func TestPostUnknownObjectsAreCountedNotDropped(t *testing.T) {
+	cases := map[string]string{
+		"unknown object only":  `{"os":[{"t":99,"x":1}]}`,
+		"text and unknown":     `{"os":[{"t":1,"jct":"[{\"type\":\"text\",\"text\":\"kept\"}]"},{"t":99}]}`,
+		"unobserved link kind": `{"os":[{"t":1,"jct":"[{\"type\":\"text\",\"text\":\"kept\"}]"},{"t":2,"st":9,"url":"kakaomoim://x"}]}`,
+	}
+	for name, attachment := range cases {
+		e, err := events.Decode(postPacket(t, attachment))
+		post, ok := e.(events.PostMessage)
+		if err != nil || !ok {
+			t.Fatalf("%s: %T %v", name, e, err)
+		}
+		converted, err := convertPost(context.Background(), nil, nil, post)
+		if err != nil || converted.Parts[0].Content.Body == "KakaoTalk post:" {
+			t.Fatalf("%s: body %q", name, converted.Parts[0].Content.Body)
+		}
 	}
 }
