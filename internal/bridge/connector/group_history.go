@@ -104,7 +104,7 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 	if err != nil {
 		return false, err
 	}
-	if err = kc.checkSourceAccess(ctx, chatID, nil); err != nil {
+	if err = kc.checkSourceAccess(ctx, chatID); err != nil {
 		return false, err
 	}
 	key := fmt.Sprintf("kakao:group-history:%s:%s", p.Receiver, p.ID)
@@ -215,7 +215,7 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 			if remote == nil {
 				return false, errors.New("connector: historical event has no delivery mapping")
 			}
-			if err = kc.checkSourceAccess(ctx, chatID, nil); err != nil {
+			if err = kc.checkSourceAccess(ctx, chatID); err != nil {
 				return false, err
 			}
 			// Sending as a former ghost may temporarily join it via Matrix's
@@ -260,7 +260,7 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 }
 
 func (kc *KakaoClient) loadGroupHistory(ctx context.Context, key string) (groupHistoryProgress, bool, error) {
-	raw, found, err := newKVStore(kc.login.Bridge.DB.KV).get(ctx, key)
+	raw, found, err := kc.store.get(ctx, key)
 	if err != nil || !found {
 		return groupHistoryProgress{}, false, err
 	}
@@ -284,7 +284,7 @@ func (kc *KakaoClient) saveGroupHistory(ctx context.Context, key string, p group
 	if err != nil {
 		return err
 	}
-	if err = newKVStore(kc.login.Bridge.DB.KV).put(ctx, key, string(b)); err != nil {
+	if err = kc.store.put(ctx, key, string(b)); err != nil {
 		return err
 	}
 	if len(b) > 4096 || !p.valid() {

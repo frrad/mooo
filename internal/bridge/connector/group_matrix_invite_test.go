@@ -46,7 +46,7 @@ func newMatrixInviteHarness(t *testing.T, fake *fakeKakao) *matrixInviteHarness 
 		t.Fatal(err)
 	}
 	h := &matrixInviteHarness{fake: fake, bot: bot, portal: portal}
-	h.kc = newKakaoClient(&bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}}, Bridge: br, Log: zerolog.Nop()}, testSelfID, nil)
+	h.kc = newKakaoClient(&bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}}, Bridge: br, Log: zerolog.Nop()}, newBridgeStore(br.DB), testSelfID, nil)
 	h.kc.client = fake
 	h.kc.refreshMembership = func(_ kakaoClient, chatID int64) { h.refreshes = append(h.refreshes, chatID) }
 	h.ghost = &bridgev2.Ghost{Ghost: &database.Ghost{ID: makeUserID(testOtherID)}, Intent: &membershipIntent{mxid: "@kakao_2000:test"}}

@@ -14,14 +14,45 @@ import (
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/bridgev2/simplevent"
+	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 )
 
 func (f *fakeKakao) ListChats(context.Context) ([]chatmeta.ChatData, error) {
 	return f.chatInventory, f.chatInventoryErr
 }
 
+// newDiscoveryFramework returns a framework-backed client whose portal for
+// chatID is bound to a Matrix room joined by exactly roster's ghosts, as the
+// framework leaves it after handling the discovery resync. Queued events are
+// recorded by the harness instead of being handled.
+func newDiscoveryFramework(t *testing.T, chatID int64, roster []int64) (*KakaoClient, *testHarness) {
+	t.Helper()
+	ctx := context.Background()
+	kc, _, matrix := newGroupCreationFramework(t)
+	p, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(chatID, kc.login.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.MXID = "!discovered:test"
+	if err = p.Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	matrix.members = map[id.UserID]*event.MemberEventContent{
+		"@owner:test": {Membership: event.MembershipJoin},
+		"@bot:test":   {Membership: event.MembershipJoin},
+	}
+	for _, member := range roster {
+		matrix.members[id.UserID("@kakao_"+strconv.FormatInt(member, 10)+":test")] = &event.MemberEventContent{Membership: event.MembershipJoin}
+	}
+	h := &testHarness{}
+	kc.queue = h.queue
+	kc.sendState = h.sendState
+	return kc, h
+}
+
 func TestBootstrapDiscoversRegularGroupsBeforeLiveSubscription(t *testing.T) {
-	kc, h := newTestClient(t, nil)
+	kc, h := newDiscoveryFramework(t, testChatID, []int64{testSelfID, testOtherID})
 	f := &fakeKakao{memberList: chatmeta.MemberListResponse{MemberIDs: []int64{testSelfID, testOtherID}}, chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: testChatID, Type: "MultiChat"}}, stream: make(chan events.Result), chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat"}, {ChatID: 4000, Type: "DirectChat"}, {ChatID: 5000, Type: "MultiChat", LinkID: 1}}}
 	if _, err := kc.connectAndSubscribe(context.Background(), f); err != nil {
 		t.Fatal(err)
@@ -55,7 +86,7 @@ func TestNewMemberDiscoveryMayCreatePortalButLeaveMayNot(t *testing.T) {
 func TestDiscoveryFailureStopsBeforeEventsAndDoesNotCreatePortal(t *testing.T) {
 	for _, mode := range []string{"incomplete-list", "wrong-room", "unsupported-room", "missing-roster", "matrix-failure"} {
 		t.Run(mode, func(t *testing.T) {
-			kc, h := newTestClient(t, nil)
+			kc, h := newDiscoveryFramework(t, testChatID, []int64{testSelfID, testOtherID})
 			f := &fakeKakao{stream: make(chan events.Result), chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat"}}, chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: testChatID, Type: "MultiChat"}}, memberList: chatmeta.MemberListResponse{MemberIDs: []int64{testSelfID, testOtherID}}}
 			switch mode {
 			case "incomplete-list":
@@ -85,7 +116,7 @@ func TestDiscoveryFailureStopsBeforeEventsAndDoesNotCreatePortal(t *testing.T) {
 }
 
 func TestDiscoveryDeduplicatesInventoryAndPreservesSourceRoster(t *testing.T) {
-	kc, h := newTestClient(t, nil)
+	kc, h := newDiscoveryFramework(t, testChatID, []int64{testSelfID, testOtherID, 4000})
 	f := &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat"}, {ChatID: testChatID, Type: "MultiChat"}}, chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: testChatID, Type: "MultiChat", ChatMetas: []chatmeta.ChatMeta{{Type: chatmeta.SharedMetaTitle, Content: "Synthetic group"}}}}, memberList: chatmeta.MemberListResponse{MemberIDs: []int64{testSelfID, testOtherID, 4000}}}
 	if err := kc.discoverGroups(context.Background(), f); err != nil {
 		t.Fatal(err)
@@ -133,7 +164,7 @@ func TestObservedGroupDiscoveryFixtureUsesProductionBootstrap(t *testing.T) {
 	}
 	for _, tc := range fixture.Cases {
 		t.Run(tc.Name, func(t *testing.T) {
-			kc, h := newTestClient(t, nil)
+			kc, h := newDiscoveryFramework(t, testChatID, tc.MemberIDs)
 			f := &fakeKakao{stream: make(chan events.Result), chatInventory: tc.Inventory, chatInfo: chatmeta.ChatInfoResponse{ChatData: tc.ChatData}, memberList: chatmeta.MemberListResponse{MemberIDs: tc.MemberIDs}, members: tc.Members}
 			if _, err := kc.connectAndSubscribe(context.Background(), f); err != nil {
 				t.Fatal(err)

@@ -111,7 +111,7 @@ func TestPowerLevelChangesForKakaoMembersAreRejectedAndRestored(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kc := newKakaoClient(&bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}}, Bridge: br, Log: zerolog.Nop()}, testSelfID, nil)
+	kc := newKakaoClient(&bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}}, Bridge: br, Log: zerolog.Nop()}, newBridgeStore(br.DB), testSelfID, nil)
 	kc.client = &fakeKakao{}
 	previous := &event.PowerLevelsEventContent{Users: map[id.UserID]int{"@owner:test": 100}}
 	change := func(target bridgev2.GhostOrUserLogin) *bridgev2.MatrixPowerLevelChange {
@@ -188,7 +188,7 @@ func TestMatrixMembershipChangesForKakaoMembersAreRejectedAndRestored(t *testing
 		t.Fatal(err)
 	}
 	fake := &fakeKakao{}
-	kc := newKakaoClient(&bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}}, Bridge: br, Log: zerolog.Nop()}, testSelfID, nil)
+	kc := newKakaoClient(&bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}}, Bridge: br, Log: zerolog.Nop()}, newBridgeStore(br.DB), testSelfID, nil)
 	kc.client = fake
 	ghostIntent := &membershipIntent{mxid: "@kakao_2000:test"}
 	ghost := &bridgev2.Ghost{Ghost: &database.Ghost{ID: makeUserID(2000)}, Intent: ghostIntent}

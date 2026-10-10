@@ -124,7 +124,7 @@ func TestFrameworkInlineBlockedRemoteEventDisconnectLeavesSourceUncommitted(t *t
 	freshDone := make(chan struct{})
 	var pumpDone chan struct{}
 	fake := &fakeKakao{stream: make(chan events.Result)}
-	kc := newKakaoClient(login, testSelfID, func() (kakaoClient, error) {
+	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, func() (kakaoClient, error) {
 		openMu.Lock()
 		openCount++
 		switch openCount {
@@ -283,7 +283,7 @@ func runFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T, gap eve
 		t.Fatal(err)
 	}
 	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: bridge}
-	kc := newKakaoClient(login, testSelfID, nil)
+	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
 	kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		// PortalInternals is the framework's synchronous test seam for driving
 		// the real remote-message handler without starting the event loop.
@@ -346,7 +346,7 @@ func runFrameworkConversionGapFailureReplayAndRestartDedup(t *testing.T, gap eve
 		t.Fatal(err)
 	}
 	login2 := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: bridge2}
-	kc2 := newKakaoClient(login2, testSelfID, nil)
+	kc2 := newKakaoClient(login2, newBridgeStore(login2.Bridge.DB), testSelfID, nil)
 	var restartResult bridgev2.EventHandlingResult
 	kc2.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		//nolint:staticcheck // intentional framework integration coverage

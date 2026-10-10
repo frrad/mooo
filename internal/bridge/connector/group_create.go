@@ -114,7 +114,7 @@ func (kc *KakaoClient) saveGroupAttempt(ctx context.Context, room id.RoomID, att
 	meta.GroupCreates = next
 	if err = kc.login.Save(ctx); err == nil {
 		var saved *database.UserLogin
-		saved, err = kc.login.Bridge.DB.UserLogin.GetByID(ctx, kc.login.ID)
+		saved, err = kc.store.userLoginByID(ctx, kc.login.ID)
 		if err == nil {
 			if saved == nil {
 				err = errors.New("connector: creation journal login disappeared")
@@ -366,7 +366,7 @@ func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room
 	if err = portal.Save(ctx); err != nil {
 		return nil, err
 	}
-	persisted, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, key)
+	persisted, err := kc.store.portalByKey(ctx, key)
 	if err != nil {
 		return nil, err
 	}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/frrad/mooo/internal/protocol/events"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
@@ -42,10 +41,7 @@ func (kc *KakaoClient) sendReadyState() {
 }
 
 func (kc *KakaoClient) verifySourceLeave(ctx context.Context, chatID int64) error {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return nil
-	}
-	p, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, makePortalKey(chatID, kc.login.ID))
+	p, err := kc.store.portalByKey(ctx, makePortalKey(chatID, kc.login.ID))
 	if err != nil {
 		return err
 	}
@@ -73,15 +69,9 @@ func (kc *KakaoClient) verifySourceLeave(ctx context.Context, chatID int64) erro
 // applySourceLeave bypasses QueueRemoteEvent: its MarkInPortal admission step
 // invites the associated Matrix user, which is wrong for a source departure.
 func (kc *KakaoClient) applySourceLeave(ctx context.Context, chatID int64) error {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		if !committable(kc.queue(kc.remoteEventFor(events.ChatLeft{ChatID: chatID}))) {
-			return errMembershipPending
-		}
-		return nil
-	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	p, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, makePortalKey(chatID, kc.login.ID))
+	p, err := kc.store.portalByKey(ctx, makePortalKey(chatID, kc.login.ID))
 	if err != nil {
 		return err
 	}
@@ -124,10 +114,7 @@ func (kc *KakaoClient) applySourceLeave(ctx context.Context, chatID int64) error
 // Only a completed full inventory can revoke access based on absence. Unknown
 // legacy room types and unbound draft portals are not inferred to be groups.
 func (kc *KakaoClient) reconcileMissingGroups(ctx context.Context, seen map[int64]struct{}) error {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return nil
-	}
-	portals, err := kc.login.Bridge.DB.Portal.GetAll(ctx)
+	portals, err := kc.store.portalsWithMXID(ctx)
 	if err != nil {
 		return err
 	}
@@ -164,9 +151,6 @@ func (kc *KakaoClient) recordSourceRemoval(ctx context.Context, chatID int64) er
 	}
 	kc.sourceBlocked[chatID] = errSourceAccessRemoved
 	kc.mu.Unlock()
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return nil
-	}
 	portal, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(chatID, kc.login.ID))
 	if err != nil {
 		return err
@@ -178,37 +162,26 @@ func (kc *KakaoClient) recordSourceRemoval(ctx context.Context, chatID int64) er
 	})
 }
 
-func (kc *KakaoClient) checkSourceAccess(ctx context.Context, chatID int64, portal *bridgev2.Portal) error {
+func (kc *KakaoClient) checkSourceAccess(ctx context.Context, chatID int64) error {
 	kc.mu.Lock()
 	blocked := kc.sourceBlocked[chatID]
 	kc.mu.Unlock()
 	if blocked != nil {
 		return blocked
 	}
-	if kc.login != nil && kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
-		saved, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, makePortalKey(chatID, kc.login.ID))
-		if err != nil {
-			return err
-		}
-		if saved != nil {
-			meta, ok := saved.Metadata.(*KakaoPortalMetadata)
-			if !ok || meta == nil {
-				return errors.New("connector: source access metadata is unavailable")
-			}
-			if meta.SourceRemoved {
-				return errSourceAccessRemoved
-			}
-			if meta.MembershipPending {
-				return errMembershipPending
-			}
-		}
-	} else if portal != nil {
-		if meta, ok := portal.Metadata.(*KakaoPortalMetadata); ok && meta != nil && meta.SourceRemoved {
-			return errSourceAccessRemoved
-		}
-		if meta, ok := portal.Metadata.(*KakaoPortalMetadata); ok && meta != nil && meta.MembershipPending {
-			return errMembershipPending
-		}
+	saved, err := kc.store.portalByKey(ctx, makePortalKey(chatID, kc.login.ID))
+	if err != nil || saved == nil {
+		return err
+	}
+	meta, ok := saved.Metadata.(*KakaoPortalMetadata)
+	if !ok || meta == nil {
+		return errors.New("connector: source access metadata is unavailable")
+	}
+	if meta.SourceRemoved {
+		return errSourceAccessRemoved
+	}
+	if meta.MembershipPending {
+		return errMembershipPending
 	}
 	return nil
 }

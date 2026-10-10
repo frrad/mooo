@@ -179,7 +179,7 @@ func newGroupCreationFramework(t *testing.T) (*KakaoClient, *countingGroupCreate
 		t.Fatal(err)
 	}
 	login := &bridgev2.UserLogin{UserLogin: record, Bridge: br, User: user, Log: zerolog.Nop()}
-	kc := newKakaoClient(login, testSelfID, nil)
+	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
 	login.Client = kc
 	backend := &countingGroupCreateClient{fakeKakao: &fakeKakao{chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: 5000, Type: "MultiChat", ActiveMemberCount: 3, ChatMetas: []chatmeta.ChatMeta{{Type: 3, Content: "Synthetic created group"}}}}, memberList: chatmeta.MemberListResponse{MemberIDs: []int64{1000, 2000, 4000}}}}
 	kc.client = backend

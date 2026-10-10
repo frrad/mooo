@@ -21,10 +21,7 @@ const outboundAttemptRetention = 30 * 24 * time.Hour
 var errOutboundAlreadyAttempted = errors.New("connector: Matrix event was already sent to KakaoTalk")
 
 func (kc *KakaoClient) reserveOutboundKV(ctx context.Context, eventID id.EventID) (bool, error) {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return false, errors.New("connector: outbound attempt store unavailable")
-	}
-	kv := newKVStore(kc.login.Bridge.DB.KV)
+	kv := kc.store
 	prefix := fmt.Sprintf("kakao:outbound-attempt:%s:", kc.login.ID)
 	now := time.Now()
 	if err := kv.deleteOlderThan(ctx, prefix, kvTimeStamp(now.Add(-outboundAttemptRetention))); err != nil {

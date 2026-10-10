@@ -46,7 +46,7 @@ func TestRedeliveredMatrixEventIsSentToKakaoOnce(t *testing.T) {
 		t.Fatal("duplicate delivery would overwrite the original event's status")
 	}
 
-	restarted := newKakaoClient(kc.login, testSelfID, nil)
+	restarted := newKakaoClient(kc.login, kc.store, testSelfID, nil)
 	restarted.client = backend
 	if err := deliver(restarted); err == nil {
 		t.Fatal("redelivery after restart reported a second successful send")

@@ -72,14 +72,14 @@ func TestSelfLeaveFrameworkFailureIsNotAcknowledged(t *testing.T) {
 	if kc.handleEvent(backend, events.ChatLeft{ChatID: 5000}) {
 		t.Fatal("failed framework leave acknowledged")
 	}
-	if err = kc.checkSourceAccess(ctx, 5000, p); err == nil {
+	if err = kc.checkSourceAccess(ctx, 5000); err == nil {
 		t.Fatal("failed framework leave restored access")
 	}
 	matrix.failMember = ""
 	if !kc.handleEvent(backend, events.ChatLeft{ChatID: 5000}) {
 		t.Fatal("successful leave replay not accepted")
 	}
-	if err = kc.checkSourceAccess(ctx, 5000, p); err == nil {
+	if err = kc.checkSourceAccess(ctx, 5000); err == nil {
 		t.Fatal("successful leave restored source access")
 	}
 }
@@ -107,7 +107,7 @@ func TestSelfLeaveOwnerFailureDoesNotRejoinGhost(t *testing.T) {
 	if matrix.members["@kakao_1000:test"].Membership != event.MembershipLeave {
 		t.Fatal("departed source ghost rejoined while removing owner")
 	}
-	if err = kc.checkSourceAccess(ctx, 5000, p); err == nil {
+	if err = kc.checkSourceAccess(ctx, 5000); err == nil {
 		t.Fatal("owner failure restored source access")
 	}
 }
