@@ -2,9 +2,11 @@ package client
 
 import (
 	"errors"
-	"github.com/frrad/mooo/internal/protocol/events"
-	"go.mongodb.org/mongo-driver/v2/bson"
 	"testing"
+
+	"github.com/frrad/mooo/internal/protocol/events"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 func TestHistoryPageKeepsLiveAndReadCheckpointsIndependent(t *testing.T) {
@@ -15,7 +17,7 @@ func TestHistoryPageKeepsLiveAndReadCheckpointsIndependent(t *testing.T) {
 	if _, err := checkpoint.CommitReadWatermark(42, 400); err != nil {
 		t.Fatal(err)
 	}
-	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", checkSyncRequest(42, 100, 103), statusDocument(bson.E{Key: "chatLogs", Value: bson.A{
+	backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", checkSyncRequest(42, 100, 103), statusDocument(bson.E{Key: "chatLogs", Value: bson.A{
 		bson.D{{Key: "logId", Value: int64(100)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "inclusive boundary"}},
 		bson.D{{Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "one"}},
 		bson.D{{Key: "logId", Value: int64(103)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "three"}},
@@ -34,23 +36,23 @@ func TestHistoryPageKeepsLiveAndReadCheckpointsIndependent(t *testing.T) {
 	if checkpoint.ReadWatermark(42) != 400 || !checkpoint.IsCommitted(42, 500) {
 		t.Fatal("history changed live/read state")
 	}
-	if err := api.CommitEvent(page.Events[0]); !errors.Is(err, ErrCommitOrder) {
+	if err := api.CommitEvent(page.Events[0]); !errors.Is(err, errCommitOrder) {
 		t.Fatalf("historical event entered live commit queue: %v", err)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 func TestHistoryPageUnavailableDoesNotAdvance(t *testing.T) {
 	checkpoint := testCheckpoint(t)
-	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", checkSyncRequest(42, 100, 103), statusDocument()))
+	backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", checkSyncRequest(42, 100, 103), statusDocument()))
 	api := testContinuityClient(t, checkpoint, backend)
 	if _, err := api.ReadHistoryPage(t.Context(), 42, 100, 103, 3); !errors.Is(err, ErrGapUnresolved) {
 		t.Fatalf("unavailable history: %v", err)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 func TestHistoryPageRejectsAnotherRoomBeforeReturningAnyEvents(t *testing.T) {
 	checkpoint := testCheckpoint(t)
-	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", checkSyncRequest(42, 100, 103), statusDocument(bson.E{Key: "chatLogs", Value: bson.A{
+	backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", checkSyncRequest(42, 100, 103), statusDocument(bson.E{Key: "chatLogs", Value: bson.A{
 		bson.D{{Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "valid"}},
 		bson.D{{Key: "chatId", Value: int64(43)}, {Key: "logId", Value: int64(103)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "foreign"}},
 	}})))
@@ -58,5 +60,5 @@ func TestHistoryPageRejectsAnotherRoomBeforeReturningAnyEvents(t *testing.T) {
 	if page, err := api.ReadHistoryPage(t.Context(), 42, 100, 103, 1); !errors.Is(err, events.ErrChatLogMisdirected) || len(page.Events) != 0 {
 		t.Fatalf("foreign history escaped: %+v %v", page, err)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }

@@ -9,18 +9,18 @@ import (
 
 // GetMessages reads the current chat logs for logIDs in one chat with one
 // GETMSGS request. Logs the server does not return are simply absent.
-func (s *Session) GetMessages(ctx context.Context, chatID int64, logIDs []int64) ([]events.Event, error) {
+func (s *session) GetMessages(ctx context.Context, chatID int64, logIDs []int64) ([]events.Event, error) {
 	body, err := (chat.GetMessagesRequest{ChatID: chatID, LogIDs: logIDs}).MarshalBSON()
 	if err != nil {
-		return nil, ErrProtocol
+		return nil, protocolErr(chat.GetMessagesCommand, "request")
 	}
-	reply, err := s.Request(ctx, chat.GetMessagesCommand, body)
+	reply, err := s.request(ctx, chat.GetMessagesCommand, body)
 	if err != nil {
 		return nil, err
 	}
 	chatLogs, err := chat.DecodeGetMessagesResponse(reply.Body)
 	if err != nil {
-		return nil, ErrProtocol
+		return nil, protocolErr(chat.GetMessagesCommand, "chatLogs")
 	}
 	if chatLogs == nil {
 		return nil, nil
@@ -36,7 +36,7 @@ func (s *Session) GetMessages(ctx context.Context, chatID int64, logIDs []int64)
 			return nil, err
 		}
 		if _, logID, ok := events.MessagePosition(event); !ok || !wanted[logID] {
-			return nil, ErrProtocol
+			return nil, protocolErr(chat.GetMessagesCommand, "chatLogs.logId")
 		}
 		result = append(result, event)
 	}
@@ -45,7 +45,7 @@ func (s *Session) GetMessages(ctx context.Context, chatID int64, logIDs []int64)
 
 // GetMessages reads chosen chat logs through the current session.
 func (c *Client) GetMessages(ctx context.Context, chatID int64, logIDs []int64) ([]events.Event, error) {
-	return withSession(c, ctx, func(session *Session) ([]events.Event, error) {
+	return withSession(c, ctx, func(session *session) ([]events.Event, error) {
 		return session.GetMessages(ctx, chatID, logIDs)
 	})
 }

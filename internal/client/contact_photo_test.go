@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/frrad/mooo/internal/protocol/media"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -17,7 +18,7 @@ func (f profilePhotoTransport) RoundTrip(r *http.Request) (*http.Response, error
 
 func TestContactPhotoResolvesSelectedProfileAndDownloadsWithoutCredentials(t *testing.T) {
 	data := syntheticClientJPEG(t)
-	backend := newScriptedBackend(t, false, expectRequest("MEMBER", func(raw bson.Raw) error {
+	backend := newScriptedBackend(t, false, testloco.Expect("MEMBER", func(raw bson.Raw) error {
 		if err := requireInt64(raw, "chatId", 42); err != nil {
 			return err
 		}
@@ -35,7 +36,7 @@ func TestContactPhotoResolvesSelectedProfileAndDownloadsWithoutCredentials(t *te
 	if err != nil || !bytes.Equal(got, data) {
 		t.Fatalf("download bytes=%d error=%v", len(got), err)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestContactPhotoRejectsMissingOrMismatchedProfilesBeforeHTTP(t *testing.T) {
@@ -46,12 +47,12 @@ func TestContactPhotoRejectsMissingOrMismatchedProfilesBeforeHTTP(t *testing.T) 
 		want       error
 	}{
 		{"absent", 42, 7, "", ErrContactPhotoAbsent},
-		{"wrong room", 43, 7, "https://talk.kakaocdn.net/avatar", ErrContactProfileUnavailable},
-		{"wrong user", 42, 8, "https://talk.kakaocdn.net/avatar", ErrContactProfileUnavailable},
+		{"wrong room", 43, 7, "https://talk.kakaocdn.net/avatar", errContactProfileUnavailable},
+		{"wrong user", 42, 8, "https://talk.kakaocdn.net/avatar", errContactProfileUnavailable},
 		{"unsafe resource", 42, 7, "https://example.invalid/avatar?secret=private", media.ErrAvatarDownload},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			backend := newScriptedBackend(t, false, expectRequest("MEMBER", nil, statusDocument(bson.E{Key: "chatId", Value: tc.chat}, bson.E{Key: "members", Value: bson.A{bson.D{{Key: "userId", Value: tc.user}, {Key: "pi", Value: tc.photo}}}})))
+			backend := newScriptedBackend(t, false, testloco.Expect("MEMBER", nil, statusDocument(bson.E{Key: "chatId", Value: tc.chat}, bson.E{Key: "members", Value: bson.A{bson.D{{Key: "userId", Value: tc.user}, {Key: "pi", Value: tc.photo}}}})))
 			s := testMetadataSession(backend, 1)
 			downloader := &http.Client{Transport: profilePhotoTransport(func(*http.Request) (*http.Response, error) {
 				t.Error("unexpected CDN request")
@@ -60,7 +61,7 @@ func TestContactPhotoRejectsMissingOrMismatchedProfilesBeforeHTTP(t *testing.T) 
 			if data, err := s.ContactProfilePhoto(t.Context(), 42, 7, downloader); data != nil || !errors.Is(err, tc.want) {
 				t.Fatalf("photo=%d err=%v", len(data), err)
 			}
-			backend.wait(t)
+			waitBackends(t, backend)
 		})
 	}
 }
@@ -69,7 +70,7 @@ func TestContactPhotoRefreshesMetadataAfterFailedCDNDownload(t *testing.T) {
 	reply := func(path string) bson.D {
 		return statusDocument(bson.E{Key: "chatId", Value: int64(42)}, bson.E{Key: "members", Value: bson.A{bson.D{{Key: "userId", Value: int64(7)}, {Key: "pi", Value: "https://talk.kakaocdn.net/" + path}}}})
 	}
-	backend := newScriptedBackend(t, false, expectRequest("MEMBER", nil, reply("expired")), expectRequest("MEMBER", nil, reply("current")))
+	backend := newScriptedBackend(t, false, testloco.Expect("MEMBER", nil, reply("expired")), testloco.Expect("MEMBER", nil, reply("current")))
 	session := testMetadataSession(backend, 1)
 	data := syntheticClientJPEG(t)
 	var paths []string
@@ -90,5 +91,5 @@ func TestContactPhotoRefreshesMetadataAfterFailedCDNDownload(t *testing.T) {
 	if err != nil || !bytes.Equal(got, data) || len(paths) != 2 || paths[1] != "/current" {
 		t.Fatalf("fresh profile bytes=%d error=%v paths=%v", len(got), err, paths)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }

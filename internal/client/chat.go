@@ -9,7 +9,7 @@ import (
 )
 
 // AddMembers sends one invitation without retrying an ambiguous result.
-func (s *Session) AddMembers(ctx context.Context, request chat.AddMembersRequest) (chat.AddMembersResponse, error) {
+func (s *session) AddMembers(ctx context.Context, request chat.AddMembersRequest) (chat.AddMembersResponse, error) {
 	return call(s, ctx, chat.AddMembersCommand, request, chat.DecodeAddMembersResponse)
 }
 
@@ -17,13 +17,13 @@ func (s *Session) AddMembers(ctx context.Context, request chat.AddMembersRequest
 // one member creates a direct chat; requests with multiple members create a
 // group. The transport sends the mutation exactly once and never retries an
 // ambiguous result.
-func (s *Session) CreateChat(ctx context.Context, request chat.CreateRequest) (chat.CreateResponse, error) {
+func (s *session) CreateChat(ctx context.Context, request chat.CreateRequest) (chat.CreateResponse, error) {
 	return call(s, ctx, chat.CreateCommand, request, chat.DecodeCreateResponse)
 }
 
 // SendText sends one text message exactly once using the current direct-text
 // WRITE shape.
-func (s *Session) SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error) {
+func (s *session) SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error) {
 	request := chat.WriteRequest{
 		ChatID: chatID, Message: message, Type: messagetype.Text,
 	}
@@ -35,6 +35,6 @@ func (s *Session) SendText(ctx context.Context, chatID int64, message string) (c
 
 // SendReply sends one type-26 reply exactly once. The target metadata is
 // serialized independently of UI state and the mutation is never retried.
-func (s *Session) SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error) {
+func (s *session) SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error) {
 	return call(s, ctx, chat.WriteCommand, request, chat.DecodeWriteResponse)
 }

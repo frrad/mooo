@@ -13,11 +13,17 @@ import (
 	"github.com/frrad/mooo/internal/continuity"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+// These tests run one request path on a bare session over a testloco
+// backend instead of connectSession: scripting booking, checkin, and
+// LOGINLIST for each would exercise nothing new. login_sync_test.go and
+// client_test.go cover the bootstrap end to end.
+
 func TestSessionMarkReadUsesOneMessageSyncShape(t *testing.T) {
-	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", func(raw bson.Raw) error {
+	backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", func(raw bson.Raw) error {
 		if err := requireExactKeys(raw, "chatId", "cur", "max", "cnt"); err != nil {
 			return err
 		}
@@ -36,8 +42,8 @@ func TestSessionMarkReadUsesOneMessageSyncShape(t *testing.T) {
 		}
 		return nil
 	}, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})))
-	session := &Session{
-		wire:    backend.client,
+	session := &session{
+		wire:    clientWire(backend),
 		nextID:  1,
 		pushes:  make(chan loco.Packet, 1),
 		pending: make(map[uint32]pendingRequest),
@@ -51,11 +57,11 @@ func TestSessionMarkReadUsesOneMessageSyncShape(t *testing.T) {
 	if len(response.ChatLogs) != 0 {
 		t.Fatalf("response chat logs = %d, want empty", len(response.ChatLogs))
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestSessionMarkReadRejectsInvalidInput(t *testing.T) {
-	session := &Session{}
+	session := &session{}
 	for _, test := range []struct {
 		name      string
 		ctx       context.Context
@@ -78,7 +84,7 @@ func TestSessionMarkReadRejectsInvalidInput(t *testing.T) {
 
 func TestClientMarkReadCommitsOnlyAfterSuccess(t *testing.T) {
 	checkpoint := testCheckpoint(t)
-	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", nil, statusDocument(
+	backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", nil, statusDocument(
 		bson.E{Key: "chatLogs", Value: bson.A{}},
 	)))
 	api := testContinuityClient(t, checkpoint, backend)
@@ -89,7 +95,7 @@ func TestClientMarkReadCommitsOnlyAfterSuccess(t *testing.T) {
 	if len(response.ChatLogs) != 0 || checkpoint.ReadWatermark(42) != 99 {
 		t.Fatalf("response=%#v watermark=%d", response, checkpoint.ReadWatermark(42))
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestClientMarkReadSerializesDuplicateWatermarks(t *testing.T) {
@@ -97,8 +103,8 @@ func TestClientMarkReadSerializesDuplicateWatermarks(t *testing.T) {
 	requests := 0
 	firstRequest := make(chan struct{})
 	allowFirstResponse := make(chan struct{})
-	backend := newScriptedBackend(t, false, func(server *wireConn) error {
-		request, err := server.readRequest()
+	backend := newScriptedBackend(t, false, func(server *testloco.Peer) error {
+		request, err := server.Read()
 		if err != nil {
 			return err
 		}
@@ -108,7 +114,7 @@ func TestClientMarkReadSerializesDuplicateWatermarks(t *testing.T) {
 		requests++
 		close(firstRequest)
 		<-allowFirstResponse
-		return writeBackendPacket(server, request.Header.PacketID, "SYNCMSG", mustBSON(statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})))
+		return server.WriteBSON(request.Header.PacketID, "SYNCMSG", statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}}))
 	})
 	api := testContinuityClient(t, checkpoint, backend)
 	errs := make(chan error, 2)
@@ -141,7 +147,7 @@ func TestClientMarkReadSerializesDuplicateWatermarks(t *testing.T) {
 	if requests != 1 || checkpoint.ReadWatermark(42) != 99 {
 		t.Fatalf("requests=%d watermark=%d, want one request and watermark 99", requests, checkpoint.ReadWatermark(42))
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestClientMarkReadSkipsPersistedWatermark(t *testing.T) {
@@ -155,7 +161,7 @@ func TestClientMarkReadSkipsPersistedWatermark(t *testing.T) {
 	}
 	api.checkpoint = checkpoint
 	dials := 0
-	api.dial = func(context.Context, authstate.State) (*Session, error) {
+	api.dial = func(context.Context, authstate.State) (*session, error) {
 		dials++
 		return nil, errors.New("unexpected dial")
 	}
@@ -178,7 +184,7 @@ func TestClientMarkReadSkipsOlderPersistedWatermark(t *testing.T) {
 	}
 	api.checkpoint = checkpoint
 	dials := 0
-	api.dial = func(context.Context, authstate.State) (*Session, error) {
+	api.dial = func(context.Context, authstate.State) (*session, error) {
 		dials++
 		return nil, errors.New("unexpected dial")
 	}
@@ -212,7 +218,7 @@ func TestClientMarkReadSkipsWatermarkAfterCheckpointReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	api.checkpoint = second
-	api.dial = func(context.Context, authstate.State) (*Session, error) {
+	api.dial = func(context.Context, authstate.State) (*session, error) {
 		return nil, errors.New("unexpected dial after restart")
 	}
 	if _, err := api.MarkRead(context.Background(), 42, 99); err != nil {
@@ -223,7 +229,7 @@ func TestClientMarkReadSkipsWatermarkAfterCheckpointReopen(t *testing.T) {
 func TestClientMarkReadNonzeroStatusDoesNotPersistOrRetry(t *testing.T) {
 	checkpoint := testCheckpoint(t)
 	requests := 0
-	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", func(bson.Raw) error {
+	backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", func(bson.Raw) error {
 		requests++
 		return nil
 	}, bson.D{{Key: "status", Value: int32(-321)}}))
@@ -235,13 +241,13 @@ func TestClientMarkReadNonzeroStatusDoesNotPersistOrRetry(t *testing.T) {
 	if requests != 1 || checkpoint.ReadWatermark(42) != 0 {
 		t.Fatalf("requests=%d watermark=%d", requests, checkpoint.ReadWatermark(42))
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestClientMarkReadDisconnectDoesNotPersistOrRetry(t *testing.T) {
 	checkpoint := testCheckpoint(t)
 	requests := 0
-	backend := newScriptedBackend(t, false, disconnectAfterRequest("SYNCMSG", &requests))
+	backend := newScriptedBackend(t, false, testloco.DropAfter("SYNCMSG", &requests))
 	api := testContinuityClient(t, checkpoint, backend)
 	if _, err := api.MarkRead(context.Background(), 42, 99); err == nil {
 		t.Fatal("MarkRead unexpectedly succeeded after disconnect")
@@ -249,7 +255,7 @@ func TestClientMarkReadDisconnectDoesNotPersistOrRetry(t *testing.T) {
 	if requests != 1 || checkpoint.ReadWatermark(42) != 0 {
 		t.Fatalf("requests=%d watermark=%d", requests, checkpoint.ReadWatermark(42))
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestClientSyncMessagesCatchUpDoesNotSuppressLaterMarkRead(t *testing.T) {
@@ -264,13 +270,13 @@ func TestClientSyncMessagesCatchUpDoesNotSuppressLaterMarkRead(t *testing.T) {
 		return nil
 	}
 	backend := newScriptedBackend(t, false,
-		expectRequest("SYNCMSG", recordCount, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})),
-		expectRequest("SYNCMSG", recordCount, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})),
+		testloco.Expect("SYNCMSG", recordCount, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})),
+		testloco.Expect("SYNCMSG", recordCount, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})),
 	)
 	api := testContinuityClient(t, checkpoint, backend)
 	// Catch-up declares zero held messages. Whether that marks the interval
 	// read on the server is unproven, so it must not record an acknowledgement.
-	if _, err := api.SyncMessages(context.Background(), syncmsg.Request{ChatID: 42, Cur: 90, Max: 99, Count: 0}); err != nil {
+	if _, err := api.syncMessages(context.Background(), syncmsg.Request{ChatID: 42, Cur: 90, Max: 99, Count: 0}); err != nil {
 		t.Fatal(err)
 	}
 	if got := checkpoint.ReadWatermark(42); got != 0 {
@@ -285,5 +291,5 @@ func TestClientSyncMessagesCatchUpDoesNotSuppressLaterMarkRead(t *testing.T) {
 	if got := checkpoint.ReadWatermark(42); got != 99 {
 		t.Fatalf("read acknowledgement after MarkRead = %d, want 99", got)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }

@@ -17,12 +17,18 @@ import (
 	"github.com/frrad/mooo/internal/protocol/loco"
 
 	"github.com/frrad/mooo/internal/protocol/messagetype"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 )
 
-func albumItemBackend(t *testing.T, key string, want []byte) *scriptedBackend {
+// These tests run one request path on a bare session over a testloco
+// backend instead of connectSession: scripting booking, checkin, and
+// LOGINLIST for each would exercise nothing new. login_sync_test.go and
+// client_test.go cover the bootstrap end to end.
+
+func albumItemBackend(t *testing.T, key string, want []byte) *testloco.Backend {
 	t.Helper()
-	return newScriptedBackend(t, true, func(server *wireConn) error {
-		request, err := server.readRequest()
+	return newScriptedBackend(t, true, func(server *testloco.Peer) error {
+		request, err := server.Read()
 		if err != nil {
 			return err
 		}
@@ -30,17 +36,17 @@ func albumItemBackend(t *testing.T, key string, want []byte) *scriptedBackend {
 		if request.Header.Method != "MPOST" || body.Lookup("k").StringValue() != key || body.Lookup("t").Int32() != messagetype.MultiPhoto {
 			return fmt.Errorf("unexpected item request %s", request.Header.Method)
 		}
-		if err := writeBackendPacket(server, request.Header.PacketID, "MPOST", mustBSON(statusDocument())); err != nil {
+		if err := server.WriteBSON(request.Header.PacketID, "MPOST", statusDocument()); err != nil {
 			return err
 		}
-		payload, err := readSecurePayload(server)
+		payload, err := server.ReadPayload()
 		if err != nil {
 			return err
 		}
 		if !bytes.Equal(payload, want) {
 			return errors.New("album photo bytes mismatch")
 		}
-		return writeBackendPacket(server, 0, "COMPLETE", mustBSON(statusDocument()))
+		return server.WriteBSON(0, "COMPLETE", statusDocument())
 	})
 }
 
@@ -50,21 +56,21 @@ func albumItemBackend(t *testing.T, key string, want []byte) *scriptedBackend {
 func TestSendAlbumUploadsEachPhotoThenWritesOnce(t *testing.T) {
 	first, second := syntheticClientJPEG(t), syntheticClientPNG(t)
 	var writes []bson.Raw
-	mainBackend := newScriptedBackend(t, true, func(server *wireConn) error {
-		request, err := server.readRequest()
+	mainBackend := newScriptedBackend(t, true, func(server *testloco.Peer) error {
+		request, err := server.Read()
 		if err != nil {
 			return err
 		}
 		if request.Header.Method != "MSHIP" || bson.Raw(request.Body).Lookup("t").Int32() != messagetype.MultiPhoto {
 			return fmt.Errorf("unexpected %s", request.Header.Method)
 		}
-		if err := writeBackendPacket(server, request.Header.PacketID, "MSHIP", mustBSON(statusDocument(
+		if err := server.WriteBSON(request.Header.PacketID, "MSHIP", statusDocument(
 			bson.E{Key: "kl", Value: bson.A{"k1", "k2"}}, bson.E{Key: "mtl", Value: bson.A{"image/jpeg", "image/png"}},
 			bson.E{Key: "vhl", Value: bson.A{"media1.invalid", "media2.invalid"}}, bson.E{Key: "pl", Value: bson.A{int32(995), int32(996)}},
-		))); err != nil {
+		)); err != nil {
 			return err
 		}
-		request, err = server.readRequest()
+		request, err = server.Read()
 		if err != nil {
 			return err
 		}
@@ -72,21 +78,21 @@ func TestSendAlbumUploadsEachPhotoThenWritesOnce(t *testing.T) {
 			return fmt.Errorf("unexpected %s", request.Header.Method)
 		}
 		writes = append(writes, bson.Raw(request.Body))
-		return writeBackendPacket(server, request.Header.PacketID, "WRITE", mustBSON(statusDocument(
+		return server.WriteBSON(request.Header.PacketID, "WRITE", statusDocument(
 			bson.E{Key: "chatId", Value: int64(42)}, bson.E{Key: "logId", Value: int64(105)}, bson.E{Key: "sendAt", Value: int64(1)},
-		)))
+		))
 	})
-	items := map[string]*scriptedBackend{
+	items := map[string]*testloco.Backend{
 		"media1.invalid": albumItemBackend(t, "k1", first),
 		"media2.invalid": albumItemBackend(t, "k2", second),
 	}
 	var dialed []string
-	session := &Session{
-		wire: mainBackend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
+	session := &session{
+		wire: clientWire(mainBackend), nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 		mediaDial: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			dialed = append(dialed, host)
-			return items[host].client, nil
+			return clientWire(items[host]), nil
 		},
 	}
 	go session.readLoop()
@@ -97,9 +103,9 @@ func TestSendAlbumUploadsEachPhotoThenWritesOnce(t *testing.T) {
 		t.Fatalf("album err=%v response=%+v", err, response)
 	}
 	for _, backend := range items {
-		backend.wait(t)
+		waitBackends(t, backend)
 	}
-	mainBackend.wait(t)
+	waitBackends(t, mainBackend)
 	if len(dialed) != 2 || dialed[0] != "media1.invalid" || dialed[1] != "media2.invalid" {
 		t.Fatalf("dialed %q", dialed)
 	}
@@ -119,34 +125,34 @@ func TestSendAlbumUploadsEachPhotoThenWritesOnce(t *testing.T) {
 // and the failure is reported as not sent.
 func TestSendAlbumUploadFailureNeverWrites(t *testing.T) {
 	first, second := syntheticClientJPEG(t), syntheticClientPNG(t)
-	mainBackend := newScriptedBackend(t, true, func(server *wireConn) error {
-		request, err := server.readRequest()
+	mainBackend := newScriptedBackend(t, true, func(server *testloco.Peer) error {
+		request, err := server.Read()
 		if err != nil {
 			return err
 		}
-		if err := writeBackendPacket(server, request.Header.PacketID, "MSHIP", mustBSON(statusDocument(
+		if err := server.WriteBSON(request.Header.PacketID, "MSHIP", statusDocument(
 			bson.E{Key: "kl", Value: bson.A{"k1", "k2"}}, bson.E{Key: "mtl", Value: bson.A{"image/jpeg", "image/png"}},
 			bson.E{Key: "vhl", Value: bson.A{"media1.invalid", "media2.invalid"}}, bson.E{Key: "pl", Value: bson.A{int32(995), int32(996)}},
-		))); err != nil {
+		)); err != nil {
 			return err
 		}
 		// Any further request (a WRITE) would fail the test through wait.
-		if _, err := server.readRequest(); err == nil {
+		if _, err := server.Read(); err == nil {
 			return errors.New("album was written after a failed upload")
 		}
 		return nil
 	})
-	failing := newScriptedBackend(t, true, func(server *wireConn) error {
-		request, err := server.readRequest()
+	failing := newScriptedBackend(t, true, func(server *testloco.Peer) error {
+		request, err := server.Read()
 		if err != nil {
 			return err
 		}
-		return writeBackendPacket(server, request.Header.PacketID, "MPOST", mustBSON(bson.D{{Key: "status", Value: int32(-1)}}))
+		return server.WriteBSON(request.Header.PacketID, "MPOST", bson.D{{Key: "status", Value: int32(-1)}})
 	})
-	session := &Session{
-		wire: mainBackend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
+	session := &session{
+		wire: clientWire(mainBackend), nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
-		mediaDial: func(context.Context, string, int) (*wireConn, error) { return failing.client, nil },
+		mediaDial: func(context.Context, string, int) (*wireConn, error) { return clientWire(failing), nil },
 	}
 	go session.readLoop()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -155,9 +161,9 @@ func TestSendAlbumUploadFailureNeverWrites(t *testing.T) {
 	if !errors.Is(err, ErrAlbumNotCreated) {
 		t.Fatalf("err = %v, want ErrAlbumNotCreated", err)
 	}
-	failing.wait(t)
-	_ = mainBackend.client.close()
-	mainBackend.wait(t)
+	waitBackends(t, failing)
+	_ = mainBackend.Endpoint.Client.Close()
+	waitBackends(t, mainBackend)
 }
 
 func syntheticClientPNG(t *testing.T) []byte {

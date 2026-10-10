@@ -15,13 +15,13 @@ var ErrChatListIncomplete = errors.New("client: full chat inventory unavailable"
 // this client's one session and does not read message history or acknowledge it.
 // Accepted partial list statuses do not produce a successful complete listing.
 func (c *Client) ListChats(ctx context.Context) ([]chatmeta.ChatData, error) {
-	return withSession(c, ctx, func(session *Session) ([]chatmeta.ChatData, error) {
+	return withSession(c, ctx, func(session *session) ([]chatmeta.ChatData, error) {
 		return session.ListChats()
 	})
 }
 
 // ListChats decodes the completed full login inventory, never a delta snapshot.
-func (s *Session) ListChats() ([]chatmeta.ChatData, error) {
+func (s *session) ListChats() ([]chatmeta.ChatData, error) {
 	if s == nil || !s.loginCursor.complete || !s.loginCursor.replaceInventory {
 		return nil, ErrChatListIncomplete
 	}

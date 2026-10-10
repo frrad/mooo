@@ -1,13 +1,12 @@
 package client
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/frrad/mooo/internal/continuity"
-	"github.com/frrad/mooo/internal/protocol/booking"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -17,16 +16,9 @@ import (
 // bootstrap completes.
 func TestConnectSessionPreservesMessagesBeforeLoginListReply(t *testing.T) {
 	state := reusableTestState()
-	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
-		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
-		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
-	)))
-	checkin := newScriptedBackend(t, false, expectRequest("CHECKIN", nil, statusDocument(
-		bson.E{Key: "host", Value: "carriage.invalid"}, bson.E{Key: "port", Value: int32(995)},
-	)))
 	keepOpen := make(chan struct{})
-	carriage := newScriptedBackend(t, true, func(server *wireConn) error {
-		request, err := server.readRequest()
+	dialers, backends := scriptedLogin(t, func(server *testloco.Peer) error {
+		request, err := server.Read()
 		if err != nil {
 			return err
 		}
@@ -44,53 +36,33 @@ func TestConnectSessionPreservesMessagesBeforeLoginListReply(t *testing.T) {
 					{Key: "message", Value: fmt.Sprintf("synthetic-%02d", i)},
 				}},
 			})
-			if err := writeBackendPacket(server, 0, "MSG", body); err != nil {
+			if err := server.WriteBSON(0, "MSG", body); err != nil {
 				return err
 			}
 		}
-		if err := writeBackendPacket(server, request.Header.PacketID, "LOGINLIST", mustBSON(statusDocument(
+		if err := server.WriteBSON(request.Header.PacketID, "LOGINLIST", statusDocument(
 			bson.E{Key: "eof", Value: true},
 			bson.E{Key: "lastTokenId", Value: int64(11)},
 			bson.E{Key: "lbk", Value: int32(2)},
-		))); err != nil {
+		)); err != nil {
 			return err
 		}
 		<-keepOpen
 		return nil
 	})
-	dialers := sessionDialers{
-		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
-			switch host {
-			case booking.Host:
-				return bookingBackend.client, nil
-			case "checkin.invalid":
-				return checkin.client, nil
-			default:
-				return nil, fmt.Errorf("unexpected TLS host %q", host)
-			}
-		},
-		secure: func(_ context.Context, host string, _ int) (*wireConn, error) {
-			if host != "carriage.invalid" {
-				return nil, fmt.Errorf("unexpected secure host %q", host)
-			}
-			return carriage.client, nil
-		},
-	}
-	session, err := connectSessionWithResumeOptions(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers, pingSessionOptions{})
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: pingSessionOptions{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
 		close(keepOpen)
 		_ = session.Close()
-		for _, backend := range []*scriptedBackend{bookingBackend, checkin, carriage} {
-			backend.wait(t)
-		}
+		waitBackends(t, backends...)
 	}()
 
 	for want := int64(1); want <= 70; want++ {
 		select {
-		case packet := <-session.Pushes():
+		case packet := <-session.pushStream():
 			if packet.Header.Method != "MSG" {
 				t.Fatalf("push %d method = %q, want MSG", want, packet.Header.Method)
 			}
@@ -107,7 +79,7 @@ func TestConnectSessionPreservesMessagesBeforeLoginListReply(t *testing.T) {
 		}
 	}
 	select {
-	case packet := <-session.Pushes():
+	case packet := <-session.pushStream():
 		t.Fatalf("unexpected extra packet %q", packet.Header.Method)
 	default:
 	}

@@ -15,6 +15,11 @@ import (
 	"github.com/frrad/mooo/internal/protocol/events"
 )
 
+// White-box tests: they drive a bare session or wireConn over a raw net.Pipe
+// so they can control framing, write blocking, pending-request state, or
+// read-loop timing directly. A scripted testloco peer cannot express those
+// conditions, so these tests do not go through connectSession.
+
 type shutdownErrorConn struct {
 	net.Conn
 	err error
@@ -46,8 +51,8 @@ func TestClientShutdownReleasesOwnershipAfterTerminalInterrupt(t *testing.T) {
 	}
 	client := &Client{session: session, checkpoint: checkpoint, lease: lease}
 	client.interruptTerminal()
-	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
-		t.Fatalf("lease after terminal interrupt = %v, want %v", err, ErrProfileInUse)
+	if _, err := acquireProfileLease(leasePath); !errors.Is(err, errProfileInUse) {
+		t.Fatalf("lease after terminal interrupt = %v, want %v", err, errProfileInUse)
 	}
 	if err := client.Connect(context.Background()); !errors.Is(err, ErrClientClosed) {
 		t.Fatalf("Connect after terminal interrupt error=%v, want %v", err, ErrClientClosed)
@@ -79,7 +84,7 @@ func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
 	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
 	lateSession := newSession(nil)
 	client := &Client{lease: lease}
-	client.dial = func(context.Context, authstate.State) (*Session, error) {
+	client.dial = func(context.Context, authstate.State) (*session, error) {
 		close(started)
 		<-release
 		return lateSession, nil
@@ -114,8 +119,8 @@ func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("shutdown while dial blocked error=%v, want deadline", err)
 	}
-	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
-		t.Fatalf("lease after blocked shutdown error=%v, want %v", err, ErrProfileInUse)
+	if _, err := acquireProfileLease(leasePath); !errors.Is(err, errProfileInUse) {
+		t.Fatalf("lease after blocked shutdown error=%v, want %v", err, errProfileInUse)
 	}
 	// A blocked dial keeps ownership and makes the first shutdown incomplete.
 	// Use a short context so this assertion catches accidental early cleanup.
@@ -152,7 +157,7 @@ func TestClientShutdownContextDoesNotWaitForAnotherShutdown(t *testing.T) {
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
-	client := &Client{dial: func(context.Context, authstate.State) (*Session, error) {
+	client := &Client{dial: func(context.Context, authstate.State) (*session, error) {
 		close(started)
 		<-release
 		return newSession(nil), nil
@@ -226,10 +231,10 @@ func TestClientShutdownDeadlineRetainsOwnershipThroughBlockedConnect(t *testing.
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
-	client := &Client{lease: lease, dial: func(context.Context, authstate.State) (*Session, error) {
+	client := &Client{lease: lease, dial: func(context.Context, authstate.State) (*session, error) {
 		close(started)
 		<-release
-		return &Session{}, nil
+		return &session{}, nil
 	}}
 	connectDone := make(chan error, 1)
 	connectFinished := make(chan struct{})
@@ -261,8 +266,8 @@ func TestClientShutdownDeadlineRetainsOwnershipThroughBlockedConnect(t *testing.
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("shutdown while dial blocked error=%v, want %v", err, context.DeadlineExceeded)
 	}
-	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
-		t.Fatalf("lease after shutdown deadline during dial error=%v, want %v", err, ErrProfileInUse)
+	if _, err := acquireProfileLease(leasePath); !errors.Is(err, errProfileInUse) {
+		t.Fatalf("lease after shutdown deadline during dial error=%v, want %v", err, errProfileInUse)
 	}
 	releaseOnce.Do(func() { close(release) })
 	select {
@@ -318,7 +323,7 @@ func TestClientShutdownClosesNormalAndCleanupSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Shutdown: %v", err)
 	}
-	for name, session := range map[string]*Session{"primary": primary, "cleanup": cleanup} {
+	for name, session := range map[string]*session{"primary": primary, "cleanup": cleanup} {
 		session.mu.Lock()
 		closing := session.closed || session.closing
 		session.mu.Unlock()
@@ -387,8 +392,8 @@ func TestClientShutdownRetainsOwnershipForAdmittedCommit(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("shutdown during admitted commit error=%v, want deadline", err)
 	}
-	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
-		t.Fatalf("lease during admitted commit error=%v, want %v", err, ErrProfileInUse)
+	if _, err := acquireProfileLease(leasePath); !errors.Is(err, errProfileInUse) {
+		t.Fatalf("lease during admitted commit error=%v, want %v", err, errProfileInUse)
 	}
 	release()
 	select {

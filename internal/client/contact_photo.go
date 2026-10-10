@@ -11,7 +11,7 @@ import (
 )
 
 var ErrContactPhotoAbsent = errors.New("client: contact has no profile photo")
-var ErrContactProfileUnavailable = errors.New("client: contact profile unavailable")
+var errContactProfileUnavailable = errors.New("client: contact profile unavailable")
 
 // ContactProfilePhoto resolves one contact in a selected room and downloads its
 // current thumbnail. It does not persist URLs or retry failed requests. Empty
@@ -20,24 +20,24 @@ func (c *Client) ContactProfilePhoto(ctx context.Context, chatID, userID int64, 
 	if chatID <= 0 || userID <= 0 || downloadClient == nil {
 		return nil, ErrProtocol
 	}
-	return withSession(c, ctx, func(session *Session) ([]byte, error) {
+	return withSession(c, ctx, func(session *session) ([]byte, error) {
 		return session.ContactProfilePhoto(ctx, chatID, userID, downloadClient)
 	})
 }
 
-func (s *Session) ContactProfilePhoto(ctx context.Context, chatID, userID int64, downloadClient *http.Client) ([]byte, error) {
+func (s *session) ContactProfilePhoto(ctx context.Context, chatID, userID int64, downloadClient *http.Client) ([]byte, error) {
 	if s == nil || ctx == nil || chatID <= 0 || userID <= 0 || downloadClient == nil {
 		return nil, ErrProtocol
 	}
 	if userID == s.userID {
-		return nil, ErrContactProfileUnavailable
+		return nil, errContactProfileUnavailable
 	}
 	response, err := call(s, ctx, chatmeta.MemberCommand, chatmeta.MemberRequest{ChatID: chatID, MemberIDs: []int64{userID}}, chatmeta.DecodeMemberResponse)
 	if err != nil {
 		return nil, err
 	}
 	if response.ChatID != chatID || len(response.Members) != 1 || response.Members[0].UserID != userID {
-		return nil, ErrContactProfileUnavailable
+		return nil, errContactProfileUnavailable
 	}
 	raw := response.Members[0].ProfileImageURL
 	if raw == "" {

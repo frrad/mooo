@@ -1,9 +1,11 @@
 package client
 
 import (
-	"github.com/frrad/mooo/internal/protocol/events"
-	"go.mongodb.org/mongo-driver/v2/bson"
 	"testing"
+
+	"github.com/frrad/mooo/internal/protocol/events"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // Observed owned-account membership-only SYNCMSG pages include a later feed
@@ -13,7 +15,7 @@ func TestMembershipFeedBeyondCatchUpCeilingDoesNotBreakBoundedRecovery(t *testin
 	if _, err := checkpoint.CommitMessage(42, 100); err != nil {
 		t.Fatal(err)
 	}
-	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", checkSyncRequest(42, 100, 101), statusDocument(bson.E{Key: "chatLogs", Value: bson.A{
+	backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", checkSyncRequest(42, 100, 101), statusDocument(bson.E{Key: "chatLogs", Value: bson.A{
 		bson.D{{Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "synthetic boundary"}},
 		bson.D{{Key: "logId", Value: int64(102)}, {Key: "type", Value: int32(0)}, {Key: "message", Value: `{"feedType":2,"member":{"userId":7},"kicked":false,"hidden":false,"memorial":false}`}},
 	}})))
@@ -37,5 +39,5 @@ func TestMembershipFeedBeyondCatchUpCeilingDoesNotBreakBoundedRecovery(t *testin
 	if checkpoint.IsCommitted(42, 102) {
 		t.Fatal("out-of-interval feed advanced cursor")
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }

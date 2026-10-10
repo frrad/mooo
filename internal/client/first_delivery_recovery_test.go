@@ -11,6 +11,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -59,8 +60,8 @@ func TestFirstUncommittedLiveMessageRemainsResumeTargetAfterRestart(t *testing.T
 		t.Fatal(err)
 	}
 	restarted.checkpoint = reopened
-	restarted.dial = func(context.Context, authstate.State) (*Session, error) {
-		return &Session{initialChatData: []bson.Raw{}}, nil
+	restarted.dial = func(context.Context, authstate.State) (*session, error) {
+		return &session{initialChatData: []bson.Raw{}}, nil
 	}
 	targets, err := restarted.ResumeTargets(t.Context())
 	if err != nil {
@@ -73,7 +74,7 @@ func TestFirstUncommittedLiveMessageRemainsResumeTargetAfterRestart(t *testing.T
 	if len(ids) != 0 || reopened.ReadWatermark(42) != 0 {
 		t.Fatal("pending admission leaked into acknowledgement state")
 	}
-	backend := newScriptedBackend(t, false, expectRequest("SYNCMSG", checkSyncRequest(42, 100, 105), statusDocument(bson.E{Key: "chatLogs", Value: bson.A{
+	backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", checkSyncRequest(42, 100, 105), statusDocument(bson.E{Key: "chatLogs", Value: bson.A{
 		bson.D{{Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "first live delivery"}},
 		bson.D{{Key: "logId", Value: int64(105)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "later"}},
 	}})))

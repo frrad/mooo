@@ -9,12 +9,18 @@ import (
 
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/loco"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func testMetadataSession(backend *scriptedBackend, userID int64) *Session {
-	session := &Session{
-		wire:    backend.client,
+// These tests run one request path on a bare session over a testloco
+// backend instead of connectSession: scripting booking, checkin, and
+// LOGINLIST for each would exercise nothing new. login_sync_test.go and
+// client_test.go cover the bootstrap end to end.
+
+func testMetadataSession(backend *testloco.Backend, userID int64) *session {
+	session := &session{
+		wire:    clientWire(backend),
 		nextID:  1,
 		userID:  userID,
 		pushes:  make(chan loco.Packet, 1),
@@ -45,7 +51,7 @@ func requireMemberIDs(raw bson.Raw, want []int64) error {
 }
 
 func TestSessionChatInfoSendsOnceAndDecodes(t *testing.T) {
-	backend := newScriptedBackend(t, false, expectRequest("CHATINFO", func(raw bson.Raw) error {
+	backend := newScriptedBackend(t, false, testloco.Expect("CHATINFO", func(raw bson.Raw) error {
 		if err := requireExactKeys(raw, "chatId"); err != nil {
 			return err
 		}
@@ -69,13 +75,13 @@ func TestSessionChatInfoSendsOnceAndDecodes(t *testing.T) {
 		!reflect.DeepEqual(response.ChatData.DisplayNicknames, []string{"Seven"}) {
 		t.Fatalf("ChatData = %#v", response.ChatData)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestSessionChatInfoNonzeroStatusIsFailure(t *testing.T) {
 	// The official completion treats only status zero as success; partial
 	// success (-310) is not accepted for CHATINFO.
-	backend := newScriptedBackend(t, false, expectRequest("CHATINFO", nil, bson.D{
+	backend := newScriptedBackend(t, false, testloco.Expect("CHATINFO", nil, bson.D{
 		{Key: "status", Value: int32(-310)},
 	}))
 	session := testMetadataSession(backend, 1)
@@ -83,18 +89,18 @@ func TestSessionChatInfoNonzeroStatusIsFailure(t *testing.T) {
 	if _, err := session.ChatInfo(context.Background(), 42); !errors.As(err, &status) || status.Status != -310 {
 		t.Fatalf("ChatInfo error = %v, want StatusError(-310)", err)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestSessionChatInfoRejectsInvalidChatIDBeforeTransport(t *testing.T) {
-	session := &Session{}
+	session := &session{}
 	if _, err := session.ChatInfo(context.Background(), 0); !errors.Is(err, chatmeta.ErrInvalidRequest) {
 		t.Fatalf("ChatInfo error = %v, want ErrInvalidRequest", err)
 	}
 }
 
 func TestSessionMembersFiltersSelfAndNonPositiveIDs(t *testing.T) {
-	backend := newScriptedBackend(t, false, expectRequest("MEMBER", func(raw bson.Raw) error {
+	backend := newScriptedBackend(t, false, testloco.Expect("MEMBER", func(raw bson.Raw) error {
 		if err := requireExactKeys(raw, "chatId", "memberIds"); err != nil {
 			return err
 		}
@@ -120,12 +126,12 @@ func TestSessionMembersFiltersSelfAndNonPositiveIDs(t *testing.T) {
 	if !reflect.DeepEqual(members, want) {
 		t.Fatalf("members = %#v, want %#v", members, want)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestSessionMembersSendsNothingWhenOnlySelfRemains(t *testing.T) {
 	// No wire: any request attempt would fail with ErrClosed.
-	session := &Session{userID: 1, pending: make(map[uint32]pendingRequest)}
+	session := &session{userID: 1, pending: make(map[uint32]pendingRequest)}
 	members, err := session.Members(context.Background(), 42, []int64{1, 0})
 	if err != nil {
 		t.Fatalf("Members error = %v, want nil without a request", err)
@@ -143,13 +149,13 @@ func TestSessionMembersBatchesAtFiveHundred(t *testing.T) {
 	firstBatch := ids[:500]
 	secondBatch := ids[500:]
 	backend := newScriptedBackend(t, false,
-		expectRequest("MEMBER", func(raw bson.Raw) error {
+		testloco.Expect("MEMBER", func(raw bson.Raw) error {
 			return requireMemberIDs(raw, firstBatch)
 		}, statusDocument(
 			bson.E{Key: "chatId", Value: int64(42)},
 			bson.E{Key: "members", Value: bson.A{bson.D{{Key: "userId", Value: int64(2)}}}},
 		)),
-		expectRequest("MEMBER", func(raw bson.Raw) error {
+		testloco.Expect("MEMBER", func(raw bson.Raw) error {
 			return requireMemberIDs(raw, secondBatch)
 		}, statusDocument(
 			bson.E{Key: "chatId", Value: int64(42)},
@@ -165,7 +171,7 @@ func TestSessionMembersBatchesAtFiveHundred(t *testing.T) {
 	if len(members) != 2 || members[0].UserID != 2 || members[1].UserID != 502 {
 		t.Fatalf("members = %#v, want users 2 and 502 from two batches", members)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestSessionMembersStopsAtFirstFailedBatch(t *testing.T) {
@@ -174,7 +180,7 @@ func TestSessionMembersStopsAtFirstFailedBatch(t *testing.T) {
 		ids = append(ids, id)
 	}
 	requests := 0
-	backend := newScriptedBackend(t, false, expectRequest("MEMBER", func(bson.Raw) error {
+	backend := newScriptedBackend(t, false, testloco.Expect("MEMBER", func(bson.Raw) error {
 		requests++
 		return nil
 	}, bson.D{{Key: "status", Value: int32(-500)}}))
@@ -184,7 +190,7 @@ func TestSessionMembersStopsAtFirstFailedBatch(t *testing.T) {
 	if _, err := session.Members(context.Background(), 42, ids); !errors.As(err, &status) {
 		t.Fatalf("Members error = %v, want StatusError", err)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 	if requests != 1 {
 		t.Fatalf("requests = %d, want 1: later batches must be abandoned", requests)
 	}
@@ -192,7 +198,7 @@ func TestSessionMembersStopsAtFirstFailedBatch(t *testing.T) {
 
 func TestSessionMembersRejectsProfilesFromAnotherRoom(t *testing.T) {
 	backend := newScriptedBackend(t, false,
-		expectRequest("MEMBER", nil, statusDocument(
+		testloco.Expect("MEMBER", nil, statusDocument(
 			bson.E{Key: "chatId", Value: int64(43)},
 			bson.E{Key: "members", Value: bson.A{bson.D{{Key: "userId", Value: int64(7)}, {Key: "nickName", Value: "Other room"}}}},
 		)),
@@ -202,7 +208,7 @@ func TestSessionMembersRejectsProfilesFromAnotherRoom(t *testing.T) {
 	if !errors.Is(err, chatmeta.ErrInvalidResponse) || len(members) != 0 {
 		t.Fatalf("Members returned %d profiles, error %v; want no profiles and invalid response", len(members), err)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestSessionMembersReturnsCompletedBatchesWithLaterFailure(t *testing.T) {
@@ -211,11 +217,11 @@ func TestSessionMembersReturnsCompletedBatchesWithLaterFailure(t *testing.T) {
 		ids = append(ids, id)
 	}
 	backend := newScriptedBackend(t, false,
-		expectRequest("MEMBER", nil, statusDocument(
+		testloco.Expect("MEMBER", nil, statusDocument(
 			bson.E{Key: "chatId", Value: int64(42)},
 			bson.E{Key: "members", Value: bson.A{bson.D{{Key: "userId", Value: int64(2)}}}},
 		)),
-		expectRequest("MEMBER", nil, bson.D{{Key: "status", Value: int32(-500)}}),
+		testloco.Expect("MEMBER", nil, bson.D{{Key: "status", Value: int32(-500)}}),
 	)
 	session := testMetadataSession(backend, 1)
 
@@ -226,7 +232,7 @@ func TestSessionMembersReturnsCompletedBatchesWithLaterFailure(t *testing.T) {
 	if len(members) != 1 || members[0].UserID != 2 {
 		t.Fatalf("members = %#v, want the completed first batch", members)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestSessionMembersReturnsCompletedBatchesWhenLaterTransportCloses(t *testing.T) {
@@ -236,11 +242,11 @@ func TestSessionMembersReturnsCompletedBatchesWhenLaterTransportCloses(t *testin
 	}
 	requests := 0
 	backend := newScriptedBackend(t, false,
-		expectRequest("MEMBER", nil, statusDocument(
+		testloco.Expect("MEMBER", nil, statusDocument(
 			bson.E{Key: "chatId", Value: int64(42)},
 			bson.E{Key: "members", Value: bson.A{bson.D{{Key: "userId", Value: int64(2)}}}},
 		)),
-		disconnectAfterRequest("MEMBER", &requests),
+		testloco.DropAfter("MEMBER", &requests),
 	)
 	session := testMetadataSession(backend, 1)
 
@@ -251,7 +257,7 @@ func TestSessionMembersReturnsCompletedBatchesWhenLaterTransportCloses(t *testin
 	if len(members) != 1 || members[0].UserID != 2 {
 		t.Fatalf("members = %#v, want completed first batch", members)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 	if requests != 1 {
 		t.Fatalf("failed-batch requests = %d, want 1", requests)
 	}
@@ -264,11 +270,11 @@ func TestSessionMembersReturnsCompletedBatchesWhenLaterResponseIsMalformed(t *te
 	}
 	requests := 0
 	backend := newScriptedBackend(t, false,
-		expectRequest("MEMBER", nil, statusDocument(
+		testloco.Expect("MEMBER", nil, statusDocument(
 			bson.E{Key: "chatId", Value: int64(42)},
 			bson.E{Key: "members", Value: bson.A{bson.D{{Key: "userId", Value: int64(2)}}}},
 		)),
-		expectRequest("MEMBER", func(bson.Raw) error { requests++; return nil }, statusDocument(
+		testloco.Expect("MEMBER", func(bson.Raw) error { requests++; return nil }, statusDocument(
 			bson.E{Key: "chatId", Value: int64(42)},
 			bson.E{Key: "members", Value: "malformed"},
 		)),
@@ -282,7 +288,7 @@ func TestSessionMembersReturnsCompletedBatchesWhenLaterResponseIsMalformed(t *te
 	if len(members) != 1 || members[0].UserID != 2 {
 		t.Fatalf("members = %#v, want completed first batch", members)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 	if requests != 1 {
 		t.Fatalf("malformed-batch requests = %d, want 1", requests)
 	}
@@ -290,7 +296,7 @@ func TestSessionMembersReturnsCompletedBatchesWhenLaterResponseIsMalformed(t *te
 
 func TestSessionMembersRejectsPartialStatusWithoutRetry(t *testing.T) {
 	requests := 0
-	backend := newScriptedBackend(t, false, expectRequest("MEMBER", func(bson.Raw) error {
+	backend := newScriptedBackend(t, false, testloco.Expect("MEMBER", func(bson.Raw) error {
 		requests++
 		return nil
 	}, bson.D{{Key: "status", Value: int32(-310)}}))
@@ -300,14 +306,14 @@ func TestSessionMembersRejectsPartialStatusWithoutRetry(t *testing.T) {
 	if _, err := session.Members(context.Background(), 42, []int64{7}); !errors.As(err, &status) || status.Status != -310 {
 		t.Fatalf("Members error = %v, want StatusError(-310)", err)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 	if requests != 1 {
 		t.Fatalf("requests = %d, want exactly one", requests)
 	}
 }
 
 func TestSessionMemberListSendsChatIDAndToken(t *testing.T) {
-	backend := newScriptedBackend(t, false, expectRequest("MEMLIST", func(raw bson.Raw) error {
+	backend := newScriptedBackend(t, false, testloco.Expect("MEMLIST", func(raw bson.Raw) error {
 		if err := requireExactKeys(raw, "chatId", "token"); err != nil {
 			return err
 		}
@@ -329,14 +335,14 @@ func TestSessionMemberListSendsChatIDAndToken(t *testing.T) {
 	if !reflect.DeepEqual(response, want) {
 		t.Fatalf("response = %#v, want %#v", response, want)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestSessionMemberListRejectsNonzeroStatusExactlyOnce(t *testing.T) {
 	for _, statusCode := range []int32{1, -310} {
 		t.Run(fmt.Sprintf("status-%d", statusCode), func(t *testing.T) {
 			requests := 0
-			backend := newScriptedBackend(t, false, expectRequest("MEMLIST", func(bson.Raw) error {
+			backend := newScriptedBackend(t, false, testloco.Expect("MEMLIST", func(bson.Raw) error {
 				requests++
 				return nil
 			}, bson.D{{Key: "status", Value: statusCode}}))
@@ -346,7 +352,7 @@ func TestSessionMemberListRejectsNonzeroStatusExactlyOnce(t *testing.T) {
 			if _, err := session.MemberList(context.Background(), 42, 3); !errors.As(err, &status) || status.Status != statusCode {
 				t.Fatalf("MemberList error = %v, want StatusError(%d)", err, statusCode)
 			}
-			backend.wait(t)
+			waitBackends(t, backend)
 			if requests != 1 {
 				t.Fatalf("requests = %d, want exactly one", requests)
 			}
@@ -355,7 +361,7 @@ func TestSessionMemberListRejectsNonzeroStatusExactlyOnce(t *testing.T) {
 }
 
 func TestSessionMoimMetaReadRequest(t *testing.T) {
-	backend := newScriptedBackend(t, false, expectRequest("GETMOMETA", func(raw bson.Raw) error {
+	backend := newScriptedBackend(t, false, testloco.Expect("GETMOMETA", func(raw bson.Raw) error {
 		if err := requireExactKeys(raw, "c", "ts"); err != nil {
 			return err
 		}
@@ -377,11 +383,11 @@ func TestSessionMoimMetaReadRequest(t *testing.T) {
 	if err != nil || a.Active {
 		t.Fatalf("removal=%+v err=%v", a, err)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestSessionPersonalMetaSelectsRoomAndSendsOnce(t *testing.T) {
-	backend := newScriptedBackend(t, false, expectRequest("GETMCMETA", func(raw bson.Raw) error { return requireExactKeys(raw) }, statusDocument(
+	backend := newScriptedBackend(t, false, testloco.Expect("GETMCMETA", func(raw bson.Raw) error { return requireExactKeys(raw) }, statusDocument(
 		bson.E{Key: "chatIds", Value: bson.A{int64(42), int64(43)}},
 		bson.E{Key: "metas", Value: bson.A{`{"name":"Selected","imageUrl":""}`, `{"name":"Other"}`}},
 	)))
@@ -393,21 +399,21 @@ func TestSessionPersonalMetaSelectsRoomAndSendsOnce(t *testing.T) {
 	if meta == nil || meta.Name != "Selected" || meta.ImageURL != "" {
 		t.Fatal("personal room selection failed")
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestSessionPersonalMetaStatusFailureIsNotRetried(t *testing.T) {
-	backend := newScriptedBackend(t, false, expectRequest("GETMCMETA", nil, bson.D{{Key: "status", Value: int32(-310)}}))
+	backend := newScriptedBackend(t, false, testloco.Expect("GETMCMETA", nil, bson.D{{Key: "status", Value: int32(-310)}}))
 	session := testMetadataSession(backend, 1)
 	var status StatusError
 	if _, err := session.PersonalMeta(context.Background(), 42); !errors.As(err, &status) || status.Status != -310 {
 		t.Fatal("personal status failure was accepted")
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestSessionPersonalMetaRejectsInvalidSelectionBeforeTransport(t *testing.T) {
-	if _, err := (&Session{}).PersonalMeta(context.Background(), 0); !errors.Is(err, chatmeta.ErrInvalidRequest) {
+	if _, err := (&session{}).PersonalMeta(context.Background(), 0); !errors.Is(err, chatmeta.ErrInvalidRequest) {
 		t.Fatal("invalid personal room selection accepted")
 	}
 }

@@ -28,7 +28,7 @@ func (c *Client) ReadHistoryPage(ctx context.Context, chatID, after, through int
 	if _, err := request.MarshalBSON(); err != nil {
 		return HistoryPage{}, err
 	}
-	response, err := c.SyncMessages(ctx, request)
+	response, err := c.syncMessages(ctx, request)
 	if err != nil {
 		return HistoryPage{}, err
 	}
@@ -40,7 +40,7 @@ func decodeHistoryPage(request syncmsg.Request, response syncmsg.Response, limit
 	for _, raw := range response.ChatLogs {
 		logID, err := syncmsg.LogID(raw)
 		if err != nil || logID < request.Cur {
-			return HistoryPage{}, ErrProtocol
+			return HistoryPage{}, protocolErr("SYNCMSG", "chatLogs.logId")
 		}
 		if logID == request.Cur || logID > request.Max {
 			continue
@@ -52,7 +52,7 @@ func decodeHistoryPage(request syncmsg.Request, response syncmsg.Response, limit
 		}
 		chatID, position, ok := events.MessagePosition(event)
 		if !ok || chatID != request.ChatID || position != logID {
-			return HistoryPage{}, ErrProtocol
+			return HistoryPage{}, protocolErr("SYNCMSG", "chatLogs.chatId")
 		}
 		if len(result.Events) < limit {
 			result.Events = append(result.Events, event)

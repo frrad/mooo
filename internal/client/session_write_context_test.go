@@ -12,6 +12,11 @@ import (
 	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
+// White-box tests: they drive a bare session or wireConn over a raw net.Pipe
+// so they can control framing, write blocking, pending-request state, or
+// read-loop timing directly. A scripted testloco peer cannot express those
+// conditions, so these tests do not go through connectSession.
+
 type blockedWriteConn struct {
 	net.Conn
 	entered chan struct{}
@@ -34,7 +39,7 @@ func TestSessionRequestContextInterruptsBlockedWrite(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() {
-		_, err := session.Request(ctx, "PING", []byte{5, 0, 0, 0, 0})
+		_, err := session.request(ctx, "PING", []byte{5, 0, 0, 0, 0})
 		result <- err
 	}()
 	defer func() { cancel(); _ = clientConn.Close(); _ = peer.Close() }()
@@ -77,7 +82,7 @@ func TestSessionPartialWriteClosesCarriage(t *testing.T) {
 	ctx := context.Background()
 	result := make(chan error, 1)
 	go func() {
-		_, err := session.Request(ctx, "PING", []byte{5, 0, 0, 0, 0})
+		_, err := session.request(ctx, "PING", []byte{5, 0, 0, 0, 0})
 		result <- err
 	}()
 	defer func() { _ = clientConn.Close(); _ = peer.Close() }()
@@ -94,7 +99,7 @@ func TestSessionPartialWriteClosesCarriage(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("partial write did not terminate")
 	}
-	if _, err := session.Request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); !errors.Is(err, ErrClosed) {
+	if _, err := session.request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); !errors.Is(err, ErrClosed) {
 		t.Fatalf("reused carriage error=%v, want ErrClosed", err)
 	}
 }
@@ -106,7 +111,7 @@ func TestSessionQueuedWriterHonorsContextCancellation(t *testing.T) {
 	session.wire = &wireConn{c: conn}
 	firstDone := make(chan error, 1)
 	go func() {
-		_, err := session.Request(context.Background(), "PING", []byte{5, 0, 0, 0, 0})
+		_, err := session.request(context.Background(), "PING", []byte{5, 0, 0, 0, 0})
 		firstDone <- err
 	}()
 	defer func() { _ = clientConn.Close(); _ = peer.Close() }()
@@ -118,7 +123,7 @@ func TestSessionQueuedWriterHonorsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	queued := make(chan error, 1)
 	go func() {
-		_, err := session.Request(ctx, "PING", []byte{5, 0, 0, 0, 0})
+		_, err := session.request(ctx, "PING", []byte{5, 0, 0, 0, 0})
 		queued <- err
 	}()
 	deadline := time.After(time.Second)
@@ -161,7 +166,7 @@ func TestSessionCanceledWriteRestoresDeadlineForNextRequest(t *testing.T) {
 	firstCtx, cancelFirst := context.WithCancel(context.Background())
 	first := make(chan error, 1)
 	go func() {
-		_, err := session.Request(firstCtx, "PING", []byte{5, 0, 0, 0, 0})
+		_, err := session.request(firstCtx, "PING", []byte{5, 0, 0, 0, 0})
 		first <- err
 	}()
 	defer func() { _ = clientConn.Close(); _ = peer.Close() }()
@@ -187,7 +192,7 @@ func TestSessionCanceledWriteRestoresDeadlineForNextRequest(t *testing.T) {
 	secondCtx, cancelSecond := context.WithCancel(context.Background())
 	second := make(chan error, 1)
 	go func() {
-		_, err := session.Request(secondCtx, "PING", []byte{5, 0, 0, 0, 0})
+		_, err := session.request(secondCtx, "PING", []byte{5, 0, 0, 0, 0})
 		second <- err
 	}()
 	select {
@@ -220,11 +225,11 @@ func TestSessionPartialWriteErrorClosesCarriage(t *testing.T) {
 	session := newSession(nil)
 	session.wire = &wireConn{c: conn}
 	defer func() { _ = clientConn.Close(); _ = peer.Close() }()
-	_, err := session.Request(context.Background(), "PING", []byte{5, 0, 0, 0, 0})
+	_, err := session.request(context.Background(), "PING", []byte{5, 0, 0, 0, 0})
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("request error=%v, want unexpected EOF", err)
 	}
-	if _, err := session.Request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); !errors.Is(err, ErrClosed) {
+	if _, err := session.request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); !errors.Is(err, ErrClosed) {
 		t.Fatalf("reused carriage error=%v, want ErrClosed", err)
 	}
 }
@@ -247,7 +252,7 @@ func TestSessionCompleteWriteCancellationKeepsCarriage(t *testing.T) {
 	defer cancel()
 	session := newSession(nil)
 	session.wire = &wireConn{c: &completeWriteCancelsConn{cancel: cancel}}
-	if _, err := session.Request(ctx, "PING", []byte{5, 0, 0, 0, 0}); !errors.Is(err, context.Canceled) {
+	if _, err := session.request(ctx, "PING", []byte{5, 0, 0, 0, 0}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("request error=%v, want context.Canceled", err)
 	}
 	session.mu.Lock()
@@ -309,7 +314,7 @@ func TestSessionPartialWriteLeavesSelectedPushSafe(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("push was not selected")
 	}
-	if _, err := session.Request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); err == nil {
+	if _, err := session.request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); err == nil {
 		t.Fatal("partial write succeeded")
 	}
 	close(conn.release)

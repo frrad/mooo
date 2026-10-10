@@ -16,7 +16,7 @@ import (
 // SHIP, POST, and the byte stream are each sent exactly once. Transport failure
 // is ambiguous and is never retried automatically.
 // SendImage uploads one photo with an optional caption.
-func (s *Session) SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error) {
+func (s *session) SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error) {
 	image, err := media.PrepareImage(data)
 	if err != nil {
 		return media.SendResult{}, err
@@ -35,7 +35,7 @@ func (s *Session) SendImage(ctx context.Context, chatID int64, data []byte, capt
 
 // SendUpload uploads one prepared file or video with the same single-attempt
 // SHIP, POST, stream and COMPLETE sequence as a photo.
-func (s *Session) SendUpload(ctx context.Context, chatID int64, upload media.Upload) (media.SendResult, error) {
+func (s *session) SendUpload(ctx context.Context, chatID int64, upload media.Upload) (media.SendResult, error) {
 	shipBody, err := (media.UploadShipRequest{ChatID: chatID, Upload: upload}).MarshalBSON()
 	if err != nil {
 		return media.SendResult{}, err
@@ -48,8 +48,8 @@ func (s *Session) SendUpload(ctx context.Context, chatID int64, upload media.Upl
 	})
 }
 
-func (s *Session) trailerUpload(ctx context.Context, shipBody, data []byte, post func(key string) ([]byte, error)) (media.SendResult, error) {
-	shipPacket, err := s.Request(ctx, media.ShipCommand, shipBody)
+func (s *session) trailerUpload(ctx context.Context, shipBody, data []byte, post func(key string) ([]byte, error)) (media.SendResult, error) {
+	shipPacket, err := s.request(ctx, media.ShipCommand, shipBody)
 	if err != nil {
 		return media.SendResult{}, err
 	}
@@ -75,7 +75,7 @@ var ErrAlbumNotCreated = errors.New("client: album message was not created")
 // SendAlbum sends 2 to 30 JPEG or PNG photos as one album: one MSHIP, one
 // MPOST and stream per photo on its own media connection, then one type-27
 // WRITE. No stage is retried; a failure before the WRITE is ErrAlbumNotCreated.
-func (s *Session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, caption string) (chat.WriteResponse, error) {
+func (s *session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, caption string) (chat.WriteResponse, error) {
 	images := make([]media.Image, 0, len(photos))
 	for _, data := range photos {
 		image, err := media.PrepareImage(data)
@@ -91,7 +91,7 @@ func (s *Session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, 
 	if !media.ValidCaption(caption) {
 		return chat.WriteResponse{}, media.ErrInvalidCaption
 	}
-	shipPacket, err := s.Request(ctx, media.AlbumShipCommand, shipBody)
+	shipPacket, err := s.request(ctx, media.AlbumShipCommand, shipBody)
 	if err != nil {
 		return chat.WriteResponse{}, fmt.Errorf("%w: MSHIP: %w", ErrAlbumNotCreated, err)
 	}
@@ -120,7 +120,7 @@ func (s *Session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, 
 	if err != nil {
 		return chat.WriteResponse{}, fmt.Errorf("%w: %w", ErrAlbumNotCreated, err)
 	}
-	reply, err := s.Request(ctx, chat.WriteCommand, body)
+	reply, err := s.request(ctx, chat.WriteCommand, body)
 	if err != nil {
 		return chat.WriteResponse{}, err
 	}
@@ -130,7 +130,7 @@ func (s *Session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, 
 // uploadToMediaServer sends one POST or MPOST on a new dedicated media
 // connection, streams the bytes from the server's offset and returns the
 // server's COMPLETE packet.
-func (s *Session) uploadToMediaServer(ctx context.Context, host string, port int, command string, postBody, data []byte) (loco.Packet, error) {
+func (s *session) uploadToMediaServer(ctx context.Context, host string, port int, command string, postBody, data []byte) (loco.Packet, error) {
 	dial := s.mediaDial
 	if dial == nil {
 		dial = dialSecure
@@ -155,7 +155,7 @@ func (s *Session) uploadToMediaServer(ctx context.Context, host string, port int
 	}
 	status, err := loco.Status(postPacket)
 	if err != nil {
-		return loco.Packet{}, ErrProtocol
+		return loco.Packet{}, protocolErr(command, "status")
 	}
 	if status != 0 {
 		return loco.Packet{}, StatusError{Command: command, Status: status}
@@ -187,13 +187,13 @@ func (s *Session) uploadToMediaServer(ctx context.Context, host string, port int
 			return packet, nil
 		}
 	}
-	return loco.Packet{}, ErrProtocol
+	return loco.Packet{}, protocolErr(media.CompleteCommand, "reply")
 }
 
 func decodeMediaComplete(packet loco.Packet) (media.SendResult, error) {
 	status, err := loco.Status(packet)
 	if err != nil {
-		return media.SendResult{}, ErrProtocol
+		return media.SendResult{}, protocolErr(media.CompleteCommand, "status")
 	}
 	if status != 0 {
 		return media.SendResult{}, StatusError{Command: media.CompleteCommand, Status: status}

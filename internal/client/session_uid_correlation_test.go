@@ -12,12 +12,17 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+// White-box tests: they drive a bare session or wireConn over a raw net.Pipe
+// so they can control framing, write blocking, pending-request state, or
+// read-loop timing directly. A scripted testloco peer cannot express those
+// conditions, so these tests do not go through connectSession.
+
 func TestSessionReaderRoutesWrongMethodAndCompletesMatchingUID(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 	waiter := make(chan requestResult, 1)
-	s := &Session{
+	s := &session{
 		wire:    &wireConn{c: clientConn},
 		pushes:  make(chan loco.Packet, 2),
 		pending: map[uint32]pendingRequest{17: {method: "PING", result: waiter}},
@@ -121,7 +126,7 @@ func TestSessionRequestRawRejectsWrongMethodSamePacketID(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	got, err := s.Request(ctx, "PING", []byte{5, 0, 0, 0, 0})
+	got, err := s.request(ctx, "PING", []byte{5, 0, 0, 0, 0})
 	if err != nil || got.Header.Method != "PING" {
 		t.Fatalf("request result=%+v err=%v", got.Header, err)
 	}
@@ -141,7 +146,7 @@ func TestSessionRequestRawRejectsWrongMethodSamePacketID(t *testing.T) {
 func TestSessionUIDCorrelationDoesNotDeleteReusedPacketID(t *testing.T) {
 	oldWaiter := make(chan requestResult, 1)
 	newWaiter := make(chan requestResult, 1)
-	s := &Session{
+	s := &session{
 		pending: map[uint32]pendingRequest{17: {method: "PING", result: oldWaiter}},
 	}
 	s.pending[17] = pendingRequest{method: "LCHATLIST", result: newWaiter}
@@ -167,7 +172,7 @@ func TestSessionUIDCorrelationDoesNotDeleteReusedPacketID(t *testing.T) {
 
 func TestSessionDispatchPacketRequiresMethodInUniqueID(t *testing.T) {
 	waiter := make(chan requestResult, 1)
-	s := &Session{
+	s := &session{
 		pending: map[uint32]pendingRequest{17: {method: "PING", result: waiter}},
 	}
 

@@ -10,6 +10,11 @@ import (
 	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 )
 
+// White-box tests: they drive a bare session or wireConn over a raw net.Pipe
+// so they can control framing, write blocking, pending-request state, or
+// read-loop timing directly. A scripted testloco peer cannot express those
+// conditions, so these tests do not go through connectSession.
+
 func TestSessionSecureCoalescedEnvelopeDispatchesBothPackets(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	_ = serverConn.SetDeadline(time.Now().Add(time.Second))
@@ -24,7 +29,7 @@ func TestSessionSecureCoalescedEnvelopeDispatchesBothPackets(t *testing.T) {
 	}
 	waiter1 := make(chan requestResult, 1)
 	waiter2 := make(chan requestResult, 1)
-	s := &Session{
+	s := &session{
 		wire:          &wireConn{c: clientConn, secure: clientSecure},
 		pushes:        make(chan loco.Packet, 2),
 		pending:       map[uint32]pendingRequest{7: {method: "ONE", result: waiter1}, 8: {method: "TWO", result: waiter2}},

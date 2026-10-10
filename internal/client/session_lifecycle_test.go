@@ -12,11 +12,16 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+// White-box tests: they drive a bare session or wireConn over a raw net.Pipe
+// so they can control framing, write blocking, pending-request state, or
+// read-loop timing directly. A scripted testloco peer cannot express those
+// conditions, so these tests do not go through connectSession.
+
 func TestSessionFinishReadFansOutOnceAndClearsPending(t *testing.T) {
 	first := make(chan requestResult, 1)
 	second := make(chan requestResult, 1)
 	pushes := make(chan loco.Packet, 1)
-	session := &Session{
+	session := &session{
 		pending: map[uint32]pendingRequest{100000000: {method: "PING", result: first}, 100000001: {method: "PING", result: second}},
 		pushes:  pushes,
 	}
@@ -56,7 +61,7 @@ func TestSessionFinishReadFansOutOnceAndClearsPending(t *testing.T) {
 
 func TestSessionCloseFailsPendingRequestThroughReaderTeardown(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
-	session := &Session{
+	session := &session{
 		wire:    &wireConn{c: clientConn},
 		pushes:  make(chan loco.Packet, 1),
 		pending: make(map[uint32]pendingRequest),
@@ -81,7 +86,7 @@ func TestSessionCloseFailsPendingRequestThroughReaderTeardown(t *testing.T) {
 
 func TestSessionResponseRemovesPendingCallback(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
-	session := &Session{
+	session := &session{
 		wire:    &wireConn{c: clientConn},
 		nextID:  100000000,
 		pushes:  make(chan loco.Packet, 1),
@@ -122,7 +127,7 @@ func TestSessionResponseRemovesPendingCallback(t *testing.T) {
 		serverDone <- err
 	}()
 
-	if _, err := session.Request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); err != nil {
+	if _, err := session.request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-serverDone; err != nil {
@@ -138,7 +143,7 @@ func TestSessionResponseRemovesPendingCallback(t *testing.T) {
 
 func TestSessionRequestIDWrapsBeforeOfficialUpperBound(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
-	session := &Session{
+	session := &session{
 		wire:    &wireConn{c: clientConn},
 		nextID:  199999999,
 		pushes:  make(chan loco.Packet, 1),
@@ -189,7 +194,7 @@ func TestSessionRequestIDWrapsBeforeOfficialUpperBound(t *testing.T) {
 	}()
 
 	for range 2 {
-		if _, err := session.Request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); err != nil {
+		if _, err := session.request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -203,7 +208,7 @@ func TestSessionRequestIDWrapsBeforeOfficialUpperBound(t *testing.T) {
 }
 
 func TestSessionRequestIDSkipsPendingAfterWrap(t *testing.T) {
-	session := &Session{
+	session := &session{
 		nextID: 199999999,
 		pending: map[uint32]pendingRequest{
 			100000000: {method: "PING", result: make(chan requestResult)},
@@ -227,7 +232,7 @@ func TestSessionRequestIDSkipsPendingAfterWrap(t *testing.T) {
 
 func TestSessionMalformedHeaderFailsPendingExactlyOnce(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
-	session := &Session{
+	session := &session{
 		wire:    &wireConn{c: clientConn},
 		pushes:  make(chan loco.Packet, 1),
 		pending: make(map[uint32]pendingRequest),

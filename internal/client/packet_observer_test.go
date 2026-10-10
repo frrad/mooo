@@ -68,7 +68,7 @@ func TestPacketObserverSeesEveryBootstrapReplyAndLeavesLoginUnchanged(t *testing
 		{Key: "lastTokenId", Value: int64(91)},
 	})
 
-	session, err := connectSessionWithResume(t.Context(), reusableTestState(), continuity.Checkpoint{Version: continuity.Version}, dialers.observed(recorder.observe))
+	session, err := connectSession(t.Context(), reusableTestState(), sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers.observed(recorder.observe), ping: realtimePingOptions()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,5 @@ func TestPacketObserverSeesEveryBootstrapReplyAndLeavesLoginUnchanged(t *testing
 		}
 	}
 	_ = session.Close()
-	for _, backend := range backends {
-		backend.wait(t)
-	}
+	waitBackends(t, backends...)
 }
