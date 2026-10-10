@@ -72,7 +72,7 @@ expiry setters and persistence/notification calls were read statically. The
 complete uploader request/response callbacks, relay downloader callbacks, cache
 cleanup transitions and all player consumers are not fully traced. Controlled
 receiver playback and Matrix SDK acceptance cover the tested path only, and do
-not establish full official-client parity. Native outbound video is unimplemented.
+not establish full official-client parity. Outbound video from Matrix: [group outbound media](bridge/GROUP-OUTBOUND-MEDIA.md).
 
 Final readiness exposed an unrecognized official video-player screen. A
 failing-first classifier/navigation regression now recognizes the combined

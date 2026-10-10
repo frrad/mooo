@@ -141,3 +141,18 @@ func TestAlbumDeterministicGapKeepsOtherPhoto(t *testing.T) {
 		t.Fatal("one deterministic gap lost the rest of the album or its caption")
 	}
 }
+
+// Regression (owned acceptance, 2026-10-10): an album sent from Matrix is
+// recorded as one whole-message row. When catch-up later delivers the same
+// album from KakaoTalk, that row means the album is complete; resuming parts
+// duplicated both photos in Matrix.
+func TestAlbumRecordedFromMatrixIsNotRedeliveredAsParts(t *testing.T) {
+	msg, photos := albumMessage(t)
+	albumTransport(t, photos)
+	kc, _ := newTestClient(t, nil)
+	remote := kc.albumEvent(msg)
+	res, err := remote.HandleExisting(context.Background(), nil, nil, []*database.Message{{PartID: ""}})
+	if err != nil || res.ContinueMessageHandling {
+		t.Fatal("outbound album redelivered from catch-up")
+	}
+}

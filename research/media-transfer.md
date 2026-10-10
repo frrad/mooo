@@ -52,6 +52,13 @@ final "unavailable" outcome; 429 and 5xx remain transient. Cancelling the
 sender's context closes the dedicated media connection. Evidence, Mac trace and
 gaps: [group photos](bridge/GROUP-PHOTOS.md).
 
+## Files, video and albums (2026-10-10)
+
+Files (type 18) and video (type 3) reuse the single-photo chain with their
+own `t`, the file name in `POST f` and no dimensions. Albums use `MSHIP`, one
+`MPOST` per photo, and a type-27 `WRITE`. Details, limits and acceptance:
+[group outbound media](bridge/GROUP-OUTBOUND-MEDIA.md).
+
 ## Evidence and confidence
 
 - Black-box owned-account experiment, Android 26.8.2 to clean-room Go client,

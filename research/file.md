@@ -35,7 +35,7 @@ notices; transient fetch/upload failures leave delivery uncommitted.
 mooo policy: 64 KiB attachment JSON, 64 MiB file, 512-byte filename/token;
 reject duplicate JSON fields, path separators and filename control characters.
 Resource-only, cloud/backup/restore paths and LargeFile (29) remain unsupported.
-Native outbound file and actual Matrix application file-opening parity remain
+Outbound files from Matrix are covered in [group outbound media](bridge/GROUP-OUTBOUND-MEDIA.md). Actual Matrix application file-opening parity remains
 unvalidated. Owned Android A/B acceptance passed for two distinct synthetic text files: one
 catch-up delivery and one fresh live delivery. Both became encrypted native
 `m.file` events; the Matrix SDK verified filenames, text/plain MIME, sizes and

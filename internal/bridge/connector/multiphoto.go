@@ -28,6 +28,11 @@ func (kc *KakaoClient) albumEvent(msg events.MultiPhotoMessage) *multipartMessag
 	remote.HandleExistingFunc = func(_ context.Context, _ *bridgev2.Portal, _ bridgev2.MatrixAPI, parts []*database.Message, _ events.MultiPhotoMessage) (bridgev2.UpsertResult, error) {
 		existingIDs = make(map[networkid.PartID]bool, len(parts))
 		for _, part := range parts {
+			// An album sent from Matrix is recorded as one whole-message
+			// row; it is already complete in Matrix.
+			if part.PartID == "" {
+				return bridgev2.UpsertResult{}, nil
+			}
 			existingIDs[part.PartID] = true
 		}
 		for i := range a.Photos {
