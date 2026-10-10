@@ -12,6 +12,7 @@ import (
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
+	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
 type chatLister interface {
@@ -28,8 +29,8 @@ type chatSummary struct {
 	Unread       int32    `json:"unread_count"`
 }
 
-func openChatLister(path string) (chatLister, error) {
-	return client.OpenWithOptions(path, &http.Client{Timeout: 20 * time.Second}, client.OpenOptions{FullChatList: true})
+func openChatLister(path string, packetObserver func(loco.Packet)) (chatLister, error) {
+	return client.OpenWithOptions(path, &http.Client{Timeout: 20 * time.Second}, client.OpenOptions{FullChatList: true, PacketObserver: packetObserver})
 }
 
 func runListChats(args []string, stdout, stderr io.Writer, open func(string) (chatLister, error)) int {

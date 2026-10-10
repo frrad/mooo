@@ -6,41 +6,40 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/command"
+	"github.com/frrad/mooo/internal/shadow"
 )
+
+// labBSONShadowModeEnv overrides the lab's default BSON shadow mode with
+// "off", "log" or "panic".
+const labBSONShadowModeEnv = "MOOO_BSON_SHADOW"
 
 // labBSONShadowDumpDirEnv names an optional private directory for raw-body
 // dumps of BSON shadow discrepancies.
 const labBSONShadowDumpDirEnv = "MOOO_BSON_SHADOW_DUMP_DIR"
 
 func main() {
-	// Research runs crash on decoder discrepancies; operator listing reports
-	// them with the same log-only default as the bridge.
-	// $MOOO_BSON_SHADOW overrides the mode (off, log or panic).
-	mode, err := labShadowMode(os.Args[1:], os.Getenv(client.BSONShadowModeEnv))
+	// Research runs crash on decoder discrepancies; operator listing only
+	// logs them. $MOOO_BSON_SHADOW overrides the mode (off, log or panic).
+	mode, err := labShadowMode(os.Args[1:], os.Getenv(labBSONShadowModeEnv))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 
-	client.SetBSONShadow(client.BSONShadowConfig{Mode: mode, DumpDir: os.Getenv(labBSONShadowDumpDirEnv)})
-	code := command.Run(os.Args[1:], os.Stdout, os.Stderr)
+	observer := shadow.NewObserver(shadow.Config{Mode: mode, DumpDir: os.Getenv(labBSONShadowDumpDirEnv)})
+	code := command.Run(os.Args[1:], os.Stdout, os.Stderr, observer)
 	if code != 0 {
 		os.Exit(code)
 	}
 }
 
-func labShadowMode(args []string, configured string) (client.BSONShadowMode, error) {
-	mode, err := client.ParseBSONShadowMode(configured)
-	if err != nil {
-		return mode, err
+func labShadowMode(args []string, configured string) (shadow.Mode, error) {
+	if configured != "" {
+		return shadow.ParseMode(configured)
 	}
-	if mode == client.BSONShadowDefault {
-		mode = client.BSONShadowPanic
-		if len(args) >= 2 && ((args[0] == "chats" && args[1] == "list") || (args[0] == "contacts" && args[1] == "photo")) {
-			mode = client.BSONShadowLog
-		}
+	if len(args) >= 2 && ((args[0] == "chats" && args[1] == "list") || (args[0] == "contacts" && args[1] == "photo")) {
+		return shadow.ModeLog, nil
 	}
-	return mode, nil
+	return shadow.ModePanic, nil
 }

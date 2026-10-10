@@ -68,21 +68,22 @@ type Client struct {
 	readMu           sync.Mutex
 }
 
-// Open acquires the profile's process-wide owner lease and creates a reusable
-// authenticated client without opening a network connection.
-func Open(statePath string, doer macweb.Doer) (*Client, error) {
-	return OpenWithOptions(statePath, doer, OpenOptions{})
-}
-
 // OpenOptions selects explicit bootstrap behavior for an operator-owned profile.
 type OpenOptions struct {
 	// FullChatList requests a full inventory at the next login by using the
 	// documented zero list token. Message commit positions and LBK are retained.
 	FullChatList bool
+	// PacketObserver, when set, sees every incoming LOCO packet on the read
+	// loop before dispatch. It must not retain or modify the packet. Nil, the
+	// default, adds no per-packet work. Research tooling such as the BSON
+	// shadow comparison is wired in only through this field.
+	PacketObserver func(loco.Packet)
 }
 
-// OpenWithOptions acquires the same exclusive profile lease as Open. It never
-// creates a parallel secondary session or changes committed message positions.
+// OpenWithOptions acquires the profile's process-wide owner lease and creates
+// a reusable authenticated client without opening a network connection. It
+// never creates a parallel secondary session or changes committed message
+// positions.
 func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*Client, error) {
 	statePath = filepath.Clean(statePath)
 	store, err := authstate.Open(statePath)
@@ -113,7 +114,7 @@ func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*
 	client.checkpoint = checkpoint
 	resume := options.loginResume(checkpoint.Snapshot())
 	client.dial = func(ctx context.Context, state authstate.State) (*Session, error) {
-		return connectSessionWithResume(ctx, state, resume, productionSessionDialers())
+		return connectSessionWithResume(ctx, state, resume, productionSessionDialers().observed(options.PacketObserver))
 	}
 	return client, nil
 }
