@@ -765,9 +765,9 @@ func (c *Client) Close() error {
 }
 
 // Shutdown marks the Client closed, interrupts its Session without holding
-// Client.mu, and joins the Session worker before releasing checkpoint and
-// profile ownership. A deadline leaves ownership intact so the caller can
-// retry Shutdown after the worker becomes joinable.
+// Client.mu, and joins in-flight connect, commit and event-decoder work before
+// releasing checkpoint and profile ownership. A deadline leaves ownership
+// intact so the caller can retry Shutdown once that work becomes joinable.
 func (c *Client) Shutdown(ctx context.Context) error {
 	if c == nil {
 		return nil

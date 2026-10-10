@@ -25,10 +25,6 @@ func connectSessionWithDialers(ctx context.Context, state authstate.State, diale
 	return connectSessionWithResume(ctx, state, continuity.Checkpoint{Version: continuity.Version}, dialers)
 }
 
-func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, command string, body []byte) error {
-	return s.writeRequestWithResult(ctx, wire, id, command, body, nil)
-}
-
 func (s *Session) readLoop() {
 	s.mu.Lock()
 	if s.readLoopStarted {

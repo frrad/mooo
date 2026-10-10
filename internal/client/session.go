@@ -54,221 +54,37 @@ type lifecycleScheduler interface {
 	queueSchedule() bool
 }
 
+// lifecycleShutdown is the optional terminal hook a scheduler implements
+// (pingTimerOwner does) so stopLifecycle can release its timer.
 type lifecycleShutdown interface {
 	shutdown()
-}
-
-// receiveHeaderTimeoutController is intentionally injected before readLoop
-// starts and must not be replaced while that loop runs. The reviewed source
-// gates timer admission on producer status and captured configuration; Session
-// does not invent a default status/config source until that layer is traced and
-// wired. Toggle is called with the captured enable byte and packet identity,
-// while Close invalidates queued and scheduled owner work. Toggle must enqueue
-// without synchronously reentering Session: Session holds a dedicated mutex
-// across the call to serialize arm/disarm ordering.
-type receiveHeaderTimeoutController interface {
-	Toggle(enableByte byte, tag int64) (bool, error)
-	Close()
-}
-
-// InSegmentTimeoutController is an optional body-read watchdog owner. Session
-// only forwards the reviewed body transitions; it does not construct a clock,
-// queue, timeout configuration, or production owner by default.
-// InSegmentTimeoutController is the narrow owner contract accepted by
-// BindInSegmentTimeout. Implementations normally come from
-// sessionlogin.NewInSegmentTimeoutOwner.
-type InSegmentTimeoutController interface {
-	Toggle(enableByte byte) (bool, error)
-	Close()
-}
-
-// PushReceiptSender is the injected transport-independent receipt owner. A
-// Session never constructs a receipt packet or chooses a wire tag.
-type PushReceiptSender interface{ Send(packet any) error }
-
-// EligiblePushReceiptPacket scopes the reviewed upstream notice methods. The
-// body/header consistency check keeps header-only and truncated synthetic
-// packets out of the adapter; serialization and receipt payload construction
-// remain injected responsibilities.
-func EligiblePushReceiptPacket(packet loco.Packet) bool {
-	if packet.Header.Method != "HINT" && packet.Header.Method != "BLOCKSYNC" {
-		return false
-	}
-	return packet.Header.BodyLen != 0 && packet.Header.BodyLen == uint32(len(packet.Body))
-}
-
-type pushReceiptCloser interface{ Close() }
-type pushReceiptWaiter interface{ Wait(context.Context) error }
-
-type pushReceiptBinding struct {
-	mu         sync.Mutex
-	sender     PushReceiptSender
-	eligible   func(loco.Packet) bool
-	closed     bool
-	jobs       chan loco.Packet
-	stop       chan struct{}
-	stopOnce   sync.Once
-	done       chan struct{}
-	closerDone chan struct{}
-	closerOnce sync.Once
-}
-
-func newPushReceiptBinding(sender PushReceiptSender, eligible func(loco.Packet) bool) *pushReceiptBinding {
-	b := &pushReceiptBinding{
-		sender:     sender,
-		eligible:   eligible,
-		jobs:       make(chan loco.Packet, requestLimit),
-		stop:       make(chan struct{}),
-		done:       make(chan struct{}),
-		closerDone: make(chan struct{}),
-	}
-	go b.run()
-	return b
-}
-
-func (b *pushReceiptBinding) run() {
-	defer close(b.done)
-	for {
-		select {
-		case packet := <-b.jobs:
-			b.send(packet)
-		case <-b.stop:
-			return
-		}
-	}
-}
-
-func (b *pushReceiptBinding) enqueue(packet loco.Packet) {
-	b.mu.Lock()
-	if b.closed {
-		b.mu.Unlock()
-		return
-	}
-	jobs, stop := b.jobs, b.stop
-	b.mu.Unlock()
-	select {
-	case jobs <- packet:
-	case <-stop:
-	}
-}
-
-func (b *pushReceiptBinding) send(packet loco.Packet) {
-	b.mu.Lock()
-	if b.closed {
-		b.mu.Unlock()
-		return
-	}
-	eligible := b.eligible
-	sender := b.sender
-	b.mu.Unlock()
-	// Eligibility and sender execution are both outside the binding lock so
-	// injected callbacks may synchronously reenter Session or block on I/O.
-	if !eligible(packet) {
-		return
-	}
-	b.mu.Lock()
-	closed := b.closed
-	b.mu.Unlock()
-	if !closed {
-		_ = sender.Send(packet)
-	}
-}
-
-func (b *pushReceiptBinding) close() {
-	b.mu.Lock()
-	if b.closed {
-		b.mu.Unlock()
-		return
-	}
-	b.closed = true
-	sender := b.sender
-	b.mu.Unlock()
-	b.stopOnce.Do(func() { close(b.stop) })
-	b.closerOnce.Do(func() {
-		closer, ok := sender.(pushReceiptCloser)
-		if !ok {
-			close(b.closerDone)
-			return
-		}
-		go func() {
-			closer.Close()
-			close(b.closerDone)
-		}()
-	})
-}
-
-func (b *pushReceiptBinding) wait(ctx context.Context) error {
-	if err := waitFor(ctx, b.done); err != nil {
-		return err
-	}
-	if err := waitFor(ctx, b.closerDone); err != nil {
-		return err
-	}
-	b.mu.Lock()
-	sender := b.sender
-	b.mu.Unlock()
-	if waiter, ok := sender.(pushReceiptWaiter); ok {
-		return waiter.Wait(ctx)
-	}
-	return nil
-}
-
-func waitFor(ctx context.Context, done <-chan struct{}) error {
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }
 
 // Session owns one authenticated carriage. A background reader dispatches
 // correlated responses and preserves unsolicited packets for the caller.
 type Session struct {
-	mu                     sync.Mutex
-	writeGateOnce          sync.Once
-	writeGate              chan struct{}
-	receiveHeaderTimeoutMu sync.Mutex
-	lifecycleMu            sync.Mutex
-	wire                   *wireConn
-	nextID                 uint32
-	closed                 bool
-	closing                bool
-	pushes                 chan loco.Packet
-	pending                map[uint32]chan requestResult
-	pendingByUniqueID      map[string]chan requestResult
-	pendingUniqueIDByID    map[uint32]string
-	lifecycleScheduler     lifecycleScheduler
-	lifecycleStopped       bool
-	// outSegmentSubmitter is opt-in and must be bound to wire before use. The
-	// default Session path remains synchronous until producer/status readiness
-	// supplies this adapter explicitly.
-	outSegmentSubmitter *sessionlogin.OutSegmentSubmitter
-	// headerObserver is configured before readLoop starts and must not change
-	// while that loop is running.
-	headerObserver             func(loco.Header)
-	receiveHeaderTimeout       receiveHeaderTimeoutController
-	inSegmentTimeout           InSegmentTimeoutController
-	pushReceipt                *pushReceiptBinding
-	receiptDone                chan struct{}
-	receiveHeaderTimeoutEnable func(command string, packetID uint32) (byte, bool)
-	receiveHeaderTimeoutState  map[uint32]*receiveHeaderTimeoutToken
-	initialChatData            []bson.Raw
-	userID                     int64
-	appVersion                 string
-	mediaDial                  wireDialer
-	loginCursor                loginCursor
-	bootstrapDone              bool
-	bootstrapPushes            []loco.Packet
-	readLoopStarted            bool
-}
-
-type receiveHeaderTimeoutToken struct {
-	packetID  uint32
-	key       string
-	enable    byte
-	committed bool
-	canceled  bool
+	mu                  sync.Mutex
+	writeGateOnce       sync.Once
+	writeGate           chan struct{}
+	lifecycleMu         sync.Mutex
+	wire                *wireConn
+	nextID              uint32
+	closed              bool
+	closing             bool
+	pushes              chan loco.Packet
+	pending             map[uint32]chan requestResult
+	pendingByUniqueID   map[string]chan requestResult
+	pendingUniqueIDByID map[uint32]string
+	lifecycleScheduler  lifecycleScheduler
+	lifecycleStopped    bool
+	initialChatData     []bson.Raw
+	userID              int64
+	appVersion          string
+	mediaDial           wireDialer
+	loginCursor         loginCursor
+	bootstrapDone       bool
+	bootstrapPushes     []loco.Packet
+	readLoopStarted     bool
 }
 
 func newSession(scheduler lifecycleScheduler) *Session {
@@ -342,7 +158,6 @@ type pingSessionOptions struct {
 	interval               time.Duration
 	timeout                time.Duration
 	beforeBootstrapRequest func()
-	inSegmentTimeoutOwner  InSegmentTimeoutController
 }
 
 type sessionDialers struct {
@@ -450,11 +265,6 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	session.userID = state.Credentials.UserID
 	session.appVersion = state.Identity.Metadata.AppVersion
 	session.mediaDial = dialers.secure
-	if pingOptions.inSegmentTimeoutOwner != nil {
-		if err := session.BindInSegmentTimeout(pingOptions.inSegmentTimeoutOwner); err != nil {
-			return nil, ErrBootstrap
-		}
-	}
 	cleanup := true
 	defer func() {
 		if cleanup {
@@ -579,22 +389,11 @@ func (s *Session) requestRaw(ctx context.Context, id uint32, command string, bod
 	s.pendingUniqueIDByID[id] = packetUniqueID(command, id)
 	wire := s.wire
 	s.mu.Unlock()
-	preparedTimeout := s.prepareReceiveHeaderTimeout(command, id)
 	s.queueCancelRequest()
-	writeResult := func(writeOutcome sessionlogin.OutSegmentWriteResult) {
-		if writeOutcome.Err != nil && !errors.Is(writeOutcome.Err, context.Canceled) {
-			s.abortReceiveHeaderTimeout(preparedTimeout)
-			if s.failPending(id, result, writeOutcome.Err) {
-				return
-			}
-		}
-	}
-	if err := s.writeRequestWithResult(ctx, wire, id, command, body, writeResult); err != nil {
-		s.abortReceiveHeaderTimeout(preparedTimeout)
+	if err := s.writeRequest(ctx, wire, id, command, body); err != nil {
 		s.removePending(id, result)
 		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, err)
 	}
-	s.commitReceiveHeaderTimeout(preparedTimeout)
 	select {
 	case outcome := <-result:
 		if outcome.err != nil {
@@ -602,7 +401,6 @@ func (s *Session) requestRaw(ctx context.Context, id uint32, command string, bod
 		}
 		return outcome.packet, nil
 	case <-ctx.Done():
-		s.abortReceiveHeaderTimeout(preparedTimeout)
 		s.removePending(id, result)
 		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, ctx.Err())
 	}
@@ -631,7 +429,7 @@ func (s *Session) allocateRequestIDLocked() (uint32, error) {
 	}
 }
 
-func (s *Session) writeRequestWithResult(ctx context.Context, wire *wireConn, id uint32, command string, body []byte, onResult func(sessionlogin.OutSegmentWriteResult)) error {
+func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, command string, body []byte) error {
 	raw, err := (loco.Packet{Header: loco.Header{PacketID: id, Method: command, BodyType: loco.BodyTypeBSON}, Body: body}).MarshalBinary(0)
 	if err != nil {
 		return err
@@ -642,21 +440,11 @@ func (s *Session) writeRequestWithResult(ctx context.Context, wire *wireConn, id
 			return err
 		}
 	}
-	s.mu.Lock()
-	submitter := s.outSegmentSubmitter
-	s.mu.Unlock()
-	if submitter != nil {
-		return submitter.SubmitWithResult(ctx, raw, onResult)
-	}
 	_, err = s.writeRawPayload(ctx, wire, raw)
 	return err
 }
 
 func (s *Session) writeRawPayload(ctx context.Context, wire *wireConn, raw []byte) (int, error) {
-	return s.writeRawPayloadProgress(ctx, wire, raw, nil)
-}
-
-func (s *Session) writeRawPayloadProgress(ctx context.Context, wire *wireConn, raw []byte, progress func(int, error)) (int, error) {
 	if err := s.acquireWrite(ctx); err != nil {
 		return 0, err
 	}
@@ -686,14 +474,9 @@ func (s *Session) writeRawPayloadProgress(ctx context.Context, wire *wireConn, r
 	for len(remaining) > 0 {
 		var n int
 		n, err = wire.c.Write(remaining)
-		partial := false
 		if n > 0 {
 			written += n
-			partial = n < len(remaining)
 			remaining = remaining[n:]
-		}
-		if progress != nil && (partial || err != nil) {
-			progress(n, err)
 		}
 		if err != nil {
 			break
@@ -716,12 +499,7 @@ func (s *Session) writeRawPayloadProgress(ctx context.Context, wire *wireConn, r
 			s.closing = true
 		}
 		s.mu.Unlock()
-		// Asynchronous completion can be buffered until timeout admission.
-		// Its submitter must deliver the write error before closing the wire,
-		// or reader teardown can replace that error in the pending request.
-		if progress == nil {
-			_ = wire.close()
-		}
+		_ = wire.close()
 		s.stopLifecycle()
 	}
 	if ctxErr != nil {
@@ -761,241 +539,8 @@ func (s *Session) removePending(id uint32, expected chan requestResult) {
 	}
 }
 
-func (s *Session) failPending(id uint32, expected chan requestResult, err error) bool {
-	s.mu.Lock()
-	result, ok := s.pending[id]
-	if !ok || result != expected {
-		s.mu.Unlock()
-		return false
-	}
-	if ok {
-		delete(s.pending, id)
-		if key := s.pendingUniqueIDByID[id]; key != "" && s.pendingByUniqueID[key] == result {
-			delete(s.pendingByUniqueID, key)
-			delete(s.pendingUniqueIDByID, id)
-		}
-	}
-	s.mu.Unlock()
-	result <- requestResult{err: err}
-	return true
-}
-
 func packetUniqueID(method string, id uint32) string {
 	return sessionlogin.FormatPacketUniqueID(method, id)
-}
-
-func (s *Session) prepareReceiveHeaderTimeout(command string, packetID uint32) *receiveHeaderTimeoutToken {
-	// The reviewed source proves status-3 producer ordering but does not expose
-	// the lower asynchronous
-	// socket-write callback boundary, so the gate is captured before the write
-	// and committed only after the write succeeds.
-	s.mu.Lock()
-	controller := s.receiveHeaderTimeout
-	gate := s.receiveHeaderTimeoutEnable
-	s.mu.Unlock()
-	if controller == nil || gate == nil {
-		return nil
-	}
-	enableByte, admitted := gate(command, packetID)
-	if !admitted {
-		return nil
-	}
-	token := &receiveHeaderTimeoutToken{packetID: packetID, key: packetUniqueID(command, packetID), enable: enableByte}
-	s.receiveHeaderTimeoutMu.Lock()
-	if s.receiveHeaderTimeoutState == nil {
-		s.receiveHeaderTimeoutState = make(map[uint32]*receiveHeaderTimeoutToken)
-	}
-	s.receiveHeaderTimeoutState[packetID] = token
-	s.receiveHeaderTimeoutMu.Unlock()
-	return token
-}
-
-func (s *Session) commitReceiveHeaderTimeout(token *receiveHeaderTimeoutToken) {
-	if token == nil {
-		return
-	}
-	s.receiveHeaderTimeoutMu.Lock()
-	state, pending := s.receiveHeaderTimeoutState[token.packetID]
-	if !pending || state != token || state.committed || state.canceled {
-		s.receiveHeaderTimeoutMu.Unlock()
-		return
-	}
-	s.mu.Lock()
-	controller := s.receiveHeaderTimeout
-	closed := s.closed || s.closing
-	s.mu.Unlock()
-	if controller == nil || closed {
-		if current, ok := s.receiveHeaderTimeoutState[token.packetID]; ok && current == token {
-			delete(s.receiveHeaderTimeoutState, token.packetID)
-		}
-		s.receiveHeaderTimeoutMu.Unlock()
-		return
-	}
-	admitted, _ := controller.Toggle(state.enable, int64(token.packetID))
-	if !admitted {
-		if current, ok := s.receiveHeaderTimeoutState[token.packetID]; ok && current == token {
-			delete(s.receiveHeaderTimeoutState, token.packetID)
-		}
-		s.receiveHeaderTimeoutMu.Unlock()
-		return
-	}
-	token.committed = true
-	s.receiveHeaderTimeoutMu.Unlock()
-}
-
-func (s *Session) abortReceiveHeaderTimeout(token *receiveHeaderTimeoutToken) {
-	if token == nil {
-		return
-	}
-	var controller receiveHeaderTimeoutController
-	committed := false
-	s.receiveHeaderTimeoutMu.Lock()
-	if current, ok := s.receiveHeaderTimeoutState[token.packetID]; ok && current == token {
-		committed = current.committed
-		s.mu.Lock()
-		controller = s.receiveHeaderTimeout
-		s.mu.Unlock()
-		if committed && controller != nil {
-			// Keep the timeout-state mutex held while enqueueing cancellation so
-			// an old request cannot cancel a replacement with the same ID.
-			_, _ = controller.Toggle(0, int64(token.packetID))
-		}
-		delete(s.receiveHeaderTimeoutState, token.packetID)
-	}
-	s.receiveHeaderTimeoutMu.Unlock()
-}
-
-func (s *Session) resetReceiveHeaderTimeout() {
-	s.receiveHeaderTimeoutMu.Lock()
-	s.receiveHeaderTimeoutState = nil
-	s.receiveHeaderTimeoutMu.Unlock()
-}
-
-func (s *Session) disarmReceiveHeaderTimeout(packetID uint32, key string, controller receiveHeaderTimeoutController) bool {
-	s.receiveHeaderTimeoutMu.Lock()
-	state, tracked := s.receiveHeaderTimeoutState[packetID]
-	if !tracked || state.key != key {
-		s.receiveHeaderTimeoutMu.Unlock()
-		return false
-	}
-	admitted, _ := controller.Toggle(0, int64(packetID))
-	if admitted {
-		state.canceled = true
-		delete(s.receiveHeaderTimeoutState, packetID)
-	}
-	s.receiveHeaderTimeoutMu.Unlock()
-	return admitted
-}
-
-// observeHeader preserves the existing test seam while disarming the
-// injected owner at the source-observed pre-body header boundary. Matching is
-// against the packet-ID map's unique-ID value; missing or mismatching values
-// leave the timer untouched.
-func (s *Session) observeHeader(header loco.Header) {
-	s.mu.Lock()
-	controller := s.receiveHeaderTimeout
-	stored := s.pendingUniqueIDByID[header.PacketID]
-	matching := stored != "" && stored == packetUniqueID(header.Method, header.PacketID)
-	observer := s.headerObserver
-	s.mu.Unlock()
-	if observer != nil {
-		observer(header)
-	}
-	if matching && controller != nil {
-		s.disarmReceiveHeaderTimeout(header.PacketID, packetUniqueID(header.Method, header.PacketID), controller)
-	}
-}
-
-func (s *Session) closeReceiveHeaderTimeout() {
-	s.mu.Lock()
-	controller := s.receiveHeaderTimeout
-	s.mu.Unlock()
-	if controller != nil {
-		controller.Close()
-	}
-}
-
-// BindInSegmentTimeout installs the opt-in body-progress watchdog before the
-// session reader starts. A nil owner disables the seam. The owner is closed
-// with the Session and is never activated by an ordinary Session constructor.
-func (s *Session) BindInSegmentTimeout(owner InSegmentTimeoutController) error {
-	if s == nil {
-		return ErrClosed
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed || s.closing || s.readLoopStarted {
-		return ErrClosed
-	}
-	if s.inSegmentTimeout != nil {
-		return fmt.Errorf("client: in-segment timeout owner already bound")
-	}
-	s.inSegmentTimeout = owner
-	return nil
-}
-
-func (s *Session) closeInSegmentTimeout() {
-	s.mu.Lock()
-	owner := s.inSegmentTimeout
-	s.mu.Unlock()
-	if owner != nil {
-		owner.Close()
-	}
-}
-
-// BindPushReceipt installs the opt-in unmatched-push receipt adapter before
-// the reader starts. Eligibility is injected because source-level upstream
-// notice selection is distinct from packet construction and wire encoding.
-func (s *Session) BindPushReceipt(sender PushReceiptSender, eligible func(loco.Packet) bool) error {
-	if s == nil {
-		return ErrClosed
-	}
-	if sender == nil || eligible == nil {
-		return fmt.Errorf("client: incomplete push-receipt binding")
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed || s.closing || s.readLoopStarted {
-		return ErrClosed
-	}
-	if s.pushReceipt != nil {
-		return fmt.Errorf("client: push-receipt owner already bound")
-	}
-	s.pushReceipt = newPushReceiptBinding(sender, eligible)
-	s.receiptDone = s.pushReceipt.done
-	return nil
-}
-
-func (s *Session) dispatchPushReceipt(packet loco.Packet) {
-	s.mu.Lock()
-	binding := s.pushReceipt
-	s.mu.Unlock()
-	if binding != nil {
-		binding.enqueue(packet)
-	}
-}
-
-func (s *Session) closePushReceipt() {
-	s.mu.Lock()
-	binding := s.pushReceipt
-	s.mu.Unlock()
-	if binding != nil {
-		binding.close()
-	}
-}
-
-func (s *Session) bodyProgressCallbacks() bodyProgressCallbacks {
-	s.mu.Lock()
-	owner := s.inSegmentTimeout
-	s.mu.Unlock()
-	if owner == nil {
-		return bodyProgressCallbacks{}
-	}
-	return bodyProgressCallbacks{
-		schedule: func() { _, _ = owner.Toggle(1) },
-		partial:  func() { _, _ = owner.Toggle(0); _, _ = owner.Toggle(1) },
-		complete: func() { _, _ = owner.Toggle(0) },
-	}
 }
 
 func (s *Session) startReadLoop() {
@@ -1010,9 +555,8 @@ func (s *Session) startReadLoop() {
 }
 
 func (s *Session) readLoopBody() {
-	progress := s.bodyProgressCallbacks()
 	for {
-		packet, err := s.wire.readWithHeaderObserverAndProgress(s.observeHeader, progress)
+		packet, err := s.wire.read()
 		if err != nil {
 			s.finishRead(err)
 			return
@@ -1020,7 +564,6 @@ func (s *Session) readLoopBody() {
 		if s.dispatchPacket(packet) {
 			continue
 		}
-		s.dispatchPushReceipt(packet)
 		// dispatchPacket reports unsolicited packets through the normal push path.
 		s.mu.Lock()
 		if !s.bootstrapDone && s.bootstrapPushes != nil {
@@ -1094,7 +637,6 @@ func (s *Session) finishRead(err error) {
 	s.pendingByUniqueID = nil
 	s.pendingUniqueIDByID = nil
 	pushes := s.pushes
-	submitter := s.outSegmentSubmitter
 	s.mu.Unlock()
 	if shouldSchedule {
 		for range pending {
@@ -1102,13 +644,6 @@ func (s *Session) finishRead(err error) {
 		}
 	}
 	s.stopLifecycle()
-	s.closeReceiveHeaderTimeout()
-	s.closeInSegmentTimeout()
-	s.closePushReceipt()
-	s.resetReceiveHeaderTimeout()
-	if submitter != nil {
-		submitter.Close()
-	}
 	for _, waiter := range pending {
 		waiter <- requestResult{err: err}
 	}
@@ -1128,35 +663,19 @@ func (s *Session) Close() error {
 	}
 	s.closing = true
 	wire := s.wire
-	submitter := s.outSegmentSubmitter
 	if wire == nil {
 		s.closed = true
 		s.mu.Unlock()
 		s.stopLifecycle()
-		s.closeReceiveHeaderTimeout()
-		s.closeInSegmentTimeout()
-		s.closePushReceipt()
-		if submitter != nil {
-			submitter.Close()
-		}
 		return nil
 	}
 	s.mu.Unlock()
 	s.stopLifecycle()
-	s.closeReceiveHeaderTimeout()
-	s.closeInSegmentTimeout()
-	s.closePushReceipt()
-	s.resetReceiveHeaderTimeout()
-	if submitter != nil {
-		submitter.Close()
-	}
 	return wire.close()
 }
 
-// Shutdown interrupts the Session and then joins opt-in asynchronous
-// submission and receipt workers. Callers must not invoke Shutdown from an
-// injected callback; callback-side Close remains interrupt-only to avoid
-// self-join.
+// Shutdown interrupts the Session. It is currently equivalent to Close apart
+// from rejecting a nil context.
 func (s *Session) Shutdown(ctx context.Context) error {
 	if s == nil {
 		return nil
@@ -1164,34 +683,13 @@ func (s *Session) Shutdown(ctx context.Context) error {
 	if ctx == nil {
 		return context.Canceled
 	}
-	closeErr := s.Close()
-	s.mu.Lock()
-	submitter := s.outSegmentSubmitter
-	s.mu.Unlock()
-	var waitErr error
-	if submitter != nil {
-		waitErr = submitter.Wait(ctx)
-	}
-	var receiptErr error
-	s.mu.Lock()
-	binding := s.pushReceipt
-	s.mu.Unlock()
-	if binding != nil {
-		receiptErr = binding.wait(ctx)
-	}
-	return errors.Join(closeErr, waitErr, receiptErr)
+	return s.Close()
 }
 
 type wireConn struct {
 	c        net.Conn
 	secure   *loco.SecureV3
 	producer *loco.Producer
-}
-
-type bodyProgressCallbacks struct {
-	schedule func()
-	partial  func()
-	complete func()
 }
 
 func dialTLS(ctx context.Context, host string, port int) (*wireConn, error) {
@@ -1257,33 +755,19 @@ func (w *wireConn) request(id uint32, method string, body []byte) (loco.Packet, 
 	return loco.Packet{}, unsolicited, ErrProtocol
 }
 
+// read is the single point every incoming LOCO packet passes through, so the
+// BSON shadow comparison runs here.
 func (w *wireConn) read() (loco.Packet, error) {
-	return w.readWithHeaderObserver(nil)
-}
-
-// readWithHeaderObserver preserves read's packet/error behavior while exposing
-// the point at which a validated LOCO header is available. Plain transport
-// invokes the observer before reading the body. Secure transport invokes it
-// only after the authenticated envelope has been decrypted; the secure layer
-// does not expose plaintext header bytes earlier.
-func (w *wireConn) readWithHeaderObserver(observe func(loco.Header)) (loco.Packet, error) {
-	return w.readWithHeaderObserverAndProgress(observe, bodyProgressCallbacks{})
-}
-
-// readWithHeaderObserverAndProgress is the single point every incoming LOCO
-// packet passes through, so the BSON shadow comparison runs here.
-func (w *wireConn) readWithHeaderObserverAndProgress(observe func(loco.Header), progress bodyProgressCallbacks) (loco.Packet, error) {
-	packet, err := w.readUnshadowed(observe, progress)
+	packet, err := w.readUnshadowed()
 	if err == nil {
 		shadowDecode(packet)
 	}
 	return packet, err
 }
 
-func (w *wireConn) readUnshadowed(observe func(loco.Header), progress bodyProgressCallbacks) (loco.Packet, error) {
-	// Plain transport retains the reviewed header-before-body boundary. Exact
-	// reads naturally preserve split headers/bodies and leave any coalesced
-	// following frame for the next call.
+func (w *wireConn) readUnshadowed() (loco.Packet, error) {
+	// Exact plain-transport reads naturally preserve split headers/bodies and
+	// leave any coalesced following frame for the next call.
 	if w.secure == nil {
 		headerBytes := make([]byte, loco.HeaderSize)
 		if _, err := io.ReadFull(w.c, headerBytes); err != nil {
@@ -1293,11 +777,8 @@ func (w *wireConn) readUnshadowed(observe func(loco.Header), progress bodyProgre
 		if err != nil {
 			return loco.Packet{}, err
 		}
-		if observe != nil {
-			observe(header)
-		}
 		body := make([]byte, int(header.BodyLen))
-		if err := readBodyWithProgress(w.c, body, progress); err != nil {
+		if _, err := io.ReadFull(w.c, body); err != nil {
 			return loco.Packet{}, err
 		}
 		return loco.Packet{Header: header, Body: body}, nil
@@ -1306,13 +787,12 @@ func (w *wireConn) readUnshadowed(observe func(loco.Header), progress bodyProgre
 		w.producer = loco.NewProducer(0, 0)
 	}
 	for {
-		if packet, ok, err := w.producer.Next(observe); err != nil {
+		if packet, ok, err := w.producer.Next(nil); err != nil {
 			return loco.Packet{}, err
 		} else if ok {
 			return packet, nil
 		}
 
-		var plaintext []byte
 		prefix := make([]byte, 4)
 		if _, err := io.ReadFull(w.c, prefix); err != nil {
 			if errors.Is(err, io.EOF) && w.producer.Buffered() > 0 {
@@ -1329,11 +809,10 @@ func (w *wireConn) readUnshadowed(observe func(loco.Header), progress bodyProgre
 		}
 		envelope := make([]byte, 4+int(n))
 		copy(envelope, prefix)
-		if err := readBodyWithProgress(w.c, envelope[4:], progress); err != nil {
+		if _, err := io.ReadFull(w.c, envelope[4:]); err != nil {
 			return loco.Packet{}, err
 		}
-		var err error
-		plaintext, err = w.secure.Decrypt(envelope)
+		plaintext, err := w.secure.Decrypt(envelope)
 		if err != nil {
 			return loco.Packet{}, err
 		}
@@ -1341,51 +820,6 @@ func (w *wireConn) readUnshadowed(observe func(loco.Header), progress bodyProgre
 			return loco.Packet{}, err
 		}
 	}
-}
-
-// readBodyWithProgress keeps header bytes outside the in-segment watchdog and
-// reports each transport body transition in source order. A short read resets
-// the watchdog; completion only disables it after the requested body is full.
-func readBodyWithProgress(r io.Reader, body []byte, progress bodyProgressCallbacks) error {
-	if len(body) == 0 {
-		return nil
-	}
-	if progress.schedule == nil && progress.partial == nil && progress.complete == nil {
-		_, err := io.ReadFull(r, body)
-		return err
-	}
-	if progress.schedule != nil {
-		progress.schedule()
-	}
-	read := 0
-	for read < len(body) {
-		n, err := r.Read(body[read:])
-		if n > 0 {
-			read += n
-			if read < len(body) && progress.partial != nil {
-				progress.partial()
-			}
-		}
-		if read == len(body) {
-			if progress.complete != nil {
-				progress.complete()
-			}
-			return nil
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) && read > 0 {
-				return io.ErrUnexpectedEOF
-			}
-			return err
-		}
-		if n == 0 {
-			return io.ErrNoProgress
-		}
-	}
-	if progress.complete != nil {
-		progress.complete()
-	}
-	return nil
 }
 
 func checkin(ctx context.Context, hosts []string, ports []int, body []byte, dialers sessionDialers) (loco.Packet, *wireConn, error) {
