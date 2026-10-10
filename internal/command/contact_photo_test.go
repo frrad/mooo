@@ -24,7 +24,7 @@ func (f *fakeContactPhotoClient) ContactProfilePhoto(_ context.Context, chat, us
 	f.chat, f.user = chat, user
 	return f.data, f.err
 }
-func (f *fakeContactPhotoClient) Close() error { f.closed++; return nil }
+func (f *fakeContactPhotoClient) Shutdown(context.Context) error { f.closed++; return nil }
 
 func TestContactPhotoCLIUsesSelectedContactAndPrivateOutput(t *testing.T) {
 	root := t.TempDir()

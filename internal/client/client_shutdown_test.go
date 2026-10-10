@@ -214,7 +214,7 @@ func TestClientShutdownContextDoesNotWaitForAnotherShutdown(t *testing.T) {
 	}
 }
 
-func TestClientCloseRetainsOwnershipThroughBlockedConnect(t *testing.T) {
+func TestClientShutdownDeadlineRetainsOwnershipThroughBlockedConnect(t *testing.T) {
 	dir := t.TempDir()
 	leasePath := filepath.Join(dir, "profile.lock")
 	lease, err := acquireProfileLease(leasePath)
@@ -255,11 +255,14 @@ func TestClientCloseRetainsOwnershipThroughBlockedConnect(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("dial did not start")
 	}
-	if err := client.Close(); err != nil {
-		t.Fatalf("close while dial blocked: %v", err)
+	blockedCtx, blockedCancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err = client.Shutdown(blockedCtx)
+	blockedCancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("shutdown while dial blocked error=%v, want %v", err, context.DeadlineExceeded)
 	}
 	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
-		t.Fatalf("lease after close during dial error=%v, want %v", err, ErrProfileInUse)
+		t.Fatalf("lease after shutdown deadline during dial error=%v, want %v", err, ErrProfileInUse)
 	}
 	releaseOnce.Do(func() { close(release) })
 	select {

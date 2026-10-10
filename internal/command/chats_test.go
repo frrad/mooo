@@ -22,7 +22,7 @@ type fakeChatLister struct {
 func (f *fakeChatLister) ListChats(context.Context) ([]chatmeta.ChatData, error) {
 	return f.chats, f.err
 }
-func (f *fakeChatLister) Close() error { f.closed++; return nil }
+func (f *fakeChatLister) Shutdown(context.Context) error { f.closed++; return nil }
 
 func TestChatListWritesPrivateSummaryWithoutSourceMessage(t *testing.T) {
 	root := t.TempDir()
