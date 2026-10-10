@@ -99,7 +99,7 @@ func TestSessionRejectsRequestsDuringLocalClose(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("Close did not reach owner cancellation")
 	}
-	_, err := session.Request(context.Background(), "NOTIREAD", []byte{5, 0, 0, 0, 0})
+	_, err := session.request(context.Background(), "NOTIREAD", []byte{5, 0, 0, 0, 0})
 	if !errors.Is(err, ErrClosed) {
 		t.Errorf("request during Close: %v; want ErrClosed", err)
 	}
@@ -244,7 +244,7 @@ func TestSessionPingContextCancellationDoesNotScheduleRearm(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	requestDone := make(chan error, 1)
 	go func() {
-		_, err := session.Request(ctx, "PING", []byte{5, 0, 0, 0, 0})
+		_, err := session.request(ctx, "PING", []byte{5, 0, 0, 0, 0})
 		requestDone <- err
 	}()
 	select {
@@ -315,7 +315,7 @@ func TestSessionOrdinaryWriteFailureDoesNotScheduleRearm(t *testing.T) {
 		lifecycleScheduler: scheduler,
 	}
 	defer func() { _ = clientConn.Close() }()
-	if _, err := session.Request(context.Background(), "NOTIREAD", []byte{5, 0, 0, 0, 0}); err == nil {
+	if _, err := session.request(context.Background(), "NOTIREAD", []byte{5, 0, 0, 0, 0}); err == nil {
 		t.Fatal("ordinary request unexpectedly succeeded after write failure")
 	}
 	if got, want := scheduler.snapshot(), []string{"cancel"}; !reflect.DeepEqual(got, want) {

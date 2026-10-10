@@ -48,7 +48,7 @@ func (s *session) SendUpload(ctx context.Context, chatID int64, upload media.Upl
 }
 
 func (s *session) trailerUpload(ctx context.Context, shipBody, data []byte, post func(key string) ([]byte, error)) (media.SendResult, error) {
-	shipPacket, err := s.Request(ctx, media.ShipCommand, shipBody)
+	shipPacket, err := s.request(ctx, media.ShipCommand, shipBody)
 	if err != nil {
 		return media.SendResult{}, err
 	}
@@ -90,7 +90,7 @@ func (s *session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, 
 	if !media.ValidCaption(caption) {
 		return chat.WriteResponse{}, media.ErrInvalidCaption
 	}
-	shipPacket, err := s.Request(ctx, media.AlbumShipCommand, shipBody)
+	shipPacket, err := s.request(ctx, media.AlbumShipCommand, shipBody)
 	if err != nil {
 		return chat.WriteResponse{}, fmt.Errorf("%w: MSHIP: %w", ErrAlbumNotCreated, err)
 	}
@@ -122,7 +122,7 @@ func (s *session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, 
 	if err != nil {
 		return chat.WriteResponse{}, fmt.Errorf("%w: %w", ErrAlbumNotCreated, err)
 	}
-	reply, err := s.Request(ctx, chat.WriteCommand, body)
+	reply, err := s.request(ctx, chat.WriteCommand, body)
 	if err != nil {
 		return chat.WriteResponse{}, err
 	}

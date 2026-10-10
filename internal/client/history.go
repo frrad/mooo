@@ -30,7 +30,7 @@ func (c *Client) ReadHistoryPage(ctx context.Context, chatID, after, through int
 	if _, err := request.MarshalBSON(); err != nil {
 		return HistoryPage{}, err
 	}
-	response, err := c.SyncMessages(ctx, request)
+	response, err := c.syncMessages(ctx, request)
 	if err != nil {
 		return HistoryPage{}, err
 	}

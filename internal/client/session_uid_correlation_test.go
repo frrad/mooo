@@ -121,7 +121,7 @@ func TestSessionRequestRawRejectsWrongMethodSamePacketID(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	got, err := s.Request(ctx, "PING", []byte{5, 0, 0, 0, 0})
+	got, err := s.request(ctx, "PING", []byte{5, 0, 0, 0, 0})
 	if err != nil || got.Header.Method != "PING" {
 		t.Fatalf("request result=%+v err=%v", got.Header, err)
 	}

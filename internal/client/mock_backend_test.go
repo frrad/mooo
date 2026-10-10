@@ -772,7 +772,7 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	chats, err := api.InitialChatData(ctx)
+	chats, err := api.initialChatData(ctx)
 	if err != nil || len(chats) != 2 {
 		t.Fatalf("initial chats = %d, err=%v", len(chats), err)
 	}

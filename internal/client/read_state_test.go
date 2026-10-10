@@ -270,7 +270,7 @@ func TestClientSyncMessagesCatchUpDoesNotSuppressLaterMarkRead(t *testing.T) {
 	api := testContinuityClient(t, checkpoint, backend)
 	// Catch-up declares zero held messages. Whether that marks the interval
 	// read on the server is unproven, so it must not record an acknowledgement.
-	if _, err := api.SyncMessages(context.Background(), syncmsg.Request{ChatID: 42, Cur: 90, Max: 99, Count: 0}); err != nil {
+	if _, err := api.syncMessages(context.Background(), syncmsg.Request{ChatID: 42, Cur: 90, Max: 99, Count: 0}); err != nil {
 		t.Fatal(err)
 	}
 	if got := checkpoint.ReadWatermark(42); got != 0 {

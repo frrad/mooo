@@ -89,7 +89,7 @@ func TestConnectSessionPreservesMessagesBeforeLoginListReply(t *testing.T) {
 
 	for want := int64(1); want <= 70; want++ {
 		select {
-		case packet := <-session.Pushes():
+		case packet := <-session.pushStream():
 			if packet.Header.Method != "MSG" {
 				t.Fatalf("push %d method = %q, want MSG", want, packet.Header.Method)
 			}
@@ -106,7 +106,7 @@ func TestConnectSessionPreservesMessagesBeforeLoginListReply(t *testing.T) {
 		}
 	}
 	select {
-	case packet := <-session.Pushes():
+	case packet := <-session.pushStream():
 		t.Fatalf("unexpected extra packet %q", packet.Header.Method)
 	default:
 	}

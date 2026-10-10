@@ -9,10 +9,10 @@ import (
 // MarkRead acknowledges one exact message position through the same
 // SYNCMSG primitive used for bounded history recovery. The server-side
 // acknowledgement is the one-message interval [watermark-1, watermark].
-// Request sends exactly once; transport failures and non-zero statuses are
+// request sends exactly once; transport failures and non-zero statuses are
 // returned by the shared request path without retrying.
 func (s *session) MarkRead(ctx context.Context, chatID, watermark int64) (syncmsg.Response, error) {
-	return s.SyncMessages(ctx, syncmsg.Request{
+	return s.syncMessages(ctx, syncmsg.Request{
 		ChatID: chatID,
 		Cur:    watermark - 1,
 		Max:    watermark,

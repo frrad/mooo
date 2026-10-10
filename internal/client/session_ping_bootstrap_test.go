@@ -318,7 +318,7 @@ func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.
 		defer func() { _ = outcome.session.Close() }()
 		for want := 0; want < 70; want++ {
 			select {
-			case packet := <-outcome.session.Pushes():
+			case packet := <-outcome.session.pushStream():
 				if packet.Header.Method != "PUSH" {
 					t.Fatalf("buffered push %d method = %q, want PUSH", want, packet.Header.Method)
 				}

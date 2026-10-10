@@ -266,7 +266,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 			}
 			pingCtx, cancel := context.WithTimeout(context.Background(), pingOptions.timeout)
 			defer cancel()
-			if _, err := session.Request(pingCtx, "PING", []byte{5, 0, 0, 0, 0}); err != nil {
+			if _, err := session.request(pingCtx, "PING", []byte{5, 0, 0, 0, 0}); err != nil {
 				_ = session.Close()
 			}
 		})
@@ -324,9 +324,9 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	return session, nil
 }
 
-// InitialChatData returns independent copies of the chat-data documents
+// chatDataSnapshot returns independent copies of the chat-data documents
 // obtained while completing LOGINLIST/LCHATLIST synchronization.
-func (s *session) InitialChatData() []bson.Raw {
+func (s *session) chatDataSnapshot() []bson.Raw {
 	if s == nil {
 		return nil
 	}
@@ -339,25 +339,25 @@ func (s *session) InitialChatData() []bson.Raw {
 	return out
 }
 
-// Pushes exposes unsolicited packets from the background reader, including
+// pushStream exposes unsolicited packets from the background reader, including
 // packets received while no request is active. Callers should drain it
 // continuously once mutations or subscriptions can produce events.
-func (s *session) Pushes() <-chan loco.Packet {
+func (s *session) pushStream() <-chan loco.Packet {
 	if s == nil {
 		return nil
 	}
 	return s.pushes
 }
 
-// call marshals req, sends it once with Request and decodes the successful
-// reply body. A nil Session or Context is rejected by Request.
+// call marshals req, sends it once with request and decodes the successful
+// reply body. A nil session or Context is rejected by request.
 func call[Req interface{ MarshalBSON() ([]byte, error) }, Resp any](s *session, ctx context.Context, command string, req Req, decode func([]byte) (Resp, error)) (Resp, error) {
 	var zero Resp
 	body, err := req.MarshalBSON()
 	if err != nil {
 		return zero, err
 	}
-	reply, err := s.Request(ctx, command, body)
+	reply, err := s.request(ctx, command, body)
 	if err != nil {
 		return zero, err
 	}
@@ -368,10 +368,10 @@ func call[Req interface{ MarshalBSON() ([]byte, error) }, Resp any](s *session, 
 // beyond its status.
 func ignoreReply([]byte) (struct{}, error) { return struct{}{}, nil }
 
-// Request sends exactly once. A timeout or disconnect is ambiguous and is
+// request sends exactly once. A timeout or disconnect is ambiguous and is
 // returned without retrying the command. It rejects a nil Session or Context,
 // so callers need no guard of their own unless they dereference s first.
-func (s *session) Request(ctx context.Context, command string, body []byte) (loco.Packet, error) {
+func (s *session) request(ctx context.Context, command string, body []byte) (loco.Packet, error) {
 	reply, err := s.requestRaw(ctx, 0, command, body)
 	if err != nil {
 		return loco.Packet{}, err

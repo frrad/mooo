@@ -36,7 +36,7 @@ func (s *session) GetMessages(ctx context.Context, chatID int64, logIDs []int64)
 	if err != nil {
 		return nil, ErrProtocol
 	}
-	reply, err := s.Request(ctx, GetMessagesCommand, body)
+	reply, err := s.request(ctx, GetMessagesCommand, body)
 	if err != nil {
 		return nil, err
 	}

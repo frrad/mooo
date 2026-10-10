@@ -253,11 +253,11 @@ func (c *Client) adoptSession(session *session) (*session, error) {
 	return session, nil
 }
 
-// InitialChatData returns the synchronized login snapshot, connecting once if
+// initialChatData returns the synchronized login snapshot, connecting once if
 // needed and reusing that connection for later operations.
-func (c *Client) InitialChatData(ctx context.Context) ([]bson.Raw, error) {
+func (c *Client) initialChatData(ctx context.Context) ([]bson.Raw, error) {
 	return withSession(c, ctx, func(session *session) ([]bson.Raw, error) {
-		return session.InitialChatData(), nil
+		return session.chatDataSnapshot(), nil
 	})
 }
 
@@ -265,7 +265,7 @@ func (c *Client) InitialChatData(ctx context.Context) ([]bson.Raw, error) {
 // unsolicited-packet stream for Events.
 func (c *Client) sessionPushes(ctx context.Context) (<-chan loco.Packet, error) {
 	return withSession(c, ctx, func(session *session) (<-chan loco.Packet, error) {
-		raw := session.Pushes()
+		raw := session.pushStream()
 		if raw == nil {
 			return nil, ErrProtocol
 		}

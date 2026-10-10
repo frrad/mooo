@@ -122,7 +122,7 @@ func TestSessionResponseRemovesPendingCallback(t *testing.T) {
 		serverDone <- err
 	}()
 
-	if _, err := session.Request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); err != nil {
+	if _, err := session.request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-serverDone; err != nil {
@@ -189,7 +189,7 @@ func TestSessionRequestIDWrapsBeforeOfficialUpperBound(t *testing.T) {
 	}()
 
 	for range 2 {
-		if _, err := session.Request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); err != nil {
+		if _, err := session.request(context.Background(), "PING", []byte{5, 0, 0, 0, 0}); err != nil {
 			t.Fatal(err)
 		}
 	}
