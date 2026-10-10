@@ -41,11 +41,11 @@ type Client struct {
 	store            *authstate.Store
 	checkpoint       *continuity.Store
 	http             macweb.Doer
-	session          *Session
-	cleanupSession   *Session
+	session          *session
+	cleanupSession   *session
 	closed           bool
 	renewalAttempted bool
-	dial             func(context.Context, authstate.State) (*Session, error)
+	dial             func(context.Context, authstate.State) (*session, error)
 	lease            *profileLease
 	eventStream      chan events.Result
 	eventDone        chan struct{}
@@ -102,7 +102,7 @@ func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*
 	}
 	client.checkpoint = checkpoint
 	resume := options.loginResume(checkpoint.Snapshot())
-	client.dial = func(ctx context.Context, state authstate.State) (*Session, error) {
+	client.dial = func(ctx context.Context, state authstate.State) (*session, error) {
 		return connectSessionWithResume(ctx, state, resume, productionSessionDialers().observed(options.PacketObserver))
 	}
 	return client, nil
@@ -132,7 +132,7 @@ func (c *Client) Connect(ctx context.Context) error {
 
 // withSession lazily establishes the Client's one Session and runs fn on it.
 // Client operations reach the Session only through it.
-func withSession[T any](c *Client, ctx context.Context, fn func(*Session) (T, error)) (T, error) {
+func withSession[T any](c *Client, ctx context.Context, fn func(*session) (T, error)) (T, error) {
 	session, err := c.ensureSession(ctx)
 	if err != nil {
 		var zero T
@@ -141,7 +141,7 @@ func withSession[T any](c *Client, ctx context.Context, fn func(*Session) (T, er
 	return fn(session)
 }
 
-func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
+func (c *Client) ensureSession(ctx context.Context) (*session, error) {
 	if c == nil || ctx == nil {
 		return nil, ErrProtocol
 	}
@@ -183,7 +183,7 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 // connect dials and adopts one Session for ensureSession, which owns the
 // connectActive gate. A -950 dial status renews stored credentials at most
 // once per Client and dials again.
-func (c *Client) connect(ctx context.Context) (*Session, error) {
+func (c *Client) connect(ctx context.Context) (*session, error) {
 	c.mu.Lock()
 	state, dial := c.state, c.dial
 	c.mu.Unlock()
@@ -226,7 +226,7 @@ func (c *Client) connect(ctx context.Context) (*Session, error) {
 // failure closes the Client; a Client closed during the dial gets the Session
 // recorded so Shutdown can join its worker, since closing the transport alone
 // is not a worker-join guarantee.
-func (c *Client) adoptSession(session *Session) (*Session, error) {
+func (c *Client) adoptSession(session *session) (*session, error) {
 	c.mu.Lock()
 	checkpoint := c.checkpoint
 	c.mu.Unlock()
@@ -256,7 +256,7 @@ func (c *Client) adoptSession(session *Session) (*Session, error) {
 // InitialChatData returns the synchronized login snapshot, connecting once if
 // needed and reusing that connection for later operations.
 func (c *Client) InitialChatData(ctx context.Context) ([]bson.Raw, error) {
-	return withSession(c, ctx, func(session *Session) ([]bson.Raw, error) {
+	return withSession(c, ctx, func(session *session) ([]bson.Raw, error) {
 		return session.InitialChatData(), nil
 	})
 }
@@ -264,7 +264,7 @@ func (c *Client) InitialChatData(ctx context.Context) ([]bson.Raw, error) {
 // sessionPushes lazily establishes the session and returns its
 // unsolicited-packet stream for Events.
 func (c *Client) sessionPushes(ctx context.Context) (<-chan loco.Packet, error) {
-	return withSession(c, ctx, func(session *Session) (<-chan loco.Packet, error) {
+	return withSession(c, ctx, func(session *session) (<-chan loco.Packet, error) {
 		raw := session.Pushes()
 		if raw == nil {
 			return nil, ErrProtocol
@@ -511,7 +511,7 @@ func (c *Client) queueCommit(chatID, logID int64) {
 // CreateChat uses the client's existing session, or lazily establishes its
 // first one. It does not reconnect or retry after any transport failure.
 func (c *Client) CreateChat(ctx context.Context, request chat.CreateRequest) (chat.CreateResponse, error) {
-	return withSession(c, ctx, func(session *Session) (chat.CreateResponse, error) {
+	return withSession(c, ctx, func(session *session) (chat.CreateResponse, error) {
 		return session.CreateChat(ctx, request)
 	})
 }
@@ -521,7 +521,7 @@ func (c *Client) AddMembers(ctx context.Context, request chat.AddMembersRequest)
 	if _, err := request.MarshalBSON(); err != nil {
 		return chat.AddMembersResponse{}, err
 	}
-	return withSession(c, ctx, func(session *Session) (chat.AddMembersResponse, error) {
+	return withSession(c, ctx, func(session *session) (chat.AddMembersResponse, error) {
 		return session.AddMembers(ctx, request)
 	})
 }
@@ -529,7 +529,7 @@ func (c *Client) AddMembers(ctx context.Context, request chat.AddMembersRequest)
 // SendText lazily connects once, then sends one text message without retrying
 // an ambiguous transport result.
 func (c *Client) SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error) {
-	return withSession(c, ctx, func(session *Session) (chat.WriteResponse, error) {
+	return withSession(c, ctx, func(session *session) (chat.WriteResponse, error) {
 		return session.SendText(ctx, chatID, message)
 	})
 }
@@ -537,7 +537,7 @@ func (c *Client) SendText(ctx context.Context, chatID int64, message string) (ch
 // SendReply lazily connects once, then sends one reply without retrying an
 // ambiguous transport result.
 func (c *Client) SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error) {
-	return withSession(c, ctx, func(session *Session) (chat.WriteResponse, error) {
+	return withSession(c, ctx, func(session *session) (chat.WriteResponse, error) {
 		return session.SendReply(ctx, request)
 	})
 }
@@ -545,21 +545,21 @@ func (c *Client) SendReply(ctx context.Context, request chat.ReplyRequest) (chat
 // SendImage lazily connects once, then sends one JPEG or PNG without retrying
 // any ambiguous mutation or upload stage.
 func (c *Client) SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error) {
-	return withSession(c, ctx, func(session *Session) (media.SendResult, error) {
+	return withSession(c, ctx, func(session *session) (media.SendResult, error) {
 		return session.SendImage(ctx, chatID, data, caption)
 	})
 }
 
 // SendUpload sends one prepared file or video through the current session.
 func (c *Client) SendUpload(ctx context.Context, chatID int64, upload media.Upload) (media.SendResult, error) {
-	return withSession(c, ctx, func(session *Session) (media.SendResult, error) {
+	return withSession(c, ctx, func(session *session) (media.SendResult, error) {
 		return session.SendUpload(ctx, chatID, upload)
 	})
 }
 
 // SendAlbum sends 2 to 30 photos as one album through the current session.
 func (c *Client) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, caption string) (chat.WriteResponse, error) {
-	return withSession(c, ctx, func(session *Session) (chat.WriteResponse, error) {
+	return withSession(c, ctx, func(session *session) (chat.WriteResponse, error) {
 		return session.SendAlbum(ctx, chatID, photos, caption)
 	})
 }

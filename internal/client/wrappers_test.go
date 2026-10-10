@@ -21,11 +21,11 @@ func decodeEventStreamWithTerminal(raw <-chan loco.Packet, output chan<- events.
 	decodeEventStreamWithTerminalStop(raw, output, checkpoint, delivered, terminal, nil)
 }
 
-func connectSessionWithDialers(ctx context.Context, state authstate.State, dialers sessionDialers) (*Session, error) {
+func connectSessionWithDialers(ctx context.Context, state authstate.State, dialers sessionDialers) (*session, error) {
 	return connectSessionWithResume(ctx, state, continuity.Checkpoint{Version: continuity.Version}, dialers)
 }
 
-func (s *Session) readLoop() {
+func (s *session) readLoop() {
 	s.mu.Lock()
 	if s.readLoopStarted {
 		s.mu.Unlock()

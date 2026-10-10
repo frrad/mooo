@@ -285,15 +285,15 @@ func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.
 	}
 	clock := &queuedTimerClock{}
 	result := make(chan struct {
-		session *Session
+		session *session
 		err     error
 	}, 1)
 	go func() {
-		session, err := connectSessionWithResumeOptions(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers, pingSessionOptions{clock: clock, interval: time.Second, timeout: time.Second, beforeBootstrapRequest: func() { close(gapReady); <-allowLchat }})
+		connected, err := connectSessionWithResumeOptions(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers, pingSessionOptions{clock: clock, interval: time.Second, timeout: time.Second, beforeBootstrapRequest: func() { close(gapReady); <-allowLchat }})
 		result <- struct {
-			session *Session
+			session *session
 			err     error
-		}{session: session, err: err}
+		}{session: connected, err: err}
 	}()
 	select {
 	case <-gapReady:

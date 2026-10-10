@@ -126,7 +126,7 @@ func endpoint(body []byte) (string, int, error) {
 	return hostValue.StringValue(), port, nil
 }
 
-func finishLoginSyncSession(ctx context.Context, session *Session, first []byte, firstStatus int32, beforeRequest func()) ([]bson.Raw, loginCursor, error) {
+func finishLoginSyncSession(ctx context.Context, session *session, first []byte, firstStatus int32, beforeRequest func()) ([]bson.Raw, loginCursor, error) {
 	page := append(bson.Raw(nil), first...)
 	status := firstStatus
 	var chats []bson.Raw

@@ -79,7 +79,7 @@ func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
 	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
 	lateSession := newSession(nil)
 	client := &Client{lease: lease}
-	client.dial = func(context.Context, authstate.State) (*Session, error) {
+	client.dial = func(context.Context, authstate.State) (*session, error) {
 		close(started)
 		<-release
 		return lateSession, nil
@@ -152,7 +152,7 @@ func TestClientShutdownContextDoesNotWaitForAnotherShutdown(t *testing.T) {
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
-	client := &Client{dial: func(context.Context, authstate.State) (*Session, error) {
+	client := &Client{dial: func(context.Context, authstate.State) (*session, error) {
 		close(started)
 		<-release
 		return newSession(nil), nil
@@ -226,10 +226,10 @@ func TestClientShutdownDeadlineRetainsOwnershipThroughBlockedConnect(t *testing.
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
-	client := &Client{lease: lease, dial: func(context.Context, authstate.State) (*Session, error) {
+	client := &Client{lease: lease, dial: func(context.Context, authstate.State) (*session, error) {
 		close(started)
 		<-release
-		return &Session{}, nil
+		return &session{}, nil
 	}}
 	connectDone := make(chan error, 1)
 	connectFinished := make(chan struct{})
@@ -318,7 +318,7 @@ func TestClientShutdownClosesNormalAndCleanupSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Shutdown: %v", err)
 	}
-	for name, session := range map[string]*Session{"primary": primary, "cleanup": cleanup} {
+	for name, session := range map[string]*session{"primary": primary, "cleanup": cleanup} {
 		session.mu.Lock()
 		closing := session.closed || session.closing
 		session.mu.Unlock()

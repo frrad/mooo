@@ -18,7 +18,7 @@ func TestSessionReadLoopCorrelatesPendingPacketSplitAtHeader(t *testing.T) {
 	defer func() { _ = serverConn.Close() }()
 	wantID := uint32(100000123)
 	waiter := make(chan requestResult, 1)
-	session := &Session{
+	session := &session{
 		wire:    &wireConn{c: clientConn},
 		pushes:  make(chan loco.Packet, 1),
 		pending: map[uint32]pendingRequest{wantID: {method: "PUSH", result: waiter}},
@@ -67,7 +67,7 @@ func TestSessionReadLoopBodyEOFFailsWaiterOnce(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	wantID := uint32(100000124)
 	waiter := make(chan requestResult, 1)
-	session := &Session{
+	session := &session{
 		wire:    &wireConn{c: clientConn},
 		pushes:  make(chan loco.Packet, 1),
 		pending: map[uint32]pendingRequest{wantID: {method: "PUSH", result: waiter}},

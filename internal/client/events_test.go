@@ -54,7 +54,7 @@ func TestMalformedTerminalNoticeDoesNotTriggerShutdown(t *testing.T) {
 
 func TestTerminalNoticeClosesSessionEventStream(t *testing.T) {
 	raw := make(chan loco.Packet, 2)
-	session := &Session{pushes: raw}
+	session := &session{pushes: raw}
 	api := &Client{session: session}
 	stream, err := api.Events(context.Background())
 	if err != nil {
@@ -95,7 +95,7 @@ func TestTerminalNoticeClosesSessionEventStream(t *testing.T) {
 func TestTerminalNoticeClosesOwnedCarriageAndRejectsSend(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = serverConn.Close() }()
-	session := &Session{
+	session := &session{
 		wire:    &wireConn{c: clientConn},
 		pushes:  make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest),
@@ -154,7 +154,7 @@ func TestShutdownCancelsBlockedEventDecoder(t *testing.T) {
 	}
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = serverConn.Close() }()
-	session := &Session{
+	session := &session{
 		wire:    &wireConn{c: clientConn},
 		pushes:  make(chan loco.Packet, requestLimit),
 		pending: make(map[uint32]pendingRequest),
@@ -208,7 +208,7 @@ func TestShutdownCancelsBlockedEventDecoder(t *testing.T) {
 }
 
 func TestShutdownCancelsIdleEventDecoder(t *testing.T) {
-	session := &Session{pushes: make(chan loco.Packet)}
+	session := &session{pushes: make(chan loco.Packet)}
 	api := &Client{session: session}
 	if _, err := api.Events(context.Background()); err != nil {
 		t.Fatal(err)
@@ -264,7 +264,7 @@ func TestDecodeEventStreamSuppressesCommittedAndInProcessDuplicates(t *testing.T
 }
 
 func TestEventsRejectsClosedAdmissionAfterSessionLookup(t *testing.T) {
-	api := &Client{session: &Session{pushes: make(chan loco.Packet)}}
+	api := &Client{session: &session{pushes: make(chan loco.Packet)}}
 	api.closed = true
 	if _, err := api.Events(context.Background()); !errors.Is(err, ErrClientClosed) {
 		t.Fatalf("Events after closed admission error = %v, want %v", err, ErrClientClosed)

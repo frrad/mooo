@@ -17,7 +17,7 @@ const maxGetMessages = 200
 
 // GetMessages reads the current chat logs for logIDs in one chat with one
 // GETMSGS request. Logs the server does not return are simply absent.
-func (s *Session) GetMessages(ctx context.Context, chatID int64, logIDs []int64) ([]events.Event, error) {
+func (s *session) GetMessages(ctx context.Context, chatID int64, logIDs []int64) ([]events.Event, error) {
 	if chatID <= 0 || len(logIDs) == 0 || len(logIDs) > maxGetMessages {
 		return nil, ErrProtocol
 	}
@@ -84,7 +84,7 @@ func (s *Session) GetMessages(ctx context.Context, chatID int64, logIDs []int64)
 
 // GetMessages reads chosen chat logs through the current session.
 func (c *Client) GetMessages(ctx context.Context, chatID int64, logIDs []int64) ([]events.Event, error) {
-	return withSession(c, ctx, func(session *Session) ([]events.Event, error) {
+	return withSession(c, ctx, func(session *session) ([]events.Event, error) {
 		return session.GetMessages(ctx, chatID, logIDs)
 	})
 }

@@ -59,7 +59,7 @@ func TestClientConnectRenewsOnceOnExpiredToken(t *testing.T) {
 	}
 	client.store = store
 	dials := 0
-	client.dial = func(_ context.Context, got authstate.State) (*Session, error) {
+	client.dial = func(_ context.Context, got authstate.State) (*session, error) {
 		dials++
 		if dials == 1 {
 			return nil, StatusError{Command: "LOGINLIST", Status: -950}
@@ -67,7 +67,7 @@ func TestClientConnectRenewsOnceOnExpiredToken(t *testing.T) {
 		if got.Credentials.AccessToken != "new-access" {
 			t.Fatal("second login did not use rotated access token")
 		}
-		return &Session{}, nil
+		return &session{}, nil
 	}
 	if err := client.Connect(t.Context()); err != nil {
 		t.Fatal(err)
@@ -114,7 +114,7 @@ func TestClientConnectDoesNotRepeatFailedRenewal(t *testing.T) {
 		t.Fatal(err)
 	}
 	client.store = store
-	client.dial = func(context.Context, authstate.State) (*Session, error) {
+	client.dial = func(context.Context, authstate.State) (*session, error) {
 		return nil, StatusError{Command: "LOGINLIST", Status: -950}
 	}
 	if err := client.Connect(t.Context()); !errors.Is(err, ErrCredentialRenewal) {
@@ -145,9 +145,9 @@ func TestClientConnectReusesOneSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	connects := 0
-	client.dial = func(context.Context, authstate.State) (*Session, error) {
+	client.dial = func(context.Context, authstate.State) (*session, error) {
 		connects++
-		return &Session{}, nil
+		return &session{}, nil
 	}
 	if err := client.Connect(t.Context()); err != nil {
 		t.Fatal(err)

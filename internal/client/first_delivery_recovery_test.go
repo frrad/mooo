@@ -59,8 +59,8 @@ func TestFirstUncommittedLiveMessageRemainsResumeTargetAfterRestart(t *testing.T
 		t.Fatal(err)
 	}
 	restarted.checkpoint = reopened
-	restarted.dial = func(context.Context, authstate.State) (*Session, error) {
-		return &Session{initialChatData: []bson.Raw{}}, nil
+	restarted.dial = func(context.Context, authstate.State) (*session, error) {
+		return &session{initialChatData: []bson.Raw{}}, nil
 	}
 	targets, err := restarted.ResumeTargets(t.Context())
 	if err != nil {

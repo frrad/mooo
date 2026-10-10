@@ -45,7 +45,7 @@ func OpenWithTestDialers(statePath string, doer macweb.Doer, dialers TestDialers
 		return nil, err
 	}
 	resume := option.loginResume(c.checkpoint.Snapshot())
-	c.dial = func(ctx context.Context, state authstate.State) (*Session, error) {
+	c.dial = func(ctx context.Context, state authstate.State) (*session, error) {
 		return connectSessionWithResume(ctx, state, resume, testSessionDialers(dialers).observed(option.PacketObserver))
 	}
 	return c, nil

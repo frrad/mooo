@@ -16,7 +16,7 @@ import (
 
 func TestSessionBackgroundReaderDispatchesIdlePushAndResponse(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
-	s := &Session{
+	s := &session{
 		wire: &wireConn{c: clientConn}, nextID: 1,
 		pushes: make(chan loco.Packet, 4), pending: make(map[uint32]pendingRequest),
 	}
@@ -153,7 +153,7 @@ func TestEndpointWidths(t *testing.T) {
 }
 
 func TestSessionClosed(t *testing.T) {
-	s := &Session{closed: true}
+	s := &session{closed: true}
 	_, err := s.Request(t.Context(), "CREATE", []byte{5, 0, 0, 0, 0})
 	if !errors.Is(err, ErrClosed) {
 		t.Fatalf("error=%v", err)

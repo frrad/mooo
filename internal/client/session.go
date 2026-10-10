@@ -64,9 +64,9 @@ type lifecycleShutdown interface {
 	shutdown()
 }
 
-// Session owns one authenticated carriage. A background reader dispatches
+// session owns one authenticated carriage. A background reader dispatches
 // correlated responses and preserves unsolicited packets for the caller.
-type Session struct {
+type session struct {
 	mu                 sync.Mutex
 	writeGateOnce      sync.Once
 	writeGate          chan struct{}
@@ -89,8 +89,8 @@ type Session struct {
 	readLoopStarted    bool
 }
 
-func newSession(scheduler lifecycleScheduler) *Session {
-	return &Session{
+func newSession(scheduler lifecycleScheduler) *session {
+	return &session{
 		pending:            make(map[uint32]pendingRequest),
 		lifecycleScheduler: scheduler,
 		bootstrapDone:      true,
@@ -100,7 +100,7 @@ func newSession(scheduler lifecycleScheduler) *Session {
 // queueSchedule and queueCancelRequest keep owner callbacks out of Session.mu.
 // lifecycleMu serializes them with stopLifecycle so shutdown cannot be
 // followed by an effective timer rearm.
-func (s *Session) queueSchedule() {
+func (s *session) queueSchedule() {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
 	if s.lifecycleStopped || s.lifecycleScheduler == nil {
@@ -109,7 +109,7 @@ func (s *Session) queueSchedule() {
 	s.lifecycleScheduler.queueSchedule()
 }
 
-func (s *Session) queueCancelRequest() {
+func (s *session) queueCancelRequest() {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
 	if s.lifecycleStopped || s.lifecycleScheduler == nil {
@@ -118,7 +118,7 @@ func (s *Session) queueCancelRequest() {
 	s.lifecycleScheduler.queueCancel()
 }
 
-func (s *Session) stopLifecycle() {
+func (s *session) stopLifecycle() {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
 	if s.lifecycleStopped {
@@ -186,15 +186,15 @@ func (d sessionDialers) observed(observer func(loco.Packet)) sessionDialers {
 
 // connectSession performs GETCONF, CHECKIN, secure carriage setup, and
 // LOGINLIST from client-owned state. Client owns and reuses the result.
-func connectSession(ctx context.Context, state authstate.State) (*Session, error) {
+func connectSession(ctx context.Context, state authstate.State) (*session, error) {
 	return connectSessionWithResumeOptions(ctx, state, continuity.Checkpoint{Version: continuity.Version}, productionSessionDialers(), pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout})
 }
 
-func connectSessionWithResume(ctx context.Context, state authstate.State, resume continuity.Checkpoint, dialers sessionDialers) (*Session, error) {
+func connectSessionWithResume(ctx context.Context, state authstate.State, resume continuity.Checkpoint, dialers sessionDialers) (*session, error) {
 	return connectSessionWithResumeOptions(ctx, state, resume, dialers, pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout})
 }
 
-func connectSessionWithResumeOptions(ctx context.Context, state authstate.State, resume continuity.Checkpoint, dialers sessionDialers, pingOptions pingSessionOptions) (*Session, error) {
+func connectSessionWithResumeOptions(ctx context.Context, state authstate.State, resume continuity.Checkpoint, dialers sessionDialers, pingOptions pingSessionOptions) (*session, error) {
 	if ctx == nil || state.Credentials == nil {
 		return nil, ErrCredentialsAbsent
 	}
@@ -257,7 +257,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	if pingOptions.timeout <= 0 {
 		pingOptions.timeout = defaultPingRequestTimeout
 	}
-	var session *Session
+	var session *session
 	var owner lifecycleScheduler
 	if pingOptions.clock != nil && pingOptions.interval > 0 {
 		owner = newPingTimerOwner(pingOptions.clock, pingOptions.interval, func() {
@@ -326,7 +326,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 
 // InitialChatData returns independent copies of the chat-data documents
 // obtained while completing LOGINLIST/LCHATLIST synchronization.
-func (s *Session) InitialChatData() []bson.Raw {
+func (s *session) InitialChatData() []bson.Raw {
 	if s == nil {
 		return nil
 	}
@@ -342,7 +342,7 @@ func (s *Session) InitialChatData() []bson.Raw {
 // Pushes exposes unsolicited packets from the background reader, including
 // packets received while no request is active. Callers should drain it
 // continuously once mutations or subscriptions can produce events.
-func (s *Session) Pushes() <-chan loco.Packet {
+func (s *session) Pushes() <-chan loco.Packet {
 	if s == nil {
 		return nil
 	}
@@ -351,7 +351,7 @@ func (s *Session) Pushes() <-chan loco.Packet {
 
 // call marshals req, sends it once with Request and decodes the successful
 // reply body. A nil Session or Context is rejected by Request.
-func call[Req interface{ MarshalBSON() ([]byte, error) }, Resp any](s *Session, ctx context.Context, command string, req Req, decode func([]byte) (Resp, error)) (Resp, error) {
+func call[Req interface{ MarshalBSON() ([]byte, error) }, Resp any](s *session, ctx context.Context, command string, req Req, decode func([]byte) (Resp, error)) (Resp, error) {
 	var zero Resp
 	body, err := req.MarshalBSON()
 	if err != nil {
@@ -371,7 +371,7 @@ func ignoreReply([]byte) (struct{}, error) { return struct{}{}, nil }
 // Request sends exactly once. A timeout or disconnect is ambiguous and is
 // returned without retrying the command. It rejects a nil Session or Context,
 // so callers need no guard of their own unless they dereference s first.
-func (s *Session) Request(ctx context.Context, command string, body []byte) (loco.Packet, error) {
+func (s *session) Request(ctx context.Context, command string, body []byte) (loco.Packet, error) {
 	reply, err := s.requestRaw(ctx, 0, command, body)
 	if err != nil {
 		return loco.Packet{}, err
@@ -386,7 +386,7 @@ func (s *Session) Request(ctx context.Context, command string, body []byte) (loc
 	return reply, nil
 }
 
-func (s *Session) requestRaw(ctx context.Context, id uint32, command string, body []byte) (loco.Packet, error) {
+func (s *session) requestRaw(ctx context.Context, id uint32, command string, body []byte) (loco.Packet, error) {
 	if s == nil || ctx == nil || command == "" {
 		return loco.Packet{}, ErrProtocol
 	}
@@ -436,7 +436,7 @@ func (s *Session) requestRaw(ctx context.Context, id uint32, command string, bod
 // allocateRequestIDLocked returns one ID from the official bounded request
 // range. The caller must hold s.mu. IDs still present in pending are skipped
 // so wraparound cannot correlate a new request with an older callback.
-func (s *Session) allocateRequestIDLocked() (uint32, error) {
+func (s *session) allocateRequestIDLocked() (uint32, error) {
 	if s.nextID < requestIDMin || s.nextID >= requestIDMax {
 		s.nextID = requestIDMin
 	}
@@ -456,7 +456,7 @@ func (s *Session) allocateRequestIDLocked() (uint32, error) {
 	}
 }
 
-func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, command string, body []byte) error {
+func (s *session) writeRequest(ctx context.Context, wire *wireConn, id uint32, command string, body []byte) error {
 	raw, err := (loco.Packet{Header: loco.Header{PacketID: id, Method: command, BodyType: loco.BodyTypeBSON}, Body: body}).MarshalBinary(0)
 	if err != nil {
 		return err
@@ -471,7 +471,7 @@ func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, c
 	return err
 }
 
-func (s *Session) writeRawPayload(ctx context.Context, wire *wireConn, raw []byte) (int, error) {
+func (s *session) writeRawPayload(ctx context.Context, wire *wireConn, raw []byte) (int, error) {
 	if err := s.acquireWrite(ctx); err != nil {
 		return 0, err
 	}
@@ -533,7 +533,7 @@ func (s *Session) writeRawPayload(ctx context.Context, wire *wireConn, raw []byt
 	return written, err
 }
 
-func (s *Session) acquireWrite(ctx context.Context) error {
+func (s *session) acquireWrite(ctx context.Context) error {
 	s.writeGateOnce.Do(func() {
 		s.writeGate = make(chan struct{}, 1)
 		s.writeGate <- struct{}{}
@@ -546,11 +546,11 @@ func (s *Session) acquireWrite(ctx context.Context) error {
 	}
 }
 
-func (s *Session) releaseWrite() {
+func (s *session) releaseWrite() {
 	s.writeGate <- struct{}{}
 }
 
-func (s *Session) removePending(id uint32, expected chan requestResult) {
+func (s *session) removePending(id uint32, expected chan requestResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.pending[id].result == expected {
@@ -558,7 +558,7 @@ func (s *Session) removePending(id uint32, expected chan requestResult) {
 	}
 }
 
-func (s *Session) startReadLoop() {
+func (s *session) startReadLoop() {
 	s.mu.Lock()
 	if s.readLoopStarted {
 		s.mu.Unlock()
@@ -569,7 +569,7 @@ func (s *Session) startReadLoop() {
 	go s.readLoopBody()
 }
 
-func (s *Session) readLoopBody() {
+func (s *session) readLoopBody() {
 	for {
 		packet, err := s.wire.read()
 		if err != nil {
@@ -601,7 +601,7 @@ func (s *Session) readLoopBody() {
 // dispatchPacket correlates by the packet header unique ID, which is the
 // pair (method, packet ID). A packet that reuses a pending ID with a different
 // method is not a completion and stays on the push path.
-func (s *Session) dispatchPacket(packet loco.Packet) bool {
+func (s *session) dispatchPacket(packet loco.Packet) bool {
 	s.mu.Lock()
 	request, ok := s.pending[packet.Header.PacketID]
 	ok = ok && request.method == packet.Header.Method
@@ -617,7 +617,7 @@ func (s *Session) dispatchPacket(packet loco.Packet) bool {
 	return true
 }
 
-func (s *Session) finishBootstrap() bool {
+func (s *session) finishBootstrap() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || s.closing {
@@ -637,7 +637,7 @@ func (s *Session) finishBootstrap() bool {
 	return true
 }
 
-func (s *Session) finishRead(err error) {
+func (s *session) finishRead(err error) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -663,7 +663,7 @@ func (s *Session) finishRead(err error) {
 	}
 }
 
-func (s *Session) Close() error {
+func (s *session) Close() error {
 	if s == nil {
 		return nil
 	}
@@ -687,7 +687,7 @@ func (s *Session) Close() error {
 
 // Shutdown interrupts the Session. It is currently equivalent to Close apart
 // from rejecting a nil context.
-func (s *Session) Shutdown(ctx context.Context) error {
+func (s *session) Shutdown(ctx context.Context) error {
 	if s == nil {
 		return nil
 	}

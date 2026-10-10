@@ -20,7 +20,7 @@ const maxCatchUpPages = 100
 // advance the account's server-visible read watermark through max, so callers
 // must treat this as a read-state mutation even though it does not advance the
 // local application commit checkpoint.
-func (s *Session) SyncMessages(ctx context.Context, request syncmsg.Request) (syncmsg.Response, error) {
+func (s *session) SyncMessages(ctx context.Context, request syncmsg.Request) (syncmsg.Response, error) {
 	return call(s, ctx, "SYNCMSG", request, syncmsg.ParseResponse)
 }
 
@@ -34,7 +34,7 @@ func (c *Client) SyncMessages(ctx context.Context, request syncmsg.Request) (syn
 	}
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
-	return withSession(c, ctx, func(session *Session) (syncmsg.Response, error) {
+	return withSession(c, ctx, func(session *session) (syncmsg.Response, error) {
 		return session.SyncMessages(ctx, request)
 	})
 }

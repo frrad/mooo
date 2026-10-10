@@ -32,7 +32,7 @@ func TestGetMessagesReadsEditedMessagesByLogID(t *testing.T) {
 			bson.D{{Key: "chatId", Value: int64(42)}, {Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "authorId", Value: int64(2000)}, {Key: "revision", Value: int32(2)}, {Key: "message", Value: "synthetic second edit"}},
 		}})))
 	})
-	session := &Session{
+	session := &session{
 		wire: backend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 	}
@@ -63,7 +63,7 @@ func TestGetMessagesRejectsALogFromAnotherChat(t *testing.T) {
 			bson.D{{Key: "chatId", Value: int64(43)}, {Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "synthetic"}},
 		}})))
 	})
-	session := &Session{
+	session := &session{
 		wire: backend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 	}

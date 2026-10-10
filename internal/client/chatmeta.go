@@ -9,7 +9,7 @@ import (
 // ChatInfo fetches one room's chat data with CHATINFO. It sends exactly once
 // and does not follow a positive LinkID with INFOLINK: OpenChat link
 // resolution is left to the caller.
-func (s *Session) ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error) {
+func (s *session) ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error) {
 	return call(s, ctx, chatmeta.ChatInfoCommand, chatmeta.ChatInfoRequest{ChatID: chatID}, chatmeta.DecodeChatInfoResponse)
 }
 
@@ -19,7 +19,7 @@ func (s *Session) ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfo
 // chatmeta.MaxMemberBatch. The first failed batch ends the call without
 // retrying; members from batches that already succeeded are returned with the
 // error. Duplicate IDs are passed through, as in the official client.
-func (s *Session) Members(ctx context.Context, chatID int64, userIDs []int64) ([]chatmeta.Member, error) {
+func (s *session) Members(ctx context.Context, chatID int64, userIDs []int64) ([]chatmeta.Member, error) {
 	if s == nil || ctx == nil {
 		return nil, ErrProtocol
 	}
@@ -50,13 +50,13 @@ func (s *Session) Members(ctx context.Context, chatID int64, userIDs []int64) ([
 
 // MemberList refreshes a room's member-ID roster with MEMLIST. The official
 // client issues it only from member-list UI; it sends exactly once.
-func (s *Session) MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error) {
+func (s *session) MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error) {
 	return call(s, ctx, chatmeta.MemberListCommand, chatmeta.MemberListRequest{ChatID: chatID, Token: token}, chatmeta.DecodeMemberListResponse)
 }
 
 // ChatInfo lazily connects once, then fetches one room's chat data.
 func (c *Client) ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error) {
-	return withSession(c, ctx, func(session *Session) (chatmeta.ChatInfoResponse, error) {
+	return withSession(c, ctx, func(session *session) (chatmeta.ChatInfoResponse, error) {
 		return session.ChatInfo(ctx, chatID)
 	})
 }
@@ -64,32 +64,32 @@ func (c *Client) ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoR
 // Members lazily connects once, then resolves member profiles in batches
 // without retrying a failed batch.
 func (c *Client) Members(ctx context.Context, chatID int64, userIDs []int64) ([]chatmeta.Member, error) {
-	return withSession(c, ctx, func(session *Session) ([]chatmeta.Member, error) {
+	return withSession(c, ctx, func(session *session) ([]chatmeta.Member, error) {
 		return session.Members(ctx, chatID, userIDs)
 	})
 }
 
 // MemberList lazily connects once, then refreshes a room's member-ID roster.
 func (c *Client) MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error) {
-	return withSession(c, ctx, func(session *Session) (chatmeta.MemberListResponse, error) {
+	return withSession(c, ctx, func(session *session) (chatmeta.MemberListResponse, error) {
 		return session.MemberList(ctx, chatID, token)
 	})
 }
 
 // MoimMeta fetches the current Boards announcement, independently of CHATINFO.
-func (s *Session) MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error) {
+func (s *session) MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error) {
 	return call(s, ctx, chatmeta.GetMoimMetaCommand, chatmeta.MoimRequest{ChatID: chatID}, chatmeta.DecodeMoimResponse)
 }
 
 func (c *Client) MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error) {
-	return withSession(c, ctx, func(session *Session) (chatmeta.MoimResponse, error) {
+	return withSession(c, ctx, func(session *session) (chatmeta.MoimResponse, error) {
 		return session.MoimMeta(ctx, chatID)
 	})
 }
 
 // PersonalMeta reads the account-wide personal settings once and selects only
 // the caller's room. An omitted room returns nil, rather than a fabricated clear.
-func (s *Session) PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.RoomMeta, error) {
+func (s *session) PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.RoomMeta, error) {
 	if chatID <= 0 {
 		return nil, chatmeta.ErrInvalidRequest
 	}
@@ -108,19 +108,19 @@ func (c *Client) PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.Room
 	if chatID <= 0 {
 		return nil, chatmeta.ErrInvalidRequest
 	}
-	return withSession(c, ctx, func(session *Session) (*chatmeta.RoomMeta, error) {
+	return withSession(c, ctx, func(session *session) (*chatmeta.RoomMeta, error) {
 		return session.PersonalMeta(ctx, chatID)
 	})
 }
 
 // ChatOnRoom sends one CHATONROOM for a chat and returns its member read
 // watermarks. It sends no read acknowledgement of its own.
-func (s *Session) ChatOnRoom(ctx context.Context, chatID int64) (chatmeta.ChatOnRoomResponse, error) {
+func (s *session) ChatOnRoom(ctx context.Context, chatID int64) (chatmeta.ChatOnRoomResponse, error) {
 	return call(s, ctx, chatmeta.ChatOnRoomCommand, chatmeta.ChatOnRoomRequest{ChatID: chatID}, chatmeta.DecodeChatOnRoomResponse)
 }
 
 func (c *Client) ChatOnRoom(ctx context.Context, chatID int64) (chatmeta.ChatOnRoomResponse, error) {
-	return withSession(c, ctx, func(session *Session) (chatmeta.ChatOnRoomResponse, error) {
+	return withSession(c, ctx, func(session *session) (chatmeta.ChatOnRoomResponse, error) {
 		return session.ChatOnRoom(ctx, chatID)
 	})
 }

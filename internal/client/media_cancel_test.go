@@ -52,7 +52,7 @@ func TestSendImageCancellationInterruptsPendingComplete(t *testing.T) {
 		_, _ = server.readRequest()
 		return nil
 	})
-	session := &Session{
+	session := &session{
 		wire: mainBackend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 		mediaDial: func(context.Context, string, int) (*wireConn, error) { return mediaBackend.client, nil },
@@ -109,7 +109,7 @@ func TestSendImageCarriesCaptionInPostExtra(t *testing.T) {
 		}
 		return writeBackendPacket(server, 0, "COMPLETE", mustBSON(statusDocument(bson.E{Key: "chatLog", Value: bson.Raw(completeLog)})))
 	})
-	session := &Session{
+	session := &session{
 		wire: mainBackend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 		mediaDial: func(context.Context, string, int) (*wireConn, error) { return mediaBackend.client, nil },

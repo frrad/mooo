@@ -20,12 +20,12 @@ func (c *Client) ContactProfilePhoto(ctx context.Context, chatID, userID int64, 
 	if chatID <= 0 || userID <= 0 || downloadClient == nil {
 		return nil, ErrProtocol
 	}
-	return withSession(c, ctx, func(session *Session) ([]byte, error) {
+	return withSession(c, ctx, func(session *session) ([]byte, error) {
 		return session.ContactProfilePhoto(ctx, chatID, userID, downloadClient)
 	})
 }
 
-func (s *Session) ContactProfilePhoto(ctx context.Context, chatID, userID int64, downloadClient *http.Client) ([]byte, error) {
+func (s *session) ContactProfilePhoto(ctx context.Context, chatID, userID int64, downloadClient *http.Client) ([]byte, error) {
 	if s == nil || ctx == nil || chatID <= 0 || userID <= 0 || downloadClient == nil {
 		return nil, ErrProtocol
 	}

@@ -765,7 +765,7 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	api.dial = func(ctx context.Context, got authstate.State) (*Session, error) {
+	api.dial = func(ctx context.Context, got authstate.State) (*session, error) {
 		return connectSessionWithDialers(ctx, got, dialers)
 	}
 	defer func() { _ = api.Shutdown(t.Context()) }()
@@ -828,20 +828,20 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 func TestScriptedBackendAmbiguousWriteIsNeverRetried(t *testing.T) {
 	requests := 0
 	backend := newScriptedBackend(t, true, disconnectAfterRequest("WRITE", &requests))
-	session := &Session{
+	scripted := &session{
 		wire: backend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 	}
-	go session.readLoop()
+	go scripted.readLoop()
 	state := reusableTestState()
 	api, err := newClient(state, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	dials := 0
-	api.dial = func(context.Context, authstate.State) (*Session, error) {
+	api.dial = func(context.Context, authstate.State) (*session, error) {
 		dials++
-		return session, nil
+		return scripted, nil
 	}
 	defer func() { _ = api.Shutdown(t.Context()) }()
 
@@ -903,7 +903,7 @@ func TestScriptedBackendExpiredTokenRenewsThenLogsInOnce(t *testing.T) {
 	}
 	api.store = store
 	loginAttempts := 0
-	api.dial = func(ctx context.Context, got authstate.State) (*Session, error) {
+	api.dial = func(ctx context.Context, got authstate.State) (*session, error) {
 		loginAttempts++
 		switch loginAttempts {
 		case 1:
@@ -992,7 +992,7 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 		return server.close()
 	})
 	mediaDials := 0
-	session := &Session{
+	session := &session{
 		wire: mainBackend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 		mediaDial: func(_ context.Context, host string, _ int) (*wireConn, error) {

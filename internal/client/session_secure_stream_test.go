@@ -24,7 +24,7 @@ func TestSessionSecureCoalescedEnvelopeDispatchesBothPackets(t *testing.T) {
 	}
 	waiter1 := make(chan requestResult, 1)
 	waiter2 := make(chan requestResult, 1)
-	s := &Session{
+	s := &session{
 		wire:          &wireConn{c: clientConn, secure: clientSecure},
 		pushes:        make(chan loco.Packet, 2),
 		pending:       map[uint32]pendingRequest{7: {method: "ONE", result: waiter1}, 8: {method: "TWO", result: waiter2}},

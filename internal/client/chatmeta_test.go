@@ -12,8 +12,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func testMetadataSession(backend *scriptedBackend, userID int64) *Session {
-	session := &Session{
+func testMetadataSession(backend *scriptedBackend, userID int64) *session {
+	session := &session{
 		wire:    backend.client,
 		nextID:  1,
 		userID:  userID,
@@ -87,7 +87,7 @@ func TestSessionChatInfoNonzeroStatusIsFailure(t *testing.T) {
 }
 
 func TestSessionChatInfoRejectsInvalidChatIDBeforeTransport(t *testing.T) {
-	session := &Session{}
+	session := &session{}
 	if _, err := session.ChatInfo(context.Background(), 0); !errors.Is(err, chatmeta.ErrInvalidRequest) {
 		t.Fatalf("ChatInfo error = %v, want ErrInvalidRequest", err)
 	}
@@ -125,7 +125,7 @@ func TestSessionMembersFiltersSelfAndNonPositiveIDs(t *testing.T) {
 
 func TestSessionMembersSendsNothingWhenOnlySelfRemains(t *testing.T) {
 	// No wire: any request attempt would fail with ErrClosed.
-	session := &Session{userID: 1, pending: make(map[uint32]pendingRequest)}
+	session := &session{userID: 1, pending: make(map[uint32]pendingRequest)}
 	members, err := session.Members(context.Background(), 42, []int64{1, 0})
 	if err != nil {
 		t.Fatalf("Members error = %v, want nil without a request", err)
@@ -407,7 +407,7 @@ func TestSessionPersonalMetaStatusFailureIsNotRetried(t *testing.T) {
 }
 
 func TestSessionPersonalMetaRejectsInvalidSelectionBeforeTransport(t *testing.T) {
-	if _, err := (&Session{}).PersonalMeta(context.Background(), 0); !errors.Is(err, chatmeta.ErrInvalidRequest) {
+	if _, err := (&session{}).PersonalMeta(context.Background(), 0); !errors.Is(err, chatmeta.ErrInvalidRequest) {
 		t.Fatal("invalid personal room selection accepted")
 	}
 }
