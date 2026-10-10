@@ -1,0 +1,35 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-10",
+    "method": "Owned A, in the owned encrypted A/B/C regular group, sent one synthetic text and edited it once, then sent a second synthetic text and deleted it for everyone. A read-only B push probe recorded every push for the chat, then one read-only B CHATONROOM + SYNCMSG cnt=0 from the earlier cursor recorded the catch-up chat logs. Key sets, value kinds, types, revisions, feed JSON and log-ID relations were kept; identifiers, times and message IDs are synthetic.",
+    "doc": "research/bridge/GROUP-EDITS-DELETIONS.md"
+  },
+  "push": {
+    "edit": {
+      "method": "SYNCMODMSG",
+      "body": {
+        "chatId": 3000, "logId": 3000000000000000202, "noSeen": false, "status": 0,
+        "chatLog": {"chatId": 3000, "logId": 3000000000000000202, "prevId": 3000000000000000201, "type": 0, "authorId": 2000, "msgId": 11, "sendAt": 1791640000, "scope": 1, "revision": 0,
+          "message": "{\"feedType\":25,\"logId\":3000000000000000201,\"targetRevision\":1,\"hidden\":false}"},
+        "modifiedChatLog": {"chatId": 3000, "logId": 3000000000000000201, "prevId": 3000000000000000200, "type": 1, "authorId": 2000, "msgId": 10, "sendAt": 1791639990, "scope": 1, "revision": 1,
+          "message": "synthetic original-edited", "attachment": "{}"}
+      }
+    },
+    "delete": {
+      "method": "SYNCDLMSG",
+      "body": {
+        "chatId": 3000, "logId": 3000000000000000204, "noSeen": false, "status": 0,
+        "chatLog": {"chatId": 3000, "logId": 3000000000000000204, "prevId": 3000000000000000203, "type": 0, "authorId": 2000, "msgId": 13, "sendAt": 1791640020, "scope": 1, "revision": 0,
+          "message": "{\"feedType\":14,\"logId\":3000000000000000203,\"hidden\":false,\"byHost\":false}"}
+      }
+    }
+  },
+  "catchUp": [
+    {"chatId": 3000, "logId": 3000000000000000201, "prevId": 3000000000000000200, "type": 1, "authorId": 2000, "msgId": 10, "sendAt": 1791639990, "scope": 1, "revision": 1, "message": "synthetic original-edited", "attachment": "{}"},
+    {"chatId": 3000, "logId": 3000000000000000202, "prevId": 3000000000000000201, "type": 0, "authorId": 2000, "msgId": 11, "sendAt": 1791640000, "scope": 1, "revision": 0, "message": "{\"feedType\":25,\"logId\":3000000000000000201,\"targetRevision\":1,\"hidden\":false}"},
+    {"chatId": 3000, "logId": 3000000000000000203, "prevId": 3000000000000000202, "type": 16385, "authorId": 2000, "msgId": 12, "sendAt": 1791640010, "scope": 1, "revision": 0, "message": "synthetic deleted text that must not be shown", "attachment": "{}"},
+    {"chatId": 3000, "logId": 3000000000000000204, "prevId": 3000000000000000203, "type": 0, "authorId": 2000, "msgId": 13, "sendAt": 1791640020, "scope": 1, "revision": 0, "message": "{\"feedType\":14,\"logId\":3000000000000000203,\"hidden\":false,\"byHost\":false}"}
+  ]
+}

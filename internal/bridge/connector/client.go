@@ -803,6 +803,14 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		}
 		return kc.handleReadState(notice)
 	}
+	if edit, ok := evt.(events.MessageEdited); ok && edit.Modified == nil {
+		completed, err := kc.completeEdit(context.Background(), c, edit)
+		if err != nil {
+			kc.log().Warn().Err(err).Msg("Kakao edited message could not be fetched; leaving the edit uncommitted")
+			return false
+		}
+		evt = completed
+	}
 	remote := kc.remoteEventFor(evt)
 	if remote != nil && removedChat == 0 {
 		chatID, parseErr := parseChatID(remote.GetPortalKey().ID)

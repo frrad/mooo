@@ -7,13 +7,30 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+// A deleted-for-everyone flag keeps the position and base type but never the
+// content (observed: research/fixtures/edits/observed-group-edit-delete.json).
+func TestDeletedFlagKeepsIdentityButWithholdsContent(t *testing.T) {
+	for _, base := range []int32{messagetype.Vote, messagetype.Text} {
+		p := packet(t, "MSG", bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.D{{Key: "logId", Value: int64(99)}, {Key: "type", Value: base | messagetype.DeletedAllChatTypeFlag}, {Key: "message", Value: "synthetic withheld"}}}})
+		e, err := Decode(p)
+		if err != nil {
+			t.Fatalf("type %d: %v", base, err)
+		}
+		msg, ok := e.(DeletedMessage)
+		if !ok || msg.BaseType != base || msg.ChatID != 42 || msg.LogID != 99 {
+			t.Fatalf("deleted type %d = %#v", base, e)
+		}
+		if chatID, logID, positioned := MessagePosition(e); !positioned || chatID != 42 || logID != 99 {
+			t.Fatalf("deleted type %d lost cursor", base)
+		}
+	}
+}
+
 // Naming a recovered value must not enable an unsupported payload or remove flags.
 func TestNamedUnsupportedMessageTypesPreserveIdentity(t *testing.T) {
 	for _, typ := range []int32{
 		messagetype.AnimatedEmoticon, messagetype.Spritecon, messagetype.AnimatedStickerEx,
 		messagetype.Schedule, messagetype.Mvoip, messagetype.Universal,
-		messagetype.Vote | messagetype.DeletedAllChatTypeFlag,
-		messagetype.Text | messagetype.DeletedAllChatTypeFlag,
 		messagetype.Text | messagetype.OpenLinkIllegalBlindFlag,
 		messagetype.Text | messagetype.SecretChatTypeFlag,
 		1234567, // Future unknown values remain observable too.

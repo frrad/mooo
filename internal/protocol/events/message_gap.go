@@ -20,7 +20,8 @@ func (MessageGap) isEvent()   {}
 // Decode remains the strict protocol parser. An invalid or ambiguous identity
 // remains an error: callers must stop message admission rather than skip it.
 func DecodeForDelivery(packet loco.Packet) (Event, error) {
-	if packet.Header.Method != "MSG" {
+	// Edit and delete pushes carry a chat log with its own position, like MSG.
+	if packet.Header.Method != "MSG" && packet.Header.Method != "SYNCMODMSG" && packet.Header.Method != "SYNCDLMSG" {
 		decoded, err := Decode(packet)
 		if err != nil && (packet.Header.Method == "DELMEM" || packet.Header.Method == "NEWMEM" || packet.Header.Method == "LEFT") {
 			return nil, ErrUnidentifiableMembership

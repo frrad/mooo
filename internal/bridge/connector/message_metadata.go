@@ -35,6 +35,8 @@ type KakaoMessageMetadata struct {
 	// restart from destructively replacing newer reaction state.
 	ReactionRevision     int64 `json:"reaction_revision,omitempty"`
 	MiniReactionRevision int64 `json:"mini_reaction_revision,omitempty"`
+	// Revision is the KakaoTalk edit revision of the bridged content.
+	Revision int64 `json:"revision,omitempty"`
 }
 
 func (m KakaoMessageMetadata) String() string {
