@@ -165,6 +165,7 @@ type KakaoClient struct {
 	recoveryTry          int
 	wait                 func(context.Context, time.Duration) error
 	profiles             map[int64]chatmeta.Member
+	profileRefreshAfter  string
 	reactionMu           sync.Mutex
 	reactionRevisions    map[string]int64
 	reactionNoticeMu     sync.Mutex
@@ -524,7 +525,23 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	kickedOut := false
 	changeServer := false
 	var terminalErr error
-	for result := range stream {
+	profileTicker := time.NewTicker(time.Minute)
+	defer profileTicker.Stop()
+eventLoop:
+	for {
+		var result events.Result
+		select {
+		case <-profileTicker.C:
+			if !kickedOut && !changeServer {
+				kc.refreshOneGroupProfiles(c)
+			}
+			continue
+		case next, ok := <-stream:
+			if !ok {
+				break eventLoop
+			}
+			result = next
+		}
 		if kickedOut || changeServer {
 			// A terminal notice ends the session's event acceptance window. The
 			// stream still has to close so the owner can publish its terminal
@@ -534,11 +551,11 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 		if result.Err != nil {
 			if errors.Is(result.Err, events.ErrUnidentifiableMembership) {
 				terminalErr = events.ErrUnidentifiableMembership
-				break
+				break eventLoop
 			}
 			if isUnidentifiableMessageError(result.Err) {
 				terminalErr = unidentifiableMessageError()
-				break
+				break eventLoop
 			}
 			kc.log().Warn().Err(result.Err).Msg("Dropped undecodable Kakao event")
 			continue
@@ -1081,7 +1098,14 @@ func (kc *KakaoClient) chatInfoFromClient(ctx context.Context, portal *bridgev2.
 	}
 	profiles, err := c.Members(ctx, chatID, userIDs)
 	if err != nil {
-		return nil, err
+		if data.Type != "MultiChat" {
+			return nil, err
+		}
+		// The successfully refreshed source roster remains authoritative even
+		// when an optional profile batch fails. Keep successful earlier results
+		// and leave unresolved identities without fabricated profile fields.
+		kc.log().Warn().Int("resolved_profiles", len(profiles)).Int("requested_profiles", len(userIDs)).
+			Msg("Some member profiles are unavailable; preserving the source roster")
 	}
 
 	members := bridgev2.ChatMemberMap{}.Set(bridgev2.ChatMember{
@@ -1248,13 +1272,18 @@ func chatName(data chatmeta.ChatData) string {
 }
 
 func userInfoForMember(profile chatmeta.Member) *bridgev2.UserInfo {
-	info := &bridgev2.UserInfo{}
-	if profile.Nickname != "" {
-		name := profile.Nickname
-		info.Name = &name
+	// This function consumes a known MEMBER record. Empty fields confirm a clear;
+	// an unavailable profile never calls it and carries no UserInfo instead.
+	name := profile.Nickname
+	info := &bridgev2.UserInfo{Name: &name}
+	raw := profile.ProfileImageURL
+	if raw == "" {
+		raw = profile.FullProfileImageURL
 	}
-	if profile.ProfileImageURL != "" {
-		info.Avatar = avatarFromURL(profile.ProfileImageURL)
+	if raw == "" {
+		info.Avatar = &bridgev2.Avatar{Remove: true}
+	} else {
+		info.Avatar = avatarFromURL(raw)
 	}
 	return info
 }

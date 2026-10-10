@@ -1,0 +1,135 @@
+{
+  "cases": [
+    {
+      "input": {
+        "label": "new",
+        "json": {
+          "userId": 2000,
+          "nickName": "Current",
+          "profileImageUrl": "https://example.invalid/small.png",
+          "fullProfileImageUrl": "https://example.invalid/full.png",
+          "originalProfileImageUrl": "https://example.invalid/original.png"
+        }
+      },
+      "member": {
+        "userId": 2000,
+        "nickName": "Current",
+        "image": "https://example.invalid/small.png",
+        "full": "https://example.invalid/full.png"
+      },
+      "user": {
+        "nickName": "Current",
+        "displayName": "Current",
+        "image": "https://example.invalid/small.png",
+        "full": "https://example.invalid/full.png"
+      },
+      "mooo_deviation": "Nil native model strings become empty Go strings. Matrix uses its own display-name fallback for a known cleared name rather than copying the native localized Unknown label; a full-size image is the bridge fallback when the thumbnail is empty.",
+      "mooo_expected": {
+        "name": "Current",
+        "imageURL": "https://example.invalid/small.png",
+        "avatarRemove": false
+      }
+    },
+    {
+      "input": {
+        "label": "clear",
+        "json": {
+          "userId": 2000,
+          "nickName": "",
+          "profileImageUrl": "",
+          "fullProfileImageUrl": ""
+        }
+      },
+      "member": {
+        "userId": 2000,
+        "nickName": "",
+        "image": "",
+        "full": ""
+      },
+      "user": {
+        "nickName": "",
+        "displayName": "(Unknown)",
+        "image": "",
+        "full": ""
+      },
+      "mooo_deviation": "Nil native model strings become empty Go strings. Matrix uses its own display-name fallback for a known cleared name rather than copying the native localized Unknown label; a full-size image is the bridge fallback when the thumbnail is empty.",
+      "mooo_expected": {
+        "name": "",
+        "imageURL": "",
+        "avatarRemove": true
+      }
+    },
+    {
+      "input": {
+        "label": "missing",
+        "json": {
+          "userId": 2000
+        }
+      },
+      "member": {
+        "userId": 2000,
+        "nickName": null,
+        "image": null,
+        "full": null
+      },
+      "user": {
+        "nickName": null,
+        "displayName": "(Unknown)",
+        "image": null,
+        "full": null
+      },
+      "mooo_deviation": "Nil native model strings become empty Go strings. Matrix uses its own display-name fallback for a known cleared name rather than copying the native localized Unknown label; a full-size image is the bridge fallback when the thumbnail is empty.",
+      "mooo_expected": {
+        "name": "",
+        "imageURL": "",
+        "avatarRemove": true
+      }
+    },
+    {
+      "input": {
+        "label": "full-only",
+        "json": {
+          "userId": 2000,
+          "nickName": "Full",
+          "fullProfileImageUrl": "https://example.invalid/full.png"
+        }
+      },
+      "member": {
+        "userId": 2000,
+        "nickName": "Full",
+        "image": null,
+        "full": "https://example.invalid/full.png"
+      },
+      "user": {
+        "nickName": "Full",
+        "displayName": "Full",
+        "image": null,
+        "full": "https://example.invalid/full.png"
+      },
+      "mooo_deviation": "Nil native model strings become empty Go strings. Matrix uses its own display-name fallback for a known cleared name rather than copying the native localized Unknown label; a full-size image is the bridge fallback when the thumbnail is empty.",
+      "mooo_expected": {
+        "name": "Full",
+        "imageURL": "https://example.invalid/full.png",
+        "avatarRemove": false
+      }
+    }
+  ],
+  "request": {
+    "method": "MEMBER",
+    "json": "{\"chatId\":5000,\"memberIds\":[2000,4000]}",
+    "input": {
+      "chatId": 5000,
+      "memberIds": [
+        2000,
+        4000
+      ]
+    }
+  },
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk for Mac 26.8.0 arm64",
+    "date": "2026-10-10",
+    "method": "Isolated signed offline lab runtime: group_member_mac_runtime.py executes LocoMember JSON initialization, NTUser.updateWithLocoMember and LocoMemberRequest serialization; original preference hashes unchanged and process killed.",
+    "doc": "research/bridge/GROUP-MEMBER-PROFILES.md"
+  }
+}

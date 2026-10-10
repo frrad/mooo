@@ -1,0 +1,97 @@
+{
+  "cases": [
+    {
+      "input": {
+        "label": "new",
+        "json": {
+          "userId": 2000,
+          "nickname": "Current",
+          "statusMessage": "Status",
+          "profileImage": {
+            "thumbnailUrl": "https://example.invalid/small.png",
+            "mediumUrl": "https://example.invalid/full.png",
+            "originalUrl": "https://example.invalid/original.png"
+          }
+        }
+      },
+      "model": {
+        "userId": 2000,
+        "nickName": "Current",
+        "image": "https://example.invalid/small.png",
+        "full": "https://example.invalid/full.png"
+      },
+      "user": {
+        "nickName": "Current",
+        "displayName": "Current",
+        "image": "https://example.invalid/small.png",
+        "full": "https://example.invalid/full.png"
+      }
+    },
+    {
+      "input": {
+        "label": "clear",
+        "json": {
+          "userId": 2000,
+          "nickname": "",
+          "statusMessage": "",
+          "profileImage": {
+            "thumbnailUrl": "",
+            "mediumUrl": ""
+          }
+        }
+      },
+      "model": {
+        "userId": 2000,
+        "nickName": "",
+        "image": "",
+        "full": ""
+      },
+      "user": {
+        "nickName": "Previous",
+        "displayName": "Previous",
+        "image": "",
+        "full": ""
+      }
+    },
+    {
+      "input": {
+        "label": "missing",
+        "json": {
+          "userId": 2000
+        }
+      },
+      "model": {
+        "userId": 2000,
+        "nickName": null,
+        "image": null,
+        "full": null
+      },
+      "user": {
+        "nickName": "Previous",
+        "displayName": "Previous",
+        "image": null,
+        "full": null
+      }
+    }
+  ],
+  "initial_user": {
+    "userId": 2000,
+    "nickName": "Previous",
+    "displayName": "Previous",
+    "image": "https://example.invalid/previous.png",
+    "full": "https://example.invalid/previous-full.png"
+  },
+  "profile_update": true,
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk for Mac 26.8.0 arm64",
+    "date": "2026-10-10",
+    "method": "Private Frida harness group_maldive_mac_runtime_confirmed.py executes MaldiveProfile.initWithDictionary and NTUser.loadWithMaldiveProfile:profileUpdate: on synthetic dictionaries; separate signed app identity, no official app group or network entitlement, official preference hashes unchanged, process killed. No updateWithMaldiveProfile/saveProfileToDatabase invocation.",
+    "doc": "research/bridge/GROUP-MEMBER-PROFILES.md"
+  },
+  "limitations": [
+    "Model/loading execution only; HTTP authentication, request delivery, status decoding, persistence notifications and background refresh are not exercised.",
+    "A successful HTTP dictionary missing image fields clears model image pointers; this does not establish that an unavailable HTTP response confirms an avatar clear.",
+    "No mooo HTTP profile consuming path exists yet; this research fixture is not implementation parity coverage."
+  ]
+}
