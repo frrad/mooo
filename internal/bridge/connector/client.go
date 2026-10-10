@@ -1425,16 +1425,16 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		}
 		response, err = c.SendReply(ctx, chat.ReplyRequest{ChatID: chatID, Message: body, Target: target})
 		if err != nil {
-			return nil, err
+			return nil, outboundSendError(err)
 		}
 	} else {
 		response, err = c.SendText(ctx, chatID, body)
 		if err != nil {
-			return nil, err
+			return nil, outboundSendError(err)
 		}
 	}
 	if response.LogID <= 0 {
-		return nil, errors.New("KakaoTalk accepted the message without a log ID")
+		return nil, outboundAcceptedWithoutPosition(errors.New("KakaoTalk accepted the message without a log ID"))
 	}
 	sentType := chat.TextType
 	if msg.ReplyTo != nil {
@@ -1450,6 +1450,37 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	}, nil
 }
 
+// outboundSendError classifies a failed single Kakao send for Matrix. A
+// server status reply is a certain refusal. Any other failure may have been
+// delivered; it is never retried, and it must not be shown as retriable,
+// because a manual resend could duplicate a delivered message.
+func outboundSendError(err error) error {
+	var statusErr client.StatusError
+	if errors.As(err, &statusErr) {
+		return bridgev2.WrapErrorInStatus(err).
+			WithStatus(event.MessageStatusFail).
+			WithErrorReason(event.MessageStatusNetworkError).
+			WithIsCertain(true).
+			WithMessage("KakaoTalk refused this message.").
+			WithSendNotice(true)
+	}
+	return bridgev2.WrapErrorInStatus(err).
+		WithStatus(event.MessageStatusFail).
+		WithErrorReason(event.MessageStatusNetworkError).
+		WithIsCertain(false).
+		WithMessage("KakaoTalk did not confirm this message, and it may have been delivered. Check KakaoTalk before sending it again.").
+		WithSendNotice(true)
+}
+
+func outboundAcceptedWithoutPosition(err error) error {
+	return bridgev2.WrapErrorInStatus(err).
+		WithStatus(event.MessageStatusFail).
+		WithErrorReason(event.MessageStatusNetworkError).
+		WithIsCertain(false).
+		WithMessage("KakaoTalk accepted this message without identifying it, so it is probably delivered but cannot be linked. Check KakaoTalk before sending it again.").
+		WithSendNotice(true)
+}
+
 func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c kakaoClient, intent bridgev2.MatrixAPI, chatID int64, uri id.ContentURIString, fileInfo *event.EncryptedFileInfo) (*bridgev2.MatrixMessageResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)
 	defer cancel()
@@ -1459,11 +1490,11 @@ func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c kakaoClient, inten
 	}
 	response, err := c.SendImage(ctx, chatID, data)
 	if err != nil {
-		return nil, err
+		return nil, outboundSendError(err)
 	}
 	logID, sendAt, err := media.SendResultPosition(response)
 	if err != nil {
-		return nil, err
+		return nil, outboundAcceptedWithoutPosition(err)
 	}
 	return &bridgev2.MatrixMessageResponse{DB: &database.Message{ID: makeMessageID(chatID, logID), SenderID: makeUserID(kc.userID), Timestamp: kakaoTime(sendAt), Metadata: newKakaoMessageMetadata(chatID, logID, kc.userID, media.PhotoType, "[image]", 0)}}, nil
 }
