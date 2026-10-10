@@ -18,7 +18,7 @@ func testMetadataSession(backend *scriptedBackend, userID int64) *Session {
 		nextID:  1,
 		userID:  userID,
 		pushes:  make(chan loco.Packet, 1),
-		pending: make(map[uint32]chan requestResult),
+		pending: make(map[uint32]pendingRequest),
 	}
 	go session.readLoop()
 	return session
@@ -125,7 +125,7 @@ func TestSessionMembersFiltersSelfAndNonPositiveIDs(t *testing.T) {
 
 func TestSessionMembersSendsNothingWhenOnlySelfRemains(t *testing.T) {
 	// No wire: any request attempt would fail with ErrClosed.
-	session := &Session{userID: 1, pending: make(map[uint32]chan requestResult)}
+	session := &Session{userID: 1, pending: make(map[uint32]pendingRequest)}
 	members, err := session.Members(context.Background(), 42, []int64{1, 0})
 	if err != nil {
 		t.Fatalf("Members error = %v, want nil without a request", err)

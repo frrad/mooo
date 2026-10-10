@@ -25,12 +25,10 @@ func TestSessionSecureCoalescedEnvelopeDispatchesBothPackets(t *testing.T) {
 	waiter1 := make(chan requestResult, 1)
 	waiter2 := make(chan requestResult, 1)
 	s := &Session{
-		wire:                &wireConn{c: clientConn, secure: clientSecure},
-		pushes:              make(chan loco.Packet, 2),
-		pending:             map[uint32]chan requestResult{7: waiter1, 8: waiter2},
-		pendingByUniqueID:   map[string]chan requestResult{"ONE.7": waiter1, "TWO.8": waiter2},
-		pendingUniqueIDByID: map[uint32]string{7: "ONE.7", 8: "TWO.8"},
-		bootstrapDone:       true,
+		wire:          &wireConn{c: clientConn, secure: clientSecure},
+		pushes:        make(chan loco.Packet, 2),
+		pending:       map[uint32]pendingRequest{7: {method: "ONE", result: waiter1}, 8: {method: "TWO", result: waiter2}},
+		bootstrapDone: true,
 	}
 	readDone := make(chan struct{})
 	serverDone := make(chan error, 1)

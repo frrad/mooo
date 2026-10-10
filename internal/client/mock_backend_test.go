@@ -833,7 +833,7 @@ func TestScriptedBackendAmbiguousWriteIsNeverRetried(t *testing.T) {
 	backend := newScriptedBackend(t, true, disconnectAfterRequest("WRITE", &requests))
 	session := &Session{
 		wire: backend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
-		pending: make(map[uint32]chan requestResult), userID: 7, appVersion: "26.8.0",
+		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 	}
 	go session.readLoop()
 	state := reusableTestState()
@@ -997,7 +997,7 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 	mediaDials := 0
 	session := &Session{
 		wire: mainBackend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
-		pending: make(map[uint32]chan requestResult), userID: 7, appVersion: "26.8.0",
+		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 		mediaDial: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			mediaDials++
 			if host != "media.invalid" {

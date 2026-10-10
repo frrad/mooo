@@ -18,7 +18,7 @@ func TestSessionBackgroundReaderDispatchesIdlePushAndResponse(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	s := &Session{
 		wire: &wireConn{c: clientConn}, nextID: 1,
-		pushes: make(chan loco.Packet, 4), pending: make(map[uint32]chan requestResult),
+		pushes: make(chan loco.Packet, 4), pending: make(map[uint32]pendingRequest),
 	}
 	go s.readLoop()
 	defer func() { _ = s.Close() }()
