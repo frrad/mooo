@@ -7,6 +7,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
@@ -106,7 +107,7 @@ func decodeFeed(chatID, logID int64, chatLog bson.Raw) (Event, error) {
 	if err != nil || target <= 0 || target >= logID {
 		return nil, ErrMalformedEvent
 	}
-	author, sentAt := optionalInt64(chatLog, "authorId"), optionalInt64(chatLog, "sendAt")
+	author, sentAt := bsonfield.Int64OrZero(chatLog, "authorId"), bsonfield.Int64OrZero(chatLog, "sendAt")
 	switch feedType {
 	case feedTypeMessageDeleted:
 		return MessageDeleted{ChatID: chatID, LogID: logID, AuthorID: author, SentAt: sentAt, TargetLogID: target, ByHost: feed.ByHost}, nil
@@ -146,7 +147,7 @@ func decodeEditPush(packet loco.Packet) (Event, error) {
 		return nil, ErrMalformedEvent
 	}
 	chatID, logID, ok := MessagePosition(modified)
-	if !ok || chatID != edit.ChatID || logID != edit.TargetLogID || optionalInt64(value.Document(), "revision") != edit.TargetRevision {
+	if !ok || chatID != edit.ChatID || logID != edit.TargetLogID || bsonfield.Int64OrZero(value.Document(), "revision") != edit.TargetRevision {
 		return nil, ErrMalformedEvent
 	}
 	edit.Modified = modified

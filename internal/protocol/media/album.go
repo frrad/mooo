@@ -6,6 +6,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
@@ -82,8 +83,8 @@ func DecodeAlbumShipResponse(body []byte, count int) (AlbumShipResponse, error) 
 	}
 	ports := make([]int, 0, count)
 	for _, element := range elements {
-		port, err := integerValue(element)
-		if err != nil || port <= 0 || port > 65535 {
+		port, ok := bsonfield.Int64Value(element)
+		if !ok || port <= 0 || port > 65535 {
 			return AlbumShipResponse{}, ErrInvalidResponse
 		}
 		ports = append(ports, int(port))

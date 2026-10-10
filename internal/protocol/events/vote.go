@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
 )
 
 // VoteMessage is an inbound text-poll creation snapshot, not interactive voting.
@@ -45,7 +47,7 @@ func decodeVote(chatID, logID int64, log bson.Raw) (Event, error) {
 	if json.Unmarshal([]byte(value), &a) != nil || a.VoteID == nil || *a.VoteID < 0 || a.PostID != nil || a.Subtype != 1 || !validVoteText(a.Title, 1024) || len(a.Objects) == 0 || len(a.Objects) > 16 {
 		return nil, ErrMalformedEvent
 	}
-	m := VoteMessage{ChatID: chatID, LogID: logID, AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt"), Title: a.Title}
+	m := VoteMessage{ChatID: chatID, LogID: logID, AuthorID: bsonfield.Int64OrZero(log, "authorId"), SentAt: bsonfield.Int64OrZero(log, "sendAt"), Title: a.Title}
 	found := false
 	for _, raw := range a.Objects {
 		var object struct {
