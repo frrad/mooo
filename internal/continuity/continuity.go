@@ -253,6 +253,8 @@ func (s *Store) ResolveGapThrough(chatID, logID int64) error {
 }
 
 // RecordDeliveryStart persists an admission boundary without committing it.
+// Live admission calls it for every message, so an unchanged boundary is not
+// rewritten.
 func (s *Store) RecordDeliveryStart(chatID, logID int64) error {
 	if chatID <= 0 || logID <= 0 {
 		return ErrInvalidCursor
@@ -260,14 +262,18 @@ func (s *Store) RecordDeliveryStart(chatID, logID int64) error {
 	return s.update(func(next *Checkpoint) error {
 		for _, cursor := range next.Chats {
 			if cursor.ChatID == chatID {
-				return nil
+				return errUnchanged
 			}
 		}
-		raiseTarget(&next.KnownChats, ChatTarget{ChatID: chatID, MaxLogID: logID})
+		raised := raiseTarget(&next.KnownChats, ChatTarget{ChatID: chatID, MaxLogID: logID})
 		index := sort.Search(len(next.DeliveryStarts), func(i int) bool { return next.DeliveryStarts[i].ChatID >= chatID })
 		if index < len(next.DeliveryStarts) && next.DeliveryStarts[index].ChatID == chatID {
 			if logID < next.DeliveryStarts[index].FirstLogID {
 				next.DeliveryStarts[index].FirstLogID = logID
+				return nil
+			}
+			if !raised {
+				return errUnchanged
 			}
 			return nil
 		}
@@ -375,6 +381,9 @@ func (s *Store) MarkClean() error {
 	})
 }
 
+// errUnchanged lets an update callback skip the atomic rewrite.
+var errUnchanged = errors.New("continuity: unchanged")
+
 func (s *Store) update(change func(*Checkpoint) error) error {
 	if s == nil || s.path == "" {
 		return ErrInvalidPath
@@ -383,6 +392,9 @@ func (s *Store) update(change func(*Checkpoint) error) error {
 	defer s.mu.Unlock()
 	next := s.data.Clone()
 	if err := change(&next); err != nil {
+		if errors.Is(err, errUnchanged) {
+			return nil
+		}
 		return err
 	}
 	if err := validate(next); err != nil {
@@ -451,15 +463,17 @@ func setTarget(targets *[]ChatTarget, target ChatTarget) {
 	(*targets)[index] = target
 }
 
-func raiseTarget(targets *[]ChatTarget, target ChatTarget) {
+func raiseTarget(targets *[]ChatTarget, target ChatTarget) bool {
 	index := sort.Search(len(*targets), func(i int) bool { return (*targets)[i].ChatID >= target.ChatID })
 	if index < len(*targets) && (*targets)[index].ChatID == target.ChatID {
 		if (*targets)[index].MaxLogID < target.MaxLogID {
 			(*targets)[index].MaxLogID = target.MaxLogID
+			return true
 		}
-		return
+		return false
 	}
 	setTarget(targets, target)
+	return true
 }
 
 func removeTarget(targets *[]ChatTarget, chatID int64) {

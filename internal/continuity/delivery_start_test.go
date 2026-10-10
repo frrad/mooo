@@ -87,3 +87,59 @@ func TestDeletedSourceChatCannotRetainReplayAuthorization(t *testing.T) {
 		t.Fatal("deleted source room retained replay authority")
 	}
 }
+
+// Live admission records a floor for every message, so a no-op must not
+// rewrite and fsync the checkpoint for each one; a write failure there would
+// also end the session for an already committed chat.
+func TestDeliveryStartNoOpDoesNotRewriteCheckpoint(t *testing.T) {
+	path := testPath(t)
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CommitMessage(42, 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordDeliveryStart(77, 200); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordDeliveryStart(77, 210); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.RecordDeliveryStart(42, 101); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordDeliveryStart(77, 205); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("no-op admission replaced the checkpoint file")
+	}
+
+	if err := store.RecordDeliveryStart(77, 199); err != nil {
+		t.Fatal(err)
+	}
+	lowered, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(after, lowered) {
+		t.Fatal("a lower admission floor was not persisted")
+	}
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reopened.Snapshot().DeliveryStarts[0].FirstLogID; got != 199 {
+		t.Fatalf("persisted floor %d", got)
+	}
+}
