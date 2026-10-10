@@ -171,29 +171,11 @@ func (kc *KakaoClient) recordSourceRemoval(ctx context.Context, chatID int64) er
 	if err != nil {
 		return err
 	}
-	meta, ok := portal.Metadata.(*KakaoPortalMetadata)
-	if !ok || meta == nil {
-		return errors.New("connector: source access metadata is unavailable")
-	}
-	next := *meta
-	next.SourceRemoved = true
-	portal.Metadata = &next
-	if err = portal.Save(ctx); err != nil {
-		portal.Metadata = meta
-		return err
-	}
-	saved, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, portal.PortalKey)
-	if err != nil {
-		return err
-	}
-	if saved == nil {
-		return errors.New("connector: source access state disappeared")
-	}
-	got, ok := saved.Metadata.(*KakaoPortalMetadata)
-	if !ok || got == nil || !got.SourceRemoved {
-		return errors.New("connector: source access removal was not persisted")
-	}
-	return nil
+	return kc.savePortalMeta(ctx, portal, func(next *KakaoPortalMetadata) {
+		next.SourceRemoved = true
+	}, func(got *KakaoPortalMetadata) bool {
+		return got.SourceRemoved
+	})
 }
 
 func (kc *KakaoClient) checkSourceAccess(ctx context.Context, chatID int64, portal *bridgev2.Portal) error {
