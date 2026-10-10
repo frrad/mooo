@@ -9,20 +9,17 @@ import (
 	"github.com/frrad/mooo/internal/protocol/macweb"
 )
 
-// TestConnection describes one synthetic LOCO transport endpoint. It is kept
-// in the internal package so integration tests can exercise Client without
-// exposing wireConn or the production dialers.
-type TestConnection struct {
-	Conn   net.Conn
-	Secure *loco.SecureV3
-}
+// TestDialer returns an already-established synthetic LOCO transport for
+// host. secure is nil for a plain TLS-framed endpoint. The scripted peer in
+// internal/testsupport/loco provides one with Hosts.Dial.
+type TestDialer func(ctx context.Context, host string, port int) (conn net.Conn, secure *loco.SecureV3, err error)
 
-// TestDialers injects already-established synthetic booking, check-in, and
-// carriage transports. The connector integration tests use this seam to run
-// the real bootstrap and session lifecycle against a scripted backend.
+// TestDialers injects synthetic booking, check-in, and carriage transports.
+// The connector integration tests use this seam to run the real bootstrap and
+// session lifecycle against a scripted backend.
 type TestDialers struct {
-	TLS    func(context.Context, string, int) (TestConnection, error)
-	Secure func(context.Context, string, int) (TestConnection, error)
+	TLS    TestDialer
+	Secure TestDialer
 }
 
 // OpenWithTestDialers opens a normal leased Client while replacing only its
@@ -52,16 +49,16 @@ func OpenWithTestDialers(statePath string, doer macweb.Doer, dialers TestDialers
 }
 
 func testSessionDialers(dialers TestDialers) sessionDialers {
-	wrap := func(d func(context.Context, string, int) (TestConnection, error)) wireDialer {
+	wrap := func(dial TestDialer) wireDialer {
 		return func(ctx context.Context, host string, port int) (*wireConn, error) {
-			endpoint, err := d(ctx, host, port)
+			conn, secure, err := dial(ctx, host, port)
 			if err != nil {
 				return nil, err
 			}
-			if endpoint.Conn == nil {
+			if conn == nil {
 				return nil, errBootstrap
 			}
-			return &wireConn{c: endpoint.Conn, secure: endpoint.Secure}, nil
+			return &wireConn{c: conn, secure: secure}, nil
 		}
 	}
 	return sessionDialers{tls: wrap(dialers.TLS), secure: wrap(dialers.Secure)}

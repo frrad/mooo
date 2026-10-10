@@ -23,7 +23,6 @@ import (
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/continuity"
 	"github.com/frrad/mooo/internal/protocol/events"
-	protocol "github.com/frrad/mooo/internal/protocol/loco"
 	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 )
 
@@ -234,11 +233,7 @@ func syncCaptureStep(requests *[]syncRequest, reply bson.D) testloco.Step {
 			max:    raw.Lookup("max").Int64(),
 			count:  raw.Lookup("cnt").Int32(),
 		})
-		body, err := bson.Marshal(reply)
-		if err != nil {
-			return err
-		}
-		return peer.Write(protocol.Packet{Header: protocol.Header{PacketID: request.Header.PacketID, Method: "SYNCMSG", BodyType: protocol.BodyTypeBSON}, Body: body})
+		return peer.WriteBSON(request.Header.PacketID, "SYNCMSG", reply)
 	}
 }
 
@@ -254,7 +249,7 @@ func connectScriptedReadReceiptClient(t *testing.T, statePath string, steps ...t
 		t.Fatal(err)
 	}
 	loginReply := bson.D{{Key: "status", Value: int32(0)}, {Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: testChatID}, {Key: "l", Value: bson.D{{Key: "chatId", Value: testChatID}, {Key: "logId", Value: int64(2)}}}}}}, {Key: "eof", Value: true}, {Key: "lastTokenId", Value: int64(10)}, {Key: "lbk", Value: int32(1)}}
-	dialers, backends := scriptedDialers(t, append([]testloco.Step{requestStep("LOGINLIST", loginReply)}, steps...)...)
+	dialers, backends := scriptedDialers(t, append([]testloco.Step{testloco.Expect("LOGINLIST", nil, loginReply)}, steps...)...)
 	raw, err := client.OpenWithTestDialers(statePath, nil, dialers)
 	if err != nil {
 		t.Fatal(err)
@@ -279,7 +274,7 @@ func TestMatrixReadReceiptSendsOneMarkReadAndCheckpointSuppressesRepeat(t *testi
 	var requests []syncRequest
 	kc, backends := connectScriptedReadReceiptClient(t, statePath,
 		syncCaptureStep(&requests, bson.D{{Key: "status", Value: int32(0)}, {Key: "chatLogs", Value: bson.A{}}}),
-		holdStep(),
+		testloco.HoldOpen(),
 	)
 
 	if err := kc.HandleMatrixReadReceipt(context.Background(), matrixReadReceipt(2)); err != nil {
@@ -311,7 +306,7 @@ func TestMatrixReadReceiptFailureIsSurfacedRedactedWithoutRetry(t *testing.T) {
 	var requests []syncRequest
 	kc, backends := connectScriptedReadReceiptClient(t, statePath,
 		syncCaptureStep(&requests, bson.D{{Key: "status", Value: int32(-500)}}),
-		holdStep(),
+		testloco.HoldOpen(),
 	)
 
 	err := kc.HandleMatrixReadReceipt(context.Background(), matrixReadReceipt(2))
