@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -32,29 +33,12 @@ type ContactMessage struct {
 func (ContactMessage) String() string     { return "ContactMessage{<redacted>}" }
 func (m ContactMessage) GoString() string { return m.String() }
 
-func DecodeContactMessage(body []byte) (ContactMessage, error) {
-	raw := bson.Raw(body)
-	if raw.Validate() != nil {
+func DecodeContactMessage(env chatlog.Envelope) (ContactMessage, error) {
+	if env.Type != messagetype.Contact || !env.LogIDInChatLog {
 		return ContactMessage{}, ErrInvalidMessage
 	}
-	chat, err := integerField(raw, "chatId")
-	if err != nil || chat <= 0 {
-		return ContactMessage{}, ErrInvalidMessage
-	}
-	v, err := raw.LookupErr("chatLog")
-	if err != nil || v.Type != bson.TypeEmbeddedDocument {
-		return ContactMessage{}, ErrInvalidMessage
-	}
-	log := v.Document()
-	typ, err := integerField(log, "type")
-	if err != nil || typ != int64(messagetype.Contact) {
-		return ContactMessage{}, ErrInvalidMessage
-	}
-	id, err := integerField(log, "logId")
-	if err != nil || id <= 0 {
-		return ContactMessage{}, ErrInvalidMessage
-	}
-	v, err = log.LookupErr("attachment")
+	log := env.Log
+	v, err := log.LookupErr("attachment")
 	if err != nil || v.Type != bson.TypeString || len(v.StringValue()) > 64<<10 || !utf8.ValidString(v.StringValue()) {
 		return ContactMessage{}, ErrInvalidMessage
 	}
@@ -88,7 +72,7 @@ func DecodeContactMessage(body []byte) (ContactMessage, error) {
 	if json.Unmarshal([]byte(text), &a) != nil || !validContactAttachment(a) {
 		return ContactMessage{}, ErrInvalidMessage
 	}
-	return ContactMessage{ChatID: chat, LogID: id, AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt"), Attachment: a}, nil
+	return ContactMessage{ChatID: env.ChatID, LogID: env.LogID, AuthorID: env.AuthorID, SentAt: env.SentAt, Attachment: a}, nil
 }
 
 func validContactAttachment(a ContactAttachment) bool {

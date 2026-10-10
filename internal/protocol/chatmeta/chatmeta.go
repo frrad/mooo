@@ -12,9 +12,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
 )
 
 const (
@@ -30,6 +31,10 @@ var (
 	ErrInvalidRequest  = errors.New("chatmeta: invalid request")
 	ErrInvalidResponse = errors.New("chatmeta: invalid response")
 )
+
+// fields reads chat metadata. Null and undefined count as absent, so a
+// legacy alias after a null current key still applies.
+var fields = bsonfield.Reader{Err: ErrInvalidResponse, NullAbsent: true}
 
 // ChatInfoRequest asks for one room's chat data.
 type ChatInfoRequest struct {
@@ -136,10 +141,7 @@ func DecodeChatInfoResponse(body []byte) (ChatInfoResponse, error) {
 	if err := raw.Validate(); err != nil {
 		return ChatInfoResponse{}, ErrInvalidResponse
 	}
-	value, ok, err := lookup(raw, "chatInfo")
-	if err != nil {
-		return ChatInfoResponse{}, err
-	}
+	value, ok := fields.Lookup(raw, "chatInfo")
 	if !ok || value.Type != bson.TypeEmbeddedDocument {
 		return ChatInfoResponse{}, fmt.Errorf("%w: chatInfo", ErrInvalidResponse)
 	}
@@ -147,7 +149,7 @@ func DecodeChatInfoResponse(body []byte) (ChatInfoResponse, error) {
 	if err != nil {
 		return ChatInfoResponse{}, err
 	}
-	blind, _, err := int64Array(raw, "bmids")
+	blind, _, err := fields.Int64s(raw, "bmids")
 	if err != nil {
 		return ChatInfoResponse{}, err
 	}
@@ -164,30 +166,28 @@ func DecodeChatData(raw bson.Raw) (ChatData, error) {
 	var ok bool
 	var err error
 
-	if data.ChatID, ok, err = int64Field(raw, "c", "chatId"); err != nil {
+	if data.ChatID, ok, err = fields.Int64(raw, "c", "chatId"); err != nil {
 		return ChatData{}, err
 	}
 	if !ok || data.ChatID <= 0 {
 		return ChatData{}, fmt.Errorf("%w: chat id", ErrInvalidResponse)
 	}
-	if data.Type, _, err = stringField(raw, "t", "type"); err != nil {
+	if data.Type, _, err = fields.String(raw, "t", "type"); err != nil {
 		return ChatData{}, err
 	}
-	if data.ActiveMemberCount, _, err = int32Field(raw, "a", "activeMembersCount", "activeMemberCount"); err != nil {
+	if data.ActiveMemberCount, _, err = fields.Int32(raw, "a", "activeMembersCount", "activeMemberCount"); err != nil {
 		return ChatData{}, err
 	}
-	if data.NewMessageCount, _, err = int32Field(raw, "n", "newMessageCount"); err != nil {
+	if data.NewMessageCount, _, err = fields.Int32(raw, "n", "newMessageCount"); err != nil {
 		return ChatData{}, err
 	}
-	if data.LastSeenLogID, _, err = int64Field(raw, "s", "lastSeenLogId"); err != nil {
+	if data.LastSeenLogID, _, err = fields.Int64(raw, "s", "lastSeenLogId"); err != nil {
 		return ChatData{}, err
 	}
-	if data.LastServerLogID, _, err = int64Field(raw, "ll", "lastServerLogId"); err != nil {
+	if data.LastServerLogID, _, err = fields.Int64(raw, "ll", "lastServerLogId"); err != nil {
 		return ChatData{}, err
 	}
-	if value, ok, err := lookup(raw, "l", "lastChatLog"); err != nil {
-		return ChatData{}, err
-	} else if ok {
+	if value, ok := fields.Lookup(raw, "l", "lastChatLog"); ok {
 		if value.Type != bson.TypeEmbeddedDocument {
 			return ChatData{}, fmt.Errorf("%w: last chat log", ErrInvalidResponse)
 		}
@@ -196,7 +196,7 @@ func DecodeChatData(raw bson.Raw) (ChatData, error) {
 	if err := decodeDisplay(raw, &data); err != nil {
 		return ChatData{}, err
 	}
-	if data.PushAlert, data.PushAlertSet, err = boolField(raw, "p", "pushAlert"); err != nil {
+	if data.PushAlert, data.PushAlertSet, err = fields.Bool(raw, "p", "pushAlert"); err != nil {
 		return ChatData{}, err
 	}
 	if data.Meta, err = decodeRoomMeta(raw); err != nil {
@@ -205,22 +205,22 @@ func DecodeChatData(raw bson.Raw) (ChatData, error) {
 	if data.ChatMetas, err = decodeChatMetas(raw); err != nil {
 		return ChatData{}, err
 	}
-	if data.MetaMaxRevision, _, err = int64Field(raw, "mmr", "metaMaxRevision"); err != nil {
+	if data.MetaMaxRevision, _, err = fields.Int64(raw, "mmr", "metaMaxRevision"); err != nil {
 		return ChatData{}, err
 	}
-	if data.JoinedAtForNewMem, _, err = int32Field(raw, "jn", "joinedAtForNewMem"); err != nil {
+	if data.JoinedAtForNewMem, _, err = fields.Int32(raw, "jn", "joinedAtForNewMem"); err != nil {
 		return ChatData{}, err
 	}
-	if data.InviterID, _, err = int64Field(raw, "ii", "inviterId"); err != nil {
+	if data.InviterID, _, err = fields.Int64(raw, "ii", "inviterId"); err != nil {
 		return ChatData{}, err
 	}
-	if data.LinkID, _, err = int64Field(raw, "li", "linkId"); err != nil {
+	if data.LinkID, _, err = fields.Int64(raw, "li", "linkId"); err != nil {
 		return ChatData{}, err
 	}
-	if data.LinkToken, _, err = int32Field(raw, "otk", "linkToken"); err != nil {
+	if data.LinkToken, _, err = fields.Int32(raw, "otk", "linkToken"); err != nil {
 		return ChatData{}, err
 	}
-	if data.BlindMemberIDs, _, err = int64Array(raw, "bmids", "blindMemberIds"); err != nil {
+	if data.BlindMemberIDs, _, err = fields.Int64s(raw, "bmids", "blindMemberIds"); err != nil {
 		return ChatData{}, err
 	}
 	return data, nil
@@ -233,23 +233,20 @@ func DecodeChatData(raw bson.Raw) (ChatData, error) {
 // profileImageUrl otherwise.
 func decodeDisplay(raw bson.Raw, data *ChatData) error {
 	var err error
-	if data.DisplayUserIDs, _, err = int64Array(raw, "displayUserIds"); err != nil {
+	if data.DisplayUserIDs, _, err = fields.Int64s(raw, "displayUserIds"); err != nil {
 		return err
 	}
-	if data.DisplayNicknames, _, err = stringArray(raw, "displayNicknames"); err != nil {
+	if data.DisplayNicknames, _, err = fields.Strings(raw, "displayNicknames"); err != nil {
 		return err
 	}
-	if data.DisplayImageURLs, _, err = stringArray(raw, "displayImageUrls"); err != nil {
+	if data.DisplayImageURLs, _, err = fields.Strings(raw, "displayImageUrls"); err != nil {
 		return err
 	}
-	if data.Suspicions, _, err = stringArray(raw, "suspicions"); err != nil {
+	if data.Suspicions, _, err = fields.Strings(raw, "suspicions"); err != nil {
 		return err
 	}
 
-	members, ok, err := lookup(raw, "displayMembers")
-	if err != nil {
-		return err
-	}
+	members, ok := fields.Lookup(raw, "displayMembers")
 	if ok {
 		if members.Type != bson.TypeArray {
 			return fmt.Errorf("%w: displayMembers", ErrInvalidResponse)
@@ -258,7 +255,7 @@ func decodeDisplay(raw bson.Raw, data *ChatData) error {
 		if err != nil {
 			return ErrInvalidResponse
 		}
-		rawType, _, err := stringField(raw, "type")
+		rawType, _, err := fields.String(raw, "type")
 		if err != nil {
 			return err
 		}
@@ -275,18 +272,18 @@ func decodeDisplay(raw bson.Raw, data *ChatData) error {
 				return fmt.Errorf("%w: display member", ErrInvalidResponse)
 			}
 			member := value.Document()
-			id, ok, err := int64Field(member, "userId")
+			id, ok, err := fields.Int64(member, "userId")
 			if err != nil {
 				return err
 			}
 			if !ok {
 				return fmt.Errorf("%w: display member user id", ErrInvalidResponse)
 			}
-			nickname, _, err := stringField(member, "nickName")
+			nickname, _, err := fields.String(member, "nickName")
 			if err != nil {
 				return err
 			}
-			suspicion, _, err := stringField(member, "suspicion")
+			suspicion, _, err := fields.String(member, "suspicion")
 			if err != nil {
 				return err
 			}
@@ -294,7 +291,7 @@ func decodeDisplay(raw bson.Raw, data *ChatData) error {
 			nicknames = append(nicknames, nickname)
 			suspicions = append(suspicions, suspicion)
 			if len(values) == 1 {
-				image, _, err := stringField(member, imageKey)
+				image, _, err := fields.String(member, imageKey)
 				if err != nil {
 					return err
 				}
@@ -309,12 +306,12 @@ func decodeDisplay(raw bson.Raw, data *ChatData) error {
 		}
 	}
 
-	if ids, ok, err := int64Array(raw, "i"); err != nil {
+	if ids, ok, err := fields.Int64s(raw, "i"); err != nil {
 		return err
 	} else if ok {
 		data.DisplayUserIDs = ids
 	}
-	if nicknames, ok, err := stringArray(raw, "k"); err != nil {
+	if nicknames, ok, err := fields.Strings(raw, "k"); err != nil {
 		return err
 	} else if ok {
 		data.DisplayNicknames = nicknames
@@ -323,10 +320,11 @@ func decodeDisplay(raw bson.Raw, data *ChatData) error {
 }
 
 func decodeRoomMeta(raw bson.Raw) (*RoomMeta, error) {
-	value, ok, err := lookup(raw, "m", "meta")
-	if err != nil || !ok {
-		return nil, err
+	value, ok := fields.Lookup(raw, "m", "meta")
+	if !ok {
+		return nil, nil
 	}
+	var err error
 	switch value.Type {
 	case bson.TypeEmbeddedDocument:
 		document := value.Document()
@@ -340,7 +338,7 @@ func decodeRoomMeta(raw bson.Raw) (*RoomMeta, error) {
 			{"fullImageUrl", &meta.FullImageURL},
 			{"chat_category", &meta.ChatCategory},
 		} {
-			if *field.target, _, err = stringField(document, field.key); err != nil {
+			if *field.target, _, err = fields.String(document, field.key); err != nil {
 				return nil, err
 			}
 		}
@@ -352,8 +350,8 @@ func decodeRoomMeta(raw bson.Raw) (*RoomMeta, error) {
 		}
 		return &meta, nil
 	case bson.TypeString:
-		var fields map[string]any
-		if err := json.Unmarshal([]byte(value.StringValue()), &fields); err != nil {
+		var jsonFields map[string]any
+		if err := json.Unmarshal([]byte(value.StringValue()), &jsonFields); err != nil {
 			return nil, fmt.Errorf("%w: meta JSON", ErrInvalidResponse)
 		}
 		var meta RoomMeta
@@ -366,7 +364,7 @@ func decodeRoomMeta(raw bson.Raw) (*RoomMeta, error) {
 			{"fullImageUrl", &meta.FullImageURL},
 			{"chat_category", &meta.ChatCategory},
 		} {
-			switch v := fields[field.key].(type) {
+			switch v := jsonFields[field.key].(type) {
 			case nil:
 			case string:
 				*field.target = v
@@ -381,7 +379,7 @@ func decodeRoomMeta(raw bson.Raw) (*RoomMeta, error) {
 			{"favorite", &meta.Favorite},
 			{"chat_hide", &meta.ChatHide},
 		} {
-			switch v := fields[field.key].(type) {
+			switch v := jsonFields[field.key].(type) {
 			case nil:
 			case bool:
 				*field.target = v
@@ -400,9 +398,9 @@ func decodeRoomMeta(raw bson.Raw) (*RoomMeta, error) {
 // metaBool accepts a boolean or the official client's string form, where
 // only "true" is true.
 func metaBool(raw bson.Raw, key string) (bool, error) {
-	value, ok, err := lookup(raw, key)
-	if err != nil || !ok {
-		return false, err
+	value, ok := fields.Lookup(raw, key)
+	if !ok {
+		return false, nil
 	}
 	switch value.Type {
 	case bson.TypeBoolean:
@@ -415,9 +413,9 @@ func metaBool(raw bson.Raw, key string) (bool, error) {
 }
 
 func decodeChatMetas(raw bson.Raw) ([]ChatMeta, error) {
-	value, ok, err := lookup(raw, "chatMetas")
-	if err != nil || !ok {
-		return nil, err
+	value, ok := fields.Lookup(raw, "chatMetas")
+	if !ok {
+		return nil, nil
 	}
 	if value.Type != bson.TypeArray {
 		return nil, fmt.Errorf("%w: chatMetas", ErrInvalidResponse)
@@ -433,19 +431,19 @@ func decodeChatMetas(raw bson.Raw) ([]ChatMeta, error) {
 		}
 		document := value.Document()
 		var meta ChatMeta
-		if meta.Type, _, err = int32Field(document, "type"); err != nil {
+		if meta.Type, _, err = fields.Int32(document, "type"); err != nil {
 			return nil, err
 		}
-		if meta.Revision, _, err = int64Field(document, "revision"); err != nil {
+		if meta.Revision, _, err = fields.Int64(document, "revision"); err != nil {
 			return nil, err
 		}
-		if meta.AuthorID, _, err = int64Field(document, "authorId"); err != nil {
+		if meta.AuthorID, _, err = fields.Int64(document, "authorId"); err != nil {
 			return nil, err
 		}
-		if meta.Content, _, err = stringField(document, "content"); err != nil {
+		if meta.Content, _, err = fields.String(document, "content"); err != nil {
 			return nil, err
 		}
-		if meta.UpdatedAt, _, err = int64Field(document, "updatedAt"); err != nil {
+		if meta.UpdatedAt, _, err = fields.Int64(document, "updatedAt"); err != nil {
 			return nil, err
 		}
 		metas = append(metas, meta)
@@ -516,16 +514,13 @@ func DecodeMemberResponse(body []byte) (MemberResponse, error) {
 	var response MemberResponse
 	var err error
 	var ok bool
-	if response.ChatID, ok, err = int64Field(raw, "chatId"); err != nil {
+	if response.ChatID, ok, err = fields.Int64(raw, "chatId"); err != nil {
 		return MemberResponse{}, err
 	}
 	if !ok || response.ChatID <= 0 {
 		return MemberResponse{}, fmt.Errorf("%w: member response chat id", ErrInvalidResponse)
 	}
-	value, ok, err := lookup(raw, "members")
-	if err != nil {
-		return MemberResponse{}, err
-	}
+	value, ok := fields.Lookup(raw, "members")
 	if !ok {
 		return response, nil
 	}
@@ -556,7 +551,7 @@ func DecodeMember(raw bson.Raw) (Member, error) {
 	var member Member
 	var ok bool
 	var err error
-	if member.UserID, ok, err = int64Field(raw, "userId"); err != nil {
+	if member.UserID, ok, err = fields.Int64(raw, "userId"); err != nil {
 		return Member{}, err
 	}
 	if !ok || member.UserID <= 0 {
@@ -576,7 +571,7 @@ func DecodeMember(raw bson.Raw) (Member, error) {
 		{&member.AccessPermit, []string{"accessPermit"}},
 		{&member.Suspicion, []string{"suspicion"}},
 	} {
-		if *field.target, _, err = stringField(raw, field.keys...); err != nil {
+		if *field.target, _, err = fields.String(raw, field.keys...); err != nil {
 			return Member{}, err
 		}
 	}
@@ -589,20 +584,20 @@ func DecodeMember(raw bson.Raw) (Member, error) {
 		{&member.AccountID, []string{"accountId"}},
 		{&member.OpenLinkMemberType, []string{"mt", "openLinkUserMemberType"}},
 	} {
-		if *field.target, _, err = int32Field(raw, field.keys...); err != nil {
+		if *field.target, _, err = fields.Int32(raw, field.keys...); err != nil {
 			return Member{}, err
 		}
 	}
-	if member.ProfileLinkID, _, err = int64Field(raw, "pli", "profilelinkId"); err != nil {
+	if member.ProfileLinkID, _, err = fields.Int64(raw, "pli", "profilelinkId"); err != nil {
 		return Member{}, err
 	}
-	if member.ChannelID, _, err = int64Field(raw, "pfId", "channelId"); err != nil {
+	if member.ChannelID, _, err = fields.Int64(raw, "pfId", "channelId"); err != nil {
 		return Member{}, err
 	}
-	if member.Suspended, _, err = boolField(raw, "suspended"); err != nil {
+	if member.Suspended, _, err = fields.Bool(raw, "suspended"); err != nil {
 		return Member{}, err
 	}
-	if member.Memorial, _, err = boolField(raw, "memorial"); err != nil {
+	if member.Memorial, _, err = fields.Bool(raw, "memorial"); err != nil {
 		return Member{}, err
 	}
 	return member, nil
@@ -638,128 +633,14 @@ func DecodeMemberListResponse(body []byte) (MemberListResponse, error) {
 	}
 	var response MemberListResponse
 	var err error
-	if response.Token, _, err = int64Field(raw, "token"); err != nil {
+	if response.Token, _, err = fields.Int64(raw, "token"); err != nil {
 		return MemberListResponse{}, err
 	}
-	if response.Type, _, err = stringField(raw, "type"); err != nil {
+	if response.Type, _, err = fields.String(raw, "type"); err != nil {
 		return MemberListResponse{}, err
 	}
-	if response.MemberIDs, _, err = int64Array(raw, "memberIds"); err != nil {
+	if response.MemberIDs, _, err = fields.Int64s(raw, "memberIds"); err != nil {
 		return MemberListResponse{}, err
 	}
 	return response, nil
-}
-
-// lookup returns the value of the first key that is present and not null.
-// Documents are validated before lookup, so a lookup error means absence.
-func lookup(raw bson.Raw, keys ...string) (bson.RawValue, bool, error) {
-	for _, key := range keys {
-		value, err := raw.LookupErr(key)
-		if err != nil || value.Type == bson.TypeNull || value.Type == bson.TypeUndefined {
-			continue
-		}
-		return value, true, nil
-	}
-	return bson.RawValue{}, false, nil
-}
-
-func integer(value bson.RawValue) (int64, bool) {
-	switch value.Type {
-	case bson.TypeInt32:
-		return int64(value.Int32()), true
-	case bson.TypeInt64:
-		return value.Int64(), true
-	default:
-		return 0, false
-	}
-}
-
-func int64Field(raw bson.Raw, keys ...string) (int64, bool, error) {
-	value, ok, err := lookup(raw, keys...)
-	if err != nil || !ok {
-		return 0, false, err
-	}
-	n, ok := integer(value)
-	if !ok {
-		return 0, false, fmt.Errorf("%w: %s", ErrInvalidResponse, keys[0])
-	}
-	return n, true, nil
-}
-
-func int32Field(raw bson.Raw, keys ...string) (int32, bool, error) {
-	n, ok, err := int64Field(raw, keys...)
-	if err != nil || !ok {
-		return 0, ok, err
-	}
-	if n < math.MinInt32 || n > math.MaxInt32 {
-		return 0, false, fmt.Errorf("%w: %s out of int32 range", ErrInvalidResponse, keys[0])
-	}
-	return int32(n), true, nil
-}
-
-func stringField(raw bson.Raw, keys ...string) (string, bool, error) {
-	value, ok, err := lookup(raw, keys...)
-	if err != nil || !ok {
-		return "", false, err
-	}
-	if value.Type != bson.TypeString {
-		return "", false, fmt.Errorf("%w: %s", ErrInvalidResponse, keys[0])
-	}
-	return value.StringValue(), true, nil
-}
-
-func boolField(raw bson.Raw, keys ...string) (bool, bool, error) {
-	value, ok, err := lookup(raw, keys...)
-	if err != nil || !ok {
-		return false, false, err
-	}
-	if value.Type != bson.TypeBoolean {
-		return false, false, fmt.Errorf("%w: %s", ErrInvalidResponse, keys[0])
-	}
-	return value.Boolean(), true, nil
-}
-
-func int64Array(raw bson.Raw, keys ...string) ([]int64, bool, error) {
-	value, ok, err := lookup(raw, keys...)
-	if err != nil || !ok {
-		return nil, false, err
-	}
-	if value.Type != bson.TypeArray {
-		return nil, false, fmt.Errorf("%w: %s", ErrInvalidResponse, keys[0])
-	}
-	values, err := value.Array().Values()
-	if err != nil {
-		return nil, false, ErrInvalidResponse
-	}
-	result := make([]int64, 0, len(values))
-	for _, element := range values {
-		n, ok := integer(element)
-		if !ok {
-			return nil, false, fmt.Errorf("%w: %s element", ErrInvalidResponse, keys[0])
-		}
-		result = append(result, n)
-	}
-	return result, true, nil
-}
-
-func stringArray(raw bson.Raw, keys ...string) ([]string, bool, error) {
-	value, ok, err := lookup(raw, keys...)
-	if err != nil || !ok {
-		return nil, false, err
-	}
-	if value.Type != bson.TypeArray {
-		return nil, false, fmt.Errorf("%w: %s", ErrInvalidResponse, keys[0])
-	}
-	values, err := value.Array().Values()
-	if err != nil {
-		return nil, false, ErrInvalidResponse
-	}
-	result := make([]string, 0, len(values))
-	for _, element := range values {
-		if element.Type != bson.TypeString {
-			return nil, false, fmt.Errorf("%w: %s element", ErrInvalidResponse, keys[0])
-		}
-		result = append(result, element.StringValue())
-	}
-	return result, true, nil
 }
