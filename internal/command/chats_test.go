@@ -31,10 +31,10 @@ func TestChatListWritesPrivateSummaryWithoutSourceMessage(t *testing.T) {
 	}
 	out := filepath.Join(root, "chats.json")
 	fake := &fakeChatLister{chats: []chatmeta.ChatData{{ChatID: 42, Type: "DirectChat", Meta: &chatmeta.RoomMeta{Name: "Synthetic room"}, LastChatLog: []byte("SOURCE-PRIVATE")}}}
-	var stdout, stderr bytes.Buffer
-	code := runListChats([]string{"--state", filepath.Join(root, "profile"), "--output", out}, &stdout, &stderr, func(string) (chatLister, error) { return fake, nil })
-	if code != 0 || fake.closed != 1 {
-		t.Fatalf("code=%d closes=%d error=%s", code, fake.closed, stderr.String())
+	var stdout bytes.Buffer
+	err := runListChats([]string{"--state", filepath.Join(root, "profile"), "--output", out}, &stdout, func(string) (chatLister, error) { return fake, nil })
+	if err != nil || fake.closed != 1 {
+		t.Fatalf("error=%v closes=%d", err, fake.closed)
 	}
 	data, err := os.ReadFile(out)
 	if err != nil {
@@ -57,8 +57,8 @@ func TestChatListIncompleteRemovesReservedOutput(t *testing.T) {
 	_ = os.Chmod(root, 0700)
 	out := filepath.Join(root, "chats.json")
 	fake := &fakeChatLister{err: client.ErrChatListIncomplete}
-	var stdout, stderr bytes.Buffer
-	if runListChats([]string{"--state", filepath.Join(root, "profile"), "--output", out}, &stdout, &stderr, func(string) (chatLister, error) { return fake, nil }) == 0 {
+	var stdout bytes.Buffer
+	if runListChats([]string{"--state", filepath.Join(root, "profile"), "--output", out}, &stdout, func(string) (chatLister, error) { return fake, nil }) == nil {
 		t.Fatal("incomplete listing succeeded")
 	}
 	if _, err := os.Stat(out); !errors.Is(err, os.ErrNotExist) {
@@ -75,9 +75,9 @@ func TestChatListExistingOutputDoesNotOpenProfile(t *testing.T) {
 	out := filepath.Join(root, "chats.json")
 	_ = os.WriteFile(out, []byte("keep"), 0600)
 	opened := false
-	var stdout, stderr bytes.Buffer
-	code := runListChats([]string{"--state", filepath.Join(root, "profile"), "--output", out}, &stdout, &stderr, func(string) (chatLister, error) { opened = true; return nil, errors.New("unused") })
-	if code == 0 || opened {
+	var stdout bytes.Buffer
+	err := runListChats([]string{"--state", filepath.Join(root, "profile"), "--output", out}, &stdout, func(string) (chatLister, error) { opened = true; return nil, errors.New("unused") })
+	if err == nil || opened {
 		t.Fatal("existing output reached profile open")
 	}
 	data, _ := os.ReadFile(out)

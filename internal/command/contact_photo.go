@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -20,35 +19,27 @@ type contactPhotoClient interface {
 	Shutdown(context.Context) error
 }
 
-func openContactPhotoClient(path string, packetObserver func(loco.Packet)) (contactPhotoClient, error) {
-	return client.OpenWithOptions(path, &http.Client{Timeout: 20 * time.Second}, client.OpenOptions{PacketObserver: packetObserver})
+func contactPhoto(args []string, stdout io.Writer, packetObserver func(loco.Packet)) error {
+	return runContactPhoto(args, stdout, func(path string) (contactPhotoClient, error) {
+		return client.OpenWithOptions(path, &http.Client{Timeout: 20 * time.Second}, client.OpenOptions{PacketObserver: packetObserver})
+	})
 }
 
-func runContactPhoto(args []string, stdout, stderr io.Writer, open func(string) (contactPhotoClient, error)) int {
-	options, err := parseOptions(args, map[string]struct{}{"state": {}, "output": {}, "chat": {}, "user": {}})
+func runContactPhoto(args []string, stdout io.Writer, open func(string) (contactPhotoClient, error)) error {
+	options, err := parseOptions(args, "state", "output", "chat", "user")
 	chatID, chatErr := strconv.ParseInt(options["chat"], 10, 64)
 	userID, userErr := strconv.ParseInt(options["user"], 10, 64)
 	if err != nil || chatErr != nil || userErr != nil || chatID <= 0 || userID <= 0 || !filepath.IsAbs(options["state"]) || !filepath.IsAbs(options["output"]) {
-		return commandError(stderr, "contacts photo requires absolute --state and --output and positive --chat and --user")
+		return errors.New("contacts photo requires absolute --state and --output and positive --chat and --user")
 	}
-	parent, err := os.Lstat(filepath.Dir(options["output"]))
-	if err != nil || !parent.IsDir() || parent.Mode().Perm()&0077 != 0 {
-		return commandError(stderr, "photo output requires a private directory")
-	}
-	file, err := os.OpenFile(options["output"], os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	file, commit, abort, err := reservePrivateOutput(options["output"], "photo")
 	if err != nil {
-		return commandError(stderr, "could not reserve photo output")
+		return err
 	}
-	keep := false
-	defer func() {
-		_ = file.Close()
-		if !keep {
-			_ = os.Remove(options["output"])
-		}
-	}()
+	defer abort()
 	c, err := open(options["state"])
 	if err != nil {
-		return commandError(stderr, "could not open selected profile")
+		return errors.New("could not open selected profile")
 	}
 	closed := false
 	defer func() {
@@ -61,21 +52,17 @@ func runContactPhoto(args []string, stdout, stderr io.Writer, open func(string) 
 	data, err := c.ContactProfilePhoto(ctx, chatID, userID, &http.Client{Timeout: 30 * time.Second})
 	if err != nil {
 		if errors.Is(err, client.ErrContactPhotoAbsent) {
-			return commandError(stderr, "contact has no profile photo")
+			return errors.New("contact has no profile photo")
 		}
-		return commandError(stderr, "contact photo retrieval failed")
+		return errors.New("contact photo retrieval failed")
 	}
 	closed = true
 	if shutdownProfile(c) != nil {
-		return commandError(stderr, "selected profile cleanup failed")
+		return errors.New("selected profile cleanup failed")
 	}
-	if _, err = file.Write(data); err != nil {
-		return commandError(stderr, "could not write photo output")
+	if _, err = file.Write(data); err != nil || commit() != nil {
+		return errors.New("could not write photo output")
 	}
-	if file.Sync() != nil || file.Close() != nil {
-		return commandError(stderr, "could not write photo output")
-	}
-	keep = true
 	_, _ = fmt.Fprintf(stdout, "saved %d photo bytes in private output\n", len(data))
-	return 0
+	return nil
 }
