@@ -152,7 +152,7 @@ func (kc *KakaoClient) HandleMatrixReaction(ctx context.Context, msg *bridgev2.M
 	if err != nil {
 		return nil, err
 	}
-	if err = kc.checkSourceAccess(ctx, request.ChatID, msg.Portal); err != nil {
+	if err = kc.checkSourceAccess(ctx, request.ChatID); err != nil {
 		return nil, err
 	}
 	api, err := kc.reactionClient()
@@ -174,7 +174,7 @@ func (kc *KakaoClient) removeReplacedLegacyReactions(ctx context.Context, msg *b
 		return
 	}
 	bridge := msg.Portal.Bridge
-	existing, err := bridge.DB.Reaction.GetAllToMessageBySender(ctx, msg.Portal.Receiver, msg.TargetMessage.ID, msg.PreHandleResp.SenderID)
+	existing, err := kc.store.reactionsBySender(ctx, msg.Portal.Receiver, msg.TargetMessage.ID, msg.PreHandleResp.SenderID)
 	if err != nil {
 		kc.log().Warn().Err(err).Msg("Could not load replaced Kakao legacy reactions")
 		return
@@ -188,7 +188,7 @@ func (kc *KakaoClient) removeReplacedLegacyReactions(ctx context.Context, msg *b
 		}, nil); err != nil {
 			kc.log().Warn().Err(err).Msg("Could not redact replaced Kakao legacy reaction")
 		}
-		if err := bridge.DB.Reaction.Delete(ctx, old); err != nil {
+		if err := kc.store.deleteReaction(ctx, old); err != nil {
 			kc.log().Warn().Err(err).Msg("Could not delete replaced Kakao legacy reaction")
 		}
 	}
@@ -216,7 +216,7 @@ func (kc *KakaoClient) HandleMatrixReactionRemove(ctx context.Context, msg *brid
 	if err != nil || portalChat != chatID || msg.Portal.Receiver != kc.login.ID {
 		return errReactionTarget
 	}
-	if err = kc.checkSourceAccess(ctx, chatID, msg.Portal); err != nil {
+	if err = kc.checkSourceAccess(ctx, chatID); err != nil {
 		return err
 	}
 	if (msg.TargetReaction.Room.ID != "" && msg.TargetReaction.Room.ID != msg.Portal.ID) ||
@@ -407,7 +407,7 @@ func (kc *KakaoClient) applyReactionChange(c kakaoClient, reaction events.Reacti
 		return true, nil
 	}
 	remotes := []bridgev2.RemoteEvent{remote}
-	if syncEvent, ok := remote.(*kakaoReactionSync); ok && kc.login != nil && kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
+	if syncEvent, ok := remote.(*kakaoReactionSync); ok {
 		remotes, err = kc.reactionDeliveryEvents(context.Background(), syncEvent)
 		if err != nil {
 			if errors.Is(err, errReactionTargetMissing) {
@@ -428,8 +428,8 @@ func (kc *KakaoClient) applyReactionChange(c kakaoClient, reaction events.Reacti
 		if !result.Ignored {
 			allIgnored = false
 		}
-		if syncEvent, ok := delivery.(*simplevent.Reaction); ok && syncEvent.Type == bridgev2.RemoteEventReactionRemove && kc.login != nil && kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
-			row, queryErr := kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(context.Background(), kc.login.ID, syncEvent.TargetMessage, syncEvent.Sender.Sender, syncEvent.EmojiID)
+		if syncEvent, ok := delivery.(*simplevent.Reaction); ok && syncEvent.Type == bridgev2.RemoteEventReactionRemove {
+			row, queryErr := kc.store.reaction(context.Background(), kc.login.ID, syncEvent.TargetMessage, syncEvent.Sender.Sender, syncEvent.EmojiID)
 			if queryErr != nil || row != nil {
 				kc.log().Warn().Err(queryErr).Msg("Kakao reaction removal was not confirmed in the database")
 				return false, nil
@@ -450,18 +450,15 @@ func (kc *KakaoClient) applyReactionChange(c kakaoClient, reaction events.Reacti
 }
 
 func (kc *KakaoClient) reactionDeliveryEvents(ctx context.Context, sync *kakaoReactionSync) ([]bridgev2.RemoteEvent, error) {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return nil, errors.New("connector: reaction database is unavailable")
-	}
 	target := sync.TargetMessage
-	message, err := kc.login.Bridge.DB.Message.GetFirstPartByID(ctx, kc.login.ID, target)
+	message, err := kc.store.firstMessagePart(ctx, kc.login.ID, target)
 	if err != nil {
 		return nil, err
 	}
 	if message == nil {
 		return nil, errReactionTargetMissing
 	}
-	existing, err := kc.login.Bridge.DB.Reaction.GetAllToMessage(ctx, kc.login.ID, target)
+	existing, err := kc.store.reactionsToMessage(ctx, kc.login.ID, target)
 	if err != nil {
 		return nil, err
 	}
@@ -658,44 +655,18 @@ func reactionSyncUsers(members reactions.MembersResponse, selfID int64, loginID 
 }
 
 func (kc *KakaoClient) storedReactionRevision(ctx context.Context, change events.ReactionChanged) (int64, error) {
-	key := reactionRevisionCacheKey(change)
-	kc.reactionMu.Lock()
-	cached := kc.reactionRevisions[key]
-	kc.reactionMu.Unlock()
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return cached, nil
-	}
-	msg, err := kc.login.Bridge.DB.Message.GetFirstPartByID(ctx, kc.login.ID, makeMessageID(change.ChatID, change.LogID))
+	msg, err := kc.store.firstMessagePart(ctx, kc.login.ID, makeMessageID(change.ChatID, change.LogID))
 	if err != nil || msg == nil {
 		return 0, err
 	}
-	switch metadata := msg.Metadata.(type) {
-	case *KakaoMessageMetadata:
-		if metadata != nil && reactionMetadataRevision(metadata, change) > cached {
-			return reactionMetadataRevision(metadata, change), nil
-		}
-	case KakaoMessageMetadata:
-		if reactionMetadataRevision(metadata, change) > cached {
-			return reactionMetadataRevision(metadata, change), nil
-		}
-	}
-	return cached, nil
+	return reactionMetadataRevision(msg.Metadata, change), nil
 }
 
 func (kc *KakaoClient) persistReactionRevision(ctx context.Context, change events.ReactionChanged, appliedRevision int64) error {
 	if appliedRevision <= 0 {
 		return errReactionRevision
 	}
-	key := reactionRevisionCacheKey(change)
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		kc.reactionMu.Lock()
-		if appliedRevision > kc.reactionRevisions[key] {
-			kc.reactionRevisions[key] = appliedRevision
-		}
-		kc.reactionMu.Unlock()
-		return nil
-	}
-	msg, err := kc.login.Bridge.DB.Message.GetFirstPartByID(ctx, kc.login.ID, makeMessageID(change.ChatID, change.LogID))
+	msg, err := kc.store.firstMessagePart(ctx, kc.login.ID, makeMessageID(change.ChatID, change.LogID))
 	if err != nil || msg == nil {
 		return err
 	}
@@ -716,24 +687,9 @@ func (kc *KakaoClient) persistReactionRevision(ctx context.Context, change event
 	} else {
 		metadata.ReactionRevision = appliedRevision
 	}
-	if err := kc.login.Bridge.DB.Message.Update(ctx, msg); err != nil {
-		return err
-	}
-	kc.reactionMu.Lock()
-	if appliedRevision > kc.reactionRevisions[key] {
-		kc.reactionRevisions[key] = appliedRevision
-	}
-	kc.reactionMu.Unlock()
-	return nil
+	return kc.store.updateMessage(ctx, msg)
 }
 
-func reactionRevisionCacheKey(change events.ReactionChanged) string {
-	key := string(makeMessageID(change.ChatID, change.LogID))
-	if change.MetadataType == 2 {
-		key += ":mini"
-	}
-	return key
-}
 func reactionMetadataRevision(value any, change events.ReactionChanged) int64 {
 	var meta KakaoMessageMetadata
 	switch v := value.(type) {

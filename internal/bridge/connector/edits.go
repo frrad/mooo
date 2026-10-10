@@ -120,12 +120,9 @@ func (kc *KakaoClient) deletedMessageEvent(deleted events.DeletedMessage) bridge
 // the deleted placeholder; the Mac client marks deletions in place, so there
 // is nothing more to remove.
 func (kc *KakaoClient) targetAlreadyDeleted(deletion events.MessageDeleted) bool {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return false
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	part, err := kc.login.Bridge.DB.Message.GetFirstPartByID(ctx, kc.login.ID, makeMessageID(deletion.ChatID, deletion.TargetLogID))
+	part, err := kc.store.firstMessagePart(ctx, kc.login.ID, makeMessageID(deletion.ChatID, deletion.TargetLogID))
 	if err != nil || part == nil {
 		return false
 	}

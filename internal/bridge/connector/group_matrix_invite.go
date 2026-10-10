@@ -50,7 +50,7 @@ func (kc *KakaoClient) handleMatrixInvite(ctx context.Context, msg *bridgev2.Mat
 	if err != nil {
 		return err
 	}
-	if err = kc.checkSourceAccess(ctx, chatID, msg.Portal); err != nil {
+	if err = kc.checkSourceAccess(ctx, chatID); err != nil {
 		return err
 	}
 	kc.mu.Lock()

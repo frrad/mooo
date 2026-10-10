@@ -26,7 +26,7 @@ func TestMemberReadReceiptsNeverMoveBackwards(t *testing.T) {
 		t.Fatalf("ghost receipts = %v, want only the forward receipt %v (not %s)", got, want, first)
 	}
 	// A new connection with the same bridge database keeps the watermark.
-	reopened := newKakaoClient(f.login, testSelfID, nil)
+	reopened := newKakaoClient(f.login, newBridgeStore(f.login.Bridge.DB), testSelfID, nil)
 	reopened.queue = f.kc.queue
 	if !reopened.handleEvent(&fakeKakao{}, events.ReadStateChanged{ChatID: testChatID, UserID: testOtherID, Watermark: 100}) {
 		t.Fatal("stale DECUNREAD after restart was not handled")

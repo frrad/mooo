@@ -55,7 +55,7 @@ func TestGroupCreationJournalSurvivesReloadAndSuppressesCREATE(t *testing.T) {
 	}
 	backend := &countingGroupCreateClient{fakeKakao: &fakeKakao{chatInfoErr: errors.New("synthetic snapshot failure")}}
 	login := &bridgev2.UserLogin{UserLogin: record, Bridge: br, User: user}
-	kc := newKakaoClient(login, testSelfID, nil)
+	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
 	kc.client = backend
 	params := &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}}
 	_, fingerprint, err := kc.groupCreateRequest(params)

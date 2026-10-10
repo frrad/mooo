@@ -105,15 +105,12 @@ func (kc *KakaoClient) announcementResync(chatID int64) bridgev2.RemoteEvent {
 // Refresh existing group portals after reconnect, including removals made
 // while offline. The event reads a fresh snapshot when the portal processes it.
 func (kc *KakaoClient) refreshAnnouncements(ctx context.Context) error {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return nil
-	}
-	rows, err := kc.login.Bridge.DB.UserPortal.GetAllForLogin(ctx, kc.login.UserLogin)
+	rows, err := kc.store.userPortals(ctx, kc.login.UserLogin)
 	if err != nil {
 		return err
 	}
 	for _, row := range rows {
-		p, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, row.Portal)
+		p, err := kc.store.portalByKey(ctx, row.Portal)
 		if err != nil {
 			return err
 		}

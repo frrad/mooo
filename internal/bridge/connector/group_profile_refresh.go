@@ -15,7 +15,7 @@ import (
 // managed groups. Fresh membership authorizes profile application; it never
 // uses cached identities to rejoin a departed member or creates a new portal.
 func (kc *KakaoClient) refreshOneGroupProfiles(c kakaoClient) {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil || !kc.groupGate.TryLock() {
+	if !kc.groupGate.TryLock() {
 		return
 	}
 	defer kc.groupGate.Unlock()
@@ -27,14 +27,14 @@ func (kc *KakaoClient) refreshOneGroupProfiles(c kakaoClient) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	rows, err := kc.login.Bridge.DB.UserPortal.GetAllForLogin(ctx, kc.login.UserLogin)
+	rows, err := kc.store.userPortals(ctx, kc.login.UserLogin)
 	if err != nil {
 		kc.log().Warn().Msg("Could not list groups for profile refresh")
 		return
 	}
 	var eligible []*database.Portal
 	for _, row := range rows {
-		p, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, row.Portal)
+		p, err := kc.store.portalByKey(ctx, row.Portal)
 		if err != nil {
 			kc.log().Warn().Msg("Could not read group for profile refresh")
 			continue

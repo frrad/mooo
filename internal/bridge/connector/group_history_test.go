@@ -91,7 +91,7 @@ func TestGroupHistoryProgressSurvivesDeliveryFailureAndExplicitResume(t *testing
 		t.Fatal("new action overwrote unfinished selection")
 	}
 	fail = false
-	reloaded := newKakaoClient(kc.login, kc.userID, nil)
+	reloaded := newKakaoClient(kc.login, kc.store, kc.userID, nil)
 	reloaded.client = source
 	reloaded.queue = kc.queue
 	kc.login.Client = reloaded

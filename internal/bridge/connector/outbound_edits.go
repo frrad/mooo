@@ -41,7 +41,7 @@ func (kc *KakaoClient) HandleMatrixEdit(ctx context.Context, msg *bridgev2.Matri
 	if err != nil {
 		return err
 	}
-	if err = kc.checkSourceAccess(ctx, chatID, msg.Portal); err != nil {
+	if err = kc.checkSourceAccess(ctx, chatID); err != nil {
 		return err
 	}
 	meta, _ := msg.EditTarget.Metadata.(*KakaoMessageMetadata)
@@ -96,7 +96,7 @@ func (kc *KakaoClient) HandleMatrixMessageRemove(ctx context.Context, msg *bridg
 	if err != nil {
 		return err
 	}
-	if err = kc.checkSourceAccess(ctx, chatID, msg.Portal); err != nil {
+	if err = kc.checkSourceAccess(ctx, chatID); err != nil {
 		return err
 	}
 	meta, _ := msg.TargetMessage.Metadata.(*KakaoMessageMetadata)
@@ -143,20 +143,14 @@ func matrixDeletionKey(kc *KakaoClient, messageID networkid.MessageID) string {
 }
 
 func (kc *KakaoClient) recordMatrixDeletion(ctx context.Context, messageID networkid.MessageID) {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return
-	}
-	if _, err := newKVStore(kc.login.Bridge.DB.KV).putIfAbsent(ctx, matrixDeletionKey(kc, messageID), kvTimeStamp(time.Now())); err != nil {
+	if _, err := kc.store.putIfAbsent(ctx, matrixDeletionKey(kc, messageID), kvTimeStamp(time.Now())); err != nil {
 		kc.log().Warn().Err(err).Msg("Failed to record a Matrix deletion tombstone")
 	}
 }
 
 func (kc *KakaoClient) deletedFromMatrix(messageID networkid.MessageID) bool {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return false
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, found, err := newKVStore(kc.login.Bridge.DB.KV).get(ctx, matrixDeletionKey(kc, messageID))
+	_, found, err := kc.store.get(ctx, matrixDeletionKey(kc, messageID))
 	return err == nil && found
 }
