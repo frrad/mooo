@@ -36,9 +36,7 @@ var (
 	ErrInvalidRequest  = errors.New("reactions: invalid request")
 	ErrInvalidResponse = errors.New("reactions: invalid response")
 	ErrRejected        = errors.New("reactions: request rejected")
-	// ErrTransport is macweb.ErrTransport; the outcome of a mutation is unknown.
-	ErrTransport    = macweb.ErrTransport
-	ErrLookupFailed = errors.New("reactions: lookup failed")
+	ErrLookupFailed    = errors.New("reactions: lookup failed")
 	// ErrOutcomeUnconfirmed means the server returned a response, but the
 	// response does not establish whether the requested state was applied.
 	ErrOutcomeUnconfirmed = errors.New("reactions: outcome unconfirmed")
@@ -46,8 +44,6 @@ var (
 	// the mutation result cannot be established. Callers must not retry it.
 	ErrOutcomeUnknown = errors.New("reactions: outcome unknown")
 )
-
-type ClientProfile = macweb.Profile
 
 // Request applies one reaction to one chat log. Type Cancel removes the
 // caller's current reaction. LinkID is included only for open-chat messages.
@@ -76,7 +72,7 @@ func membersPath(chatID, logID int64) string {
 
 // NewHTTPRequest builds the exact JSON mutation shape recovered from the
 // current Mac client. Authorization values are sensitive and must not be logged.
-func NewHTTPRequest(ctx context.Context, profile ClientProfile, reaction Request) (*http.Request, error) {
+func NewHTTPRequest(ctx context.Context, profile macweb.Profile, reaction Request) (*http.Request, error) {
 	if ctx == nil || profile.Validate(true) != nil || reaction.validate() != nil {
 		return nil, ErrInvalidRequest
 	}
@@ -104,7 +100,7 @@ func NewHTTPRequest(ctx context.Context, profile ClientProfile, reaction Request
 }
 
 // NewMembersHTTPRequest builds the current Mac reaction-attribution lookup.
-func NewMembersHTTPRequest(ctx context.Context, profile ClientProfile, chatID, logID int64) (*http.Request, error) {
+func NewMembersHTTPRequest(ctx context.Context, profile macweb.Profile, chatID, logID int64) (*http.Request, error) {
 	if ctx == nil || profile.Validate(true) != nil || chatID <= 0 || logID <= 0 {
 		return nil, ErrInvalidRequest
 	}
@@ -148,15 +144,13 @@ func DecodeResponse(body []byte) (Response, error) {
 	return response, nil
 }
 
-type Doer = macweb.Doer
-
 // execute performs one request. A non-2xx status is ErrRejected, a Doer
-// failure is ErrTransport, and a missing, unreadable or oversized body is
+// failure is macweb.ErrTransport, and a missing, unreadable or oversized body is
 // ErrInvalidResponse.
-func execute(doer Doer, req *http.Request) ([]byte, error) {
+func execute(doer macweb.Doer, req *http.Request) ([]byte, error) {
 	body, err := macweb.Do(doer, req, maxResponse)
 	switch {
-	case err == nil || errors.Is(err, ErrTransport):
+	case err == nil || errors.Is(err, macweb.ErrTransport):
 		return body, err
 	case errors.Is(err, macweb.ErrStatus):
 		return nil, fmt.Errorf("%w: %w", ErrRejected, err)
@@ -166,7 +160,7 @@ func execute(doer Doer, req *http.Request) ([]byte, error) {
 }
 
 // Send performs one reaction mutation and never retries an ambiguous outcome.
-func Send(ctx context.Context, doer Doer, profile ClientProfile, reaction Request) (Response, error) {
+func Send(ctx context.Context, doer macweb.Doer, profile macweb.Profile, reaction Request) (Response, error) {
 	if doer == nil {
 		return Response{}, ErrInvalidRequest
 	}
@@ -227,7 +221,7 @@ func (r MembersResponse) NeedsMetaSync(storedRevision int64) bool {
 }
 
 // FetchMembers resolves the user IDs behind each current reaction type.
-func FetchMembers(ctx context.Context, doer Doer, profile ClientProfile, chatID, logID int64) (MembersResponse, error) {
+func FetchMembers(ctx context.Context, doer macweb.Doer, profile macweb.Profile, chatID, logID int64) (MembersResponse, error) {
 	if doer == nil {
 		return MembersResponse{}, ErrInvalidRequest
 	}

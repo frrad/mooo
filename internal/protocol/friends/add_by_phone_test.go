@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/frrad/mooo/internal/protocol/macweb"
 )
 
 func TestNewAddByPhoneHTTPRequest(t *testing.T) {
-	req, err := NewAddByPhoneHTTPRequest(context.Background(), ClientProfile{
+	req, err := NewAddByPhoneHTTPRequest(context.Background(), macweb.Profile{
 		AppVersion: "26.8.0", OSVersion: "26.6.2", Language: "en",
 		AccessToken: "synthetic-token", DeviceUUID: "synthetic-device",
 	}, AddByPhoneRequest{PhoneNumber: "5550101", CountryISO: "us", CountryCode: "1", NickName: "Test"})

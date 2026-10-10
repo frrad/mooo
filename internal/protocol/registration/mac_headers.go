@@ -11,15 +11,10 @@ import (
 
 var ErrInvalidMacClientProfile = errors.New("registration: invalid Mac client profile")
 
-// MacClientProfile carries the non-secret compatibility values used by the
-// reviewed logged-out Mac registration client. Its credential fields are
-// ignored.
-type MacClientProfile = macweb.Profile
-
 // ApplyMacClientHeaders applies the exact four-header profile observed on the
 // current Mac QR generation request. It never adds cookies, authorization, or
 // device/account identifiers.
-func ApplyMacClientHeaders(request *http.Request, profile MacClientProfile) error {
+func ApplyMacClientHeaders(request *http.Request, profile macweb.Profile) error {
 	if request == nil || !validProfilePart(profile.AppVersion) ||
 		!validProfilePart(profile.OSVersion) || !validProfilePart(profile.Language) {
 		return ErrInvalidMacClientProfile

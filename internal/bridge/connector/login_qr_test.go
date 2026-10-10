@@ -20,6 +20,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/database"
 
 	"github.com/frrad/mooo/internal/authstate"
+	"github.com/frrad/mooo/internal/protocol/macweb"
 	"github.com/frrad/mooo/internal/protocol/registration"
 )
 
@@ -138,7 +139,7 @@ func TestMacHeaderDoerUsesReviewedHeadersAndDoesNotFollowRedirects(t *testing.T)
 		}),
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	doer := macHeaderDoer{client: client, profile: registration.MacClientProfile{AppVersion: "26.8.0", OSVersion: "26.6.2", Language: "en"}}
+	doer := macHeaderDoer{client: client, profile: macweb.Profile{AppVersion: "26.8.0", OSVersion: "26.6.2", Language: "en"}}
 	request, err := http.NewRequest(http.MethodPost, "https://katalk.kakao.com/mac/account/qrCodeLogin/cancel", nil)
 	if err != nil {
 		t.Fatal(err)

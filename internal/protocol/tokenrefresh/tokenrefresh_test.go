@@ -47,8 +47,8 @@ func TestExecuteRejectsOversizedBody(t *testing.T) {
 	}
 }
 
-func testProfile() ClientProfile {
-	return ClientProfile{AppVersion: "26.8.0", OSVersion: "26.6.2", Language: "en", AccessToken: "old-access", DeviceUUID: "wire-device"}
+func testProfile() macweb.Profile {
+	return macweb.Profile{AppVersion: "26.8.0", OSVersion: "26.6.2", Language: "en", AccessToken: "old-access", DeviceUUID: "wire-device"}
 }
 
 func TestNewHTTPRequest(t *testing.T) {

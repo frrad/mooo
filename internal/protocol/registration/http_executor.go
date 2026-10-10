@@ -21,18 +21,15 @@ var (
 	ErrHTTPResponseTooLarge = errors.New("registration: HTTP response body too large")
 )
 
-// Doer is the only execution dependency. A caller may supply a custom test
-// executor, transport wrapper, or deliberately configured client; this package
-// never creates a default client or changes redirects/cookies/retries.
-type Doer = macweb.Doer
-
 // HTTPExecutor performs one injected HTTP attempt. It has no retry loop,
 // redirect policy, cookie store, auth behavior, or response-header output.
+// The injected Doer is its only execution dependency; this package never
+// creates a default client or changes redirects/cookies/retries.
 type HTTPExecutor struct {
-	doer Doer
+	doer macweb.Doer
 }
 
-func NewHTTPExecutor(doer Doer) (*HTTPExecutor, error) {
+func NewHTTPExecutor(doer macweb.Doer) (*HTTPExecutor, error) {
 	if doer == nil {
 		return nil, ErrNilHTTPDoer
 	}

@@ -26,8 +26,6 @@ var (
 	ErrRejected        = errors.New("friends: add-by-phone rejected")
 )
 
-type ClientProfile = macweb.Profile
-
 type AddByPhoneRequest struct {
 	PhoneNumber string
 	CountryISO  string
@@ -61,7 +59,7 @@ func (r AddByPhoneRequest) values() (url.Values, error) {
 
 // NewAddByPhoneHTTPRequest reproduces the current Mac authenticated WAS request.
 // Authorization is accessToken-hashedDeviceUUID; neither value is safe to log.
-func NewAddByPhoneHTTPRequest(ctx context.Context, profile ClientProfile, add AddByPhoneRequest) (*http.Request, error) {
+func NewAddByPhoneHTTPRequest(ctx context.Context, profile macweb.Profile, add AddByPhoneRequest) (*http.Request, error) {
 	if ctx == nil || profile.Validate(true) != nil {
 		return nil, ErrInvalidRequest
 	}
@@ -102,10 +100,8 @@ func DecodeAddByPhoneResponse(body []byte) (AddByPhoneResponse, error) {
 	return response, nil
 }
 
-type Doer = macweb.Doer
-
 // AddByPhone performs one request and never retries an ambiguous mutation.
-func AddByPhone(ctx context.Context, doer Doer, profile ClientProfile, add AddByPhoneRequest) (AddByPhoneResponse, error) {
+func AddByPhone(ctx context.Context, doer macweb.Doer, profile macweb.Profile, add AddByPhoneRequest) (AddByPhoneResponse, error) {
 	if doer == nil {
 		return AddByPhoneResponse{}, ErrInvalidRequest
 	}

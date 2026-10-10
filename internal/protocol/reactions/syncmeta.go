@@ -21,7 +21,7 @@ type SyncMetaPage struct {
 // request. The server returned every meta newer than cur regardless of max
 // and cnt in owned observation; mooo sends max=cur and cnt=0 because it keeps
 // no local meta rows to describe.
-func NewSyncMetaHTTPRequest(ctx context.Context, profile ClientProfile, chatID, cur int64) (*http.Request, error) {
+func NewSyncMetaHTTPRequest(ctx context.Context, profile macweb.Profile, chatID, cur int64) (*http.Request, error) {
 	if ctx == nil || profile.Validate(true) != nil || chatID <= 0 || cur <= 0 {
 		return nil, ErrInvalidRequest
 	}
@@ -42,7 +42,7 @@ func NewSyncMetaHTTPRequest(ctx context.Context, profile ClientProfile, chatID, 
 }
 
 // FetchSyncMeta performs one read-only resync page request.
-func FetchSyncMeta(ctx context.Context, doer Doer, profile ClientProfile, chatID, cur int64) (SyncMetaPage, error) {
+func FetchSyncMeta(ctx context.Context, doer macweb.Doer, profile macweb.Profile, chatID, cur int64) (SyncMetaPage, error) {
 	if doer == nil {
 		return SyncMetaPage{}, ErrInvalidRequest
 	}

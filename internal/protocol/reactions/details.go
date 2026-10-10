@@ -43,7 +43,7 @@ type DetailsResponse struct {
 
 // NewDetailsHTTPRequest builds the separate mini/custom-reaction attribution
 // request used by the current Mac client. LinkID is sent only for open chats.
-func NewDetailsHTTPRequest(ctx context.Context, profile ClientProfile, chatID, linkID, logID int64) (*http.Request, error) {
+func NewDetailsHTTPRequest(ctx context.Context, profile macweb.Profile, chatID, linkID, logID int64) (*http.Request, error) {
 	if ctx == nil || profile.Validate(true) != nil || profile.UserID <= 0 || chatID <= 0 || linkID < 0 || logID <= 0 {
 		return nil, ErrInvalidRequest
 	}
@@ -137,7 +137,7 @@ func DecodeDetailsResponse(body []byte) (DetailsResponse, error) {
 
 // FetchDetails resolves mini/custom-reaction attribution independently from
 // the legacy /members lookup.
-func FetchDetails(ctx context.Context, doer Doer, profile ClientProfile, chatID, linkID, logID int64) (DetailsResponse, error) {
+func FetchDetails(ctx context.Context, doer macweb.Doer, profile macweb.Profile, chatID, linkID, logID int64) (DetailsResponse, error) {
 	if doer == nil {
 		return DetailsResponse{}, ErrInvalidRequest
 	}

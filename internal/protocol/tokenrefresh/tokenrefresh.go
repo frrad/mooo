@@ -26,8 +26,6 @@ var (
 	ErrRejected        = errors.New("tokenrefresh: rejected")
 )
 
-type ClientProfile = macweb.Profile
-
 type Request struct {
 	RefreshToken string
 }
@@ -42,7 +40,7 @@ type Rotation struct {
 func (Rotation) String() string     { return "[redacted token rotation]" }
 func (r Rotation) GoString() string { return r.String() }
 
-func NewHTTPRequest(ctx context.Context, profile ClientProfile, request Request) (*http.Request, error) {
+func NewHTTPRequest(ctx context.Context, profile macweb.Profile, request Request) (*http.Request, error) {
 	if ctx == nil || profile.Validate(true) != nil || !validSecret(request.RefreshToken) {
 		return nil, ErrInvalidRequest
 	}
@@ -62,7 +60,7 @@ func NewHTTPRequest(ctx context.Context, profile ClientProfile, request Request)
 // Execute sends one renewal request. Any 2xx status is decoded; a non-2xx
 // status returns a *macweb.StatusError and a transport failure wraps
 // macweb.ErrTransport.
-func Execute(ctx context.Context, doer macweb.Doer, profile ClientProfile, request Request) (Rotation, error) {
+func Execute(ctx context.Context, doer macweb.Doer, profile macweb.Profile, request Request) (Rotation, error) {
 	if doer == nil {
 		return Rotation{}, ErrInvalidRequest
 	}
