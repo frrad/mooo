@@ -111,7 +111,7 @@ type QRPollResult struct {
 	// from the server number to a local deadline.
 	DeviceAuthCode             string
 	DeviceAuthRemainingSeconds float64
-	NextRequestIntervalSeconds OptionalInt64
+	NextRequestIntervalSeconds *int64
 }
 
 func (r QRPollResult) String() string {
@@ -171,9 +171,9 @@ func (s *QRRegistrationService) Poll(ctx context.Context, request QRLoginRequest
 			if intervalErr != nil {
 				return QRPollResult{}, intervalErr
 			}
-			result.NextRequestIntervalSeconds = OptionalInt64{value: interval, present: true}
+			result.NextRequestIntervalSeconds = &interval
 		}
-		if result.ServerError.QROutcome() == OutcomePending && serverError.Status == -150 && !result.NextRequestIntervalSeconds.Present() {
+		if result.ServerError.QROutcome() == OutcomePending && serverError.Status == -150 && result.NextRequestIntervalSeconds == nil {
 			return QRPollResult{}, ErrMissingJSONField
 		}
 		if result.ServerError.QROutcome() == OutcomeUnregisteredDevice {
@@ -201,20 +201,20 @@ func (s *QRRegistrationService) Poll(ctx context.Context, request QRLoginRequest
 					}
 					result.DeviceAuthRemainingSeconds = remaining
 				}
-				if !result.NextRequestIntervalSeconds.Present() {
+				if result.NextRequestIntervalSeconds == nil {
 					if raw, present := inner["nextRequestIntervalInSeconds"]; present {
 						interval, intervalErr := decodePositivePollInterval(raw)
 						if intervalErr != nil {
 							return QRPollResult{}, intervalErr
 						}
-						result.NextRequestIntervalSeconds = OptionalInt64{value: interval, present: true}
+						result.NextRequestIntervalSeconds = &interval
 					}
 				}
 			}
 			if result.DeviceAuthCode == "" {
 				return QRPollResult{}, ErrMissingJSONField
 			}
-			if !result.NextRequestIntervalSeconds.Present() {
+			if result.NextRequestIntervalSeconds == nil {
 				return QRPollResult{}, ErrMissingJSONField
 			}
 			if _, ok := object["remainingSeconds"]; ok {

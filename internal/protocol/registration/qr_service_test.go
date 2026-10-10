@@ -84,7 +84,7 @@ func TestQRServiceGenerateComposesReviewedRequestAndPreservesContext(t *testing.
 		if request.Context() != ctx || request.Method != "POST" || request.URL.String() != "https://katalk.kakao.com/mac/account/qrCodeLogin/generate" {
 			t.Fatalf("request = %s %s context=%v", request.Method, request.URL, request.Context())
 		}
-		if len(request.Header) != 1 || request.Header.Get("Content-Type") != RegistrationFormContentType {
+		if len(request.Header) != 1 || request.Header.Get("Content-Type") != RegistrationJSONContentType {
 			t.Fatalf("headers = %#v", request.Header)
 		}
 		body, err := io.ReadAll(request.Body)
@@ -131,7 +131,7 @@ func TestQRServicePollReturnsExplicitSuccessOrServerError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if doer.calls != 1 || result.Kind != QRPollSuccess || result.HTTPStatus != 200 || result.Success == nil || result.ServerError != nil || !result.Success.MinimumFieldsPresent() {
+	if doer.calls != 1 || result.Kind != QRPollSuccess || result.HTTPStatus != 200 || result.Success == nil || result.ServerError != nil || result.Success.UserID == nil || *result.Success.UserID != 7 || !result.Success.AccessToken.Present() {
 		t.Fatalf("success result = %#v calls=%d", result, doer.calls)
 	}
 	if strings.Contains(fmt.Sprintf("%v", result), "synthetic-access-value") || strings.Contains(fmt.Sprintf("%#v", result), "synthetic-access-value") {
@@ -146,14 +146,13 @@ func TestQRServicePollReturnsExplicitSuccessOrServerError(t *testing.T) {
 	if doer.calls != 1 || result.Kind != QRPollServerError || result.HTTPStatus != 200 || result.ServerError == nil || result.Success != nil || result.ServerError.Status != 14 || result.ServerError.QROutcome() != OutcomePending {
 		t.Fatalf("pending result = %#v calls=%d", result, doer.calls)
 	}
-	interval, present := result.NextRequestIntervalSeconds.Value()
-	if !present || interval != 3 {
-		t.Fatalf("pending interval = %d/%t", interval, present)
+	if interval := result.NextRequestIntervalSeconds; interval == nil || *interval != 3 {
+		t.Fatalf("pending interval = %v", interval)
 	}
 
 	service, _ = newQRServiceForTest(t, 403, `{"status":20,"reason":"restricted"}`, validator)
 	result, err = service.Poll(context.Background(), syntheticQRLoginRequest())
-	if err != nil || result.Kind != QRPollServerError || result.HTTPStatus != 403 || result.ServerError == nil || result.ServerError.QROutcome() != OutcomeRestricted {
+	if err != nil || result.Kind != QRPollServerError || result.HTTPStatus != 403 || result.ServerError == nil || result.ServerError.QROutcome() != outcomeTerminal {
 		t.Fatalf("restricted result = %#v err=%v", result, err)
 	}
 }
@@ -205,9 +204,8 @@ func TestQRServicePollReadsNestedDeviceAuthorizationEnvelope(t *testing.T) {
 	if result.DeviceAuthCode != "5678" || result.DeviceAuthRemainingSeconds != 12 {
 		t.Fatalf("nested device auth fields = %#v", result)
 	}
-	interval, present := result.NextRequestIntervalSeconds.Value()
-	if !present || interval != 4 {
-		t.Fatalf("nested device auth interval = %d/%t", interval, present)
+	if interval := result.NextRequestIntervalSeconds; interval == nil || *interval != 4 {
+		t.Fatalf("nested device auth interval = %v", interval)
 	}
 
 	service, _ = newQRServiceForTest(t, 200, `{"status":-100,"passcode":"bad","remainingSeconds":12,"nextRequestIntervalInSeconds":3}`, &fakeQRValidator{})
@@ -226,9 +224,8 @@ func TestQRServicePollPrefersTopLevelIntervalOverNestedCompatibilityField(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	interval, present := result.NextRequestIntervalSeconds.Value()
-	if !present || interval != 7 {
-		t.Fatalf("top-level interval precedence = %d/%t", interval, present)
+	if interval := result.NextRequestIntervalSeconds; interval == nil || *interval != 7 {
+		t.Fatalf("top-level interval precedence = %v", interval)
 	}
 	service, _ = newQRServiceForTest(t, 200, `{"status":-100,"nextRequestIntervalInSeconds":0,"response":{"passcode":"A1B2","remainingSeconds":12,"nextRequestIntervalInSeconds":4}}`, &fakeQRValidator{})
 	if _, err := service.Poll(context.Background(), syntheticQRLoginRequest()); !errors.Is(err, ErrInvalidQRPollInterval) {

@@ -5,8 +5,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/url"
-	"strings"
 )
 
 var (
@@ -19,27 +17,20 @@ var (
 )
 
 // NewHTTPRequest constructs, but never executes, one registration request.
-// It joins the reviewed base URL and route, uses the exact JSON body, applies
+// It POSTs the exact JSON body to the reviewed base URL and route, applies
 // only the evidenced Content-Type header, and leaves clients, cookies,
 // authentication, signing, retries, and deadlines to the caller.
 func NewHTTPRequest(ctx context.Context, form FormRequest) (*http.Request, error) {
 	if ctx == nil {
 		return nil, ErrNilRequestContext
 	}
-	expected, ok := ProfileFor(form.Profile.Route)
-	if !ok || form.Profile != expected || form.ContentType != RegistrationFormContentType {
+	if !knownRoute(form.Route) || form.ContentType != RegistrationJSONContentType {
 		return nil, ErrInvalidHTTPProfile
 	}
 	if len(form.Body) > MaxFormBodyBytes {
 		return nil, ErrFormTooLarge
 	}
-	base, err := url.Parse(form.Profile.BaseURL)
-	if err != nil || base.Scheme == "" || base.Host == "" || base.RawQuery != "" || base.Fragment != "" {
-		return nil, ErrInvalidHTTPProfile
-	}
-	base.Path = strings.TrimRight(base.Path, "/") + string(form.Profile.Route)
-	base.RawPath = ""
-	req, err := http.NewRequestWithContext(ctx, string(form.Profile.Method), base.String(), bytes.NewReader(form.Body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, RegistrationBaseURL+string(form.Route), bytes.NewReader(form.Body))
 	if err != nil {
 		return nil, ErrInvalidHTTPProfile
 	}
