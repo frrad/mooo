@@ -294,15 +294,20 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 }
 
 func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recovering bool) {
+	// report publishes a bootstrap state only while this attempt is current;
+	// a superseded or stopped attempt must not overwrite a newer state.
+	report := func(state status.BridgeState) {
+		if kc.isCurrent(generation, ctx) {
+			kc.sendState(state)
+		}
+	}
 	c, err := kc.open()
 	if err != nil {
 		kc.log().Err(err).Msg("Failed to open Kakao profile")
-		if kc.isCurrent(generation, ctx) {
-			if !recovering {
-				kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateProfileUnavailable})
-			} else {
-				kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
-			}
+		if !recovering {
+			report(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateProfileUnavailable})
+		} else {
+			report(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
 		}
 		return
 	}
@@ -325,38 +330,21 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	if err != nil {
 		kc.shutdownBootstrap(c, "after connect failure", false)
 		kc.log().Err(err).Msg("Failed to connect to KakaoTalk")
-		if errors.Is(err, errSourceAccessRemoved) {
-			if kc.isCurrent(generation, ctx) {
-				kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupAccessRemoved})
+		switch {
+		case errors.Is(err, errSourceAccessRemoved):
+			report(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupAccessRemoved})
+		case errors.Is(err, errMembershipPending):
+			report(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupMembershipPending})
+		case errors.Is(err, errGroupCreateUnresolved):
+			report(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupCreateUnresolved})
+		case isUnidentifiableMessageError(err):
+			report(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateUnidentifiableMsg})
+		case recovering && retryableRecoveryError(err) && kc.retryAfter(err, generation):
+			if errors.Is(err, errDeliveryNotConfirmed) {
+				report(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDeliveryPaused})
 			}
-			return
-		}
-		if errors.Is(err, errMembershipPending) {
-			if kc.isCurrent(generation, ctx) {
-				kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupMembershipPending})
-			}
-			return
-		}
-		if errors.Is(err, errGroupCreateUnresolved) {
-			if kc.isCurrent(generation, ctx) {
-				kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupCreateUnresolved})
-			}
-			return
-		}
-		if isUnidentifiableMessageError(err) {
-			if kc.isCurrent(generation, ctx) {
-				kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateUnidentifiableMsg})
-			}
-			return
-		}
-		if recovering && retryableRecoveryError(err) && kc.retryAfter(err, generation) {
-			if errors.Is(err, errDeliveryNotConfirmed) && kc.isCurrent(generation, ctx) {
-				kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDeliveryPaused})
-			}
-			return
-		}
-		if kc.isCurrent(generation, ctx) {
-			kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
+		default:
+			report(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
 		}
 		return
 	}
