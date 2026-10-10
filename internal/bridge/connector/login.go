@@ -21,6 +21,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/database"
 
 	"github.com/frrad/mooo/internal/authstate"
+	"github.com/frrad/mooo/internal/protocol/macweb"
 	"github.com/frrad/mooo/internal/protocol/registration"
 )
 
@@ -91,7 +92,7 @@ func (macQRPresentationValidator) Validate(p registration.QRPresentation) error 
 
 type macHeaderDoer struct {
 	client  *http.Client
-	profile registration.MacClientProfile
+	profile macweb.Profile
 }
 
 func (d macHeaderDoer) Do(req *http.Request) (*http.Response, error) {
@@ -145,7 +146,7 @@ func (b qrServiceBackend) Cancel(ctx context.Context, req registration.QRCancelR
 
 func productionQRBackend(ctx context.Context, identity authstate.Identity) (qrBackend, error) {
 	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	doer := macHeaderDoer{client: client, profile: registration.MacClientProfile{AppVersion: identity.Metadata.AppVersion, OSVersion: identity.Metadata.OSVersion, Language: "en"}}
+	doer := macHeaderDoer{client: client, profile: macweb.Profile{AppVersion: identity.Metadata.AppVersion, OSVersion: identity.Metadata.OSVersion, Language: "en"}}
 	executor, err := registration.NewHTTPExecutor(doer)
 	if err != nil {
 		return nil, err

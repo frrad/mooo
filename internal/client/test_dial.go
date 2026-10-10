@@ -5,8 +5,8 @@ import (
 	"net"
 
 	"github.com/frrad/mooo/internal/authstate"
-	"github.com/frrad/mooo/internal/protocol/friends"
 	"github.com/frrad/mooo/internal/protocol/loco"
+	"github.com/frrad/mooo/internal/protocol/macweb"
 )
 
 // TestConnection describes one synthetic LOCO transport endpoint. It is kept
@@ -29,7 +29,7 @@ type TestDialers struct {
 // network dial path. The constructor is intentionally narrow and internal:
 // production callers should use Open or OpenWithOptions. The optional options
 // select the same production login policy while keeping synthetic dialers.
-func OpenWithTestDialers(statePath string, doer friends.Doer, dialers TestDialers, options ...OpenOptions) (*Client, error) {
+func OpenWithTestDialers(statePath string, doer macweb.Doer, dialers TestDialers, options ...OpenOptions) (*Client, error) {
 	if dialers.TLS == nil || dialers.Secure == nil {
 		return nil, ErrBootstrap
 	}
