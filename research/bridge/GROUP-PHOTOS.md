@@ -154,7 +154,7 @@ saved-file hash for outbound photos) and C.
 | Matrix → Kakao captioned JPEG | one mapping; native A shows the caption and the saved file hash equals the source |
 | Matrix → Kakao PNG | one mapping; native A saved file hash equals the source, no caption |
 | Matrix media download cut for an outbound image | certain "not sent" status, no reservation row, no Kakao send |
-| SIGINT while the outbound Matrix fetch was stalled | shutdown in 0.24 s, no Kakao send |
+| SIGINT while the outbound Matrix fetch was stalled | shutdown in 0.24 s, no Kakao send; the cancelled fetch posted the certain "not bridged … not sent to KakaoTalk" status before exit |
 | Restarts between cases | no duplicate Matrix events; durable cursor equal to the latest mapping |
 
 Native A's viewer listed all eight bridged photos once, in source order, with
@@ -168,10 +168,6 @@ not inspected).
 - Expired and unavailable downloads are covered by production-path tests only;
   a real expired photo or CDN refusal was not produced live (the CONNECT proxy
   cannot forge HTTP statuses without interception).
-- An outbound image in flight when the bridge stops receives no Matrix failure
-  status, because the process exits first; the homeserver did not redeliver the
-  event. Nothing reaches KakaoTalk, but the Matrix client is left without a
-  final status.
 - The Disconnect-during-upload case was exercised live on the Matrix fetch
   stage; interrupting the Kakao media upload itself is covered by client and
   connector tests only.

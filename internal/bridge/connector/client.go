@@ -1414,7 +1414,7 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		return nil, err
 	}
 	if msg.ReplyTo == nil && msg.Content.RelatesTo != nil && msg.Content.RelatesTo.GetReplyTo() != "" {
-		return nil, errMissingReplyMetadata
+		return nil, replyTargetStatus(errMissingReplyMetadata)
 	}
 	kc.mu.Lock()
 	c := kc.client
@@ -1448,7 +1448,7 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	if msg.ReplyTo != nil {
 		target, err := replyTargetFor(msg.ReplyTo, msg.Portal.PortalKey)
 		if err != nil {
-			return nil, err
+			return nil, replyTargetStatus(err)
 		}
 		if err := kc.beginOutbound(ctx, msg); err != nil {
 			return nil, err
@@ -1481,6 +1481,18 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 			Metadata:  newKakaoMessageMetadata(chatID, response.LogID, kc.userID, sentType, body, 0),
 		},
 	}, nil
+}
+
+// replyTargetStatus refuses a Matrix reply whose target cannot be mapped to
+// exactly one KakaoTalk message in this chat. Nothing was sent, so the
+// refusal is certain; sending without the relation is left to the user.
+func replyTargetStatus(err error) error {
+	return bridgev2.WrapErrorInStatus(err).
+		WithStatus(event.MessageStatusFail).
+		WithErrorReason(event.MessageStatusUnsupported).
+		WithIsCertain(true).
+		WithMessage("The message you replied to is not a bridged KakaoTalk message in this chat, so the reply was not sent. Send it without the reply to deliver it.").
+		WithSendNotice(true)
 }
 
 // outboundSendError classifies a failed single Kakao send for Matrix. A

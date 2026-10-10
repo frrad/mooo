@@ -42,6 +42,9 @@ An ASCII source longer than the limit was observed as exactly 100 characters
 without an ellipsis. Confidence: high for direct-chat text replies; open-chat
 and attachment-specific reply fields remain unvalidated live.
 
+Regular-group behavior, the Mac reply construction and rendering trace, and the
+missing-source fallback are recorded in [group replies](bridge/GROUP-REPLIES.md).
+
 ## Reaction mutation
 
 The macOS client uses authenticated HTTPS rather than LOCO for a reaction:
