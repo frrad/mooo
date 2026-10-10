@@ -9,7 +9,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
-func TestSessionSecureCoalescedEnvelopeDispatchesBetweenHeaders(t *testing.T) {
+func TestSessionSecureCoalescedEnvelopeDispatchesBothPackets(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	_ = serverConn.SetDeadline(time.Now().Add(time.Second))
 	key := bytes.Repeat([]byte{0x91}, loco.V3KeySize)
@@ -24,25 +24,10 @@ func TestSessionSecureCoalescedEnvelopeDispatchesBetweenHeaders(t *testing.T) {
 	waiter1 := make(chan requestResult, 1)
 	waiter2 := make(chan requestResult, 1)
 	s := &Session{
-		wire:                &wireConn{c: clientConn, secure: clientSecure},
-		pushes:              make(chan loco.Packet, 2),
-		pending:             map[uint32]chan requestResult{7: waiter1, 8: waiter2},
-		pendingByUniqueID:   map[string]chan requestResult{"ONE.7": waiter1, "TWO.8": waiter2},
-		pendingUniqueIDByID: map[uint32]string{7: "ONE.7", 8: "TWO.8"},
-		bootstrapDone:       true,
-	}
-	s.headerObserver = func(header loco.Header) {
-		if header.PacketID != 8 {
-			return
-		}
-		select {
-		case result := <-waiter1:
-			if result.packet.Header.PacketID != 7 || result.err != nil {
-				t.Errorf("first result=%+v", result)
-			}
-		default:
-			t.Error("second header observed before first packet dispatch")
-		}
+		wire:          &wireConn{c: clientConn, secure: clientSecure},
+		pushes:        make(chan loco.Packet, 2),
+		pending:       map[uint32]pendingRequest{7: {method: "ONE", result: waiter1}, 8: {method: "TWO", result: waiter2}},
+		bootstrapDone: true,
 	}
 	readDone := make(chan struct{})
 	serverDone := make(chan error, 1)
@@ -86,6 +71,14 @@ func TestSessionSecureCoalescedEnvelopeDispatchesBetweenHeaders(t *testing.T) {
 		_, writeErr := serverConn.Write(envelope)
 		serverDone <- writeErr
 	}()
+	select {
+	case result := <-waiter1:
+		if result.packet.Header.PacketID != 7 || result.err != nil {
+			t.Fatalf("first result=%+v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first packet did not complete")
+	}
 	select {
 	case result := <-waiter2:
 		if result.packet.Header.PacketID != 8 || result.err != nil {

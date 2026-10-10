@@ -99,7 +99,7 @@ func TestTerminalNoticeClosesOwnedCarriageAndRejectsSend(t *testing.T) {
 	session := &Session{
 		wire:    &wireConn{c: clientConn},
 		pushes:  make(chan loco.Packet, 4),
-		pending: make(map[uint32]chan requestResult),
+		pending: make(map[uint32]pendingRequest),
 	}
 	api := &Client{session: session}
 	stream, err := api.Events(context.Background())
@@ -158,7 +158,7 @@ func TestShutdownCancelsBlockedEventDecoder(t *testing.T) {
 	session := &Session{
 		wire:    &wireConn{c: clientConn},
 		pushes:  make(chan loco.Packet, requestLimit),
-		pending: make(map[uint32]chan requestResult),
+		pending: make(map[uint32]pendingRequest),
 	}
 	api := &Client{session: session, checkpoint: checkpoint, lease: lease}
 	stream, err := api.Events(context.Background())

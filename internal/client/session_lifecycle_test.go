@@ -17,7 +17,7 @@ func TestSessionFinishReadFansOutOnceAndClearsPending(t *testing.T) {
 	second := make(chan requestResult, 1)
 	pushes := make(chan loco.Packet, 1)
 	session := &Session{
-		pending: map[uint32]chan requestResult{100000000: first, 100000001: second},
+		pending: map[uint32]pendingRequest{100000000: {method: "PING", result: first}, 100000001: {method: "PING", result: second}},
 		pushes:  pushes,
 	}
 	wantErr := errors.New("synthetic carriage close")
@@ -59,10 +59,10 @@ func TestSessionCloseFailsPendingRequestThroughReaderTeardown(t *testing.T) {
 	session := &Session{
 		wire:    &wireConn{c: clientConn},
 		pushes:  make(chan loco.Packet, 1),
-		pending: make(map[uint32]chan requestResult),
+		pending: make(map[uint32]pendingRequest),
 	}
 	waiter := make(chan requestResult, 1)
-	session.pending[100000000] = waiter
+	session.pending[100000000] = pendingRequest{method: "PING", result: waiter}
 	go session.readLoop()
 
 	if err := session.Close(); err != nil {
@@ -85,7 +85,7 @@ func TestSessionResponseRemovesPendingCallback(t *testing.T) {
 		wire:    &wireConn{c: clientConn},
 		nextID:  100000000,
 		pushes:  make(chan loco.Packet, 1),
-		pending: make(map[uint32]chan requestResult),
+		pending: make(map[uint32]pendingRequest),
 	}
 	go session.readLoop()
 	defer func() {
@@ -142,7 +142,7 @@ func TestSessionRequestIDWrapsBeforeOfficialUpperBound(t *testing.T) {
 		wire:    &wireConn{c: clientConn},
 		nextID:  199999999,
 		pushes:  make(chan loco.Packet, 1),
-		pending: make(map[uint32]chan requestResult),
+		pending: make(map[uint32]pendingRequest),
 	}
 	go session.readLoop()
 	defer func() {
@@ -205,8 +205,8 @@ func TestSessionRequestIDWrapsBeforeOfficialUpperBound(t *testing.T) {
 func TestSessionRequestIDSkipsPendingAfterWrap(t *testing.T) {
 	session := &Session{
 		nextID: 199999999,
-		pending: map[uint32]chan requestResult{
-			100000000: make(chan requestResult),
+		pending: map[uint32]pendingRequest{
+			100000000: {method: "PING", result: make(chan requestResult)},
 		},
 	}
 	session.mu.Lock()
@@ -230,10 +230,10 @@ func TestSessionMalformedHeaderFailsPendingExactlyOnce(t *testing.T) {
 	session := &Session{
 		wire:    &wireConn{c: clientConn},
 		pushes:  make(chan loco.Packet, 1),
-		pending: make(map[uint32]chan requestResult),
+		pending: make(map[uint32]pendingRequest),
 	}
 	waiter := make(chan requestResult, 1)
-	session.pending[100000000] = waiter
+	session.pending[100000000] = pendingRequest{method: "PING", result: waiter}
 	go session.readLoop()
 	defer func() { _ = clientConn.Close(); _ = serverConn.Close() }()
 	if _, err := serverConn.Write(make([]byte, loco.HeaderSize)); err != nil {
