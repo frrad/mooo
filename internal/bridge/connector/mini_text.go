@@ -2,7 +2,6 @@ package connector
 
 import (
 	"context"
-	"errors"
 	"strconv"
 
 	"github.com/frrad/mooo/internal/protocol/events"
@@ -67,16 +66,11 @@ func convertMiniText(ctx context.Context, portal *bridgev2.Portal, intent bridge
 		} else {
 			resource, err := media.DownloadMini(ctx, stickerHTTPClient, part.ResourceID)
 			if err != nil {
-				switch {
-				case errors.Is(err, media.ErrStickerUnavailable):
-					state.category = "unavailable"
-				case errors.Is(err, media.ErrUnsupportedSticker):
-					state.category = "unsupported"
-				case errors.Is(err, media.ErrInvalidSticker), errors.Is(err, media.ErrInvalidStickerResource):
-					state.category = "invalid_resource"
-				default:
+				category, ok := stickerResourceFailure(err)
+				if !ok {
 					return nil, errMiniTransfer
 				}
+				state.category = category
 			} else {
 				totalBytes += len(resource.Data)
 				if totalBytes > 8<<20 {
