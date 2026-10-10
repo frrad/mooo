@@ -45,10 +45,16 @@ func (kc *KakaoClient) reserveOutboundKV(ctx context.Context, eventID id.EventID
 
 // beginOutbound must be called immediately before the one source send.
 func (kc *KakaoClient) beginOutbound(ctx context.Context, msg *bridgev2.MatrixMessage) error {
-	if msg.Event == nil || msg.Event.ID == "" {
+	return kc.beginOutboundEvent(ctx, msg.Event)
+}
+
+// beginOutboundEvent reserves any Matrix event (message, edit or redaction)
+// immediately before its one source request.
+func (kc *KakaoClient) beginOutboundEvent(ctx context.Context, evt *event.Event) error {
+	if evt == nil || evt.ID == "" {
 		return errors.New("connector: Matrix event has no identity to deduplicate its send")
 	}
-	reserved, err := kc.reserveOutbound(ctx, msg.Event.ID)
+	reserved, err := kc.reserveOutbound(ctx, evt.ID)
 	if err != nil {
 		return fmt.Errorf("connector: record outbound attempt: %w", err)
 	}

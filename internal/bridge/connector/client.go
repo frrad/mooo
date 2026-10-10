@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/jsontime"
+	"go.mau.fi/util/ptr"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	bridgematrix "maunium.net/go/mautrix/bridgev2/matrix"
@@ -49,6 +51,8 @@ type kakaoClient interface {
 	SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error)
 	SendUpload(ctx context.Context, chatID int64, upload media.Upload) (media.SendResult, error)
 	SendAlbum(ctx context.Context, chatID int64, photos [][]byte, caption string) (chat.WriteResponse, error)
+	ModifyMessage(ctx context.Context, request chat.ModifyRequest) (int64, error)
+	DeleteMessage(ctx context.Context, request chat.DeleteRequest) error
 	MarkRead(ctx context.Context, chatID, watermark int64) (syncmsg.Response, error)
 	Close() error
 	Shutdown(ctx context.Context) error
@@ -1355,6 +1359,10 @@ func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 		ReactionCount:    1,
 		ReadReceipts:     true,
 		AllowedReactions: []string{"❤️", "👍", "✅", "😆", "😮", "😢"},
+		Edit:             event.CapLevelPartialSupport,
+		EditMaxAge:       ptr.Ptr(jsontime.S(kakaoEditWindow)),
+		Delete:           event.CapLevelPartialSupport,
+		DeleteMaxAge:     ptr.Ptr(jsontime.S(kakaoDeleteWindow)),
 		File: event.FileFeatureMap{
 			event.MsgImage: &event.FileFeatures{
 				MimeTypes: map[string]event.CapabilitySupportLevel{"image/jpeg": event.CapLevelPartialSupport, "image/png": event.CapLevelPartialSupport},
