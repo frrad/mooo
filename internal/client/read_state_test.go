@@ -40,7 +40,7 @@ func TestSessionMarkReadUsesOneMessageSyncShape(t *testing.T) {
 		wire:    backend.client,
 		nextID:  1,
 		pushes:  make(chan loco.Packet, 1),
-		pending: make(map[uint32]chan requestResult),
+		pending: make(map[uint32]pendingRequest),
 	}
 	go session.readLoop()
 

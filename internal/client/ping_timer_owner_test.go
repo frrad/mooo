@@ -201,12 +201,10 @@ func TestSessionCompletionArmsInjectedTimerOwner(t *testing.T) {
 	owner := newPingTimerOwner(clock, time.Second, func() { fired <- struct{}{} })
 	waiter := make(chan requestResult, 1)
 	session := &Session{
-		wire:                &wireConn{c: clientConn},
-		pushes:              make(chan loco.Packet, 1),
-		pending:             map[uint32]chan requestResult{100000000: waiter},
-		pendingByUniqueID:   map[string]chan requestResult{"PING.100000000": waiter},
-		pendingUniqueIDByID: map[uint32]string{100000000: "PING.100000000"},
-		lifecycleScheduler:  owner,
+		wire:               &wireConn{c: clientConn},
+		pushes:             make(chan loco.Packet, 1),
+		pending:            map[uint32]pendingRequest{100000000: {method: "PING", result: waiter}},
+		lifecycleScheduler: owner,
 	}
 	go session.readLoop()
 	body, err := bson.Marshal(bson.D{{Key: "status", Value: int32(0)}})
@@ -248,7 +246,7 @@ func TestSessionTerminalFinishShutsInjectedTimerOwner(t *testing.T) {
 	owner := newPingTimerOwner(clock, time.Second, func() { fired <- struct{}{} })
 	session := &Session{
 		pushes:             make(chan loco.Packet, 1),
-		pending:            make(map[uint32]chan requestResult),
+		pending:            make(map[uint32]pendingRequest),
 		lifecycleScheduler: owner,
 	}
 	if !owner.queueSchedule() {
