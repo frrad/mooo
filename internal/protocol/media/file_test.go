@@ -43,7 +43,7 @@ func fileBody(t *testing.T, a map[string]any) []byte {
 }
 func TestObservedFilePreservesMetadataAndOriginalBytes(t *testing.T) {
 	a, data := fileFixture(t)
-	m, err := DecodeFileMessage(fileBody(t, a))
+	m, err := DecodeFileMessage(decodeEnvelope(t, fileBody(t, a)))
 	if err != nil || m.ChatID != 42 || m.LogID != 99 || m.AuthorID != 8 || m.SentAt != 1234 || m.Attachment.Name != "mooo-file-synthetic.txt" || m.Attachment.Size != 48 {
 		t.Fatal("observed file metadata lost", err)
 	}
@@ -57,7 +57,7 @@ func TestObservedFilePreservesMetadataAndOriginalBytes(t *testing.T) {
 }
 func TestFileExpiryUsesMillisecondsAndStopsBeforeFetch(t *testing.T) {
 	a, _ := fileFixture(t)
-	m, err := DecodeFileMessage(fileBody(t, a))
+	m, err := DecodeFileMessage(decodeEnvelope(t, fileBody(t, a)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestFileRejectsPathNamesAndMalformedMetadata(t *testing.T) {
 	} {
 		a, _ := fileFixture(t)
 		change(a)
-		if _, err := DecodeFileMessage(fileBody(t, a)); err != ErrInvalidMessage {
+		if _, err := DecodeFileMessage(decodeEnvelope(t, fileBody(t, a))); err != ErrInvalidMessage {
 			t.Fatal("invalid file accepted")
 		}
 	}
@@ -90,13 +90,13 @@ func TestFileRejectsDuplicateJSONFields(t *testing.T) {
 	a, _ := fileFixture(t)
 	x, _ := json.Marshal(a)
 	body, _ := bson.Marshal(bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.D{{Key: "logId", Value: int64(99)}, {Key: "type", Value: messagetype.File}, {Key: "attachment", Value: string(x[:len(x)-1]) + `,"s":1}`}}}})
-	if _, err := DecodeFileMessage(body); err != ErrInvalidMessage {
+	if _, err := DecodeFileMessage(decodeEnvelope(t, body)); err != ErrInvalidMessage {
 		t.Fatal("duplicate file size accepted")
 	}
 }
 func TestFileChecksumAndResponseBounds(t *testing.T) {
 	a, data := fileFixture(t)
-	m, err := DecodeFileMessage(fileBody(t, a))
+	m, err := DecodeFileMessage(decodeEnvelope(t, fileBody(t, a)))
 	if err != nil {
 		t.Fatal(err)
 	}

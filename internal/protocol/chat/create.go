@@ -7,9 +7,15 @@ import (
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
 )
 
 const CreateCommand = "CREATE"
+
+// fields reads response fields; callers map every failure to their own
+// response error.
+var fields = bsonfield.Reader{Err: ErrInvalidResponse}
 
 var (
 	ErrNoMembers       = errors.New("chat: CREATE requires at least one member")
@@ -92,32 +98,13 @@ type CreateResponse struct {
 
 func DecodeCreateResponse(body []byte) (CreateResponse, error) {
 	raw := bson.Raw(body)
-	chatID, err := int64Field(raw, "chatId")
-	if err != nil || chatID <= 0 {
+	chatID, ok, err := fields.Int64(raw, "chatId")
+	if err != nil || !ok || chatID <= 0 {
 		return CreateResponse{}, ErrInvalidResponse
 	}
-	roomValue, err := raw.LookupErr("chatRoom")
-	if err != nil || roomValue.Type != bson.TypeEmbeddedDocument {
-		return CreateResponse{}, ErrInvalidResponse
-	}
-	room := append(bson.Raw(nil), roomValue.Document()...)
-	if err := room.Validate(); err != nil {
+	room, ok, err := fields.Document(raw, "chatRoom")
+	if err != nil || !ok {
 		return CreateResponse{}, ErrInvalidResponse
 	}
 	return CreateResponse{ChatID: chatID, ChatRoom: room}, nil
-}
-
-func int64Field(raw bson.Raw, key string) (int64, error) {
-	v, err := raw.LookupErr(key)
-	if err != nil {
-		return 0, err
-	}
-	switch v.Type {
-	case bson.TypeInt64:
-		return v.Int64(), nil
-	case bson.TypeInt32:
-		return int64(v.Int32()), nil
-	default:
-		return 0, ErrInvalidResponse
-	}
 }

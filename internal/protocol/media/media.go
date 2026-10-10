@@ -19,6 +19,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
+	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -48,6 +50,10 @@ var (
 	// ErrInvalidCaption reports a photo caption outside the accepted bounds.
 	ErrInvalidCaption = errors.New("media: invalid photo caption")
 )
+
+// fields reads response fields; callers map every failure to their own
+// response error.
+var fields = bsonfield.Reader{Err: ErrInvalidResponse}
 
 // MaxCaptionBytes bounds a photo caption in either direction.
 const MaxCaptionBytes = 16 << 10
@@ -98,25 +104,11 @@ type PhotoMessage struct {
 // DecodePhotoMessage parses a type-2 MSG without logging its ephemeral URLs or
 // media key. Unknown attachment fields are retained by neither this decoder nor
 // its callers, allowing the wire schema to grow safely.
-func DecodePhotoMessage(body []byte) (PhotoMessage, error) {
-	raw := bson.Raw(body)
-	chatID, err := integerField(raw, "chatId")
-	if err != nil || chatID <= 0 {
+func DecodePhotoMessage(env chatlog.Envelope) (PhotoMessage, error) {
+	if env.Type != PhotoType || !env.LogIDInChatLog {
 		return PhotoMessage{}, ErrInvalidMessage
 	}
-	logValue, err := raw.LookupErr("chatLog")
-	if err != nil || logValue.Type != bson.TypeEmbeddedDocument {
-		return PhotoMessage{}, ErrInvalidMessage
-	}
-	log := logValue.Document()
-	messageType, err := integerField(log, "type")
-	if err != nil || messageType != int64(PhotoType) {
-		return PhotoMessage{}, ErrInvalidMessage
-	}
-	logID, err := integerField(log, "logId")
-	if err != nil || logID <= 0 {
-		return PhotoMessage{}, ErrInvalidMessage
-	}
+	log := env.Log
 	attachmentValue, err := log.LookupErr("attachment")
 	if err != nil || attachmentValue.Type != bson.TypeString || len(attachmentValue.StringValue()) > 64*1024 {
 		return PhotoMessage{}, ErrInvalidMessage
@@ -137,8 +129,8 @@ func DecodePhotoMessage(body []byte) (PhotoMessage, error) {
 		return PhotoMessage{}, ErrInvalidMessage
 	}
 	return PhotoMessage{
-		ChatID: chatID, LogID: logID,
-		AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt"),
+		ChatID: env.ChatID, LogID: env.LogID,
+		AuthorID: env.AuthorID, SentAt: env.SentAt,
 		Attachment: attachment,
 	}, nil
 }
@@ -278,16 +270,16 @@ type ShipResponse struct {
 
 func DecodeShipResponse(body []byte) (ShipResponse, error) {
 	raw := bson.Raw(body)
-	key, err := stringField(raw, "k")
-	if err != nil {
+	key, ok, err := fields.String(raw, "k")
+	if err != nil || !ok || key == "" {
 		return ShipResponse{}, ErrInvalidResponse
 	}
-	host, err := stringField(raw, "vh")
-	if err != nil {
+	host, ok, err := fields.String(raw, "vh")
+	if err != nil || !ok || host == "" {
 		return ShipResponse{}, ErrInvalidResponse
 	}
-	port64, err := integerField(raw, "p")
-	if err != nil || port64 <= 0 || port64 > 65535 {
+	port64, ok, err := fields.Int64(raw, "p")
+	if err != nil || !ok || port64 <= 0 || port64 > 65535 {
 		return ShipResponse{}, ErrInvalidResponse
 	}
 	return ShipResponse{Key: key, Host: host, Port: int(port64)}, nil
@@ -333,13 +325,12 @@ func (r PostRequest) MarshalBSON() ([]byte, error) {
 
 func DecodePostOffset(body []byte, size int) (int, error) {
 	raw := bson.Raw(body)
-	value, err := raw.LookupErr("o")
-	if err != nil {
-		return 0, nil
-	}
-	offset64, err := integerValue(value)
+	offset64, ok, err := fields.Int64(raw, "o")
 	if err != nil || offset64 < 0 || offset64 > int64(size) {
 		return 0, ErrInvalidOffset
+	}
+	if !ok {
+		return 0, nil
 	}
 	return int(offset64), nil
 }
@@ -357,12 +348,12 @@ func SendResultPosition(result SendResult) (logID, sendAt int64, err error) {
 	if result.ChatLog == nil {
 		return 0, 0, ErrInvalidResponse
 	}
-	logID, err = integerField(result.ChatLog, "logId")
-	if err != nil || logID <= 0 {
+	logID, ok, err := fields.Int64(result.ChatLog, "logId")
+	if err != nil || !ok || logID <= 0 {
 		return 0, 0, ErrInvalidResponse
 	}
-	sendAt, err = integerField(result.ChatLog, "sendAt")
-	if err != nil || sendAt <= 0 {
+	sendAt, ok, err = fields.Int64(result.ChatLog, "sendAt")
+	if err != nil || !ok || sendAt <= 0 {
 		return 0, 0, ErrInvalidResponse
 	}
 	return logID, sendAt, nil
@@ -379,39 +370,4 @@ func DecodeComplete(body []byte) (SendResult, error) {
 		return SendResult{}, ErrInvalidResponse
 	}
 	return SendResult{ChatLog: chatLog}, nil
-}
-
-func stringField(raw bson.Raw, key string) (string, error) {
-	v, err := raw.LookupErr(key)
-	if err != nil || v.Type != bson.TypeString || v.StringValue() == "" {
-		return "", ErrInvalidResponse
-	}
-	return v.StringValue(), nil
-}
-
-func integerField(raw bson.Raw, key string) (int64, error) {
-	v, err := raw.LookupErr(key)
-	if err != nil {
-		return 0, err
-	}
-	return integerValue(v)
-}
-
-func optionalInt64(raw bson.Raw, key string) int64 {
-	value, err := integerField(raw, key)
-	if err != nil {
-		return 0
-	}
-	return value
-}
-
-func integerValue(v bson.RawValue) (int64, error) {
-	switch v.Type {
-	case bson.TypeInt32:
-		return int64(v.Int32()), nil
-	case bson.TypeInt64:
-		return v.Int64(), nil
-	default:
-		return 0, fmt.Errorf("%w: integer type", ErrInvalidResponse)
-	}
 }

@@ -44,7 +44,7 @@ func albumBody(t *testing.T, a map[string]any) []byte {
 	return body
 }
 func TestObservedMultiPhotoPreservesOrderedArrays(t *testing.T) {
-	got, err := DecodeMultiPhotoMessage(albumBody(t, albumFixture(t)))
+	got, err := DecodeMultiPhotoMessage(decodeEnvelope(t, albumBody(t, albumFixture(t))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestMultiPhotoRejectsMisalignedAndUnsafeArrays(t *testing.T) {
 	} {
 		a := albumFixture(t)
 		mutate(a)
-		if _, err := DecodeMultiPhotoMessage(albumBody(t, a)); err != ErrInvalidMessage {
+		if _, err := DecodeMultiPhotoMessage(decodeEnvelope(t, albumBody(t, a))); err != ErrInvalidMessage {
 			t.Fatal("malformed album accepted")
 		}
 	}
@@ -89,7 +89,7 @@ func TestMultiPhotoDuplicateAttachmentFieldsAreRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = DecodeMultiPhotoMessage(body); err != ErrInvalidMessage {
+	if _, err = DecodeMultiPhotoMessage(decodeEnvelope(t, body)); err != ErrInvalidMessage {
 		t.Fatal("duplicate array silently replaced")
 	}
 }
@@ -97,12 +97,12 @@ func TestMultiPhotoDuplicateAttachmentFieldsAreRejected(t *testing.T) {
 func TestMultiPhotoCommentsAreBoundedAndAligned(t *testing.T) {
 	a := albumFixture(t)
 	a["cmtl"] = []string{"synthetic caption", ""}
-	got, err := DecodeMultiPhotoMessage(albumBody(t, a))
+	got, err := DecodeMultiPhotoMessage(decodeEnvelope(t, albumBody(t, a)))
 	if err != nil || got.Comments[0] != "synthetic caption" {
 		t.Fatal("caption lost")
 	}
 	a["cmtl"] = []string{"only one"}
-	if _, err := DecodeMultiPhotoMessage(albumBody(t, a)); err != ErrInvalidMessage {
+	if _, err := DecodeMultiPhotoMessage(decodeEnvelope(t, albumBody(t, a))); err != ErrInvalidMessage {
 		t.Fatal("misaligned captions accepted")
 	}
 }
