@@ -24,34 +24,18 @@ func init() {
 }
 
 func (kc *KakaoClient) saveMembershipCheckpoint(ctx context.Context, p *bridgev2.Portal, pending bool, roster []int64) error {
-	meta, ok := p.Metadata.(*KakaoPortalMetadata)
-	if !ok || meta == nil {
-		return errors.New("connector: membership metadata is unavailable")
-	}
-	next := *meta
-	next.GroupMembershipManaged = true
-	next.MembershipPending = pending
-	next.MembershipRoster = slices.Clone(roster)
-	if !pending {
-		next.SourceRemoved = false
-	}
-	p.Metadata = &next
-	if err := p.Save(ctx); err != nil {
-		p.Metadata = meta
-		return err
-	}
-	saved, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, p.PortalKey)
-	if err != nil {
-		return err
-	}
-	if saved == nil {
-		return errors.New("connector: membership checkpoint disappeared")
-	}
-	got, ok := saved.Metadata.(*KakaoPortalMetadata)
-	if !ok || got == nil || !got.GroupMembershipManaged || got.MembershipPending != pending || got.SourceRemoved != next.SourceRemoved || !slices.Equal(got.MembershipRoster, roster) {
-		return errors.New("connector: membership checkpoint was not durable")
-	}
-	return nil
+	var sourceRemoved bool
+	return kc.savePortalMeta(ctx, p, func(next *KakaoPortalMetadata) {
+		next.GroupMembershipManaged = true
+		next.MembershipPending = pending
+		next.MembershipRoster = slices.Clone(roster)
+		if !pending {
+			next.SourceRemoved = false
+		}
+		sourceRemoved = next.SourceRemoved
+	}, func(got *KakaoPortalMetadata) bool {
+		return got.GroupMembershipManaged && got.MembershipPending == pending && got.SourceRemoved == sourceRemoved && slices.Equal(got.MembershipRoster, roster)
+	})
 }
 
 // refreshGroupMembership uses a fresh full source roster rather than a possibly

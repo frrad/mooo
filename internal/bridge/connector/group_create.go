@@ -382,7 +382,7 @@ func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room
 
 // creationSourceRoster checks source identities independently of the framework's
 // member map, which includes the local account even when MEMLIST omits it.
-func (kc *KakaoClient) creationSourceRoster(ctx context.Context, c kakaoClient, chatID int64, participants []int64) (map[int64]bool, error) {
+func (kc *KakaoClient) creationSourceRoster(ctx context.Context, c chatMetaAPI, chatID int64, participants []int64) (map[int64]bool, error) {
 	roster, err := c.MemberList(ctx, chatID, 0)
 	if err != nil {
 		return nil, err

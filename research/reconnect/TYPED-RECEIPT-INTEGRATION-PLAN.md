@@ -109,10 +109,13 @@ Once those eligibility and completion contracts are approved, a later client
 phase may enable the typed adapter as the normal receipt path; this document
 does not make that readiness gate permanent.
 
-Concrete source/code anchors are `internal/client/session.go`
+Concrete source/code anchors were `internal/client/session.go`
 (`BindPushReceipt`, `dispatchPushReceipt`, and `readLoopBody`),
 `internal/protocol/sessionlogin/receipt_body.go` (`BuildReceiptBody`), and
 `internal/protocol/sessionlogin/receipt_packet.go` (`BuildReceiptPacket`).
+That unbound code was deleted by task A1 of `docs/code-structure-plan.md`; it
+remains in git history (for example commit `be6fa7f`) and should be re-added
+together with the code that binds it.
 Synthetic tests should cover the four distinct nil/empty/`NSNull`/initializer
 outcomes above, signed-int32 distinctions,
 caller-owned ID preservation at zero and `math.MaxUint32`, rejection without

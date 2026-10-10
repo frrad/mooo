@@ -24,23 +24,13 @@ func (kc *KakaoClient) reserveOutboundKV(ctx context.Context, eventID id.EventID
 	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
 		return false, errors.New("connector: outbound attempt store unavailable")
 	}
-	db := kc.login.Bridge.DB.KV
+	kv := newKVStore(kc.login.Bridge.DB.KV)
 	prefix := fmt.Sprintf("kakao:outbound-attempt:%s:", kc.login.ID)
 	now := time.Now()
-	// Fixed-width seconds keep the stored value lexically ordered.
-	stamp := func(t time.Time) string { return fmt.Sprintf("%020d", t.Unix()) }
-	if _, err := db.Exec(ctx, "DELETE FROM kv_store WHERE bridge_id=$1 AND key LIKE $2 AND value < $3", db.BridgeID, prefix+"%", stamp(now.Add(-outboundAttemptRetention))); err != nil {
+	if err := kv.deleteOlderThan(ctx, prefix, kvTimeStamp(now.Add(-outboundAttemptRetention))); err != nil {
 		return false, err
 	}
-	result, err := db.Exec(ctx, "INSERT INTO kv_store (bridge_id,key,value) VALUES ($1,$2,$3) ON CONFLICT (bridge_id,key) DO NOTHING", db.BridgeID, prefix+string(eventID), stamp(now))
-	if err != nil {
-		return false, err
-	}
-	inserted, err := result.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	return inserted == 1, nil
+	return kv.putIfAbsent(ctx, prefix+string(eventID), kvTimeStamp(now))
 }
 
 // beginOutbound must be called immediately before the one source send.

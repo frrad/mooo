@@ -22,7 +22,7 @@ These are scoped capabilities, not full official-client parity.
 |---|---|---|
 | 1 | Regular-group announcements; rename, join/leave and metadata lifecycle acceptance | Inbound text and rich Boards announcements project to the room topic (PRs #269, #283); Matrix topic changes are explicitly rejected and restored because the Boards write contract is untraced. Initial shared title/roster works. Membership handlers exist, but live mutations remain unvalidated. See [chat metadata](research/chat-metadata.md) and [group evidence](research/bridge/GROUP-MESSAGING-VALIDATION.md). |
 | 2 | Remaining group media acceptance | Group photos (PR #277), text and image replies (PRs #278–279) and reactions (PR #280) are accepted. |
-| 3 | Live read-receipt and catch-up read-side-effect policy; operator malformed-message recovery; terminal/failure lifecycle acceptance | Routing, bounded recovery and ownership are implemented; `SYNCMSG cnt=0`, terminal events, Matrix failures and cleanup timeouts need controlled acceptance. Receive-header timeout and push receipts are not installed by default. |
+| 3 | Live read-receipt and catch-up read-side-effect policy; operator malformed-message recovery; terminal/failure lifecycle acceptance | Routing, bounded recovery and ownership are implemented; `SYNCMSG cnt=0`, terminal events, Matrix failures and cleanup timeouts need controlled acceptance. Receive-header timeout and push receipts: not implemented; see docs/code-structure-plan.md A1. |
 | 4 | Reproducible deployment acceptance and Matrix crypto recovery | Docker/configuration exist. Complete standard appservice installation and separate Beeper validation; test key rotation, missing keys/trust transitions and encrypted replies/reactions. |
 | 5 | Broader outbound messaging and interactive content | `HandleMatrixMessage` accepts text/notice/emote and JPEG/PNG photos only; image replies are rejected. Outbound video/audio/files/albums/stickers/cards/polls/posts, edits/deletions and poll/board actions have no supported connector path. |
 | 6 | Eligible unsupported formats and broader chat/contact scope | Link, Schedule, Nudge, SharpSearch, sticker variants, LargeVideo/LargeFile, call/business formats and Open/Team/Secret Chat need independent contracts/fixtures. Friend creation has a bounded API; full friend/contact synchronization remains open. |
@@ -43,7 +43,8 @@ loops, a 25-field hand-written connection lifecycle in the connector, and 29
 "no bridge DB" branches that exist only for the unit-test harness. The
 task-by-task refactor plan, with acceptance criteria and merge order, is in
 [`docs/code-structure-plan.md`](docs/code-structure-plan.md). Its task A1
-resolves the "Connect or delete the remaining test-only code" item below.
+resolved the "Connect or delete the remaining test-only code" item below by
+deleting the unbound code.
 
 ## Regular-group completion objective (2026-10-09)
 
@@ -313,15 +314,18 @@ behaviour those fixtures describe.
       `internal/testpolicy`.
 - [x] Read receipts: the bridge now drives `MarkRead` and `DECUNREAD`
       directly; `readstate` and `notiread` were deleted (#232).
-- [ ] Connect or delete the remaining test-only code (`deadcode -tags=goolm
-      ./...`). Each is a real capability that production never binds:
+- [x] Connect or delete the remaining test-only code (`deadcode -tags=goolm
+      ./...`). Deleted under option (a) of task A1 in
+      `docs/code-structure-plan.md` (no maintainer decision was available, so
+      the recommended default applied). Each is a real capability production
+      never bound; git history before the A1 PR and `research/reconnect/*.md`
+      retain the reviewed contracts, and the owners are re-added together with
+      the code that binds them:
   - Push delivery receipts: `Session.BindPushReceipt`, the sessionlogin
     `push_receipt_*` owners, `receipt_*` builders, `sgjson_object`,
-    `foundation_ti`, and the client out-segment worker/submitter. Needs a
-    product decision.
-  - Receive-header timeout: `sessionlogin.NewReceiveHeaderTimeoutOwner` and
-    its effects planner. Session has the controller seam, but production
-    never installs one, so no hung-read timeout is active.
+    `foundation_ti`, and the client out-segment worker/submitter.
+  - Receive-header timeout: `sessionlogin.NewReceiveHeaderTimeoutOwner`, its
+    effects planner, and the Session controller and in-segment watchdog seams.
   - Connection recovery: `sessionlogin.ReduceRecovery`, `EndpointCache`, and
     `InvalidateMatchingFailure`.
 - [ ] Run fixtures with a production equivalent (BSON decoding, events, receive

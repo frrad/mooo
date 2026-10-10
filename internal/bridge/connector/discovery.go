@@ -55,7 +55,7 @@ func (kc *KakaoClient) discoverGroups(ctx context.Context, c kakaoClient) error 
 	return nil
 }
 
-func (kc *KakaoClient) groupDiscovery(ctx context.Context, c kakaoClient, chatID int64) (*simplevent.ChatResync, error) {
+func (kc *KakaoClient) groupDiscovery(ctx context.Context, c chatMetaAPI, chatID int64) (*simplevent.ChatResync, error) {
 	key := makePortalKey(chatID, kc.login.ID)
 	p := &bridgev2.Portal{Portal: &database.Portal{PortalKey: key}}
 	if kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
@@ -89,7 +89,7 @@ func (kc *KakaoClient) groupDiscovery(ctx context.Context, c kakaoClient, chatID
 
 // Validate creation metadata before setting CreatePortal: bridgev2 may fall back
 // to NetworkAPI.GetChatInfo if an event provider fails during room creation.
-func (kc *KakaoClient) prepareMemberDiscovery(ctx context.Context, c kakaoClient, chatID int64, evt *chatInfoChangeEvent) error {
+func (kc *KakaoClient) prepareMemberDiscovery(ctx context.Context, c chatMetaAPI, chatID int64, evt *chatInfoChangeEvent) error {
 	key := makePortalKey(chatID, kc.login.ID)
 	if kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
 		p, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, key)

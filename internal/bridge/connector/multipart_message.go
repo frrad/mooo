@@ -14,6 +14,12 @@ type multipartMessage[T any] struct {
 	expectedParts int
 }
 
+// expectedPartsMessage is a remote message that declares every part it maps
+// to, so a partially bridged message is not mistaken for a complete one.
+type expectedPartsMessage interface {
+	ExpectedPartIDs() []networkid.PartID
+}
+
 func (m *multipartMessage[T]) ExpectedPartIDs() []networkid.PartID {
 	parts := make([]networkid.PartID, m.expectedParts)
 	for i := range parts {
