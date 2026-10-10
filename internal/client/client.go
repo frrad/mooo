@@ -22,7 +22,7 @@ import (
 
 var ErrClientClosed = errors.New("client: client closed")
 
-var ErrCommitOrder = errors.New("client: event commit is not the next delivered message for its chat")
+var errCommitOrder = errors.New("client: event commit is not the next delivered message for its chat")
 
 // Client owns authenticated state and one long-lived LOCO session within the
 // process that holds the profile's global owner lease. Operations establish
@@ -110,10 +110,10 @@ func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*
 
 func newClient(state authstate.State, doer macweb.Doer) (*Client, error) {
 	if state.Credentials == nil {
-		return nil, ErrCredentialsAbsent
+		return nil, errCredentialsAbsent
 	}
 	if _, err := state.Identity.WireDeviceUUID(); err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	if doer == nil {
 		doer = &http.Client{Timeout: 30 * time.Second}
@@ -450,7 +450,7 @@ func (c *Client) CommitEvent(event events.Event) error {
 	defer c.commitMu.Unlock()
 	queue := c.pendingCommits[chatID]
 	if len(queue) == 0 || queue[0] != logID {
-		return ErrCommitOrder
+		return errCommitOrder
 	}
 	_, err := checkpoint.CommitMessage(chatID, logID)
 	if err == nil {

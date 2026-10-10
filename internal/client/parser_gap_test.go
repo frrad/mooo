@@ -37,7 +37,7 @@ func TestMalformedPhotoCannotBeSilentlyCommittedPast(t *testing.T) {
 	if _, ok := first.Event.(events.MessageGap); !ok {
 		t.Fatalf("first event=%T", first.Event)
 	}
-	if err = api.CommitEvent(second.Event); !errors.Is(err, ErrCommitOrder) {
+	if err = api.CommitEvent(second.Event); !errors.Is(err, errCommitOrder) {
 		t.Fatalf("later message commit=%v; malformed photo was silently skipped", err)
 	}
 	if err = api.CommitEvent(first.Event); err != nil {

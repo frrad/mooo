@@ -48,7 +48,7 @@ func checkin(ctx context.Context, hosts []string, ports []int, body []byte, dial
 			}
 		}
 	}
-	return loco.Packet{}, nil, ErrBootstrap
+	return loco.Packet{}, nil, errBootstrap
 }
 
 func bookingTargets(body []byte) ([]string, []int, error) {

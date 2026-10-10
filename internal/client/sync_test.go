@@ -96,7 +96,7 @@ func TestCatchUpPreservesMalformedMessagePositionAndCommitOrder(t *testing.T) {
 	if !ok || second.LogID != 101 {
 		t.Fatalf("second recovered event = %#v, want log 101 text", recovered[1])
 	}
-	if err := api.CommitEvent(recovered[1]); !errors.Is(err, ErrCommitOrder) {
+	if err := api.CommitEvent(recovered[1]); !errors.Is(err, errCommitOrder) {
 		t.Fatalf("later event commit = %v, want ErrCommitOrder", err)
 	}
 	if err := api.CommitEvent(recovered[0]); err != nil {
@@ -190,7 +190,7 @@ func TestCommitEventRejectsPerChatReordering(t *testing.T) {
 	api.queueCommit(42, 105)
 	first := events.TextMessage{ChatID: 42, LogID: 101, Message: "first"}
 	second := events.TextMessage{ChatID: 42, LogID: 105, Message: "second"}
-	if err := api.CommitEvent(second); !errors.Is(err, ErrCommitOrder) {
+	if err := api.CommitEvent(second); !errors.Is(err, errCommitOrder) {
 		t.Fatalf("out-of-order commit error = %v", err)
 	}
 	if checkpoint.IsCommitted(42, 105) {

@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	ErrProfileInUse = errors.New("client: profile already in use")
-	ErrUnsafeLease  = errors.New("client: unsafe profile lease")
+	errProfileInUse = errors.New("client: profile already in use")
+	errUnsafeLease  = errors.New("client: unsafe profile lease")
 )
 
 type profileLease struct {
@@ -20,19 +20,19 @@ type profileLease struct {
 func acquireProfileLease(path string) (*profileLease, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
-		return nil, ErrUnsafeLease
+		return nil, errUnsafeLease
 	}
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
 		_ = file.Close()
-		return nil, ErrUnsafeLease
+		return nil, errUnsafeLease
 	}
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = file.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
-			return nil, ErrProfileInUse
+			return nil, errProfileInUse
 		}
-		return nil, ErrUnsafeLease
+		return nil, errUnsafeLease
 	}
 	return &profileLease{file: file}, nil
 }

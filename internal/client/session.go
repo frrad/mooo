@@ -29,8 +29,8 @@ const (
 )
 
 var (
-	ErrCredentialsAbsent = errors.New("client: credentials absent")
-	ErrBootstrap         = errors.New("client: bootstrap failed")
+	errCredentialsAbsent = errors.New("client: credentials absent")
+	errBootstrap         = errors.New("client: bootstrap failed")
 	ErrLogin             = errors.New("client: login rejected")
 	ErrClosed            = errors.New("client: session closed")
 	ErrProtocol          = errors.New("client: protocol error")
@@ -196,14 +196,14 @@ func connectSessionWithResume(ctx context.Context, state authstate.State, resume
 
 func connectSessionWithResumeOptions(ctx context.Context, state authstate.State, resume continuity.Checkpoint, dialers sessionDialers, pingOptions pingSessionOptions) (*session, error) {
 	if ctx == nil || state.Credentials == nil {
-		return nil, ErrCredentialsAbsent
+		return nil, errCredentialsAbsent
 	}
 	if dialers.tls == nil || dialers.secure == nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	wireUUID, err := state.Identity.WireDeviceUUID()
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	bookingBody, err := bson.Marshal(bson.D{
 		{Key: "MCCMNC", Value: "99999"},
@@ -212,21 +212,21 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 		{Key: "userId", Value: state.Credentials.UserID},
 	})
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	booking, err := dialers.tls(ctx, bookingHost, 443)
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	bookingReply, _, err := booking.request(1, "GETCONF", bookingBody)
 	_ = booking.close()
 	bookingStatus, statusErr := responseStatus(bookingReply)
 	if err != nil || statusErr != nil || bookingStatus != 0 {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	hosts, ports, err := bookingTargets(bookingReply.Body)
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 
 	checkinBody, err := bson.Marshal(bson.D{
@@ -240,19 +240,19 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 		{Key: "useSub", Value: true},
 	})
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	checkinReply, _, err := checkin(ctx, hosts, ports, checkinBody, dialers)
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	carriageHost, carriagePort, err := endpoint(checkinReply.Body)
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	carriage, err := dialers.secure(ctx, carriageHost, carriagePort)
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	if pingOptions.timeout <= 0 {
 		pingOptions.timeout = defaultPingRequestTimeout
@@ -295,7 +295,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 		ChatIDs: chatIDs, MaxIDs: maxIDs, LastTokenID: resume.LastTokenID, LBK: resume.LBK,
 	}).MarshalBSON()
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	session.startReadLoop()
 	loginReply, err := session.requestRaw(ctx, 2, "LOGINLIST", loginBody)

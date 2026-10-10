@@ -17,7 +17,7 @@ func (c *Client) renewCredentials(ctx context.Context) error {
 	store, state, doer := c.store, c.state, c.http
 	c.mu.Unlock()
 	if store == nil || state.Credentials == nil {
-		return ErrCredentialsAbsent
+		return errCredentialsAbsent
 	}
 	profile, err := webProfile(state)
 	if err != nil {

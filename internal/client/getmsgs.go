@@ -9,9 +9,9 @@ import (
 	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
-// GetMessagesCommand reads chosen chat logs by position. The Mac client uses
+// getMessagesCommand reads chosen chat logs by position. The Mac client uses
 // it to fetch messages edited while it was offline.
-const GetMessagesCommand = "GETMSGS"
+const getMessagesCommand = "GETMSGS"
 
 const maxGetMessages = 200
 
@@ -36,12 +36,12 @@ func (s *session) GetMessages(ctx context.Context, chatID int64, logIDs []int64)
 	if err != nil {
 		return nil, ErrProtocol
 	}
-	reply, err := s.request(ctx, GetMessagesCommand, body)
+	reply, err := s.request(ctx, getMessagesCommand, body)
 	if err != nil {
 		return nil, err
 	}
 	if status, err := responseStatus(reply); err != nil || status != 0 {
-		return nil, StatusError{Command: GetMessagesCommand, Status: status}
+		return nil, StatusError{Command: getMessagesCommand, Status: status}
 	}
 	value, err := bson.Raw(reply.Body).LookupErr("chatLogs")
 	if err != nil {

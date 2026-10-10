@@ -16,7 +16,7 @@ func TestProfileLeaseIsExclusiveAndReleasable(t *testing.T) {
 	}
 	defer func() { _ = first.Close() }()
 
-	if _, err := acquireProfileLease(path); !errors.Is(err, ErrProfileInUse) {
+	if _, err := acquireProfileLease(path); !errors.Is(err, errProfileInUse) {
 		t.Fatalf("second acquire = %v, want ErrProfileInUse", err)
 	}
 	if err := first.Close(); err != nil {

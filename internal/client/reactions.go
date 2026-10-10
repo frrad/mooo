@@ -86,11 +86,11 @@ func mergedReactionDetails(ctx context.Context, doer macweb.Doer, state authstat
 // the client calls.
 func webProfile(state authstate.State) (macweb.Profile, error) {
 	if state.Credentials == nil {
-		return macweb.Profile{}, ErrCredentialsAbsent
+		return macweb.Profile{}, errCredentialsAbsent
 	}
 	wireUUID, err := state.Identity.WireDeviceUUID()
 	if err != nil {
-		return macweb.Profile{}, ErrBootstrap
+		return macweb.Profile{}, errBootstrap
 	}
 	return macweb.Profile{
 		AppVersion: state.Identity.Metadata.AppVersion, OSVersion: state.Identity.Metadata.OSVersion,

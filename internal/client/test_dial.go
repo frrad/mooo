@@ -31,10 +31,10 @@ type TestDialers struct {
 // select the same production login policy while keeping synthetic dialers.
 func OpenWithTestDialers(statePath string, doer macweb.Doer, dialers TestDialers, options ...OpenOptions) (*Client, error) {
 	if dialers.TLS == nil || dialers.Secure == nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	if len(options) > 1 {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	var option OpenOptions
 	if len(options) == 1 {
@@ -59,7 +59,7 @@ func testSessionDialers(dialers TestDialers) sessionDialers {
 				return nil, err
 			}
 			if endpoint.Conn == nil {
-				return nil, ErrBootstrap
+				return nil, errBootstrap
 			}
 			return &wireConn{c: endpoint.Conn, secure: endpoint.Secure}, nil
 		}

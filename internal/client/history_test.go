@@ -34,7 +34,7 @@ func TestHistoryPageKeepsLiveAndReadCheckpointsIndependent(t *testing.T) {
 	if checkpoint.ReadWatermark(42) != 400 || !checkpoint.IsCommitted(42, 500) {
 		t.Fatal("history changed live/read state")
 	}
-	if err := api.CommitEvent(page.Events[0]); !errors.Is(err, ErrCommitOrder) {
+	if err := api.CommitEvent(page.Events[0]); !errors.Is(err, errCommitOrder) {
 		t.Fatalf("historical event entered live commit queue: %v", err)
 	}
 	backend.wait(t)

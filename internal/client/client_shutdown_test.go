@@ -46,8 +46,8 @@ func TestClientShutdownReleasesOwnershipAfterTerminalInterrupt(t *testing.T) {
 	}
 	client := &Client{session: session, checkpoint: checkpoint, lease: lease}
 	client.interruptTerminal()
-	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
-		t.Fatalf("lease after terminal interrupt = %v, want %v", err, ErrProfileInUse)
+	if _, err := acquireProfileLease(leasePath); !errors.Is(err, errProfileInUse) {
+		t.Fatalf("lease after terminal interrupt = %v, want %v", err, errProfileInUse)
 	}
 	if err := client.Connect(context.Background()); !errors.Is(err, ErrClientClosed) {
 		t.Fatalf("Connect after terminal interrupt error=%v, want %v", err, ErrClientClosed)
@@ -114,8 +114,8 @@ func TestClientShutdownContextDoesNotWaitForConnect(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("shutdown while dial blocked error=%v, want deadline", err)
 	}
-	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
-		t.Fatalf("lease after blocked shutdown error=%v, want %v", err, ErrProfileInUse)
+	if _, err := acquireProfileLease(leasePath); !errors.Is(err, errProfileInUse) {
+		t.Fatalf("lease after blocked shutdown error=%v, want %v", err, errProfileInUse)
 	}
 	// A blocked dial keeps ownership and makes the first shutdown incomplete.
 	// Use a short context so this assertion catches accidental early cleanup.
@@ -261,8 +261,8 @@ func TestClientShutdownDeadlineRetainsOwnershipThroughBlockedConnect(t *testing.
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("shutdown while dial blocked error=%v, want %v", err, context.DeadlineExceeded)
 	}
-	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
-		t.Fatalf("lease after shutdown deadline during dial error=%v, want %v", err, ErrProfileInUse)
+	if _, err := acquireProfileLease(leasePath); !errors.Is(err, errProfileInUse) {
+		t.Fatalf("lease after shutdown deadline during dial error=%v, want %v", err, errProfileInUse)
 	}
 	releaseOnce.Do(func() { close(release) })
 	select {
@@ -387,8 +387,8 @@ func TestClientShutdownRetainsOwnershipForAdmittedCommit(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("shutdown during admitted commit error=%v, want deadline", err)
 	}
-	if _, err := acquireProfileLease(leasePath); !errors.Is(err, ErrProfileInUse) {
-		t.Fatalf("lease during admitted commit error=%v, want %v", err, ErrProfileInUse)
+	if _, err := acquireProfileLease(leasePath); !errors.Is(err, errProfileInUse) {
+		t.Fatalf("lease during admitted commit error=%v, want %v", err, errProfileInUse)
 	}
 	release()
 	select {

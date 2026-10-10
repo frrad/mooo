@@ -46,8 +46,8 @@ func TestContactPhotoRejectsMissingOrMismatchedProfilesBeforeHTTP(t *testing.T) 
 		want       error
 	}{
 		{"absent", 42, 7, "", ErrContactPhotoAbsent},
-		{"wrong room", 43, 7, "https://talk.kakaocdn.net/avatar", ErrContactProfileUnavailable},
-		{"wrong user", 42, 8, "https://talk.kakaocdn.net/avatar", ErrContactProfileUnavailable},
+		{"wrong room", 43, 7, "https://talk.kakaocdn.net/avatar", errContactProfileUnavailable},
+		{"wrong user", 42, 8, "https://talk.kakaocdn.net/avatar", errContactProfileUnavailable},
 		{"unsafe resource", 42, 7, "https://example.invalid/avatar?secret=private", media.ErrAvatarDownload},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
