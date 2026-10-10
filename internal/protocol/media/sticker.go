@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"path"
 	"strings"
+
+	"github.com/frrad/mooo/internal/protocol/strictjson"
 )
 
 const MaxStickerBytes = 4 << 20
@@ -40,43 +42,19 @@ type StickerResource struct {
 
 // DecodeStickerAttachment retains only fields consumed by the inbound path.
 func DecodeStickerAttachment(value string) (StickerAttachment, error) {
-	if len(value) == 0 || len(value) > 16<<10 {
+	var fields map[string]json.RawMessage
+	if strictjson.Unmarshal([]byte(value), &fields, stickerJSON) != nil {
 		return StickerAttachment{}, ErrInvalidSticker
 	}
-	dec := json.NewDecoder(strings.NewReader(value))
-	tok, err := dec.Token()
-	if err != nil || tok != json.Delim('{') {
-		return StickerAttachment{}, ErrInvalidSticker
-	}
-	seen := map[string]bool{}
 	var a StickerAttachment
-	for dec.More() {
-		tok, err = dec.Token()
-		key, ok := tok.(string)
-		if err != nil || !ok || seen[key] || len(seen) >= 64 {
-			return a, ErrInvalidSticker
-		}
-		seen[key] = true
-		var raw json.RawMessage
-		if dec.Decode(&raw) != nil {
-			return a, ErrInvalidSticker
-		}
-		switch key {
-		case "path":
-			err = json.Unmarshal(raw, &a.Path)
-		case "sound":
-			err = json.Unmarshal(raw, &a.Sound)
-		}
-		if err != nil {
-			return a, ErrInvalidSticker
-		}
+	if raw, ok := fields["path"]; ok && json.Unmarshal(raw, &a.Path) != nil {
+		return StickerAttachment{}, ErrInvalidSticker
 	}
-	if _, err = dec.Token(); err != nil {
-		return a, ErrInvalidSticker
+	if raw, ok := fields["sound"]; ok && json.Unmarshal(raw, &a.Sound) != nil {
+		return StickerAttachment{}, ErrInvalidSticker
 	}
-	var extra any
-	if dec.Decode(&extra) != io.EOF || !validStickerPath(a.Path) || len(a.Sound) > 512 {
-		return a, ErrInvalidSticker
+	if !validStickerPath(a.Path) || len(a.Sound) > 512 {
+		return StickerAttachment{}, ErrInvalidSticker
 	}
 	return a, nil
 }

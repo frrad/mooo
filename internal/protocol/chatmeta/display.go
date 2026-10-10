@@ -1,10 +1,10 @@
 package chatmeta
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
+
+	"github.com/frrad/mooo/internal/protocol/strictjson"
 )
 
 // GroupDisplay is the regular room's display projection before member-name
@@ -76,6 +76,9 @@ func ProjectGroupDisplay(data ChatData) (GroupDisplay, error) {
 	return out, nil
 }
 
+// displayJSON bounds the content size but not its key count.
+var displayJSON = strictjson.Limits{MaxBytes: 64 << 10}
+
 // displayContent bounds input and rejects ambiguous duplicate keys. These are
 // bridge admission rules, not claims about official malformed-input behavior.
 func displayContent(content string, keys ...string) (map[string]string, error) {
@@ -83,44 +86,20 @@ func displayContent(content string, keys ...string) (map[string]string, error) {
 	if content == "" {
 		return out, nil
 	}
-	if len(content) > 64<<10 {
+	var fields map[string]json.RawMessage
+	if strictjson.Unmarshal([]byte(content), &fields, displayJSON) != nil {
 		return nil, ErrInvalidResponse
 	}
-	decoder := json.NewDecoder(bytes.NewBufferString(content))
-	token, err := decoder.Token()
-	if err != nil || token != json.Delim('{') {
-		return nil, ErrInvalidResponse
-	}
-	known := map[string]bool{}
 	for _, key := range keys {
-		known[key] = true
-	}
-	seen := map[string]bool{}
-	for decoder.More() {
-		token, err = decoder.Token()
-		key, ok := token.(string)
-		if err != nil || !ok || seen[key] {
+		raw, ok := fields[key]
+		if !ok {
+			continue
+		}
+		var value string
+		if json.Unmarshal(raw, &value) != nil {
 			return nil, ErrInvalidResponse
 		}
-		seen[key] = true
-		var raw json.RawMessage
-		if decoder.Decode(&raw) != nil {
-			return nil, ErrInvalidResponse
-		}
-		if known[key] {
-			var value string
-			if json.Unmarshal(raw, &value) != nil {
-				return nil, ErrInvalidResponse
-			}
-			out[key] = value
-		}
-	}
-	if token, err = decoder.Token(); err != nil || token != json.Delim('}') {
-		return nil, ErrInvalidResponse
-	}
-	var trailing any
-	if decoder.Decode(&trailing) != io.EOF {
-		return nil, ErrInvalidResponse
+		out[key] = value
 	}
 	return out, nil
 }
