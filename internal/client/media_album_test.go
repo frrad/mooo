@@ -82,7 +82,7 @@ func TestSendAlbumUploadsEachPhotoThenWritesOnce(t *testing.T) {
 	var dialed []string
 	session := &Session{
 		wire: mainBackend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
-		pending: make(map[uint32]chan requestResult), userID: 7, appVersion: "26.8.0",
+		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 		mediaDial: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			dialed = append(dialed, host)
 			return items[host].client, nil
@@ -144,7 +144,7 @@ func TestSendAlbumUploadFailureNeverWrites(t *testing.T) {
 	})
 	session := &Session{
 		wire: mainBackend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
-		pending: make(map[uint32]chan requestResult), userID: 7, appVersion: "26.8.0",
+		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 		mediaDial: func(context.Context, string, int) (*wireConn, error) { return failing.client, nil },
 	}
 	go session.readLoop()

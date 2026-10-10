@@ -63,37 +63,33 @@ type lifecycleShutdown interface {
 // Session owns one authenticated carriage. A background reader dispatches
 // correlated responses and preserves unsolicited packets for the caller.
 type Session struct {
-	mu                  sync.Mutex
-	writeGateOnce       sync.Once
-	writeGate           chan struct{}
-	lifecycleMu         sync.Mutex
-	wire                *wireConn
-	nextID              uint32
-	closed              bool
-	closing             bool
-	pushes              chan loco.Packet
-	pending             map[uint32]chan requestResult
-	pendingByUniqueID   map[string]chan requestResult
-	pendingUniqueIDByID map[uint32]string
-	lifecycleScheduler  lifecycleScheduler
-	lifecycleStopped    bool
-	initialChatData     []bson.Raw
-	userID              int64
-	appVersion          string
-	mediaDial           wireDialer
-	loginCursor         loginCursor
-	bootstrapDone       bool
-	bootstrapPushes     []loco.Packet
-	readLoopStarted     bool
+	mu                 sync.Mutex
+	writeGateOnce      sync.Once
+	writeGate          chan struct{}
+	lifecycleMu        sync.Mutex
+	wire               *wireConn
+	nextID             uint32
+	closed             bool
+	closing            bool
+	pushes             chan loco.Packet
+	pending            map[uint32]pendingRequest
+	lifecycleScheduler lifecycleScheduler
+	lifecycleStopped   bool
+	initialChatData    []bson.Raw
+	userID             int64
+	appVersion         string
+	mediaDial          wireDialer
+	loginCursor        loginCursor
+	bootstrapDone      bool
+	bootstrapPushes    []loco.Packet
+	readLoopStarted    bool
 }
 
 func newSession(scheduler lifecycleScheduler) *Session {
 	return &Session{
-		pending:             make(map[uint32]chan requestResult),
-		pendingByUniqueID:   make(map[string]chan requestResult),
-		pendingUniqueIDByID: make(map[uint32]string),
-		lifecycleScheduler:  scheduler,
-		bootstrapDone:       true,
+		pending:            make(map[uint32]pendingRequest),
+		lifecycleScheduler: scheduler,
+		bootstrapDone:      true,
 	}
 }
 
@@ -131,6 +127,13 @@ func (s *Session) stopLifecycle() {
 			owner.shutdown()
 		}
 	}
+}
+
+// pendingRequest is one outstanding request. Its unique ID is the pair
+// (method, packet ID); the map key carries the packet ID.
+type pendingRequest struct {
+	method string
+	result chan requestResult
 }
 
 type requestResult struct {
@@ -368,15 +371,7 @@ func (s *Session) requestRaw(ctx context.Context, id uint32, command string, bod
 		return loco.Packet{}, ErrProtocol
 	}
 	result := make(chan requestResult, 1)
-	s.pending[id] = result
-	if s.pendingByUniqueID == nil {
-		s.pendingByUniqueID = make(map[string]chan requestResult)
-	}
-	s.pendingByUniqueID[packetUniqueID(command, id)] = result
-	if s.pendingUniqueIDByID == nil {
-		s.pendingUniqueIDByID = make(map[uint32]string)
-	}
-	s.pendingUniqueIDByID[id] = packetUniqueID(command, id)
+	s.pending[id] = pendingRequest{method: command, result: result}
 	wire := s.wire
 	s.mu.Unlock()
 	s.queueCancelRequest()
@@ -448,16 +443,11 @@ func (s *Session) writeRawPayload(ctx context.Context, wire *wireConn, raw []byt
 	if closed {
 		return 0, ErrClosed
 	}
-	stop := make(chan struct{})
-	watchDone := make(chan struct{})
-	go func() {
-		defer close(watchDone)
-		select {
-		case <-ctx.Done():
-			_ = wire.c.SetWriteDeadline(time.Now())
-		case <-stop:
-		}
-	}()
+	cancelled := make(chan struct{})
+	stopCancel := context.AfterFunc(ctx, func() {
+		_ = wire.c.SetWriteDeadline(time.Now())
+		close(cancelled)
+	})
 	written := 0
 	remaining := raw
 	var err error
@@ -477,8 +467,11 @@ func (s *Session) writeRawPayload(ctx context.Context, wire *wireConn, raw []byt
 		}
 	}
 	ctxErr := ctx.Err()
-	close(stop)
-	<-watchDone
+	if !stopCancel() {
+		// The cancellation callback has started; wait for it so its deadline
+		// cannot land after the reset below.
+		<-cancelled
+	}
 	_ = wire.c.SetWriteDeadline(time.Time{})
 	// A cancellation after the complete frame was written must not tear down
 	// an otherwise reusable carriage. A write error after any bytes have been
@@ -518,19 +511,9 @@ func (s *Session) releaseWrite() {
 func (s *Session) removePending(id uint32, expected chan requestResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.pending[id] == expected {
+	if s.pending[id].result == expected {
 		delete(s.pending, id)
 	}
-	if s.pendingByUniqueID != nil {
-		if key := s.pendingUniqueIDByID[id]; key != "" && s.pendingByUniqueID[key] == expected {
-			delete(s.pendingByUniqueID, key)
-			delete(s.pendingUniqueIDByID, id)
-		}
-	}
-}
-
-func packetUniqueID(method string, id uint32) string {
-	return sessionlogin.FormatPacketUniqueID(method, id)
 }
 
 func (s *Session) startReadLoop() {
@@ -573,24 +556,22 @@ func (s *Session) readLoopBody() {
 	}
 }
 
-// dispatchPacket correlates by the packet header unique ID.
+// dispatchPacket correlates by the packet header unique ID, which is the
+// pair (method, packet ID). A packet that reuses a pending ID with a different
+// method is not a completion and stays on the push path.
 func (s *Session) dispatchPacket(packet loco.Packet) bool {
 	s.mu.Lock()
-	key := packetUniqueID(packet.Header.Method, packet.Header.PacketID)
-	waiter := s.pendingByUniqueID[key]
-	if waiter != nil {
-		delete(s.pendingByUniqueID, key)
-		if s.pendingUniqueIDByID[packet.Header.PacketID] == key && s.pending[packet.Header.PacketID] == waiter {
-			delete(s.pending, packet.Header.PacketID)
-			delete(s.pendingUniqueIDByID, packet.Header.PacketID)
-		}
+	request, ok := s.pending[packet.Header.PacketID]
+	ok = ok && request.method == packet.Header.Method
+	if ok {
+		delete(s.pending, packet.Header.PacketID)
 	}
 	s.mu.Unlock()
-	if waiter == nil {
+	if !ok {
 		return false
 	}
 	s.queueSchedule()
-	waiter <- requestResult{packet: packet}
+	request.result <- requestResult{packet: packet}
 	return true
 }
 
@@ -624,8 +605,6 @@ func (s *Session) finishRead(err error) {
 	shouldSchedule := !s.closing
 	pending := s.pending
 	s.pending = nil
-	s.pendingByUniqueID = nil
-	s.pendingUniqueIDByID = nil
 	pushes := s.pushes
 	s.mu.Unlock()
 	if shouldSchedule {
@@ -634,8 +613,8 @@ func (s *Session) finishRead(err error) {
 		}
 	}
 	s.stopLifecycle()
-	for _, waiter := range pending {
-		waiter <- requestResult{err: err}
+	for _, request := range pending {
+		request.result <- requestResult{err: err}
 	}
 	if pushes != nil {
 		close(pushes)
