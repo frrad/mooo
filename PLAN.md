@@ -304,7 +304,9 @@ behaviour those fixtures describe.
 
 - [x] Record the policy in `AGENTS.md` and `research/parity-fixtures.md`, and add
       the `internal/testpolicy` lint with a shrink-only allowlist.
-- [x] Delete the 45 model-only tests and empty the allowlist.
+- [x] Delete the 45 model-only tests and empty the allowlist (the empty
+      allowlist itself was removed in code-structure-plan A3; the lint now
+      rejects every model-only test).
 - [x] Delete test-only production code with no planned consumer: the
       pre-QR passcode registration state machine and coordinator, the
       sessionlogin ping-intent, ping-status, status-handler, send-order,
@@ -574,6 +576,19 @@ preparation and follow
 [the E2E maintenance contract](research/e2e-tooling.md) whenever startup, login,
 or navigation encounters a new edge case. Add a sanitized regression and improve
 the shared helper before resuming the experiment.
+
+### BSON shadow is opt-in (2026-10-10)
+
+Deliberate behaviour change: the bridge no longer runs the BSON shadow
+comparison by default. `network.bson_shadow.mode` empty now means `off`
+(previously `log`), and the bridge ignores `MOOO_BSON_SHADOW`. Set
+`mode: log` to restore the second decode and its warnings. The shadow lives in
+`internal/shadow` and reaches the client only as an explicit
+`client.OpenOptions.PacketObserver`. `mooo-lab` keeps its defaults (`panic`
+for research commands, `log` for `chats list` and `contacts photo`, overridable
+with `MOOO_BSON_SHADOW`) and produces the same warnings. Test binaries no
+longer default to `panic`; the connector scripted-backend integration tests
+opt in. See [BSON shadow scope](research/reconnect/BOUNDED-BSON-VALIDATION-API.md).
 
 ### Encrypted direct-room acceptance (2026-10-07)
 

@@ -12,11 +12,12 @@ import (
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
+	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
 type chatLister interface {
 	ListChats(context.Context) ([]chatmeta.ChatData, error)
-	Close() error
+	Shutdown(context.Context) error
 }
 
 type chatSummary struct {
@@ -28,8 +29,8 @@ type chatSummary struct {
 	Unread       int32    `json:"unread_count"`
 }
 
-func openChatLister(path string) (chatLister, error) {
-	return client.OpenWithOptions(path, &http.Client{Timeout: 20 * time.Second}, client.OpenOptions{FullChatList: true})
+func openChatLister(path string, packetObserver func(loco.Packet)) (chatLister, error) {
+	return client.OpenWithOptions(path, &http.Client{Timeout: 20 * time.Second}, client.OpenOptions{FullChatList: true, PacketObserver: packetObserver})
 }
 
 func runListChats(args []string, stdout, stderr io.Writer, open func(string) (chatLister, error)) int {
@@ -61,7 +62,7 @@ func runListChats(args []string, stdout, stderr io.Writer, open func(string) (ch
 	closed := false
 	defer func() {
 		if !closed {
-			_ = c.Close()
+			_ = shutdownProfile(c)
 		}
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -71,7 +72,7 @@ func runListChats(args []string, stdout, stderr io.Writer, open func(string) (ch
 		return commandError(stderr, "complete chat listing failed")
 	}
 	closed = true
-	if c.Close() != nil {
+	if shutdownProfile(c) != nil {
 		return commandError(stderr, "selected profile cleanup failed")
 	}
 	result := make([]chatSummary, 0, len(chats))

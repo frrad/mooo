@@ -4,6 +4,8 @@
 package loco
 
 import (
+	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -12,6 +14,20 @@ import (
 
 	protocol "github.com/frrad/mooo/internal/protocol/loco"
 )
+
+// NewKeyedSecureV3 builds a SecureV3 that uses key as its session key, so two
+// test peers can share one synthetic key. It feeds key to protocol.NewSecureV3
+// as the first bytes of its random source; random (crypto/rand when nil)
+// supplies the nonces after that.
+func NewKeyedSecureV3(key []byte, random io.Reader, maxCiphertext uint32) (*protocol.SecureV3, error) {
+	if len(key) != protocol.V3KeySize {
+		return nil, protocol.ErrInvalidKey
+	}
+	if random == nil {
+		random = rand.Reader
+	}
+	return protocol.NewSecureV3(io.MultiReader(bytes.NewReader(bytes.Clone(key)), random), maxCiphertext)
+}
 
 type Endpoint struct {
 	Client       net.Conn
@@ -36,13 +52,13 @@ func NewBackend(secure bool, steps ...Step) (*Backend, error) {
 	var clientSecure, serverSecure *protocol.SecureV3
 	var err error
 	if secure {
-		clientSecure, err = protocol.NewSecureV3(nil, 0)
-		if err != nil {
-			_ = clientConn.Close()
-			_ = serverConn.Close()
-			return nil, err
+		key := make([]byte, protocol.V3KeySize)
+		if _, err = rand.Read(key); err == nil {
+			clientSecure, err = NewKeyedSecureV3(key, nil, 0)
 		}
-		serverSecure, err = protocol.NewSecureV3WithKey(clientSecure.KeyForTesting(), nil, 0)
+		if err == nil {
+			serverSecure, err = NewKeyedSecureV3(key, nil, 0)
+		}
 		if err != nil {
 			_ = clientConn.Close()
 			_ = serverConn.Close()

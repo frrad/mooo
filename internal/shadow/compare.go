@@ -1,13 +1,14 @@
-// Package bsonshadow compares how the production BSON decoder
-// (mongo-driver) and the source-compatible observed decoder
-// (loco.DecodeObservedBSON) read the same LOCO body. Production callers keep
-// using mongo-driver; this package only reports where the official client
-// would have seen different data.
+// Package shadow is research tooling that compares how the production BSON
+// decoder (mongo-driver) and the source-compatible observed decoder
+// (DecodeObservedBSON) read the same LOCO body. Production callers keep using
+// mongo-driver; this package only reports where the official client would
+// have seen different data. It is wired in only as an explicit
+// client.OpenOptions.PacketObserver, never by default.
 //
 // Reports are safe to log: they carry field paths, discrepancy kinds and
 // value descriptors (type and length), never values. Keys that do not look
 // like protocol field names are replaced by a short hash.
-package bsonshadow
+package shadow
 
 import (
 	"crypto/sha256"
@@ -22,8 +23,6 @@ import (
 	"unicode/utf8"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
-
-	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
 // Kind classifies a discrepancy. Every kind is a difference in the data a
@@ -89,7 +88,7 @@ type Report struct {
 func Compare(body []byte) Report {
 	var mongoDoc bson.D
 	mongoErr := bson.Unmarshal(body, &mongoDoc)
-	official, officialErr := loco.DecodeObservedBSON(body, loco.BSONDecodeOptions{})
+	official, officialErr := DecodeObservedBSON(body, BSONDecodeOptions{})
 	report := Report{MongoErr: mongoErr, OfficialErr: officialErr}
 	switch {
 	case mongoErr != nil && officialErr != nil:
@@ -99,7 +98,7 @@ func Compare(body []byte) Report {
 		return report
 	case officialErr != nil:
 		kind := KindOfficialRejects
-		if errors.Is(officialErr, loco.ErrBSONDecodeBounds) {
+		if errors.Is(officialErr, ErrBSONDecodeBounds) {
 			kind = KindShadowBounds
 		}
 		report.add("", kind, "document", "error")

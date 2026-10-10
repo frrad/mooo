@@ -68,21 +68,22 @@ type Client struct {
 	readMu           sync.Mutex
 }
 
-// Open acquires the profile's process-wide owner lease and creates a reusable
-// authenticated client without opening a network connection.
-func Open(statePath string, doer macweb.Doer) (*Client, error) {
-	return OpenWithOptions(statePath, doer, OpenOptions{})
-}
-
 // OpenOptions selects explicit bootstrap behavior for an operator-owned profile.
 type OpenOptions struct {
 	// FullChatList requests a full inventory at the next login by using the
 	// documented zero list token. Message commit positions and LBK are retained.
 	FullChatList bool
+	// PacketObserver, when set, sees every incoming LOCO packet on the read
+	// loop before dispatch. It must not retain or modify the packet. Nil, the
+	// default, adds no per-packet work. Research tooling such as the BSON
+	// shadow comparison is wired in only through this field.
+	PacketObserver func(loco.Packet)
 }
 
-// OpenWithOptions acquires the same exclusive profile lease as Open. It never
-// creates a parallel secondary session or changes committed message positions.
+// OpenWithOptions acquires the profile's process-wide owner lease and creates
+// a reusable authenticated client without opening a network connection. It
+// never creates a parallel secondary session or changes committed message
+// positions.
 func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*Client, error) {
 	statePath = filepath.Clean(statePath)
 	store, err := authstate.Open(statePath)
@@ -113,7 +114,7 @@ func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*
 	client.checkpoint = checkpoint
 	resume := options.loginResume(checkpoint.Snapshot())
 	client.dial = func(ctx context.Context, state authstate.State) (*Session, error) {
-		return connectSessionWithResume(ctx, state, resume, productionSessionDialers())
+		return connectSessionWithResume(ctx, state, resume, productionSessionDialers().observed(options.PacketObserver))
 	}
 	return client, nil
 }
@@ -167,111 +168,89 @@ func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 		}
 		c.connectActive = true
 		c.connectDone = make(chan struct{})
-		state := c.state
-		dial := c.dial
 		c.mu.Unlock()
 
-		finish := func() {
+		session, err := c.connect(ctx)
+		c.mu.Lock()
+		c.connectActive = false
+		close(c.connectDone)
+		c.connectDone = nil
+		c.mu.Unlock()
+		return session, err
+	}
+}
+
+// connect dials and adopts one Session for ensureSession, which owns the
+// connectActive gate. A -950 dial status renews stored credentials at most
+// once per Client and dials again.
+func (c *Client) connect(ctx context.Context) (*Session, error) {
+	c.mu.Lock()
+	state, dial := c.state, c.dial
+	c.mu.Unlock()
+	session, err := dial(ctx, state)
+	if err == nil {
+		return c.adoptSession(session)
+	}
+	var status StatusError
+	c.mu.Lock()
+	store, renewalAttempted, closed := c.store, c.renewalAttempted, c.closed
+	c.mu.Unlock()
+	if closed {
+		return nil, ErrClientClosed
+	}
+	if store == nil || renewalAttempted || !errors.As(err, &status) || status.Status != -950 {
+		return nil, err
+	}
+	c.mu.Lock()
+	c.renewalAttempted = true
+	c.mu.Unlock()
+	if renewErr := c.renewCredentials(ctx); renewErr != nil {
+		return nil, errors.Join(ErrCredentialRenewal, renewErr)
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, ErrClientClosed
+	}
+	state, dial = c.state, c.dial
+	c.mu.Unlock()
+	session, err = dial(ctx, state)
+	if err != nil {
+		return nil, err
+	}
+	return c.adoptSession(session)
+}
+
+// adoptSession installs a freshly dialed Session's login cursor into the
+// continuity checkpoint and publishes it as the Client's session. A checkpoint
+// failure closes the Client; a Client closed during the dial gets the Session
+// recorded so Shutdown can join its worker, since closing the transport alone
+// is not a worker-join guarantee.
+func (c *Client) adoptSession(session *Session) (*Session, error) {
+	c.mu.Lock()
+	checkpoint := c.checkpoint
+	c.mu.Unlock()
+	if checkpoint != nil {
+		cursor := session.loginCursor
+		if err := checkpoint.InstallSession(cursor.lastTokenID, cursor.lbk, cursor.observed, cursor.deleted, cursor.replaceInventory); err != nil {
 			c.mu.Lock()
-			c.connectActive = false
-			close(c.connectDone)
-			c.connectDone = nil
-			c.mu.Unlock()
-		}
-		session, err := dial(ctx, state)
-		if err == nil {
-			c.mu.Lock()
-			checkpoint := c.checkpoint
-			c.mu.Unlock()
-			if checkpoint != nil {
-				if checkpointErr := checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
-					c.mu.Lock()
-					c.cleanupSession = session
-					c.closed = true
-					c.mu.Unlock()
-					_ = session.Close()
-					finish()
-					return nil, checkpointErr
-				}
-			}
-			c.mu.Lock()
-			if c.closed {
-				// Keep a late session reachable so Shutdown can join its worker;
-				// closing the transport alone is not a worker-join guarantee.
-				c.session = session
-				c.mu.Unlock()
-				_ = session.Close()
-				finish()
-				return nil, ErrClientClosed
-			}
-			c.session = session
-			c.mu.Unlock()
-			finish()
-			return session, nil
-		}
-		var status StatusError
-		c.mu.Lock()
-		store := c.store
-		renewalAttempted := c.renewalAttempted
-		closed := c.closed
-		c.mu.Unlock()
-		if closed {
-			finish()
-			return nil, ErrClientClosed
-		}
-		if store == nil || renewalAttempted || !errors.As(err, &status) || status.Status != -950 {
-			finish()
-			return nil, err
-		}
-		c.mu.Lock()
-		c.renewalAttempted = true
-		c.mu.Unlock()
-		if renewErr := c.renewCredentials(ctx); renewErr != nil {
-			finish()
-			return nil, errors.Join(ErrCredentialRenewal, renewErr)
-		}
-		c.mu.Lock()
-		if c.closed {
-			c.mu.Unlock()
-			finish()
-			return nil, ErrClientClosed
-		}
-		state = c.state
-		dial = c.dial
-		c.mu.Unlock()
-		session, err = dial(ctx, state)
-		if err != nil {
-			finish()
-			return nil, err
-		}
-		c.mu.Lock()
-		checkpoint := c.checkpoint
-		c.mu.Unlock()
-		if checkpoint != nil {
-			if checkpointErr := checkpoint.InstallSession(session.loginCursor.lastTokenID, session.loginCursor.lbk, session.loginCursor.observed, session.loginCursor.deleted, session.loginCursor.replaceInventory); checkpointErr != nil {
-				c.mu.Lock()
-				c.cleanupSession = session
-				c.closed = true
-				c.mu.Unlock()
-				_ = session.Close()
-				finish()
-				return nil, checkpointErr
-			}
-		}
-		c.mu.Lock()
-		if c.closed {
-			// Keep a late session reachable so Shutdown can join its worker.
-			c.session = session
+			c.cleanupSession = session
+			c.closed = true
 			c.mu.Unlock()
 			_ = session.Close()
-			finish()
-			return nil, ErrClientClosed
+			return nil, err
 		}
+	}
+	c.mu.Lock()
+	if c.closed {
 		c.session = session
 		c.mu.Unlock()
-		finish()
-		return session, nil
+		_ = session.Close()
+		return nil, ErrClientClosed
 	}
+	c.session = session
+	c.mu.Unlock()
+	return session, nil
 }
 
 // InitialChatData returns the synchronized login snapshot, connecting once if
@@ -723,46 +702,6 @@ func (c *Client) ReactionDetails(ctx context.Context, change events.ReactionChan
 	state, doer := c.state, c.http
 	c.mu.Unlock()
 	return mergedReactionDetails(ctx, doer, state, change)
-}
-
-// Close permanently closes this Client and its owned session.
-func (c *Client) Close() error {
-	if c == nil {
-		return nil
-	}
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return nil
-	}
-	c.closed = true
-	session, cleanup, checkpoint, lease := c.session, c.cleanupSession, c.checkpoint, c.lease
-	if c.connectActive || c.commitActive > 0 {
-		c.mu.Unlock()
-		if session != nil {
-			err := session.Close()
-			if cleanup != nil && cleanup != session {
-				err = errors.Join(err, cleanup.Close())
-			}
-			return err
-		}
-		return nil
-	}
-	c.mu.Unlock()
-	var err error
-	if session != nil {
-		err = session.Close()
-	}
-	if cleanup != nil && cleanup != session {
-		err = errors.Join(err, cleanup.Close())
-	}
-	if session != nil && checkpoint != nil {
-		err = errors.Join(err, checkpoint.MarkClean())
-	}
-	if lease != nil {
-		err = errors.Join(err, lease.Close())
-	}
-	return err
 }
 
 // Shutdown marks the Client closed, interrupts its Session without holding

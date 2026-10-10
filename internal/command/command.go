@@ -4,13 +4,16 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/buildinfo"
+	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
 const usage = `usage:
@@ -21,8 +24,9 @@ const usage = `usage:
 `
 
 // Run executes one CLI invocation and returns a process-style exit code. It
-// never includes flag values or filesystem paths in its output.
-func Run(args []string, stdout, stderr io.Writer) int {
+// never includes flag values or filesystem paths in its output. A non-nil
+// packetObserver sees every LOCO packet the opened client reads.
+func Run(args []string, stdout, stderr io.Writer, packetObserver func(loco.Packet)) int {
 	if stdout == nil {
 		stdout = io.Discard
 	}
@@ -38,10 +42,14 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if len(args) >= 2 && args[0] == "contacts" && args[1] == "photo" {
-		return runContactPhoto(args[2:], stdout, stderr, openContactPhotoClient)
+		return runContactPhoto(args[2:], stdout, stderr, func(path string) (contactPhotoClient, error) {
+			return openContactPhotoClient(path, packetObserver)
+		})
 	}
 	if len(args) >= 2 && args[0] == "chats" && args[1] == "list" {
-		return runListChats(args[2:], stdout, stderr, openChatLister)
+		return runListChats(args[2:], stdout, stderr, func(path string) (chatLister, error) {
+			return openChatLister(path, packetObserver)
+		})
 	}
 	if args[0] != "auth" || len(args) < 2 {
 		return usageError(stderr)
@@ -127,6 +135,19 @@ func presentAbsent(present bool) string {
 func usageError(stderr io.Writer) int {
 	_, _ = io.WriteString(stderr, "invalid command; run `mooo-lab --help` for usage\n")
 	return 2
+}
+
+// profileShutdownTimeout bounds how long a command waits for an opened
+// profile's in-flight connect and session work to join before giving up. A
+// timed-out shutdown leaves the profile lease held and reports cleanup failure.
+const profileShutdownTimeout = 10 * time.Second
+
+// shutdownProfile shuts an opened profile client down on its own deadline, so
+// cleanup still runs after the command's operation context has expired.
+func shutdownProfile(c interface{ Shutdown(context.Context) error }) error {
+	ctx, cancel := context.WithTimeout(context.Background(), profileShutdownTimeout)
+	defer cancel()
+	return c.Shutdown(ctx)
 }
 
 func commandError(stderr io.Writer, message string) int {

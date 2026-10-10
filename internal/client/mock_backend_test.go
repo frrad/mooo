@@ -23,6 +23,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -39,11 +40,12 @@ func newScriptedBackend(t *testing.T, secure bool, steps ...backendStep) *script
 	clientWire := &wireConn{c: clientConn}
 	serverWire := &wireConn{c: serverConn}
 	if secure {
-		clientSecure, err := loco.NewSecureV3(nil, 0)
+		key := bytes.Repeat([]byte{0x5a}, loco.V3KeySize)
+		clientSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		serverSecure, err := loco.NewSecureV3WithKey(clientSecure.KeyForTesting(), nil, 0)
+		serverSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -767,7 +769,7 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	api.dial = func(ctx context.Context, got authstate.State) (*Session, error) {
 		return connectSessionWithDialers(ctx, got, dialers)
 	}
-	defer func() { _ = api.Close() }()
+	defer func() { _ = api.Shutdown(t.Context()) }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -845,7 +847,7 @@ func TestScriptedBackendAmbiguousWriteIsNeverRetried(t *testing.T) {
 		dials++
 		return session, nil
 	}
-	defer func() { _ = api.Close() }()
+	defer func() { _ = api.Shutdown(t.Context()) }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -916,7 +918,7 @@ func TestScriptedBackendExpiredTokenRenewsThenLogsInOnce(t *testing.T) {
 			return nil, errors.New("unexpected third login attempt")
 		}
 	}
-	defer func() { _ = api.Close() }()
+	defer func() { _ = api.Shutdown(t.Context()) }()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := api.Connect(ctx); err != nil {
@@ -938,7 +940,7 @@ func TestScriptedBackendExpiredTokenRenewsThenLogsInOnce(t *testing.T) {
 	if renewals != 1 || loginAttempts != 2 {
 		t.Fatal("repeated Connect renewed or logged in again")
 	}
-	_ = api.Close()
+	_ = api.Shutdown(ctx)
 	for _, backend := range append(firstBackends, secondBackends...) {
 		backend.wait(t)
 	}
@@ -1042,9 +1044,9 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 	}
 }
 
-// readRequest reads a request the client sent to a test server. The BSON
-// shadow compares bodies received from Kakao, so harness reads of mooo's own
+// readRequest reads a request the client sent to a test server. The packet
+// observer watches bodies received from Kakao, so harness reads of mooo's own
 // requests bypass it.
 func (w *wireConn) readRequest() (loco.Packet, error) {
-	return w.readUnshadowed()
+	return w.readFrame()
 }
