@@ -40,7 +40,7 @@ distinguish implemented behavior from planned integrations.
 | Reactions | Kakao pushes aggregate counts (`CHGLOGMETA`). PR #179 reconciles per-sender Matrix reactions from `ReactionMembers` / `MiniReactionDetails` with checked add/remove operations, database postconditions, replay-safe revision persistence, and explicit lookup/failure handling. Outbound failure categories and the no-retry rule are documented in [`reaction-failure-policy.md`](reaction-failure-policy.md). Direct A/B legacy and mini acceptance is recorded; groups remain open. |
 | Own messages | Messages written by the logged-in account on another device are sent through double puppeting. |
 | Connection | The bridge decides when to reconnect. Kakao gives it no reconnect of its own. Retries use exponential backoff and then run a bounded `CatchUp`. A dropped connection is reported as a transient disconnect; `KICKOUT` is reported as logged out or bad credentials. |
-| Read state | Matrix read receipts go to `MarkRead`. `DECUNREAD` becomes ghost read receipts, or a double-puppet receipt for the user's own watermark ([policy](read-receipt-policy.md)). `NOTIREAD` is not sent. Catch-up and backfill use `SYNCMSG`, which can mark messages read on the server, so both are bounded and backfill is opt-in. |
+| Read state | Matrix read receipts go to `MarkRead`. `DECUNREAD` becomes ghost read receipts, or a double-puppet receipt for the user's own watermark ([policy](read-receipt-policy.md)). `NOTIREAD` is not sent: the Mac client sends it only while a chat window is open and focused. Catch-up and backfill use `SYNCMSG`, which can mark messages read on the server, so both are bounded and backfill is opt-in. |
 | Chat metadata | The connector uses `ChatInfo`, `MemberList`, and requested `Members` profiles for initial names and membership. Complete and partial rosters remain distinct; unsupported OpenChat links fail explicitly. Avatars and membership updates are implemented (PR #173), with live encoding and parity gaps ([dossier](../chat-metadata.md)). Friend/contact sync remains separate. |
 
 ## Current baseline and execution order
@@ -338,12 +338,12 @@ The implemented supervisor and its bounded policy are documented in
   Postgres. Is SQLite enough for the homelab target?
 - How should aggregate reaction updates reconcile with per-sender Matrix
   reactions when the detail lookup fails or disagrees?
-- Does receiving a message through the bridge change any read-state
-  expectations on the primary device? The official client sends `NOTIREAD`
-  after each inbound `MSG`; the bridge does not, because its server meaning
-  and its effect on the primary device's notifications are untraced. One
-  2026-09-30 run suggested a live `MSG` already clears the sender's unread
-  marker without it.
+- Resolved (2026-10-10): receiving a message through the bridge leaves the
+  primary phone's notification and the sender's unread count untouched until
+  a Matrix read receipt sends `MarkRead`, which clears both. The official
+  client sends `NOTIREAD` only while that chat's window is open and focused,
+  so the bridge does not send it
+  ([policy](read-receipt-policy.md#notiread-not-sent)).
 
 - [x] Owned regular three-person group text acceptance: distinct encrypted
       inbound senders, SDK-encrypted outbound visible on all three native

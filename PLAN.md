@@ -245,10 +245,13 @@ Execution through first text send/receive follows
 - [x] Implement device login and bridge-owned bounded reconnect state machines.
 - [x] Add synchronization and text receive/send with separate delivery, commit
       and explicit read watermarks. Live catch-up read-side-effect policy remains open.
-- [ ] Specify and validate read-state semantics: DECUNREAD and NOTIREAD,
+- [ ] Specify and validate read-state semantics: DECUNREAD,
       explicit markAsRead/read-all routing through SYNCMSG, local CHATOFF
       teardown, and the required separation of delivery, commit, and read
-      state.
+      state. NOTIREAD is resolved (2026-10-10): the Mac client sends it only
+      while a chat window is open and focused. The bridge omits it, and an
+      owned differential showed that `MarkRead` clears the phone notification
+      ([dossier](research/read-state-notiread.md)).
 - [x] Introduce a long-lived client owner that lazily establishes and reuses one
       session, validates response-body login status, completes login paging, and
       never reconnects or retries mutations implicitly.
