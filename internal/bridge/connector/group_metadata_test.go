@@ -22,7 +22,7 @@ func TestRegularGroupEmptyPersonalAvatarRequestsClear(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend.chatInfo.ChatData.Meta = &chatmeta.RoomMeta{}
-	info, err := kc.chatInfoFromClient(ctx, p, backend, true)
+	info, _, err := kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestRegularGroupUsesNewerLegacyDisplayMetadata(t *testing.T) {
 		{Type: chatmeta.SharedMetaTitle, Revision: 10, Content: "Shared"},
 		{Type: chatmeta.SharedMetaProfile, Revision: 10, Content: `{"imageUrl":"https://example.invalid/shared-small.png","fullImageUrl":"https://example.invalid/shared-full.png"}`},
 	}
-	info, err := kc.chatInfoFromClient(ctx, p, backend, true)
+	info, _, err := kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestRegularGroupNewerSharedProfileClearsLegacyAvatar(t *testing.T) {
 		{Type: chatmeta.SharedMetaKakaoGroup, Revision: 9, Content: `{"group_name":"Legacy","group_profile_thumbnail_url":"https://example.invalid/legacy-small.png"}`},
 		{Type: chatmeta.SharedMetaProfile, Revision: 10, Content: `{"imageUrl":"","fullImageUrl":""}`},
 	}
-	info, err := kc.chatInfoFromClient(ctx, p, backend, true)
+	info, _, err := kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestRegularGroupOlderSnapshotCannotOverwriteNewerDisplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend.chatInfo.ChatData.ChatMetas = []chatmeta.ChatMeta{{Type: chatmeta.SharedMetaTitle, Revision: 9, Content: "Newer"}, {Type: chatmeta.SharedMetaProfile, Revision: 9, Content: `{"imageUrl":"","fullImageUrl":""}`}}
-	if _, err = kc.chatInfoFromClient(ctx, p, backend, true); err != nil {
+	if _, _, err = kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true}); err != nil {
 		t.Fatal(err)
 	}
 	// Reload the production portal and then supply an older source snapshot.
@@ -114,7 +114,7 @@ func TestRegularGroupOlderSnapshotCannotOverwriteNewerDisplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend.chatInfo.ChatData.ChatMetas = []chatmeta.ChatMeta{{Type: chatmeta.SharedMetaTitle, Revision: 8, Content: "Older"}, {Type: chatmeta.SharedMetaProfile, Revision: 8, Content: `{"imageUrl":"https://example.invalid/old.png"}`}}
-	info, err := kc.chatInfoFromClient(ctx, p, backend, true)
+	info, _, err := kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestDisplayCheckpointFailureCannotPublishNewerMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend.chatInfo.ChatData.ChatMetas = []chatmeta.ChatMeta{{Type: chatmeta.SharedMetaTitle, Revision: 9, Content: "Durable"}}
-	if _, err = kc.chatInfoFromClient(ctx, p, backend, true); err != nil {
+	if _, _, err = kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true}); err != nil {
 		t.Fatal(err)
 	}
 	db := kc.login.Bridge.DB.KV
@@ -142,7 +142,7 @@ func TestDisplayCheckpointFailureCannotPublishNewerMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend.chatInfo.ChatData.ChatMetas = []chatmeta.ChatMeta{{Type: chatmeta.SharedMetaTitle, Revision: 10, Content: "Unstored"}}
-	if _, err = kc.chatInfoFromClient(ctx, p, backend, true); err == nil {
+	if _, _, err = kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true}); err == nil {
 		t.Fatal("failed checkpoint reported display success")
 	}
 	if _, err = db.Exec(ctx, `DROP TRIGGER fail_display`); err != nil {
@@ -151,7 +151,7 @@ func TestDisplayCheckpointFailureCannotPublishNewerMetadata(t *testing.T) {
 	// A new client has no volatile display cache; only the database can retain 9.
 	reloaded := newKakaoClient(kc.login, kc.store, kc.userID, nil)
 	backend.chatInfo.ChatData.ChatMetas = []chatmeta.ChatMeta{{Type: chatmeta.SharedMetaTitle, Revision: 8, Content: "Older"}}
-	info, err := reloaded.chatInfoFromClient(ctx, p, backend, true)
+	info, _, err := reloaded.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestDisplayCheckpointReadbackMismatchCannotReportSuccess(t *testing.T) {
 	if _, err = kc.login.Bridge.DB.KV.Exec(ctx, `CREATE TRIGGER corrupt_display AFTER INSERT ON kv_store BEGIN UPDATE kv_store SET value='corrupt' WHERE key=NEW.key AND bridge_id=NEW.bridge_id; END`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = kc.chatInfoFromClient(ctx, p, backend, true); err == nil {
+	if _, _, err = kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true}); err == nil {
 		t.Fatal("corrupted checkpoint was accepted")
 	}
 }
@@ -186,7 +186,7 @@ func TestDisplayCheckpointDoesNotRewritePortalAccessMetadata(t *testing.T) {
 	if err = p.Save(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = kc.chatInfoFromClient(ctx, p, backend, true); err != nil {
+	if _, _, err = kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true}); err != nil {
 		t.Fatal(err)
 	}
 	saved, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, p.PortalKey)
@@ -236,7 +236,7 @@ func TestDisplayCheckpointRejectsAmbiguousSnapshot(t *testing.T) {
 		{Type: chatmeta.SharedMetaTitle, Revision: 9, Content: "First"},
 		{Type: chatmeta.SharedMetaTitle, Revision: 9, Content: "Conflicting"},
 	}
-	if _, err = kc.chatInfoFromClient(ctx, p, backend, true); err == nil {
+	if _, _, err = kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true}); err == nil {
 		t.Fatal("ambiguous snapshot was checkpointed")
 	}
 }
@@ -377,16 +377,16 @@ func TestDisplayCheckpointOversizedWriteCannotPoisonDurableState(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend.chatInfo.ChatData.ChatMetas = []chatmeta.ChatMeta{{Type: chatmeta.SharedMetaTitle, Revision: 9, Content: "Durable"}}
-	if _, err = kc.chatInfoFromClient(ctx, p, backend, true); err != nil {
+	if _, _, err = kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true}); err != nil {
 		t.Fatal(err)
 	}
 	backend.chatInfo.ChatData.ChatMetas = []chatmeta.ChatMeta{{Type: chatmeta.SharedMetaTitle, Revision: 10, Content: strings.Repeat("x", 300<<10)}}
-	if _, err = kc.chatInfoFromClient(ctx, p, backend, true); err == nil {
+	if _, _, err = kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true}); err == nil {
 		t.Fatal("oversized display checkpoint was persisted")
 	}
 	reloaded := newKakaoClient(kc.login, kc.store, kc.userID, nil)
 	backend.chatInfo.ChatData.ChatMetas = []chatmeta.ChatMeta{{Type: chatmeta.SharedMetaTitle, Revision: 8, Content: "Older"}}
-	info, err := reloaded.chatInfoFromClient(ctx, p, backend, true)
+	info, _, err := reloaded.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
 	if err != nil || info.Name == nil || *info.Name != "Durable" {
 		t.Fatal("oversized update damaged the prior durable checkpoint")
 	}
@@ -400,7 +400,7 @@ func TestRegularGroupPersonalFullSizeAvatarFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend.chatInfo.ChatData.Meta = &chatmeta.RoomMeta{FullImageURL: "https://example.invalid/personal-full.png"}
-	info, err := kc.chatInfoFromClient(ctx, p, backend, true)
+	info, _, err := kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}

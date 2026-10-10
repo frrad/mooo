@@ -59,16 +59,12 @@ func (kc *KakaoClient) refreshGroupMembership(ctx context.Context, c kakaoClient
 	if err = kc.saveMembershipCheckpoint(ctx, p, true, nil); err != nil {
 		return err
 	}
-	info, err := kc.chatInfoFromClient(ctx, p, c, true)
-	if err != nil {
-		return err
-	}
-	raw, err := c.MemberList(ctx, chatID, 0)
+	info, snap, err := kc.chatInfoFromClient(ctx, p, c, chatInfoOptions{regularGroupOnly: true})
 	if err != nil {
 		return err
 	}
 	expected := map[networkid.UserID]bool{}
-	for _, member := range raw.MemberIDs {
+	for _, member := range snap.roster {
 		user := makeUserID(member)
 		if member <= 0 || expected[user] {
 			return errInvalidMemberRoster
@@ -81,15 +77,10 @@ func (kc *KakaoClient) refreshGroupMembership(ctx context.Context, c kakaoClient
 		}
 		return errSourceAccessRemoved
 	}
-	if info.Members == nil || !info.Members.IsFull || len(info.Members.MemberMap) != len(expected) {
+	if kc.rosterMatches(snap, expected, false) != nil {
 		return errInvalidMemberRoster
 	}
-	for user := range info.Members.MemberMap {
-		if !expected[user] {
-			return errInvalidMemberRoster
-		}
-	}
-	if err = kc.saveMembershipCheckpoint(ctx, p, true, raw.MemberIDs); err != nil {
+	if err = kc.saveMembershipCheckpoint(ctx, p, true, snap.roster); err != nil {
 		return err
 	}
 	key := p.PortalKey
@@ -130,7 +121,7 @@ func (kc *KakaoClient) refreshGroupMembership(ctx context.Context, c kakaoClient
 			return errMembershipPending
 		}
 	}
-	if err = kc.saveMembershipCheckpoint(ctx, p, false, raw.MemberIDs); err != nil {
+	if err = kc.saveMembershipCheckpoint(ctx, p, false, snap.roster); err != nil {
 		return err
 	}
 	kc.mu.Lock()
