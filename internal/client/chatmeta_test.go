@@ -190,6 +190,21 @@ func TestSessionMembersStopsAtFirstFailedBatch(t *testing.T) {
 	}
 }
 
+func TestSessionMembersRejectsProfilesFromAnotherRoom(t *testing.T) {
+	backend := newScriptedBackend(t, false,
+		expectRequest("MEMBER", nil, statusDocument(
+			bson.E{Key: "chatId", Value: int64(43)},
+			bson.E{Key: "members", Value: bson.A{bson.D{{Key: "userId", Value: int64(7)}, {Key: "nickName", Value: "Other room"}}}},
+		)),
+	)
+	session := testMetadataSession(backend, 1)
+	members, err := session.Members(context.Background(), 42, []int64{7})
+	if !errors.Is(err, chatmeta.ErrInvalidResponse) || len(members) != 0 {
+		t.Fatalf("Members returned %d profiles, error %v; want no profiles and invalid response", len(members), err)
+	}
+	backend.wait(t)
+}
+
 func TestSessionMembersReturnsCompletedBatchesWithLaterFailure(t *testing.T) {
 	ids := make([]int64, 0, 501)
 	for id := int64(2); id <= 502; id++ {

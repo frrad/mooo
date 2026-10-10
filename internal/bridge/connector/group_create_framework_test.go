@@ -39,6 +39,9 @@ type groupCreationMatrix struct {
 }
 
 func (m *groupCreationMatrix) Init(*bridgev2.Bridge) {}
+func (m *groupCreationMatrix) GetCapabilities() *bridgev2.MatrixCapabilities {
+	return &bridgev2.MatrixCapabilities{}
+}
 func (m *groupCreationMatrix) BotIntent() bridgev2.MatrixAPI {
 	return &groupCreationIntent{m: m, mxid: "@bot:test"}
 }

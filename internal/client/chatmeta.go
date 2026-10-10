@@ -56,6 +56,9 @@ func (s *Session) Members(ctx context.Context, chatID int64, userIDs []int64) ([
 		if err != nil {
 			return members, err
 		}
+		if response.ChatID != chatID {
+			return members, chatmeta.ErrInvalidResponse
+		}
 		members = append(members, response.Members...)
 	}
 	return members, nil

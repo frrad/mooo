@@ -48,7 +48,7 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       of invalid participants and ambiguous creation/invitation failures.
 - [x] Membership and access lifecycle (PR #272), including offline changes and bridge-user
       removal; prevent forwarding to removed members.
-- [ ] Shared/personal group names and group avatar replacement/clearing, with
+- [x] Shared/personal group names and group avatar replacement/clearing (PR #273), with
       convergence and clear rejection of unsupported outbound changes.
 - [ ] Member profile refresh with stable ghosts and isolated profile failures.
 - [ ] Bounded opt-in historical backfill with durable progress, source visibility,
@@ -79,13 +79,20 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       notifications, source roles and management permissions; prevent personal
       settings from changing shared state and reject unsupported actions.
 
-First active slice: group name and avatar changes. Native discovery shipped
-in PR #270, explicit Matrix creation in PR #271, and membership/access lifecycle
-in PR #272. Membership's owned encrypted acceptance, permission failure and
-restart evidence are recorded in
-[membership evidence](research/bridge/GROUP-MEMBERSHIP.md). Trace shared and
-personal name/avatar precedence, revision handling, replacement and clearing,
-then verify live/offline convergence and explicit unsupported outbound rejection.
+First active slice: member identity and profile changes. Native discovery shipped
+in PR #270, Matrix creation in PR #271, membership/access in PR #272, and name/
+avatar mapping in PR #273. Metadata's owned acceptance and remaining native
+contract limits are recorded in
+[group metadata evidence](research/bridge/GROUP-NAME-AVATAR.md). Trace Mac member
+profile requests, refresh notices, persistence, consumers and failures. Preserve
+stable source IDs and ghosts while propagating supported nickname/avatar updates;
+handle unavailable profiles without fabricating fields or blocking the roster.
+Next implement bounded periodic refresh for existing managed regular groups
+using the traced MEMBER/MEMLIST flow. Serialize refresh with the event pump,
+retain unavailable profiles, skip source-removed rooms, and bound/cancel work
+on shutdown. Document the schedule as bridge policy while native background
+profile notifications remain untraced. Verify live nickname/avatar replacement
+and clearing on stable ghosts, encrypted A/B/C traffic, and restart before PR.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.
