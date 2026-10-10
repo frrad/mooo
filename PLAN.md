@@ -102,8 +102,13 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       acknowledgement: [group read receipts](research/bridge/GROUP-READ-RECEIPTS.md).
 - [ ] Read-receipt follow-ups: the one unexplained own-watermark advance, room
       tokens for delta snapshots, double-puppet attribution, and large rooms.
-- [ ] More inbound group formats: albums, video, audio, files, contacts, profiles,
-      locations, stickers, polls and Boards; observed fixtures for each claim.
+- [x] More inbound group formats (PR #282): albums, video, audio, files, contacts,
+      profiles, locations, stickers, polls and Boards posts accepted in the
+      encrypted group (offline catch-up for location, poll and sticker), an
+      observed fixture for every claimed format, and no silent drop path:
+      [group formats](research/bridge/GROUP-FORMATS.md).
+- [ ] Format follow-ups: a live unsupported-type message, Mini text,
+      LargeVideo/LargeFile and resource-only albums in groups.
 - [ ] Rich announcement text summaries, replacement/clear/reconnect behavior and
       preservation of current topic for unsupported content.
 - [ ] Explicit outbound announcements and supported Boards mutations with native
@@ -116,8 +121,8 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       notifications, source roles and management permissions; prevent personal
       settings from changing shared state and reject unsupported actions.
 
-Next active slice: more inbound group formats. Discovery through read
-receipts shipped in PRs #270–281.
+Next active slice: rich announcements. Discovery through inbound formats
+shipped in PRs #270–282.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.
