@@ -22,21 +22,6 @@ type KakaoPortalMetadata struct {
 	GroupMembershipManaged bool    `json:"group_membership_managed,omitempty"`
 }
 
-func (kc *KakaoClient) announcementInfo(ctx context.Context, portal *bridgev2.Portal, c chatMetaAPI) (*bridgev2.ChatInfo, error) {
-	chatID, err := parseChatID(portal.ID)
-	if err != nil {
-		return nil, err
-	}
-	r, err := c.MoimMeta(ctx, chatID)
-	if err != nil {
-		return nil, err
-	}
-	if r.ChatID != chatID {
-		return nil, errChatInfoMismatch
-	}
-	return announcementTopicInfo(portal, r.Metas)
-}
-
 func announcementTopicInfo(portal *bridgev2.Portal, metas []chatmeta.MoimMeta) (*bridgev2.ChatInfo, error) {
 	var selected *chatmeta.MoimMeta
 	for i := range metas {

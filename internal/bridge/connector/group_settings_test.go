@@ -41,7 +41,7 @@ func TestPersonalNotificationSettingMapsToMuteOnly(t *testing.T) {
 			}
 			backend.chatInfo.ChatData.PushAlert = tc.push
 			backend.chatInfo.ChatData.PushAlertSet = tc.set
-			info, err := kc.chatInfoFromClient(ctx, p, backend, true)
+			info, _, err := kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
 			if err != nil {
 				t.Fatal(err)
 			}

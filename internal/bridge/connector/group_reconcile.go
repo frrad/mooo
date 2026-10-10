@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/frrad/mooo/internal/protocol/chat"
@@ -126,7 +127,7 @@ func (kc *KakaoClient) reconcileGroup(ctx context.Context, room id.RoomID, chatI
 		}
 	}
 	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: key}}
-	info, err := kc.chatInfoFromClient(ctx, portal, c, true)
+	_, snap, err := kc.chatInfoFromClient(ctx, portal, c, chatInfoOptions{regularGroupOnly: true})
 	if err != nil {
 		return nil, err
 	}
@@ -134,16 +135,11 @@ func (kc *KakaoClient) reconcileGroup(ctx context.Context, room id.RoomID, chatI
 	for _, participant := range attempt.Participants {
 		expected[makeUserID(participant)] = true
 	}
-	if info.Members == nil || !info.Members.IsFull || !inviteMissing && len(info.Members.MemberMap) != len(expected) {
-		return nil, errors.New("connector: selected source room does not match the original roster")
-	}
-	for participant := range info.Members.MemberMap {
-		if !expected[participant] {
-			return nil, errors.New("connector: selected source room has an unselected participant")
-		}
+	if err = kc.rosterMatches(snap, expected, inviteMissing); err != nil {
+		return nil, fmt.Errorf("connector: selected source room does not match the original roster: %w", err)
 	}
 	if inviteMissing {
-		rawRoster, rosterErr := kc.creationSourceRoster(ctx, c, chatID, attempt.Participants)
+		rawRoster, rosterErr := kc.creationSourceRoster(snap.roster, attempt.Participants)
 		if rosterErr != nil {
 			return nil, rosterErr
 		}

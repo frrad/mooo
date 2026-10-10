@@ -55,7 +55,7 @@ func (kc *KakaoClient) prepareMemberDiscovery(ctx context.Context, c chatMetaAPI
 	p := &bridgev2.Portal{Portal: &database.Portal{PortalKey: key}}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	info, err := kc.chatInfoFromClient(ctx, p, c, true)
+	info, _, err := kc.chatInfoFromClient(ctx, p, c, chatInfoOptions{regularGroupOnly: true})
 	if err != nil {
 		return err
 	}
