@@ -42,36 +42,46 @@ type reactionAPI interface {
 
 var _ bridgev2.ReactionHandlingNetworkAPI = (*KakaoClient)(nil)
 
-// legacyReactionTable is deliberately explicit. Aggregate item IDs are not
-// selection values and are never used to derive this mapping.
-var legacyReactionTable = map[string]struct {
+// legacyReaction is one of KakaoTalk's six legacy reaction selections.
+type legacyReaction struct {
 	typeID  reactions.Type
 	emoji   string
 	emojiID networkid.EmojiID
-}{
-	"❤":  {reactions.Heart, "❤️", "kakao:legacy:1"},
-	"❤️": {reactions.Heart, "❤️", "kakao:legacy:1"},
-	"👍":  {reactions.Like, "👍", "kakao:legacy:2"},
-	"✅":  {reactions.Check, "✅", "kakao:legacy:3"},
-	"😆":  {reactions.Laugh, "😆", "kakao:legacy:4"},
-	"😮":  {reactions.Surprise, "😮", "kakao:legacy:5"},
-	"😢":  {reactions.Sad, "😢", "kakao:legacy:6"},
 }
+
+// legacyReactions is deliberately explicit and indexed by reaction type; the
+// Cancel slot is empty. Aggregate item IDs are not selection values and are
+// never used to derive this mapping.
+var legacyReactions = [...]legacyReaction{
+	reactions.Heart:    {reactions.Heart, "❤️", "kakao:legacy:1"},
+	reactions.Like:     {reactions.Like, "👍", "kakao:legacy:2"},
+	reactions.Check:    {reactions.Check, "✅", "kakao:legacy:3"},
+	reactions.Laugh:    {reactions.Laugh, "😆", "kakao:legacy:4"},
+	reactions.Surprise: {reactions.Surprise, "😮", "kakao:legacy:5"},
+	reactions.Sad:      {reactions.Sad, "😢", "kakao:legacy:6"},
+}
+
+// legacyReactionsByEmoji maps each legacy emoji, with and without a trailing
+// variation selector, to its reaction.
+var legacyReactionsByEmoji = func() map[string]legacyReaction {
+	byEmoji := make(map[string]legacyReaction, 2*len(legacyReactions))
+	for _, entry := range legacyReactions[reactions.Heart:] {
+		byEmoji[entry.emoji] = entry
+		byEmoji[normalizeReactionEmoji(entry.emoji)] = entry
+	}
+	return byEmoji
+}()
 
 func normalizeReactionEmoji(value string) string {
 	return strings.TrimSuffix(value, "\ufe0f")
 }
 
-func reactionForEmoji(value string) (struct {
-	typeID  reactions.Type
-	emoji   string
-	emojiID networkid.EmojiID
-}, bool) {
-	entry, ok := legacyReactionTable[value]
+func reactionForEmoji(value string) (legacyReaction, bool) {
+	entry, ok := legacyReactionsByEmoji[value]
 	if ok {
 		return entry, true
 	}
-	entry, ok = legacyReactionTable[normalizeReactionEmoji(value)]
+	entry, ok = legacyReactionsByEmoji[normalizeReactionEmoji(value)]
 	return entry, ok
 }
 
@@ -89,40 +99,20 @@ func (kc *KakaoClient) reactionClient() (reactionAPI, error) {
 	return reaction, nil
 }
 
-func validateMatrixReaction(kc *KakaoClient, msg *bridgev2.MatrixReaction) (reactions.Request, struct {
-	typeID  reactions.Type
-	emoji   string
-	emojiID networkid.EmojiID
-}, error) {
+func validateMatrixReaction(kc *KakaoClient, msg *bridgev2.MatrixReaction) (reactions.Request, legacyReaction, error) {
 	if kc == nil || kc.login == nil || msg == nil || msg.TargetMessage == nil || msg.Portal == nil || msg.Event == nil || msg.Content == nil {
-		return reactions.Request{}, struct {
-			typeID  reactions.Type
-			emoji   string
-			emojiID networkid.EmojiID
-		}{}, errReactionTarget
+		return reactions.Request{}, legacyReaction{}, errReactionTarget
 	}
 	if msg.Event.Sender != kc.login.UserMXID {
-		return reactions.Request{}, struct {
-			typeID  reactions.Type
-			emoji   string
-			emojiID networkid.EmojiID
-		}{}, errReactionSender
+		return reactions.Request{}, legacyReaction{}, errReactionSender
 	}
 	chatID, logID, err := parseMessageID(msg.TargetMessage.ID)
 	if err != nil || chatID <= 0 || logID <= 0 {
-		return reactions.Request{}, struct {
-			typeID  reactions.Type
-			emoji   string
-			emojiID networkid.EmojiID
-		}{}, errReactionTarget
+		return reactions.Request{}, legacyReaction{}, errReactionTarget
 	}
 	portalChat, err := parseChatID(msg.Portal.ID)
 	if err != nil || portalChat != chatID || msg.Portal.Receiver != kc.login.ID {
-		return reactions.Request{}, struct {
-			typeID  reactions.Type
-			emoji   string
-			emojiID networkid.EmojiID
-		}{}, errReactionTarget
+		return reactions.Request{}, legacyReaction{}, errReactionTarget
 	}
 	var metadata *KakaoMessageMetadata
 	switch value := msg.TargetMessage.Metadata.(type) {
@@ -133,27 +123,15 @@ func validateMatrixReaction(kc *KakaoClient, msg *bridgev2.MatrixReaction) (reac
 		metadata = &copy
 	}
 	if metadata != nil && (metadata.ChatID != chatID || metadata.LogID != logID) {
-		return reactions.Request{}, struct {
-			typeID  reactions.Type
-			emoji   string
-			emojiID networkid.EmojiID
-		}{}, errReactionTarget
+		return reactions.Request{}, legacyReaction{}, errReactionTarget
 	}
 	if (msg.TargetMessage.Room.ID != "" && msg.TargetMessage.Room.ID != msg.Portal.ID) ||
 		(msg.TargetMessage.Room.Receiver != "" && msg.TargetMessage.Room.Receiver != kc.login.ID) {
-		return reactions.Request{}, struct {
-			typeID  reactions.Type
-			emoji   string
-			emojiID networkid.EmojiID
-		}{}, errReactionTarget
+		return reactions.Request{}, legacyReaction{}, errReactionTarget
 	}
 	entry, ok := reactionForEmoji(msg.Content.RelatesTo.Key)
 	if !ok {
-		return reactions.Request{}, struct {
-			typeID  reactions.Type
-			emoji   string
-			emojiID networkid.EmojiID
-		}{}, errReactionUnsupported
+		return reactions.Request{}, legacyReaction{}, errReactionUnsupported
 	}
 	linkID := int64(0)
 	if metadata != nil {
@@ -254,21 +232,8 @@ func (kc *KakaoClient) HandleMatrixReactionRemove(ctx context.Context, msg *brid
 		(msg.TargetReaction.Room.Receiver != "" && msg.TargetReaction.Room.Receiver != kc.login.ID) {
 		return errReactionTarget
 	}
-	var wanted reactions.Type
-	switch msg.TargetReaction.EmojiID {
-	case "kakao:legacy:1":
-		wanted = reactions.Heart
-	case "kakao:legacy:2":
-		wanted = reactions.Like
-	case "kakao:legacy:3":
-		wanted = reactions.Check
-	case "kakao:legacy:4":
-		wanted = reactions.Laugh
-	case "kakao:legacy:5":
-		wanted = reactions.Surprise
-	case "kakao:legacy:6":
-		wanted = reactions.Sad
-	default:
+	wanted, ok := legacyReactionEmojiID(msg.TargetReaction.EmojiID)
+	if !ok {
 		entry, ok := reactionForEmoji(msg.TargetReaction.Emoji)
 		if !ok {
 			return errReactionUnsupported
@@ -449,6 +414,60 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 // and still returns success, which would advance the Kakao checkpoint while
 // leaving stale reactions behind. Individual operations propagate send errors;
 // callers additionally verify the database postcondition after each one.
+// applyReactionChange delivers one reaction change to Matrix and persists its
+// applied revision. A lookup error is returned for the caller's policy: a
+// live push reports it, a resync keeps its cursor.
+func (kc *KakaoClient) applyReactionChange(c kakaoClient, reaction events.ReactionChanged) (bool, error) {
+	remote, err := kc.reactionRemote(context.Background(), c, reaction)
+	if err != nil {
+		return false, err
+	}
+	if remote == nil {
+		return true, nil
+	}
+	remotes := []bridgev2.RemoteEvent{remote}
+	if syncEvent, ok := remote.(*kakaoReactionSync); ok && kc.login != nil && kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
+		remotes, err = kc.reactionDeliveryEvents(context.Background(), syncEvent)
+		if err != nil {
+			if errors.Is(err, errReactionTargetMissing) {
+				kc.log().Debug().Msg("Kakao reaction target is not bridged; leaving revision for replay")
+				return false, nil
+			}
+			kc.log().Warn().Err(err).Msg("Kakao reaction delivery plan could not be built")
+			return false, nil
+		}
+	}
+	allIgnored := true
+	for _, delivery := range remotes {
+		result := kc.queue(delivery)
+		if !committable(result) {
+			kc.log().Warn().Err(result.Error).Msg("Kakao reaction update was not confirmed as bridged")
+			return false, nil
+		}
+		if !result.Ignored {
+			allIgnored = false
+		}
+		if syncEvent, ok := delivery.(*simplevent.Reaction); ok && syncEvent.Type == bridgev2.RemoteEventReactionRemove && kc.login != nil && kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
+			row, queryErr := kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(context.Background(), kc.login.ID, syncEvent.TargetMessage, syncEvent.Sender.Sender, syncEvent.EmojiID)
+			if queryErr != nil || row != nil {
+				kc.log().Warn().Err(queryErr).Msg("Kakao reaction removal was not confirmed in the database")
+				return false, nil
+			}
+		}
+	}
+	if len(remotes) == 0 || !allIgnored {
+		appliedRevision := reaction.Revision
+		if syncEvent, ok := remote.(*kakaoReactionSync); ok {
+			appliedRevision = syncEvent.AppliedRevision
+		}
+		if err := kc.persistReactionRevision(context.Background(), reaction, appliedRevision); err != nil {
+			kc.log().Warn().Msg("Kakao reaction revision could not be persisted")
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 func (kc *KakaoClient) reactionDeliveryEvents(ctx context.Context, sync *kakaoReactionSync) ([]bridgev2.RemoteEvent, error) {
 	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
 		return nil, errors.New("connector: reaction database is unavailable")
@@ -538,7 +557,7 @@ func (kc *KakaoClient) reactionDeliveryEvents(ctx context.Context, sync *kakaoRe
 }
 
 func legacyReactionEmojiID(value networkid.EmojiID) (reactions.Type, bool) {
-	for _, entry := range legacyReactionTable {
+	for _, entry := range legacyReactions[reactions.Heart:] {
 		if entry.emojiID == value {
 			return entry.typeID, true
 		}
@@ -642,7 +661,7 @@ func reactionSyncUsers(members reactions.MembersResponse, selfID int64, loginID 
 				continue
 			}
 			seenTypes[id] = typeID
-			entry := legacyReactionByType(typeID)
+			entry := legacyReactions[typeID]
 			sender := bridgev2.EventSender{Sender: id}
 			if userID == selfID {
 				sender.IsFromMe = true
@@ -655,23 +674,6 @@ func reactionSyncUsers(members reactions.MembersResponse, selfID int64, loginID 
 		}
 	}
 	return users, nil
-}
-
-func legacyReactionByType(typeID reactions.Type) struct {
-	typeID  reactions.Type
-	emoji   string
-	emojiID networkid.EmojiID
-} {
-	for _, entry := range legacyReactionTable {
-		if entry.typeID == typeID {
-			return entry
-		}
-	}
-	return struct {
-		typeID  reactions.Type
-		emoji   string
-		emojiID networkid.EmojiID
-	}{}
 }
 
 func (kc *KakaoClient) storedReactionRevision(ctx context.Context, change events.ReactionChanged) (int64, error) {
