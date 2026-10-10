@@ -19,12 +19,12 @@ func DecodePersonalMetaResponse(body []byte) (PersonalMetaResponse, error) {
 	if len(body) > 4<<20 || raw.Validate() != nil {
 		return PersonalMetaResponse{}, ErrInvalidResponse
 	}
-	ids, present, err := int64Array(raw, "chatIds")
+	ids, present, err := fields.Int64s(raw, "chatIds")
 	if err != nil || !present || len(ids) > 10000 {
 		return PersonalMetaResponse{}, ErrInvalidResponse
 	}
-	value, present, err := lookup(raw, "metas")
-	if err != nil || !present || value.Type != bson.TypeArray {
+	value, present := fields.Lookup(raw, "metas")
+	if !present || value.Type != bson.TypeArray {
 		return PersonalMetaResponse{}, ErrInvalidResponse
 	}
 	values, err := value.Array().Values()

@@ -18,7 +18,20 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/chatlog"
 )
+
+// decodeEnvelope decodes a synthetic MSG body the way events.Decode does
+// before it hands the envelope to a media decoder.
+func decodeEnvelope(t *testing.T, body []byte) chatlog.Envelope {
+	t.Helper()
+	envelope, err := chatlog.Decode(body)
+	if err != nil {
+		t.Fatalf("chatlog.Decode: %v", err)
+	}
+	return envelope
+}
 
 func syntheticJPEG(t *testing.T) []byte {
 	t.Helper()
@@ -103,6 +116,66 @@ func TestDecodeComplete(t *testing.T) {
 	}
 }
 
+// Media decoders have always required chatLog.logId; the envelope's fallback
+// to a top-level logId does not apply to them.
+func TestMediaDecodersRejectTopLevelOnlyLogID(t *testing.T) {
+	attachment := `{"k":"opaque","w":3,"h":2,"s":1,"cs":"0000000000000000000000000000000000000000","mt":"image/jpg","url":"https://talk.kakaocdn.net/p/file?token=synthetic","thumbnailUrl":"https://talk.kakaocdn.net/p/thumb?token=synthetic"}`
+	withInner, _ := bson.Marshal(bson.D{
+		{Key: "chatId", Value: int64(42)},
+		{Key: "chatLog", Value: bson.D{{Key: "type", Value: PhotoType}, {Key: "logId", Value: int64(99)}, {Key: "attachment", Value: attachment}}},
+	})
+	if _, err := DecodePhotoMessage(decodeEnvelope(t, withInner)); err != nil {
+		t.Fatalf("photo with chatLog.logId: %v", err)
+	}
+	outerOnly, _ := bson.Marshal(bson.D{
+		{Key: "chatId", Value: int64(42)},
+		{Key: "logId", Value: int64(99)},
+		{Key: "chatLog", Value: bson.D{{Key: "type", Value: PhotoType}, {Key: "attachment", Value: attachment}}},
+	})
+	envelope := decodeEnvelope(t, outerOnly)
+	if _, err := DecodePhotoMessage(envelope); !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("photo with only top-level logId = %v; want ErrInvalidMessage", err)
+	}
+	for name, decode := range map[string]func() error{
+		"audio": func() error {
+			_, err := DecodeAudioMessage(withoutInnerLogID(t, audioBody(t, audioFixture(t))))
+			return err
+		},
+		"contact": func() error {
+			a, _ := contactFixture(t)
+			_, err := DecodeContactMessage(withoutInnerLogID(t, contactBody(t, a)))
+			return err
+		},
+		"file": func() error {
+			a, _ := fileFixture(t)
+			_, err := DecodeFileMessage(withoutInnerLogID(t, fileBody(t, a)))
+			return err
+		},
+		"video": func() error {
+			_, err := DecodeVideoMessage(withoutInnerLogID(t, videoBody(t, videoFixture(t))))
+			return err
+		},
+		"multiphoto": func() error {
+			_, err := DecodeMultiPhotoMessage(withoutInnerLogID(t, albumBody(t, albumFixture(t))))
+			return err
+		},
+	} {
+		if err := decode(); !errors.Is(err, ErrInvalidMessage) {
+			t.Fatalf("%s decoder accepted a top-level-only logId: %v", name, err)
+		}
+	}
+}
+
+// withoutInnerLogID decodes a valid synthetic MSG body and marks its logId
+// as coming from the top level, as chatlog.Decode does when chatLog.logId is
+// absent.
+func withoutInnerLogID(t *testing.T, body []byte) chatlog.Envelope {
+	t.Helper()
+	envelope := decodeEnvelope(t, body)
+	envelope.LogIDInChatLog = false
+	return envelope
+}
+
 func TestDecodeAndDownloadPhotoMessage(t *testing.T) {
 	data := syntheticJPEG(t)
 	sum := sha1.Sum(data)
@@ -110,7 +183,7 @@ func TestDecodeAndDownloadPhotoMessage(t *testing.T) {
 	attachment := fmt.Sprintf(`{"k":"opaque","w":3,"h":2,"s":%d,"cs":"%s","mt":"image/jpg","url":"https://talk.kakaocdn.net/p/file?token=synthetic","thumbnailUrl":"https://talk.kakaocdn.net/p/thumb?token=synthetic","expire":4102444800000}`, len(data), checksum)
 	log, _ := bson.Marshal(bson.D{{Key: "type", Value: PhotoType}, {Key: "logId", Value: int64(99)}, {Key: "authorId", Value: int64(7)}, {Key: "sendAt", Value: int64(1234)}, {Key: "attachment", Value: attachment}})
 	body, _ := bson.Marshal(bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.Raw(log)}})
-	message, err := DecodePhotoMessage(body)
+	message, err := DecodePhotoMessage(decodeEnvelope(t, body))
 	if err != nil || message.ChatID != 42 || message.LogID != 99 || message.AuthorID != 7 || message.SentAt != 1234 || message.Attachment.Width != 3 {
 		t.Fatalf("message=%#v err=%v", message, err)
 	}
@@ -209,12 +282,12 @@ func TestDecodePhotoMessageCaptionBounds(t *testing.T) {
 		body, _ := bson.Marshal(bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.Raw(log)}})
 		return body
 	}
-	message, err := DecodePhotoMessage(encode("synthetic caption"))
+	message, err := DecodePhotoMessage(decodeEnvelope(t, encode("synthetic caption")))
 	if err != nil || message.Attachment.Comment != "synthetic caption" {
 		t.Fatalf("caption message=%q err=%v", message.Attachment.Comment, err)
 	}
 	for name, comment := range map[string]string{"oversize": strings.Repeat("c", 16<<10+1), "nul": "a\x00b"} {
-		if _, err := DecodePhotoMessage(encode(comment)); !errors.Is(err, ErrInvalidMessage) {
+		if _, err := DecodePhotoMessage(decodeEnvelope(t, encode(comment))); !errors.Is(err, ErrInvalidMessage) {
 			t.Fatalf("%s caption error = %v", name, err)
 		}
 	}

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
 )
 
 // LocationMessage preserves a received single location, not live updates.
@@ -61,5 +63,5 @@ func decodeLocation(chatID, logID int64, log bson.Raw) (Event, error) {
 	if json.Unmarshal([]byte(value), &a) != nil || a.Latitude == nil || a.Longitude == nil || math.IsNaN(*a.Latitude) || math.IsInf(*a.Latitude, 0) || *a.Latitude < -90 || *a.Latitude > 90 || math.IsNaN(*a.Longitude) || math.IsInf(*a.Longitude, 0) || *a.Longitude < -180 || *a.Longitude > 180 || len(a.Address) > 4096 || len(a.Title) > 1024 || !validEventString(a.Address) || !validEventString(a.Title) {
 		return nil, ErrMalformedEvent
 	}
-	return LocationMessage{ChatID: chatID, LogID: logID, AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt"), Latitude: *a.Latitude, Longitude: *a.Longitude, Address: a.Address, Title: a.Title, Current: a.Current}, nil
+	return LocationMessage{ChatID: chatID, LogID: logID, AuthorID: bsonfield.Int64OrZero(log, "authorId"), SentAt: bsonfield.Int64OrZero(log, "sendAt"), Latitude: *a.Latitude, Longitude: *a.Longitude, Address: a.Address, Title: a.Title, Current: a.Current}, nil
 }

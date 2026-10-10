@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
 )
 
 // MaxPageSize bounds Count. Count is not a page size: it declares how many
@@ -20,6 +22,8 @@ var (
 	ErrInvalidRequest  = errors.New("syncmsg: invalid request")
 	ErrInvalidResponse = errors.New("syncmsg: invalid response")
 )
+
+var fields = bsonfield.Reader{Err: ErrInvalidResponse}
 
 type Request struct {
 	ChatID int64
@@ -56,24 +60,25 @@ func TargetFromChatData(raw bson.Raw) (Target, error) {
 	if err := raw.Validate(); err != nil {
 		return Target{}, ErrInvalidResponse
 	}
-	chatID, err := integer(raw, "c")
-	if err != nil || chatID <= 0 {
+	chatID, ok, err := fields.Int64(raw, "c")
+	if err != nil || !ok || chatID <= 0 {
 		return Target{}, ErrInvalidResponse
 	}
 	last, err := raw.LookupErr("l")
 	if err != nil || last.Type != bson.TypeEmbeddedDocument {
 		return Target{}, ErrInvalidResponse
 	}
-	logID, err := integer(last.Document(), "logId")
-	if err != nil || logID <= 0 {
+	logID, ok, err := fields.Int64(last.Document(), "logId")
+	if err != nil || !ok || logID <= 0 {
 		return Target{}, ErrInvalidResponse
 	}
-	if nestedChatID, nestedErr := integer(last.Document(), "chatId"); nestedErr == nil && nestedChatID != chatID {
+	// A nested chatId of the wrong type is ignored, not rejected.
+	if nestedChatID, ok, nestedErr := fields.Int64(last.Document(), "chatId"); nestedErr == nil && ok && nestedChatID != chatID {
 		return Target{}, ErrInvalidResponse
 	}
 	// l is the last displayable chat log; ll, the last log ID, also covers
 	// later feeds such as edits, which catch-up must reach.
-	if lastLogID, err := integer(raw, "ll"); err == nil && lastLogID > logID {
+	if lastLogID, ok, err := fields.Int64(raw, "ll"); err == nil && ok && lastLogID > logID {
 		logID = lastLogID
 	}
 	return Target{ChatID: chatID, MaxLogID: logID}, nil
@@ -108,8 +113,8 @@ func ParseResponse(body []byte) (Response, error) {
 			return Response{}, fmt.Errorf("%w: chatLogs element", ErrInvalidResponse)
 		}
 		document := value.Document()
-		logID, err := integer(document, "logId")
-		if err != nil || logID <= 0 || (previous > 0 && logID <= previous) {
+		logID, ok, err := fields.Int64(document, "logId")
+		if err != nil || !ok || logID <= 0 || (previous > 0 && logID <= previous) {
 			return Response{}, fmt.Errorf("%w: chatLogs logId/order", ErrInvalidResponse)
 		}
 		previous = logID
@@ -119,24 +124,9 @@ func ParseResponse(body []byte) (Response, error) {
 }
 
 func LogID(raw bson.Raw) (int64, error) {
-	value, err := integer(raw, "logId")
-	if err != nil || value <= 0 {
+	value, ok, err := fields.Int64(raw, "logId")
+	if err != nil || !ok || value <= 0 {
 		return 0, ErrInvalidResponse
 	}
 	return value, nil
-}
-
-func integer(raw bson.Raw, key string) (int64, error) {
-	value, err := raw.LookupErr(key)
-	if err != nil {
-		return 0, err
-	}
-	switch value.Type {
-	case bson.TypeInt32:
-		return int64(value.Int32()), nil
-	case bson.TypeInt64:
-		return value.Int64(), nil
-	default:
-		return 0, ErrInvalidResponse
-	}
 }

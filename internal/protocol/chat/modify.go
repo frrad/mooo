@@ -52,12 +52,12 @@ func DecodeModifyResponse(body []byte, logID int64) (int64, error) {
 		return 0, ErrInvalidWriteResp
 	}
 	modified := value.Document()
-	got, err := int64Field(modified, "logId")
-	if err != nil || got != logID {
+	got, ok, err := fields.Int64(modified, "logId")
+	if err != nil || !ok || got != logID {
 		return 0, ErrInvalidWriteResp
 	}
-	revision, err := int64Field(modified, "revision")
-	if err != nil || revision <= 0 {
+	revision, ok, err := fields.Int64(modified, "revision")
+	if err != nil || !ok || revision <= 0 {
 		return 0, ErrInvalidWriteResp
 	}
 	return revision, nil

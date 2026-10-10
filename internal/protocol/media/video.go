@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -38,29 +39,12 @@ type VideoMessage struct {
 func (VideoMessage) String() string     { return "VideoMessage{<redacted>}" }
 func (m VideoMessage) GoString() string { return m.String() }
 
-func DecodeVideoMessage(body []byte) (VideoMessage, error) {
-	raw := bson.Raw(body)
-	if raw.Validate() != nil {
+func DecodeVideoMessage(env chatlog.Envelope) (VideoMessage, error) {
+	if env.Type != messagetype.Video || !env.LogIDInChatLog {
 		return VideoMessage{}, ErrInvalidMessage
 	}
-	chat, err := integerField(raw, "chatId")
-	if err != nil || chat <= 0 {
-		return VideoMessage{}, ErrInvalidMessage
-	}
-	v, err := raw.LookupErr("chatLog")
-	if err != nil || v.Type != bson.TypeEmbeddedDocument {
-		return VideoMessage{}, ErrInvalidMessage
-	}
-	log := v.Document()
-	typ, err := integerField(log, "type")
-	if err != nil || typ != int64(messagetype.Video) {
-		return VideoMessage{}, ErrInvalidMessage
-	}
-	id, err := integerField(log, "logId")
-	if err != nil || id <= 0 {
-		return VideoMessage{}, ErrInvalidMessage
-	}
-	v, err = log.LookupErr("attachment")
+	log := env.Log
+	v, err := log.LookupErr("attachment")
 	if err != nil || v.Type != bson.TypeString || len(v.StringValue()) > 64<<10 {
 		return VideoMessage{}, ErrInvalidMessage
 	}
@@ -94,7 +78,7 @@ func DecodeVideoMessage(body []byte) (VideoMessage, error) {
 	if json.Unmarshal([]byte(text), &a) != nil || !validVideoAttachment(a) {
 		return VideoMessage{}, ErrInvalidMessage
 	}
-	return VideoMessage{ChatID: chat, LogID: id, AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt"), Attachment: a}, nil
+	return VideoMessage{ChatID: env.ChatID, LogID: env.LogID, AuthorID: env.AuthorID, SentAt: env.SentAt, Attachment: a}, nil
 }
 
 func validVideoAttachment(a VideoAttachment) bool {

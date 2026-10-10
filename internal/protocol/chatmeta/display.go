@@ -55,11 +55,11 @@ func ProjectGroupDisplay(data ChatData) (GroupDisplay, error) {
 		out.ImageURL, out.FullImageURL = legacyFields["group_profile_thumbnail_url"], legacyFields["group_profile_url"]
 		out.AvatarKnown = true
 	} else if hasProfile {
-		fields, err := displayContent(profile.Content, "imageUrl", "fullImageUrl")
+		urls, err := displayContent(profile.Content, "imageUrl", "fullImageUrl")
 		if err != nil {
 			return GroupDisplay{}, err
 		}
-		out.ImageURL, out.FullImageURL = fields["imageUrl"], fields["fullImageUrl"]
+		out.ImageURL, out.FullImageURL = urls["imageUrl"], urls["fullImageUrl"]
 		out.AvatarKnown = true
 	}
 	if data.Meta != nil {
