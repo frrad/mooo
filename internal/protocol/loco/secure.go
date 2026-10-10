@@ -53,23 +53,6 @@ func NewSecureV3(random io.Reader, maxCiphertext uint32) (*SecureV3, error) {
 	return s, nil
 }
 
-// NewSecureV3WithKey exists for synthetic fixtures and a receiver that already
-// owns negotiated key material. It copies the key and never retains the input.
-func NewSecureV3WithKey(key []byte, random io.Reader, maxCiphertext uint32) (*SecureV3, error) {
-	if len(key) != V3KeySize {
-		return nil, ErrInvalidKey
-	}
-	if random == nil {
-		random = rand.Reader
-	}
-	if maxCiphertext == 0 {
-		maxCiphertext = DefaultMaxCiphertext
-	}
-	s := &SecureV3{random: random, maxSize: maxCiphertext}
-	copy(s.key[:], key)
-	return s, nil
-}
-
 func (s *SecureV3) Handshake() ([]byte, error) {
 	if s == nil {
 		return nil, ErrInvalidKey
@@ -148,14 +131,4 @@ func (s *SecureV3) gcm() (cipher.AEAD, error) {
 		return nil, ErrInvalidKey
 	}
 	return cipher.NewGCM(block)
-}
-
-// KeyForTesting returns a copy for synthetic cross-instance tests.
-func (s *SecureV3) KeyForTesting() []byte {
-	if s == nil {
-		return nil
-	}
-	out := make([]byte, V3KeySize)
-	copy(out, s.key[:])
-	return out
 }

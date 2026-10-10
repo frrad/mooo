@@ -1,3 +1,0 @@
-# Test files under internal/ that reference no production code and predate
-# research/parity-fixtures.md. This list only shrinks: migrate a file, then
-# delete its line. Never add entries.
