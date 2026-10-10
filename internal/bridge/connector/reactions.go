@@ -14,6 +14,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/bridgev2/simplevent"
+	"maunium.net/go/mautrix/event"
 
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/reactions"
@@ -166,10 +167,12 @@ func (kc *KakaoClient) PreHandleMatrixReaction(ctx context.Context, msg *bridgev
 		return bridgev2.MatrixReactionPreResponse{}, err
 	}
 	return bridgev2.MatrixReactionPreResponse{
-		SenderID:     makeUserID(kc.userID),
-		EmojiID:      entry.emojiID,
-		Emoji:        entry.emoji,
-		MaxReactions: 1,
+		SenderID: makeUserID(kc.userID),
+		EmojiID:  entry.emojiID,
+		Emoji:    entry.emoji,
+		// No framework-wide limit: Kakao keeps one legacy selection per user,
+		// but the same user's mini reactions are independent. HandleMatrixReaction
+		// replaces only the previous legacy selection.
 	}, nil
 }
 
@@ -189,7 +192,36 @@ func (kc *KakaoClient) HandleMatrixReaction(ctx context.Context, msg *bridgev2.M
 	if _, err = api.React(ctx, request); err != nil {
 		return nil, classifyReactionFailure(errReactionMutation, err)
 	}
+	kc.removeReplacedLegacyReactions(ctx, msg)
 	return nil, nil
+}
+
+// removeReplacedLegacyReactions redacts and forgets this account's other
+// legacy reactions on the target after KakaoTalk accepted a new legacy
+// selection, which replaces them. Mini reactions are left untouched.
+func (kc *KakaoClient) removeReplacedLegacyReactions(ctx context.Context, msg *bridgev2.MatrixReaction) {
+	if msg.Portal == nil || msg.Portal.Bridge == nil || msg.TargetMessage == nil || msg.PreHandleResp == nil {
+		return
+	}
+	bridge := msg.Portal.Bridge
+	existing, err := bridge.DB.Reaction.GetAllToMessageBySender(ctx, msg.Portal.Receiver, msg.TargetMessage.ID, msg.PreHandleResp.SenderID)
+	if err != nil {
+		kc.log().Warn().Err(err).Msg("Could not load replaced Kakao legacy reactions")
+		return
+	}
+	for _, old := range existing {
+		if old.EmojiID == msg.PreHandleResp.EmojiID || !strings.HasPrefix(string(old.EmojiID), "kakao:legacy:") {
+			continue
+		}
+		if _, err := bridge.Bot.SendMessage(ctx, msg.Portal.MXID, event.EventRedaction, &event.Content{
+			Parsed: &event.RedactionEventContent{Redacts: old.MXID},
+		}, nil); err != nil {
+			kc.log().Warn().Err(err).Msg("Could not redact replaced Kakao legacy reaction")
+		}
+		if err := bridge.DB.Reaction.Delete(ctx, old); err != nil {
+			kc.log().Warn().Err(err).Msg("Could not delete replaced Kakao legacy reaction")
+		}
+	}
 }
 
 func (kc *KakaoClient) HandleMatrixReactionRemove(ctx context.Context, msg *bridgev2.MatrixReactionRemove) error {

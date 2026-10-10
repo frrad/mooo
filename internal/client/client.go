@@ -654,6 +654,26 @@ func (c *Client) ReactionMembers(ctx context.Context, chatID, logID int64) (reac
 	return reactionMembers(ctx, doer, state, chatID, logID)
 }
 
+// ReactionMetaSync reads one page of message metadata (reaction) changes
+// newer than cur, without opening a LOCO session.
+func (c *Client) ReactionMetaSync(ctx context.Context, chatID, cur int64) (reactions.SyncMetaPage, error) {
+	if c == nil || ctx == nil {
+		return reactions.SyncMetaPage{}, ErrProtocol
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return reactions.SyncMetaPage{}, ErrClientClosed
+	}
+	state, doer := c.state, c.http
+	c.mu.Unlock()
+	profile, err := reactionProfile(state)
+	if err != nil {
+		return reactions.SyncMetaPage{}, err
+	}
+	return reactions.FetchSyncMeta(ctx, doer, profile, chatID, cur)
+}
+
 // MiniReactionDetails returns attribution for the separate mini/custom-
 // reaction data source without opening a LOCO session.
 func (c *Client) MiniReactionDetails(ctx context.Context, chatID, linkID, logID int64) (reactions.DetailsResponse, error) {

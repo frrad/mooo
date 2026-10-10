@@ -736,7 +736,7 @@ func TestMatrixReactionSendAndStaleRemoveAreBounded(t *testing.T) {
 		TargetMessage: target,
 	}
 	pre, err := kc.PreHandleMatrixReaction(context.Background(), msg)
-	if err != nil || pre.MaxReactions != 1 || pre.EmojiID != "kakao:legacy:1" {
+	if err != nil || pre.MaxReactions != 0 || pre.EmojiID != "kakao:legacy:1" {
 		t.Fatalf("pre = %#v, err=%v", pre, err)
 	}
 	if _, err = kc.HandleMatrixReaction(context.Background(), msg); err != nil {

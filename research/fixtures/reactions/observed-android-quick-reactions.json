@@ -1,0 +1,17 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-10",
+    "method": "Owned A, B and C each applied Android quick reactions to one synthetic text in the owned encrypted A/B/C regular group; the bridge's type-2 mini aggregates and detail lookups were read back as stored mini item IDs and the aggregate labels it received.",
+    "doc": "research/bridge/GROUP-REACTIONS.md"
+  },
+  "quick_reactions": [
+    {"action": "Love heart", "item_id": "1200509_029", "label_ko": "사랑", "emoji": "❤️"},
+    {"action": "Thumbs up", "item_id": "1200509_021", "label_ko": "엄지척", "emoji": "👍"},
+    {"action": "Check", "item_id": "1200509_037", "label_ko": "체크", "emoji": "✅"},
+    {"action": "Smiley face", "item_id": "1200509_001", "label_ko": "웃음", "emoji": "😆"},
+    {"action": "Surprised face", "item_id": "1200509_002", "label_ko": "놀라움", "emoji": "😮"},
+    {"action": "Sad face", "item_id": "1200509_003", "label_ko": "슬픔", "emoji": "😢"}
+  ]
+}

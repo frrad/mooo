@@ -21,7 +21,7 @@ These are scoped capabilities, not full official-client parity.
 | Priority | Missing implementation or acceptance | Code/evidence boundary |
 |---|---|---|
 | 1 | Regular-group announcements; rename, join/leave and metadata lifecycle acceptance | Inbound text Boards announcements now project to the room topic (PR #269); rich and outbound announcements remain open. Initial shared title/roster works. Membership handlers exist, but live mutations remain unvalidated. See [chat metadata](research/chat-metadata.md) and [group evidence](research/bridge/GROUP-MESSAGING-VALIDATION.md). |
-| 2 | Group reactions and remaining media acceptance | Group photos (PR #277), text replies (PR #278) and image replies (PR #279) are accepted. Direct-room evidence does not cover group reactions. |
+| 2 | Remaining group media acceptance | Group photos (PR #277), text and image replies (PRs #278–279) and reactions (PR #280) are accepted. |
 | 3 | Live read-receipt and catch-up read-side-effect policy; operator malformed-message recovery; terminal/failure lifecycle acceptance | Routing, bounded recovery and ownership are implemented; `SYNCMSG cnt=0`, terminal events, Matrix failures and cleanup timeouts need controlled acceptance. Receive-header timeout and push receipts are not installed by default. |
 | 4 | Reproducible deployment acceptance and Matrix crypto recovery | Docker/configuration exist. Complete standard appservice installation and separate Beeper validation; test key rotation, missing keys/trust transitions and encrypted replies/reactions. |
 | 5 | Broader outbound messaging and interactive content | `HandleMatrixMessage` accepts text/notice/emote and JPEG/PNG photos only; image replies are rejected. Outbound video/audio/files/albums/stickers/cards/polls/posts, edits/deletions and poll/board actions have no supported connector path. |
@@ -88,8 +88,14 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       [image replies](research/bridge/GROUP-IMAGE-REPLIES.md).
 - [ ] Image-reply follow-ups: album ("%d photos") and video source previews,
       sound stickers and attach types 22/25, and live album/video reply sources.
-- [ ] Per-member reaction add/replace/remove, counts and attribution, encrypted
-      targets, replay and restart.
+- [x] Per-member reactions (PR #280): offline changes recovered through the
+      Mac's `sync-meta` resync with per-chat cursors, Android quick reactions
+      shown as emoji, and a Matrix reaction no longer redacts the same
+      account's mini reactions: [group reactions](research/bridge/GROUP-REACTIONS.md).
+- [ ] Reaction follow-ups: outbound mini (quick-reaction) mutations, the Mac
+      `/rx/logmetas` batch path, double-puppet attribution for the bridge
+      account's phone, offline legacy changes from another device, and long
+      resync backlogs.
 - [ ] Group read receipts/unread state with monotonic member watermarks and
       observed catch-up side effects.
 - [ ] More inbound group formats: albums, video, audio, files, contacts, profiles,
@@ -106,8 +112,8 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       notifications, source roles and management permissions; prevent personal
       settings from changing shared state and reject unsupported actions.
 
-Next active slice: per-member reactions. Discovery through image replies
-shipped in PRs #270–279.
+Next active slice: group read receipts and unread state. Discovery through
+reactions shipped in PRs #270–280.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.

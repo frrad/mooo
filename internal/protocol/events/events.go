@@ -871,6 +871,50 @@ func decodeLogMeta(body []byte) (Event, error) {
 	if err != nil {
 		return nil, ErrMalformedEvent
 	}
+	return logMetaEvent(chatID, logID, revision, linkID, metaType, content)
+}
+
+// DecodeSyncedLogMeta decodes one meta object from the HTTP resync endpoint.
+// It carries the same fields and content as a CHGLOGMETA push, as JSON.
+func DecodeSyncedLogMeta(item []byte) (Event, error) {
+	var wire struct {
+		ChatID   json.Number `json:"chatId"`
+		LogID    json.Number `json:"logId"`
+		Type     json.Number `json:"type"`
+		Revision json.Number `json:"revision"`
+		LinkID   json.Number `json:"linkId"`
+		Content  *string     `json:"content"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(item))
+	decoder.UseNumber()
+	if err := decoder.Decode(&wire); err != nil || wire.Content == nil {
+		return nil, ErrMalformedEvent
+	}
+	number := func(n json.Number, optional bool) (int64, bool) {
+		if n == "" {
+			return 0, optional
+		}
+		v, err := n.Int64()
+		return v, err == nil
+	}
+	chatID, ok1 := number(wire.ChatID, false)
+	logID, ok2 := number(wire.LogID, false)
+	metaType, ok3 := number(wire.Type, false)
+	linkID, ok4 := number(wire.LinkID, true)
+	if !ok1 || !ok2 || !ok3 || !ok4 || chatID <= 0 || logID <= 0 || metaType <= 0 || metaType > int64(^uint32(0)>>1) || linkID < 0 {
+		return nil, ErrMalformedEvent
+	}
+	if metaType != 1 && metaType != 2 {
+		return UnsupportedLogMeta{ChatID: chatID, LogID: logID, Type: int32(metaType)}, nil
+	}
+	revision, ok := number(wire.Revision, false)
+	if !ok || revision <= 0 {
+		return nil, ErrMalformedEvent
+	}
+	return logMetaEvent(chatID, logID, revision, linkID, metaType, *wire.Content)
+}
+
+func logMetaEvent(chatID, logID, revision, linkID, metaType int64, content string) (Event, error) {
 	if metaType == 1 {
 		// Legacy pushes carry selection-keyed counts, not the type-2 rx
 		// aggregate item IDs. Actors still come from the members lookup;

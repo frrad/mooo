@@ -1,0 +1,17 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Mac 26.8.0 request shape; owned group server response",
+    "date": "2026-10-10",
+    "method": "Read-only GET of the Mac sync-meta endpoint for the owned encrypted A/B/C regular group with the bridge profile's credentials. cur=0 returned an empty last page; cur set to a revision below the group's reaction metas returned one legacy (type 1, empty counts after cancellation, with extra) and one mini (type 2, rx) meta and last=true, independent of max/cnt; a cur above max with max=0 returned HTTP 400. Only shapes and kinds were recorded; identifiers and revisions here are synthetic.",
+    "doc": "research/bridge/GROUP-REACTIONS.md"
+  },
+  "page": {
+    "content": [
+      {"chatId": 3000, "logId": 3948371787076642816, "type": 1, "revision": 3948377092013952282, "content": "{}", "extra": "{\"my\":0}"},
+      {"chatId": 3000, "logId": 3948371787076642816, "type": 2, "revision": 3948377398363489307, "content": "{\"rx\":[{\"a\":{\"ko\":\"synthetic\"},\"c\":1,\"k\":2,\"o\":\"1200509_029\"}]}"}
+    ],
+    "last": true,
+    "size": 2
+  }
+}

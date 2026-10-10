@@ -13,6 +13,19 @@ import (
 	"github.com/frrad/mooo/internal/protocol/reactions"
 )
 
+// quickReactionEmoji maps the mini items behind Android's six quick
+// reactions (observed, KakaoTalk Android 26.8.2) to the emoji the outbound
+// legacy table uses, so Matrix shows the same reaction instead of a
+// localized label.
+var quickReactionEmoji = map[string]string{
+	"1200509_029": "❤️",
+	"1200509_021": "👍",
+	"1200509_037": "✅",
+	"1200509_001": "😆",
+	"1200509_002": "😮",
+	"1200509_003": "😢",
+}
+
 // Mini attribution has no revision field. Require exact agreement with the
 // triggering aggregate before replacing any Matrix state. A racing snapshot
 // fails without advancing the durable revision; the next push can reconcile.
@@ -56,7 +69,10 @@ func addMiniReactionUsers(users map[networkid.UserID]*bridgev2.ReactionSyncUser,
 		if int64(len(actors)) != item.Count {
 			return errReactionRevision
 		}
-		label := item.Alt["en"]
+		label := quickReactionEmoji[item.ID]
+		if label == "" {
+			label = item.Alt["en"]
+		}
 		if label == "" {
 			keys := make([]string, 0, len(item.Alt))
 			for k := range item.Alt {
