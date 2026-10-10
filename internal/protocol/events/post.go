@@ -21,10 +21,11 @@ type PostMessage struct {
 	Unrendered                      int
 }
 
-func (PostMessage) Kind() Kind         { return KindPostMessage }
-func (PostMessage) isEvent()           {}
-func (PostMessage) String() string     { return "PostMessage{<redacted>}" }
-func (m PostMessage) GoString() string { return m.String() }
+func (PostMessage) Kind() Kind           { return KindPostMessage }
+func (m PostMessage) Position() Position { return Position{m.ChatID, m.LogID} }
+func (PostMessage) isEvent()             {}
+func (PostMessage) String() string       { return "PostMessage{<redacted>}" }
+func (m PostMessage) GoString() string   { return m.String() }
 
 func decodePost(chatID, logID int64, log bson.Raw) (Event, error) {
 	value, err := requiredString(log, "attachment")

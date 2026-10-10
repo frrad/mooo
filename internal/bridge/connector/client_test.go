@@ -24,6 +24,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"github.com/frrad/mooo/internal/protocol/reactions"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 )
@@ -1249,7 +1250,7 @@ func TestInboundMessagePersistsReplyMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	metadata, ok := converted.Parts[0].DBMetadata.(*KakaoMessageMetadata)
-	if !ok || metadata.ChatID != testChatID || metadata.LogID != 12 || metadata.AuthorID != testOtherID || metadata.Type != chat.TextType || metadata.Preview != "source" {
+	if !ok || metadata.ChatID != testChatID || metadata.LogID != 12 || metadata.AuthorID != testOtherID || metadata.Type != messagetype.Text || metadata.Preview != "source" {
 		t.Fatalf("metadata = %+v", converted.Parts[0].DBMetadata)
 	}
 }
@@ -1262,7 +1263,7 @@ func TestOutboundReplyUsesStoredSourceMetadata(t *testing.T) {
 		ID:       makeMessageID(testChatID, 11),
 		Room:     makePortalKey(testChatID, makeUserLoginID(testSelfID)),
 		SenderID: makeUserID(testOtherID),
-		Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0),
+		Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, messagetype.Text, "source", 0),
 	}
 	resp, err := kc.HandleMatrixMessage(context.Background(), msg)
 	if err != nil {
@@ -1272,10 +1273,10 @@ func TestOutboundReplyUsesStoredSourceMetadata(t *testing.T) {
 		t.Fatalf("text sends = %v, replies = %v", fake.sends, fake.replies)
 	}
 	target := fake.replies[0].request.Target
-	if target != (chat.ReplyTarget{LogID: 11, UserID: testOtherID, Type: chat.TextType, Message: "source"}) {
+	if target != (chat.ReplyTarget{LogID: 11, UserID: testOtherID, Type: messagetype.Text, Message: "source"}) {
 		t.Fatalf("reply target = %+v", target)
 	}
-	if resp.DB.Metadata.(*KakaoMessageMetadata).Type != chat.ReplyType {
+	if resp.DB.Metadata.(*KakaoMessageMetadata).Type != messagetype.Reply {
 		t.Fatalf("outbound metadata = %+v", resp.DB.Metadata)
 	}
 }
@@ -1288,7 +1289,7 @@ func TestOutboundEmoteReplyPreservesBodyAndUsesReplyOnce(t *testing.T) {
 		ID:       makeMessageID(testChatID, 11),
 		Room:     makePortalKey(testChatID, makeUserLoginID(testSelfID)),
 		SenderID: makeUserID(testOtherID),
-		Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.ReplyType, "reply source", 0),
+		Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, messagetype.Reply, "reply source", 0),
 	}
 	if _, err := kc.HandleMatrixMessage(context.Background(), msg); err != nil {
 		t.Fatal(err)
@@ -1305,10 +1306,10 @@ func TestOutboundReplyRejectsOldCrossChatAndUnresolvedTargets(t *testing.T) {
 		want  error
 	}{
 		{name: "old row", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID)}, want: errMissingReplyMetadata},
-		{name: "cross chat", reply: &database.Message{ID: makeMessageID(4000, 11), Room: makePortalKey(4000, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(4000, 11, testOtherID, chat.TextType, "source", 0)}, want: errCrossChatReply},
-		{name: "sender mismatch", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(9999), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0)}, want: errReplySenderMismatch},
-		{name: "receiver mismatch", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, makeUserLoginID(9999)), SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0)}, want: errCrossChatReply},
-		{name: "empty room id wrong receiver", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: networkid.PortalKey{Receiver: makeUserLoginID(9999)}, SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0)}, want: errCrossChatReply},
+		{name: "cross chat", reply: &database.Message{ID: makeMessageID(4000, 11), Room: makePortalKey(4000, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(4000, 11, testOtherID, messagetype.Text, "source", 0)}, want: errCrossChatReply},
+		{name: "sender mismatch", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(9999), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, messagetype.Text, "source", 0)}, want: errReplySenderMismatch},
+		{name: "receiver mismatch", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, makeUserLoginID(9999)), SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, messagetype.Text, "source", 0)}, want: errCrossChatReply},
+		{name: "empty room id wrong receiver", reply: &database.Message{ID: makeMessageID(testChatID, 11), Room: networkid.PortalKey{Receiver: makeUserLoginID(9999)}, SenderID: makeUserID(testOtherID), Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, messagetype.Text, "source", 0)}, want: errCrossChatReply},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1350,7 +1351,7 @@ func TestOutboundReplyFailureIsAmbiguousAndNotRetried(t *testing.T) {
 		ID:       makeMessageID(testChatID, 11),
 		Room:     makePortalKey(testChatID, makeUserLoginID(testSelfID)),
 		SenderID: makeUserID(testOtherID),
-		Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, chat.TextType, "source", 0),
+		Metadata: newKakaoMessageMetadata(testChatID, 11, testOtherID, messagetype.Text, "source", 0),
 	}
 	if _, err := kc.HandleMatrixMessage(context.Background(), msg); !errors.Is(err, sendErr) {
 		t.Fatalf("error = %v", err)

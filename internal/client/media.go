@@ -9,6 +9,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 // SendImage validates and uploads one JPEG or PNG through the current session.
@@ -16,9 +17,6 @@ import (
 // is ambiguous and is never retried automatically.
 // SendImage uploads one photo with an optional caption.
 func (s *Session) SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error) {
-	if s == nil || ctx == nil {
-		return media.SendResult{}, ErrProtocol
-	}
 	image, err := media.PrepareImage(data)
 	if err != nil {
 		return media.SendResult{}, err
@@ -41,9 +39,6 @@ func (s *Session) SendUpload(ctx context.Context, chatID int64, upload media.Upl
 	shipBody, err := (media.UploadShipRequest{ChatID: chatID, Upload: upload}).MarshalBSON()
 	if err != nil {
 		return media.SendResult{}, err
-	}
-	if s == nil || ctx == nil {
-		return media.SendResult{}, ErrProtocol
 	}
 	return s.trailerUpload(ctx, shipBody, upload.Data, func(key string) ([]byte, error) {
 		return (media.UploadPostRequest{
@@ -96,9 +91,6 @@ func (s *Session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, 
 	if !media.ValidCaption(caption) {
 		return chat.WriteResponse{}, media.ErrInvalidCaption
 	}
-	if s == nil || ctx == nil {
-		return chat.WriteResponse{}, ErrProtocol
-	}
 	shipPacket, err := s.Request(ctx, media.AlbumShipCommand, shipBody)
 	if err != nil {
 		return chat.WriteResponse{}, fmt.Errorf("%w: MSHIP: %w", ErrAlbumNotCreated, err)
@@ -127,7 +119,7 @@ func (s *Session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, 
 	if err != nil {
 		return chat.WriteResponse{}, fmt.Errorf("%w: %w", ErrAlbumNotCreated, err)
 	}
-	body, err := (chat.WriteRequest{ChatID: chatID, Type: media.MultiPhotoType, Extra: extra}).MarshalBSON()
+	body, err := (chat.WriteRequest{ChatID: chatID, Type: messagetype.MultiPhoto, Extra: extra}).MarshalBSON()
 	if err != nil {
 		return chat.WriteResponse{}, fmt.Errorf("%w: %w", ErrAlbumNotCreated, err)
 	}

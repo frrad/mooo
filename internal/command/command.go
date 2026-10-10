@@ -7,11 +7,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
-	"strings"
 	"time"
 
-	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/buildinfo"
 	"github.com/frrad/mooo/internal/protocol/loco"
 )
@@ -22,6 +19,23 @@ const usage = `usage:
   mooo-lab auth init --state ABSOLUTE_PATH --device-name NAME --app-version VERSION --os-version VERSION --model MODEL
   mooo-lab auth inspect --state ABSOLUTE_PATH
 `
+
+// handler runs one subcommand on the arguments after its two-word name. A
+// returned error's message is printed as-is, so it must never contain a flag
+// value or filesystem path.
+type handler struct {
+	// live marks a command that opens an authenticated profile and talks to
+	// Kakao, rather than only touching local auth state.
+	live bool
+	run  func(args []string, stdout io.Writer, packetObserver func(loco.Packet)) error
+}
+
+var handlers = map[string]handler{
+	"auth init":      {run: authInit},
+	"auth inspect":   {run: authInspect},
+	"chats list":     {live: true, run: listChats},
+	"contacts photo": {live: true, run: contactPhoto},
+}
 
 // Run executes one CLI invocation and returns a process-style exit code. It
 // never includes flag values or filesystem paths in its output. A non-nil
@@ -37,104 +51,49 @@ func Run(args []string, stdout, stderr io.Writer, packetObserver func(loco.Packe
 		_, _ = fmt.Fprintf(stdout, "mooo-lab %s\n", buildinfo.Version)
 		return 0
 	}
-	if args[0] == "--help" || args[0] == "-h" {
+	if wantsHelp(args) {
 		_, _ = io.WriteString(stdout, usage)
 		return 0
 	}
-	if len(args) >= 2 && args[0] == "contacts" && args[1] == "photo" {
-		return runContactPhoto(args[2:], stdout, stderr, func(path string) (contactPhotoClient, error) {
-			return openContactPhotoClient(path, packetObserver)
-		})
+	h, ok := lookup(args)
+	if !ok {
+		_, _ = io.WriteString(stderr, "invalid command; run `mooo-lab --help` for usage\n")
+		return 2
 	}
-	if len(args) >= 2 && args[0] == "chats" && args[1] == "list" {
-		return runListChats(args[2:], stdout, stderr, func(path string) (chatLister, error) {
-			return openChatLister(path, packetObserver)
-		})
+	if err := h.run(args[2:], stdout, packetObserver); err != nil {
+		_, _ = io.WriteString(stderr, "error: "+err.Error()+"\n")
+		return 2
 	}
-	if args[0] != "auth" || len(args) < 2 {
-		return usageError(stderr)
-	}
-	if args[1] == "--help" || args[1] == "-h" {
-		_, _ = io.WriteString(stdout, usage)
-		return 0
-	}
-	if len(args) < 3 {
-		return usageError(stderr)
-	}
-	if args[2] == "--help" || args[2] == "-h" {
-		_, _ = io.WriteString(stdout, usage)
-		return 0
-	}
-	switch args[1] {
-	case "init":
-		return runInit(args[2:], stdout, stderr)
-	case "inspect":
-		return runInspect(args[2:], stdout, stderr)
-	default:
-		return usageError(stderr)
-	}
-}
-
-func runInit(args []string, stdout, stderr io.Writer) int {
-	options, err := parseOptions(args, map[string]struct{}{
-		"state": {}, "device-name": {}, "app-version": {}, "os-version": {}, "model": {},
-	})
-	if err != nil {
-		return commandError(stderr, "invalid auth init arguments")
-	}
-	for _, name := range []string{"state", "device-name", "app-version", "os-version", "model"} {
-		if options[name] == "" {
-			return commandError(stderr, "auth init requires all options")
-		}
-	}
-	if !filepath.IsAbs(options["state"]) {
-		return commandError(stderr, "--state must be an absolute path")
-	}
-	_, err = authstate.Create(options["state"], authstate.Config{
-		DeviceName:  options["device-name"],
-		AppVersion:  options["app-version"],
-		OSVersion:   options["os-version"],
-		DeviceModel: options["model"],
-	})
-	if err != nil {
-		return commandError(stderr, "could not initialize auth state")
-	}
-	_, _ = io.WriteString(stdout, "initialized client-owned auth state\ncredentials: absent\n")
 	return 0
 }
 
-func runInspect(args []string, stdout, stderr io.Writer) int {
-	options, err := parseOptions(args, map[string]struct{}{"state": {}})
-	if err != nil || options["state"] == "" {
-		return commandError(stderr, "auth inspect requires --state")
-	}
-	if !filepath.IsAbs(options["state"]) {
-		return commandError(stderr, "--state must be an absolute path")
-	}
-	store, err := authstate.Open(options["state"])
-	if err != nil {
-		return commandError(stderr, "could not inspect auth state")
-	}
-	state, err := store.Snapshot()
-	if err != nil {
-		return commandError(stderr, "could not inspect auth state")
-	}
-	metadataPresent := state.Identity.Metadata.Version != 0 && state.Identity.Metadata.Platform != ""
-	_, _ = fmt.Fprintf(stdout, "schema_version: %d\nidentity: present (redacted)\nmetadata: %s (redacted)\ncredentials: %s\n",
-		state.Version, presentAbsent(metadataPresent), presentAbsent(state.Credentials != nil))
-	return 0
+// IsLive reports whether args name a command that opens an authenticated
+// profile. mooo-lab uses it to pick the default BSON shadow mode.
+func IsLive(args []string) bool {
+	h, ok := lookup(args)
+	return ok && h.live
 }
 
-func presentAbsent(present bool) string {
-	if present {
-		return "present"
+// wantsHelp reports a help request: first, after the auth group, or right
+// after an auth subcommand name. Live commands reject a later --help as an
+// invalid option.
+func wantsHelp(args []string) bool {
+	if isHelp(args[0]) {
+		return true
 	}
-	return "absent"
+	return args[0] == "auth" && ((len(args) >= 2 && isHelp(args[1])) || (len(args) >= 3 && isHelp(args[2])))
 }
 
-func usageError(stderr io.Writer) int {
-	_, _ = io.WriteString(stderr, "invalid command; run `mooo-lab --help` for usage\n")
-	return 2
+func isHelp(arg string) bool { return arg == "--help" || arg == "-h" }
+
+// lookup finds the handler named by the first two arguments. An auth
+// subcommand without options is a usage error rather than an option error.
+func lookup(args []string) (handler, bool) {
+	if len(args) < 2 || (args[0] == "auth" && len(args) < 3) {
+		return handler{}, false
+	}
+	h, ok := handlers[args[0]+" "+args[1]]
+	return h, ok
 }
 
 // profileShutdownTimeout bounds how long a command waits for an opened
@@ -148,42 +107,4 @@ func shutdownProfile(c interface{ Shutdown(context.Context) error }) error {
 	ctx, cancel := context.WithTimeout(context.Background(), profileShutdownTimeout)
 	defer cancel()
 	return c.Shutdown(ctx)
-}
-
-func commandError(stderr io.Writer, message string) int {
-	_, _ = io.WriteString(stderr, "error: "+message+"\n")
-	return 2
-}
-
-// parseOptions accepts only --name value and --name=value forms. Values are
-// retained in memory only for the immediate authstate call and are never part
-// of parser errors or command output.
-func parseOptions(args []string, allowed map[string]struct{}) (map[string]string, error) {
-	values := make(map[string]string, len(allowed))
-	for i := 0; i < len(args); i++ {
-		token := args[i]
-		if !strings.HasPrefix(token, "--") || len(token) == 2 {
-			return nil, fmt.Errorf("invalid option")
-		}
-		nameValue := strings.TrimPrefix(token, "--")
-		name, value, hasEquals := strings.Cut(nameValue, "=")
-		if _, ok := allowed[name]; !ok || name == "" {
-			return nil, fmt.Errorf("invalid option")
-		}
-		if _, duplicate := values[name]; duplicate {
-			return nil, fmt.Errorf("duplicate option")
-		}
-		if !hasEquals {
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
-				return nil, fmt.Errorf("missing option value")
-			}
-			i++
-			value = args[i]
-		}
-		if value == "" {
-			return nil, fmt.Errorf("empty option value")
-		}
-		values[name] = value
-	}
-	return values, nil
 }

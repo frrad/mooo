@@ -14,7 +14,6 @@ import (
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
-	"github.com/frrad/mooo/internal/protocol/media"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
@@ -79,14 +78,14 @@ func TestMatrixEditOfOwnTextIsSentOnceAndRecordsTheRevision(t *testing.T) {
 	fake := &fakeKakao{modifyRevision: 1}
 	kc := connectedClient(t, fake)
 	reservations := countReservations(kc)
-	target := ownTarget(201, chat.TextType, time.Now().Add(-time.Hour))
+	target := ownTarget(201, messagetype.Text, time.Now().Add(-time.Hour))
 	if err := kc.HandleMatrixEdit(context.Background(), matrixEdit(target, "synthetic matrix edit")); err != nil {
 		t.Fatal(err)
 	}
 	if *reservations != 1 || len(fake.modifies) != 1 {
 		t.Fatalf("reservations=%d sends=%d", *reservations, len(fake.modifies))
 	}
-	if got := fake.modifies[0]; got != (chat.ModifyRequest{ChatID: testChatID, LogID: 201, Type: chat.TextType, Message: "synthetic matrix edit", Extra: "{}"}) {
+	if got := fake.modifies[0]; got != (chat.ModifyRequest{ChatID: testChatID, LogID: 201, Type: messagetype.Text, Message: "synthetic matrix edit", Extra: "{}"}) {
 		t.Fatalf("MODIFYMSG = %+v", got)
 	}
 	meta := target.Metadata.(*KakaoMessageMetadata)
@@ -103,17 +102,17 @@ func TestMatrixEditOfOwnTextIsSentOnceAndRecordsTheRevision(t *testing.T) {
 }
 
 func TestMatrixEditIsRejectedBeforeAnySendWhenKakaoWouldRefuse(t *testing.T) {
-	other := ownTarget(201, chat.TextType, time.Now())
+	other := ownTarget(201, messagetype.Text, time.Now())
 	other.Metadata.(*KakaoMessageMetadata).AuthorID = 2000
 	cases := []struct {
 		label  string
 		target *database.Message
 	}{
 		{"another member's message", other},
-		{"older than 24 hours", ownTarget(201, chat.TextType, time.Now().Add(-25*time.Hour))},
-		{"photo", ownTarget(201, media.PhotoType, time.Now())},
-		{"reply", ownTarget(201, chat.ReplyType, time.Now())},
-		{"deleted", ownTarget(201, chat.TextType|messagetype.DeletedAllChatTypeFlag, time.Now())},
+		{"older than 24 hours", ownTarget(201, messagetype.Text, time.Now().Add(-25*time.Hour))},
+		{"photo", ownTarget(201, messagetype.Photo, time.Now())},
+		{"reply", ownTarget(201, messagetype.Reply, time.Now())},
+		{"deleted", ownTarget(201, messagetype.Text|messagetype.DeletedAllChatTypeFlag, time.Now())},
 	}
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {
@@ -132,12 +131,12 @@ func TestMatrixEditOutcomes(t *testing.T) {
 	refused := &fakeKakao{modifyErr: client.StatusError{Command: chat.ModifyCommand, Status: -1}}
 	kc := connectedClient(t, refused)
 	countReservations(kc)
-	requireStatus(t, kc.HandleMatrixEdit(context.Background(), matrixEdit(ownTarget(201, chat.TextType, time.Now()), "a")), event.MessageStatusFail, true)
+	requireStatus(t, kc.HandleMatrixEdit(context.Background(), matrixEdit(ownTarget(201, messagetype.Text, time.Now()), "a")), event.MessageStatusFail, true)
 
 	lost := &fakeKakao{modifyErr: errors.New("synthetic disconnect")}
 	kc = connectedClient(t, lost)
 	countReservations(kc)
-	requireStatus(t, kc.HandleMatrixEdit(context.Background(), matrixEdit(ownTarget(201, chat.TextType, time.Now()), "b")), event.MessageStatusFail, false)
+	requireStatus(t, kc.HandleMatrixEdit(context.Background(), matrixEdit(ownTarget(201, messagetype.Text, time.Now()), "b")), event.MessageStatusFail, false)
 	if len(lost.modifies) != 1 {
 		t.Fatalf("ambiguous edit was retried: %d sends", len(lost.modifies))
 	}
@@ -145,7 +144,7 @@ func TestMatrixEditOutcomes(t *testing.T) {
 	same := &fakeKakao{}
 	kc = connectedClient(t, same)
 	countReservations(kc)
-	if err := kc.HandleMatrixEdit(context.Background(), matrixEdit(ownTarget(201, chat.TextType, time.Now()), "synthetic original")); err != nil || len(same.modifies) != 0 {
+	if err := kc.HandleMatrixEdit(context.Background(), matrixEdit(ownTarget(201, messagetype.Text, time.Now()), "synthetic original")); err != nil || len(same.modifies) != 0 {
 		t.Fatalf("unchanged edit err=%v sends=%d", err, len(same.modifies))
 	}
 }
@@ -154,7 +153,7 @@ func TestMatrixRedactionDeletesOwnMessageForEveryoneOnce(t *testing.T) {
 	fake := &fakeKakao{}
 	kc := connectedClient(t, fake)
 	reservations := countReservations(kc)
-	target := ownTarget(203, media.PhotoType, time.Now().Add(-time.Hour))
+	target := ownTarget(203, messagetype.Photo, time.Now().Add(-time.Hour))
 	if err := kc.HandleMatrixMessageRemove(context.Background(), matrixRemove(target, "$redact-1")); err != nil {
 		t.Fatal(err)
 	}
@@ -167,14 +166,14 @@ func TestMatrixRedactionDeletesOwnMessageForEveryoneOnce(t *testing.T) {
 }
 
 func TestMatrixRedactionOutcomes(t *testing.T) {
-	other := ownTarget(203, chat.TextType, time.Now())
+	other := ownTarget(203, messagetype.Text, time.Now())
 	other.Metadata.(*KakaoMessageMetadata).AuthorID = 2000
 	before := []struct {
 		label  string
 		target *database.Message
 	}{
 		{"another member's message", other},
-		{"older than 24 hours", ownTarget(203, chat.TextType, time.Now().Add(-25*time.Hour))},
+		{"older than 24 hours", ownTarget(203, messagetype.Text, time.Now().Add(-25*time.Hour))},
 	}
 	for _, tc := range before {
 		fake := &fakeKakao{}
@@ -189,7 +188,7 @@ func TestMatrixRedactionOutcomes(t *testing.T) {
 	placeholder := &fakeKakao{}
 	kc := connectedClient(t, placeholder)
 	countReservations(kc)
-	if err := kc.HandleMatrixMessageRemove(context.Background(), matrixRemove(ownTarget(203, chat.TextType|messagetype.DeletedAllChatTypeFlag, time.Now()), "$r-placeholder")); err != nil || len(placeholder.deletes) != 0 {
+	if err := kc.HandleMatrixMessageRemove(context.Background(), matrixRemove(ownTarget(203, messagetype.Text|messagetype.DeletedAllChatTypeFlag, time.Now()), "$r-placeholder")); err != nil || len(placeholder.deletes) != 0 {
 		t.Fatalf("placeholder err=%v deletes=%d", err, len(placeholder.deletes))
 	}
 	for _, tc := range []struct {
@@ -205,7 +204,7 @@ func TestMatrixRedactionOutcomes(t *testing.T) {
 		fake := &fakeKakao{deleteErr: client.StatusError{Command: chat.DeleteCommand, Status: int32(tc.status)}}
 		kc := connectedClient(t, fake)
 		countReservations(kc)
-		err := kc.HandleMatrixMessageRemove(context.Background(), matrixRemove(ownTarget(203, chat.TextType, time.Now()), "$r-status"))
+		err := kc.HandleMatrixMessageRemove(context.Background(), matrixRemove(ownTarget(203, messagetype.Text, time.Now()), "$r-status"))
 		if tc.ok {
 			if err != nil {
 				t.Fatalf("status %d err = %v", tc.status, err)
@@ -217,7 +216,7 @@ func TestMatrixRedactionOutcomes(t *testing.T) {
 	lost := &fakeKakao{deleteErr: errors.New("synthetic disconnect")}
 	kc = connectedClient(t, lost)
 	countReservations(kc)
-	requireStatus(t, kc.HandleMatrixMessageRemove(context.Background(), matrixRemove(ownTarget(203, chat.TextType, time.Now()), "$r-lost")), event.MessageStatusFail, false)
+	requireStatus(t, kc.HandleMatrixMessageRemove(context.Background(), matrixRemove(ownTarget(203, messagetype.Text, time.Now()), "$r-lost")), event.MessageStatusFail, false)
 }
 
 func TestEditAndDeleteCapabilitiesCarryKakaoLimits(t *testing.T) {
@@ -236,7 +235,7 @@ func TestCatchUpOfAMessageDeletedFromMatrixPostsNothing(t *testing.T) {
 	kc, backend, _ := newGroupCreationFramework(t)
 	kc.client = backend
 	countReservations(kc)
-	target := ownTarget(205, chat.TextType, time.Now())
+	target := ownTarget(205, messagetype.Text, time.Now())
 	if err := kc.HandleMatrixMessageRemove(context.Background(), matrixRemove(target, "$r-own")); err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +244,7 @@ func TestCatchUpOfAMessageDeletedFromMatrixPostsNothing(t *testing.T) {
 		queued++
 		return bridgev2.EventHandlingResultSuccess
 	}
-	if !kc.handleEvent(backend, events.DeletedMessage{ChatID: testChatID, LogID: 205, AuthorID: testSelfID, BaseType: chat.TextType}) {
+	if !kc.handleEvent(backend, events.DeletedMessage{ChatID: testChatID, LogID: 205, AuthorID: testSelfID, BaseType: messagetype.Text}) {
 		t.Fatal("deleted log was not handled")
 	}
 	if queued != 0 || len(backend.committed()) != 1 {

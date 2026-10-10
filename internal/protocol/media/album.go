@@ -11,7 +11,6 @@ import (
 )
 
 const (
-	MultiPhotoType = messagetype.MultiPhoto
 	// MinAlbumPhotos: the Mac client never creates a one-photo album, and its
 	// hard-coded maximum is MaxAlbumPhotos.
 	MinAlbumPhotos     = 2
@@ -44,7 +43,7 @@ func (r AlbumShipRequest) MarshalBSON() ([]byte, error) {
 		extensions = append(extensions, image.Extension)
 	}
 	return bson.Marshal(bson.D{
-		{Key: "c", Value: r.ChatID}, {Key: "t", Value: MultiPhotoType},
+		{Key: "c", Value: r.ChatID}, {Key: "t", Value: messagetype.MultiPhoto},
 		{Key: "sl", Value: sizes}, {Key: "csl", Value: checksums}, {Key: "el", Value: extensions},
 		{Key: "ex", Value: "{}"},
 	})
@@ -126,7 +125,7 @@ func (r AlbumPostRequest) MarshalBSON() ([]byte, error) {
 		return nil, ErrInvalidAlbum
 	}
 	return bson.Marshal(bson.D{
-		{Key: "u", Value: r.UserID}, {Key: "k", Value: r.Key}, {Key: "t", Value: MultiPhotoType},
+		{Key: "u", Value: r.UserID}, {Key: "k", Value: r.Key}, {Key: "t", Value: messagetype.MultiPhoto},
 		{Key: "s", Value: int64(len(r.Image.Data))}, {Key: "scp", Value: int32(1)},
 		{Key: "mm", Value: "99999"}, {Key: "nt", Value: int32(0)}, {Key: "os", Value: "mac"},
 		{Key: "av", Value: r.AppVersion}, {Key: "dt", Value: albumPostDeviceTyp},

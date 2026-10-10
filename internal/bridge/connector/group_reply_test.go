@@ -23,6 +23,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 // capturingIntent records the Matrix message content the framework sends.
@@ -85,7 +86,7 @@ func TestInboundGroupReplyToBridgedSourceRelatesWithoutFallback(t *testing.T) {
 	fake := &fakeKakao{}
 	source := events.TextMessage{ChatID: testChatID, LogID: 200, AuthorID: testOtherID, SentAt: 1700000200, Message: "group source text"}
 	reply := events.ReplyMessage{ChatID: testChatID, LogID: 201, AuthorID: testOtherID, SentAt: 1700000201, Message: "group reply text",
-		Source: events.ReplySource{LogID: 200, UserID: testOtherID, Type: chat.TextType, Message: "group source text"}}
+		Source: events.ReplySource{LogID: 200, UserID: testOtherID, Type: messagetype.Text, Message: "group source text"}}
 	if !kc.handleEvent(fake, source) || !kc.handleEvent(fake, reply) {
 		t.Fatal("source or reply was not committed")
 	}
@@ -105,7 +106,7 @@ func TestInboundGroupReplyToMissingSourceQuotesEmbeddedPreview(t *testing.T) {
 	kc, intent := newReplyFramework(t)
 	fake := &fakeKakao{}
 	reply := events.ReplyMessage{ChatID: testChatID, LogID: 211, AuthorID: testOtherID, SentAt: 1700000211, Message: "reply to an unbridged source",
-		Source: events.ReplySource{LogID: 150, UserID: testOtherID, Type: chat.TextType, Message: "older <source> line one\nline two"}}
+		Source: events.ReplySource{LogID: 150, UserID: testOtherID, Type: messagetype.Text, Message: "older <source> line one\nline two"}}
 	if !kc.handleEvent(fake, reply) {
 		t.Fatal("reply was not committed")
 	}
@@ -169,9 +170,9 @@ func TestGroupHistoryRepliesMapInsideIntervalAndQuoteOlderSources(t *testing.T) 
 	}
 	sourceText := events.TextMessage{ChatID: 5000, LogID: 101, AuthorID: 2000, Message: "history source", SentAt: 1700000000}
 	inside := events.ReplyMessage{ChatID: 5000, LogID: 102, AuthorID: 4000, Message: "reply inside", SentAt: 1700000001,
-		Source: events.ReplySource{LogID: 101, UserID: 2000, Type: chat.TextType, Message: "history source"}}
+		Source: events.ReplySource{LogID: 101, UserID: 2000, Type: messagetype.Text, Message: "history source"}}
 	older := events.ReplyMessage{ChatID: 5000, LogID: 103, AuthorID: 2000, Message: "reply to older", SentAt: 1700000002,
-		Source: events.ReplySource{LogID: 50, UserID: 4000, Type: chat.TextType, Message: "before the interval"}}
+		Source: events.ReplySource{LogID: 50, UserID: 4000, Type: messagetype.Text, Message: "before the interval"}}
 	source.pages = []client.HistoryPage{{Events: []events.Event{sourceText, inside, older}, Next: 103, Complete: true}}
 	if done, err := kc.BackfillGroup(t.Context(), "!selected:test", 100, 103, 10, false); err != nil || !done {
 		t.Fatalf("history: %t %v", done, err)
@@ -203,7 +204,7 @@ func TestInboundStickerReplyBecomesStickerReply(t *testing.T) {
 	t.Cleanup(func() { stickerHTTPClient = old })
 	source := events.TextMessage{ChatID: testChatID, LogID: 220, AuthorID: testOtherID, SentAt: 1700000220, Message: "sticker reply source"}
 	reply := events.ReplyMessage{ChatID: testChatID, LogID: 221, AuthorID: testOtherID, SentAt: 1700000221, Message: "(Emoticons)",
-		Source:     events.ReplySource{LogID: 220, UserID: testOtherID, Type: chat.TextType, Message: "sticker reply source"},
+		Source:     events.ReplySource{LogID: 220, UserID: testOtherID, Type: messagetype.Text, Message: "sticker reply source"},
 		Attachment: events.ReplyAttachment{Type: 12, Only: true, Sticker: &media.StickerAttachment{Path: "synthetic/emot_001.png"}}}
 	if !kc.handleEvent(fake, source) || !kc.handleEvent(fake, reply) {
 		t.Fatal("source or sticker reply was not committed")
@@ -225,7 +226,7 @@ func TestInboundUnsupportedReplyAttachmentBecomesNotice(t *testing.T) {
 	fake := &fakeKakao{}
 	source := events.TextMessage{ChatID: testChatID, LogID: 230, AuthorID: testOtherID, SentAt: 1700000230, Message: "attachment source"}
 	reply := events.ReplyMessage{ChatID: testChatID, LogID: 231, AuthorID: testOtherID, SentAt: 1700000231, Message: "",
-		Source:     events.ReplySource{LogID: 230, UserID: testOtherID, Type: chat.TextType, Message: "attachment source"},
+		Source:     events.ReplySource{LogID: 230, UserID: testOtherID, Type: messagetype.Text, Message: "attachment source"},
 		Attachment: events.ReplyAttachment{Type: 71, Only: true}}
 	if !kc.handleEvent(fake, source) || !kc.handleEvent(fake, reply) {
 		t.Fatal("source or reply was not committed")
@@ -246,12 +247,12 @@ func TestOutboundReplyToPhotoUsesPhotoPreview(t *testing.T) {
 		msg := matrixMessage(event.MsgText, "reply to a photo")
 		msg.ReplyTo = &database.Message{
 			ID: makeMessageID(testChatID, 239), Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID),
-			Metadata: newKakaoMessageMetadata(testChatID, 239, testOtherID, media.PhotoType, stored, 0),
+			Metadata: newKakaoMessageMetadata(testChatID, 239, testOtherID, messagetype.Photo, stored, 0),
 		}
 		if _, err := kc.HandleMatrixMessage(context.Background(), msg); err != nil {
 			t.Fatal(err)
 		}
-		if len(fake.replies) != 1 || fake.replies[0].request.Target.Type != media.PhotoType || fake.replies[0].request.Target.Message != "Photo" {
+		if len(fake.replies) != 1 || fake.replies[0].request.Target.Type != messagetype.Photo || fake.replies[0].request.Target.Message != "Photo" {
 			t.Fatalf("stored %q: reply target = %+v", stored, fake.replies)
 		}
 	}
@@ -265,7 +266,7 @@ func TestOutboundImageReplyRefusedWithClearStatus(t *testing.T) {
 	msg := matrixMessage(event.MsgImage, "image.png")
 	msg.Content.URL = "mxc://example/image"
 	msg.ReplyTo = &database.Message{ID: makeMessageID(testChatID, 239), Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID),
-		Metadata: newKakaoMessageMetadata(testChatID, 239, testOtherID, chat.TextType, "source", 0)}
+		Metadata: newKakaoMessageMetadata(testChatID, 239, testOtherID, messagetype.Text, "source", 0)}
 	_, err := kc.HandleMatrixMessage(context.Background(), msg)
 	var statusErr bridgev2.MessageStatus
 	if !errors.Is(err, errUnsupportedImageReply) || !errors.As(err, &statusErr) || !statusErr.IsCertain || statusErr.ErrorReason != event.MessageStatusUnsupported || statusErr.Message == "" || !statusErr.SendNotice {
