@@ -38,7 +38,7 @@ func labShadowMode(args []string, configured string) (shadow.Mode, error) {
 	if configured != "" {
 		return shadow.ParseMode(configured)
 	}
-	if len(args) >= 2 && ((args[0] == "chats" && args[1] == "list") || (args[0] == "contacts" && args[1] == "photo")) {
+	if command.IsLive(args) {
 		return shadow.ModeLog, nil
 	}
 	return shadow.ModePanic, nil
