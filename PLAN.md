@@ -164,9 +164,14 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       rejected and restored; Matrix kicks, bans and invites of KakaoTalk
       members are rejected and undone:
       [settings and permissions](research/bridge/GROUP-SETTINGS-PERMISSIONS.md).
-- [ ] Settings follow-ups: Matrix invites via ADDMEM, favorites via SETMCMETA
-      `favorite`, team-chat roles, the server notification flag, and live
-      mute verification with a double puppet.
+- [x] Matrix invites (this PR): a Matrix invite of a KakaoTalk user sends
+      one reserved ADDMEM in a plain regular group; −402/−405 refusals name
+      the blocked-friends list and revoke the invite; a fresh source roster
+      decides the Matrix membership; accepted live with restart:
+      [settings and permissions](research/bridge/GROUP-SETTINGS-PERMISSIONS.md).
+- [ ] Settings follow-ups: favorites via SETMCMETA `favorite`, team-chat
+      roles, the server notification flag, live mute verification with a
+      double puppet, and a live refused invite.
 
 The regular-group slices through settings and permissions shipped in PRs
 #270–287; remaining work is the follow-ups above.
@@ -576,7 +581,7 @@ Owned A/B text and photos passed both directions in an encrypted Matrix portal,
 including exact decrypted inbound PNG bytes and offline catch-up once after a
 normal bridge restart with retained keys. See
 [`ENCRYPTED-ROOM-VALIDATION.md`](research/bridge/ENCRYPTED-ROOM-VALIDATION.md).
-The reusable `cmd/mooo-matrix-lab` companion records the harness parsing/login
+The reusable `tools/matrix-lab` companion records the harness parsing/login
 edge cases and prevents automatic repeat sends. Remaining acceptance includes
 key rotation/missing-key recovery/trust transitions, encrypted replies and
 reactions, Beeper deployment, and group media/replies/reactions. Regular three-person encrypted text and
