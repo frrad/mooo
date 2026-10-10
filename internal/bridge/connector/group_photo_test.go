@@ -12,13 +12,11 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"go.mau.fi/util/dbutil"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
@@ -32,38 +30,6 @@ import (
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 )
-
-// photoTransferIntent records Matrix uploads for the real framework path. An
-// optional upload barrier holds UploadMedia until its context ends.
-type photoTransferIntent struct {
-	*frameworkPersistenceIntent
-	mu            sync.Mutex
-	uploads       [][]byte
-	blockUpload   bool
-	uploadEntered chan struct{}
-	uploadOnce    sync.Once
-}
-
-func (f *photoTransferIntent) UploadMedia(ctx context.Context, _ id.RoomID, data []byte, _, _ string) (id.ContentURIString, *event.EncryptedFileInfo, error) {
-	f.mu.Lock()
-	block := f.blockUpload
-	f.mu.Unlock()
-	if block {
-		f.uploadOnce.Do(func() { close(f.uploadEntered) })
-		<-ctx.Done()
-		return "", nil, ctx.Err()
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.uploads = append(f.uploads, append([]byte(nil), data...))
-	return "mxc://example/photo", nil, nil
-}
-
-func (f *photoTransferIntent) uploaded() [][]byte {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([][]byte(nil), f.uploads...)
-}
 
 func groupPhotoEvent(t *testing.T, logID int64) (events.PhotoMessage, []byte) {
 	t.Helper()
@@ -92,16 +58,14 @@ func TestDisconnectCancelsInFlightGroupPhotoTransfer(t *testing.T) {
 
 func runDisconnectDuringPhotoTransfer(t *testing.T, stage string) {
 	ctx := context.Background()
-	raw, err := dbutil.NewWithDialect(filepath.Join(t.TempDir(), "bridge.db"), "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = raw.RawDB.Close() })
 	photo, data := groupPhotoEvent(t, 110)
 	downloadEntered := make(chan struct{})
 	var downloadOnce sync.Once
 	var transferMu sync.Mutex
 	blockDownload := stage == "download"
+	blockUpload := stage == "upload"
+	uploadEntered := make(chan struct{})
+	var uploadOnce sync.Once
 	oldClient := photoHTTPClient
 	photoHTTPClient = &http.Client{Transport: photoRoundTripper(func(req *http.Request) (*http.Response, error) {
 		transferMu.Lock()
@@ -115,11 +79,19 @@ func runDisconnectDuringPhotoTransfer(t *testing.T, stage string) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(data)), Request: req}, nil
 	})}
 	t.Cleanup(func() { photoHTTPClient = oldClient })
-	intent := &photoTransferIntent{frameworkPersistenceIntent: &frameworkPersistenceIntent{}, blockUpload: stage == "upload", uploadEntered: make(chan struct{})}
-	bridge, err := newFrameworkConversionBridge(ctx, raw, intent)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// The upload barrier holds UploadMedia until its context ends.
+	intent := &recordingIntent{onUpload: func(ctx context.Context, _ []byte) error {
+		transferMu.Lock()
+		block := blockUpload
+		transferMu.Unlock()
+		if !block {
+			return nil
+		}
+		uploadOnce.Do(func() { close(uploadEntered) })
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	bridge, _ := newFrameworkBridge(t, frameworkOpts{intent: intent})
 	user, err := bridge.GetUserByMXID(ctx, id.UserID("@owner:test"))
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +117,7 @@ func runDisconnectDuringPhotoTransfer(t *testing.T, stage string) {
 	fake.stream <- events.Result{Event: photo}
 	entered := downloadEntered
 	if stage == "upload" {
-		entered = intent.uploadEntered
+		entered = uploadEntered
 	}
 	select {
 	case <-entered:
@@ -167,17 +139,15 @@ func runDisconnectDuringPhotoTransfer(t *testing.T, stage string) {
 	if got := len(fake.committed()); got != 0 {
 		t.Fatalf("cancelled photo %s committed %d source events", stage, got)
 	}
-	if intent.calls != 0 {
-		t.Fatalf("cancelled photo %s sent %d Matrix events", stage, intent.calls)
+	if got := intent.sentCount(event.Type{}); got != 0 {
+		t.Fatalf("cancelled photo %s sent %d Matrix events", stage, got)
 	}
 
 	// The next connection replays the uncommitted photo through catch-up.
 	transferMu.Lock()
 	blockDownload = false
+	blockUpload = false
 	transferMu.Unlock()
-	intent.mu.Lock()
-	intent.blockUpload = false
-	intent.mu.Unlock()
 	fake.mu.Lock()
 	fake.stream = make(chan events.Result)
 	fake.resumeTargets = []syncmsg.Target{{ChatID: testChatID, MaxLogID: 110}}
@@ -191,8 +161,8 @@ func runDisconnectDuringPhotoTransfer(t *testing.T, stage string) {
 	if len(uploads) != 1 || !bytes.Equal(uploads[0], data) {
 		t.Fatalf("replayed uploads = %d, want one exact photo", len(uploads))
 	}
-	if intent.calls != 1 {
-		t.Fatalf("replayed Matrix events = %d, want 1", intent.calls)
+	if got := intent.sentCount(event.Type{}); got != 1 {
+		t.Fatalf("replayed Matrix events = %d, want 1", got)
 	}
 	if got := fake.committed(); len(got) != 1 {
 		t.Fatalf("replayed source commits = %d, want 1", len(got))
@@ -277,11 +247,6 @@ func TestTransientPhotoHTTPStatusRemainsUncommitted(t *testing.T) {
 // one more notice to the room on every attempt.
 func TestTransientPhotoFailurePostsNoMatrixErrorNotice(t *testing.T) {
 	ctx := context.Background()
-	raw, err := dbutil.NewWithDialect(filepath.Join(t.TempDir(), "bridge.db"), "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = raw.RawDB.Close() })
 	photo, data := groupPhotoEvent(t, 130)
 	failing := true
 	oldClient := photoHTTPClient
@@ -292,11 +257,8 @@ func TestTransientPhotoFailurePostsNoMatrixErrorNotice(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(data)), Request: req}, nil
 	})}
 	t.Cleanup(func() { photoHTTPClient = oldClient })
-	intent := &photoTransferIntent{frameworkPersistenceIntent: &frameworkPersistenceIntent{}, uploadEntered: make(chan struct{})}
-	bridge, err := newFrameworkConversionBridge(ctx, raw, intent)
-	if err != nil {
-		t.Fatal(err)
-	}
+	intent := &recordingIntent{}
+	bridge, _ := newFrameworkBridge(t, frameworkOpts{intent: intent})
 	user, err := bridge.GetUserByMXID(ctx, id.UserID("@owner:test"))
 	if err != nil {
 		t.Fatal(err)
@@ -310,15 +272,15 @@ func TestTransientPhotoFailurePostsNoMatrixErrorNotice(t *testing.T) {
 			t.Fatalf("attempt %d: transient photo failure was committed", attempt)
 		}
 	}
-	if intent.calls != 0 || len(fake.committed()) != 0 {
-		t.Fatalf("transient failures sent %d Matrix events and %d commits, want none", intent.calls, len(fake.committed()))
+	if intent.sentCount(event.Type{}) != 0 || len(fake.committed()) != 0 {
+		t.Fatalf("transient failures sent %d Matrix events and %d commits, want none", intent.sentCount(event.Type{}), len(fake.committed()))
 	}
 	failing = false
 	if !kc.handleEvent(fake, photo) {
 		t.Fatal("replayed photo was not committed")
 	}
-	if intent.calls != 1 || len(fake.committed()) != 1 || len(intent.uploaded()) != 1 || !bytes.Equal(intent.uploaded()[0], data) {
-		t.Fatalf("replay sent %d events, %d commits, %d uploads; want one exact photo", intent.calls, len(fake.committed()), len(intent.uploaded()))
+	if intent.sentCount(event.Type{}) != 1 || len(fake.committed()) != 1 || len(intent.uploaded()) != 1 || !bytes.Equal(intent.uploaded()[0], data) {
+		t.Fatalf("replay sent %d events, %d commits, %d uploads; want one exact photo", intent.sentCount(event.Type{}), len(fake.committed()), len(intent.uploaded()))
 	}
 }
 

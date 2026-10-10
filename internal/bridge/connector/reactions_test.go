@@ -11,9 +11,6 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/rs/zerolog"
-	"go.mau.fi/util/dbutil"
-	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
@@ -85,8 +82,7 @@ func TestObservedMiniReactionAttribution(t *testing.T) {
 
 func TestMiniRevisionsAndRemovalScope(t *testing.T) {
 	ctx := context.Background()
-	kc, _, login, old, raw := newFrameworkReactionFixture(t, &frameworkReactionIntent{})
-	defer func() { _ = raw.RawDB.Close() }()
+	kc, _, login, old := newFrameworkReactionFixture(t, &recordingIntent{})
 	legacy := events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 100}
 	mini := events.ReactionChanged{MetadataType: 2, ChatID: testChatID, LogID: 99, Revision: 2}
 	if err := kc.persistReactionRevision(ctx, legacy, 100); err != nil {
@@ -134,64 +130,6 @@ func TestMiniRevisionsAndRemovalScope(t *testing.T) {
 	if !found {
 		t.Fatal("empty confirmed mini roster did not remove mini reaction")
 	}
-}
-
-type frameworkReactionIntent struct {
-	bridgev2.MatrixAPI
-	err      error
-	calls    int
-	types    []event.Type
-	failType event.Type
-}
-
-type frameworkMatrixConnector struct {
-	bridgev2.MatrixConnector
-	intent bridgev2.MatrixAPI
-}
-
-func (f *frameworkMatrixConnector) Init(*bridgev2.Bridge)                           {}
-func (f *frameworkMatrixConnector) BotIntent() bridgev2.MatrixAPI                   { return f.intent }
-func (f *frameworkMatrixConnector) GhostIntent(networkid.UserID) bridgev2.MatrixAPI { return f.intent }
-func (f *frameworkMatrixConnector) SendMessageStatus(context.Context, *bridgev2.MessageStatus, *bridgev2.MessageStatusEventInfo) {
-}
-
-type frameworkNetworkConnector struct {
-	bridgev2.NetworkConnector
-}
-
-func (f *frameworkNetworkConnector) Init(*bridgev2.Bridge) {}
-func (f *frameworkNetworkConnector) GetDBMetaTypes() database.MetaTypes {
-	return (&KakaoConnector{}).GetDBMetaTypes()
-}
-func (f *frameworkNetworkConnector) GetCapabilities() *bridgev2.NetworkGeneralCapabilities {
-	return &bridgev2.NetworkGeneralCapabilities{}
-}
-
-func (f *frameworkReactionIntent) GetMXID() id.UserID { return "@bot:test" }
-func (f *frameworkReactionIntent) SendMessage(_ context.Context, _ id.RoomID, kind event.Type, _ *event.Content, _ *bridgev2.MatrixSendExtra) (*mautrix.RespSendEvent, error) {
-	return f.sendMessage(kind, nil)
-}
-
-func (f *frameworkReactionIntent) sendMessage(kind event.Type, err error) (*mautrix.RespSendEvent, error) {
-	f.calls++
-	f.types = append(f.types, kind)
-	if err != nil || (f.err != nil && (f.failType == (event.Type{}) || f.failType == kind)) {
-		if f.err != nil {
-			return nil, f.err
-		}
-		return nil, err
-	}
-	return &mautrix.RespSendEvent{EventID: id.EventID(fmt.Sprintf("$reaction-%d", f.calls))}, nil
-}
-
-func countFrameworkEvents(types []event.Type, want event.Type) int {
-	count := 0
-	for _, typ := range types {
-		if typ == want {
-			count++
-		}
-	}
-	return count
 }
 
 func (b *reactionTestBackend) React(_ context.Context, request reactions.Request) (reactions.Response, error) {
@@ -246,21 +184,8 @@ func TestReactionSyncUsersRejectsConflictingAndUnknownBuckets(t *testing.T) {
 
 func TestReactionDeliveryEventsUsesIndividualOperationsAndPreservesUnknownRows(t *testing.T) {
 	ctx := context.Background()
-	raw, err := dbutil.NewWithDialect(":memory:", "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = raw.RawDB.Close() }()
-	db := database.New("test", (&KakaoConnector{}).GetDBMetaTypes(), raw)
-	if err := db.Upgrade(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO ghost (bridge_id,id,name,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,contact_info_set,is_bot,identifiers,extra_profile,metadata) VALUES ('test','2000','sender','','','',1,1,0,0,'[]',NULL,'{}')`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO portal (bridge_id,id,receiver,mxid,parent_id,parent_receiver,relay_bridge_id,relay_login_id,other_user_id,name,topic,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,topic_set,name_is_custom,in_space,message_request,room_type,disappear_type,disappear_timer,cap_state,metadata) VALUES ('test','3000','1000',NULL,NULL,'','','','', '', '', '', '', '',0,0,0,0,0,0,'',NULL,NULL,NULL,'{}')`); err != nil {
-		t.Fatal(err)
-	}
+	br, _ := newFrameworkBridge(t, frameworkOpts{})
+	db := br.DB
 	message := &database.Message{BridgeID: "test", ID: makeMessageID(testChatID, 99), PartID: "0", MXID: "$event", Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID), Timestamp: time.Now(), Metadata: newKakaoMessageMetadata(testChatID, 99, testOtherID, 1, "", 0)}
 	if err := db.Message.Insert(ctx, message); err != nil {
 		t.Fatal(err)
@@ -273,7 +198,7 @@ func TestReactionDeliveryEventsUsesIndividualOperationsAndPreservesUnknownRows(t
 	if err := db.Reaction.Upsert(ctx, unknown); err != nil {
 		t.Fatal(err)
 	}
-	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: db}}
+	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: br}
 	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
 	sync := &kakaoReactionSync{ReactionSync: simplevent.ReactionSync{EventMeta: simplevent.EventMeta{PortalKey: message.Room}, TargetMessage: message.ID, Reactions: &bridgev2.ReactionSyncData{Users: map[networkid.UserID]*bridgev2.ReactionSyncUser{}, HasAllUsers: true}}}
 	events, err := kc.reactionDeliveryEvents(ctx, sync)
@@ -286,25 +211,11 @@ func TestReactionDeliveryEventsUsesIndividualOperationsAndPreservesUnknownRows(t
 	}
 }
 
-func newFrameworkReactionFixture(t *testing.T, intent *frameworkReactionIntent) (*KakaoClient, *bridgev2.Portal, *bridgev2.UserLogin, *database.Reaction, *dbutil.Database) {
+func newFrameworkReactionFixture(t *testing.T, intent *recordingIntent) (*KakaoClient, *bridgev2.Portal, *bridgev2.UserLogin, *database.Reaction) {
 	t.Helper()
 	ctx := context.Background()
-	raw, err := dbutil.NewWithDialect(":memory:", "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	matrix := &frameworkMatrixConnector{intent: intent}
-	bridge := bridgev2.NewBridge("test", raw, zerolog.Nop(), nil, matrix, &frameworkNetworkConnector{}, func(*bridgev2.Bridge) bridgev2.CommandProcessor { return nil })
+	bridge, _ := newFrameworkBridge(t, frameworkOpts{intent: intent})
 	db := bridge.DB
-	if err := db.Upgrade(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO ghost (bridge_id,id,name,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,contact_info_set,is_bot,identifiers,extra_profile,metadata) VALUES ('test','2000','sender','','','',1,1,0,0,'[]',NULL,'{}')`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO portal (bridge_id,id,receiver,mxid,parent_id,parent_receiver,relay_bridge_id,relay_login_id,other_user_id,name,topic,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,topic_set,name_is_custom,in_space,message_request,room_type,disappear_type,disappear_timer,cap_state,metadata) VALUES ('test','3000','1000',NULL,NULL,'','','','', '', '', '', '', '',0,0,0,0,0,0,'',NULL,NULL,NULL,'{}')`); err != nil {
-		t.Fatal(err)
-	}
 	key := makePortalKey(testChatID, makeUserLoginID(testSelfID))
 	message := &database.Message{BridgeID: "test", ID: makeMessageID(testChatID, 99), PartID: "0", MXID: "$event", Room: key, SenderID: makeUserID(testOtherID), SenderMXID: "@sender:test", Timestamp: time.Now(), Metadata: newKakaoMessageMetadata(testChatID, 99, testOtherID, 1, "", 0)}
 	if err := db.Message.Insert(ctx, message); err != nil {
@@ -317,14 +228,19 @@ func newFrameworkReactionFixture(t *testing.T, intent *frameworkReactionIntent) 
 	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: key, MXID: "!room:test"}, Bridge: bridge}
 	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: key.Receiver}, Bridge: bridge}
 	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
-	return kc, portal, login, old, raw
+	return kc, portal, login, old
 }
 
 func TestReactionHandleUsesFrameworkOperationsAndPersistsOnlyAfterAllACK(t *testing.T) {
 	ctx := context.Background()
-	intent := &frameworkReactionIntent{err: errors.New("synthetic redaction failure"), failType: event.EventRedaction}
-	kc, portal, login, old, raw := newFrameworkReactionFixture(t, intent)
-	defer func() { _ = raw.RawDB.Close() }()
+	redactErr := errors.New("synthetic redaction failure")
+	intent := &recordingIntent{onSendMessage: func(_ context.Context, typ event.Type, _ *event.Content) error {
+		if typ == event.EventRedaction {
+			return redactErr
+		}
+		return nil
+	}}
+	kc, portal, login, old := newFrameworkReactionFixture(t, intent)
 	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{Revision: 2, Members: map[reactions.Type][]int64{reactions.Like: {testOtherID}}, Fields: map[string]json.RawMessage{"2": []byte(`[2000]`)}}}
 	kc.client = backend
 	login.Client = kc
@@ -339,10 +255,10 @@ func TestReactionHandleUsesFrameworkOperationsAndPersistsOnlyAfterAllACK(t *test
 	if kc.handleEvent(backend, change) {
 		t.Fatal("redaction failure reported success")
 	}
-	if got := countFrameworkEvents(intent.types, event.EventReaction); got != 1 {
+	if got := intent.sentCount(event.EventReaction); got != 1 {
 		t.Fatalf("initial addition attempts = %d, want 1", got)
 	}
-	if got := countFrameworkEvents(intent.types, event.EventRedaction); got != 1 {
+	if got := intent.sentCount(event.EventRedaction); got != 1 {
 		t.Fatalf("initial removal attempts = %d, want 1", got)
 	}
 	row, err := kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(ctx, kc.login.ID, old.MessageID, old.SenderID, old.EmojiID)
@@ -353,14 +269,14 @@ func TestReactionHandleUsesFrameworkOperationsAndPersistsOnlyAfterAllACK(t *test
 	if err != nil || msg.Metadata.(*KakaoMessageMetadata).ReactionRevision != 0 {
 		t.Fatalf("failed removal advanced revision: msg=%#v err=%v", msg, err)
 	}
-	intent.err = nil
+	redactErr = nil
 	if !kc.handleEvent(backend, change) {
 		t.Fatal("successful replay was rejected")
 	}
-	if got := countFrameworkEvents(intent.types, event.EventReaction); got != 1 {
+	if got := intent.sentCount(event.EventReaction); got != 1 {
 		t.Fatalf("replay resent successful addition %d times", got)
 	}
-	if got := countFrameworkEvents(intent.types, event.EventRedaction); got != 2 {
+	if got := intent.sentCount(event.EventRedaction); got != 2 {
 		t.Fatalf("replay removal attempts = %d, want 2", got)
 	}
 	row, err = kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(ctx, kc.login.ID, old.MessageID, old.SenderID, old.EmojiID)
@@ -382,9 +298,8 @@ func TestReactionHandleUsesFrameworkOperationsAndPersistsOnlyAfterAllACK(t *test
 
 func TestReactionNoOpReconciliationPersistsRevision(t *testing.T) {
 	ctx := context.Background()
-	intent := &frameworkReactionIntent{}
-	kc, portal, login, old, raw := newFrameworkReactionFixture(t, intent)
-	defer func() { _ = raw.RawDB.Close() }()
+	intent := &recordingIntent{}
+	kc, portal, login, old := newFrameworkReactionFixture(t, intent)
 	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
 		Revision: 2,
 		Members:  map[reactions.Type][]int64{reactions.Heart: {testOtherID}},
@@ -412,10 +327,9 @@ func TestReactionNoOpReconciliationPersistsRevision(t *testing.T) {
 
 func TestReactionRemovalRequiresDatabaseDeletionPostcondition(t *testing.T) {
 	ctx := context.Background()
-	intent := &frameworkReactionIntent{}
-	kc, portal, login, old, raw := newFrameworkReactionFixture(t, intent)
-	defer func() { _ = raw.RawDB.Close() }()
-	if _, err := raw.RawDB.ExecContext(ctx, `CREATE TRIGGER reaction_delete_fail BEFORE DELETE ON reaction BEGIN SELECT RAISE(FAIL, 'synthetic delete failure'); END`); err != nil {
+	intent := &recordingIntent{}
+	kc, portal, login, old := newFrameworkReactionFixture(t, intent)
+	if _, err := login.Bridge.DB.RawDB.ExecContext(ctx, `CREATE TRIGGER reaction_delete_fail BEFORE DELETE ON reaction BEGIN SELECT RAISE(FAIL, 'synthetic delete failure'); END`); err != nil {
 		t.Fatal(err)
 	}
 	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{Revision: 2, Fields: map[string]json.RawMessage{}}}
@@ -440,7 +354,7 @@ func TestReactionRemovalRequiresDatabaseDeletionPostcondition(t *testing.T) {
 	if revision != 0 {
 		t.Fatalf("failed database deletion advanced revision to %d", revision)
 	}
-	if _, err := raw.RawDB.ExecContext(ctx, `DROP TRIGGER reaction_delete_fail`); err != nil {
+	if _, err := login.Bridge.DB.RawDB.ExecContext(ctx, `DROP TRIGGER reaction_delete_fail`); err != nil {
 		t.Fatal(err)
 	}
 	if !kc.handleEvent(backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 1}) {
@@ -468,9 +382,8 @@ func TestReactionRemovalRequiresDatabaseDeletionPostcondition(t *testing.T) {
 
 func TestFrameworkOutboundReactionMaxOneReplacesAndStaleRemovalDoesNotCancel(t *testing.T) {
 	ctx := context.Background()
-	intent := &frameworkReactionIntent{}
-	kc, portal, login, old, raw := newFrameworkReactionFixture(t, intent)
-	defer func() { _ = raw.RawDB.Close() }()
+	intent := &recordingIntent{}
+	kc, portal, login, old := newFrameworkReactionFixture(t, intent)
 	// The existing reaction belongs to the logged-in Kakao user and is the
 	// reaction that MaxReactions=1 must replace.
 	if err := kc.login.Bridge.DB.Reaction.Delete(ctx, old); err != nil {
@@ -498,7 +411,7 @@ func TestFrameworkOutboundReactionMaxOneReplacesAndStaleRemovalDoesNotCancel(t *
 	if len(backend.requests) != 1 || backend.requests[0].Type != reactions.Like {
 		t.Fatalf("Kakao mutations = %#v, want one Like", backend.requests)
 	}
-	if got := countFrameworkEvents(intent.types, event.EventRedaction); got != 1 {
+	if got := intent.sentCount(event.EventRedaction); got != 1 {
 		t.Fatalf("Matrix old-reaction redactions = %d, want 1", got)
 	}
 	oldRow, err := kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(ctx, kc.login.ID, old.MessageID, old.SenderID, old.EmojiID)
@@ -678,20 +591,8 @@ func TestReactionEventPersistsAppliedMembersRevision(t *testing.T) {
 func TestReactionRevisionSuppressesStaleEventAfterSQLiteReopen(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "reaction.db")
-	raw, err := dbutil.NewWithDialect(path, "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	db := database.New("test", (&KakaoConnector{}).GetDBMetaTypes(), raw)
-	if err := db.Upgrade(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO ghost (bridge_id,id,name,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,contact_info_set,is_bot,identifiers,extra_profile,metadata) VALUES ('test','2000','sender','','','','',0,0,0,'[]',NULL,'{}')`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := raw.RawDB.ExecContext(ctx, `INSERT INTO portal (bridge_id,id,receiver,mxid,parent_id,parent_receiver,relay_bridge_id,relay_login_id,other_user_id,name,topic,avatar_id,avatar_hash,avatar_mxc,name_set,avatar_set,topic_set,name_is_custom,in_space,message_request,room_type,disappear_type,disappear_timer,cap_state,metadata) VALUES ('test','3000','1000',NULL,NULL,'','','','', '', '', '', '', '',0,0,0,0,0,0,'',NULL,NULL,NULL,'{}')`); err != nil {
-		t.Fatal(err)
-	}
+	br, raw := newFrameworkBridge(t, frameworkOpts{path: path})
+	db := br.DB
 	message := &database.Message{
 		BridgeID: "test", ID: makeMessageID(testChatID, 99), PartID: "0", MXID: "$event",
 		Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID), SenderMXID: "@sender:test",
@@ -703,7 +604,7 @@ func TestReactionRevisionSuppressesStaleEventAfterSQLiteReopen(t *testing.T) {
 	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
 		Revision: 12, Members: map[reactions.Type][]int64{reactions.Heart: {42}}, Fields: map[string]json.RawMessage{"1": []byte(`[42]`)},
 	}}
-	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: db}}
+	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: br}
 	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
 	queued := 0
 	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
@@ -717,13 +618,8 @@ func TestReactionRevisionSuppressesStaleEventAfterSQLiteReopen(t *testing.T) {
 	if err := raw.RawDB.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := dbutil.NewWithDialect(path, "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = reopened.RawDB.Close() }()
-	reopenedDB := database.New("test", (&KakaoConnector{}).GetDBMetaTypes(), reopened)
-	login2 := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: reopenedDB}}
+	reopened, _ := newFrameworkBridge(t, frameworkOpts{path: path})
+	login2 := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: reopened}
 	kc2 := newKakaoClient(login2, newBridgeStore(login2.Bridge.DB), testSelfID, nil)
 	kc2.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		queued++

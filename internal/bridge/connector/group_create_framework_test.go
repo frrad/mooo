@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -15,7 +14,6 @@ import (
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/rs/zerolog"
-	"go.mau.fi/util/dbutil"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
@@ -158,18 +156,10 @@ func (i *groupCreationIntent) SetAvatarURL(context.Context, id.ContentURIString)
 func newGroupCreationFramework(t *testing.T) (*KakaoClient, *countingGroupCreateClient, *groupCreationMatrix) {
 	t.Helper()
 	ctx := context.Background()
-	raw, err := dbutil.NewWithDialect(filepath.Join(t.TempDir(), "bridge.db"), "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = raw.RawDB.Close() })
 	matrix := &groupCreationMatrix{members: map[id.UserID]*event.MemberEventContent{
 		"@owner:test": {Membership: event.MembershipJoin}, "@bot:test": {Membership: event.MembershipJoin}, "@kakao_2000:test": {Membership: event.MembershipInvite}, "@kakao_4000:test": {Membership: event.MembershipInvite},
 	}}
-	br, err := newFrameworkBridge(ctx, raw, matrix)
-	if err != nil {
-		t.Fatal(err)
-	}
+	br, _ := newFrameworkBridge(t, frameworkOpts{matrix: matrix})
 	user, err := br.GetUserByMXID(ctx, "@owner:test")
 	if err != nil {
 		t.Fatal(err)

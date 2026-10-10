@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
-	"go.mau.fi/util/dbutil"
 
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
@@ -1033,14 +1032,10 @@ func TestQRLoginResumeUsesLoadUserLoginAndPrivateProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	kc := &KakaoConnector{Config: Config{ProfileDir: dir}}
-	raw, err := dbutil.NewWithDialect(filepath.Join(t.TempDir(), "bridge.db"), "sqlite3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = raw.RawDB.Close() })
+	br, _ := newFrameworkBridge(t, frameworkOpts{})
 	login := &bridgev2.UserLogin{
 		UserLogin: &database.UserLogin{ID: makeUserLoginID(42), Metadata: &UserLoginMetadata{Profile: "resumed"}},
-		Bridge:    &bridgev2.Bridge{DB: database.New("test", kc.GetDBMetaTypes(), raw)},
+		Bridge:    br,
 	}
 	if err := kc.LoadUserLogin(context.Background(), login); err != nil {
 		t.Fatal(err)
