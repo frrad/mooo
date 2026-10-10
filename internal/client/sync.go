@@ -7,7 +7,6 @@ import (
 
 	"github.com/frrad/mooo/internal/continuity"
 	"github.com/frrad/mooo/internal/protocol/events"
-	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -174,14 +173,7 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 			if logID == current {
 				continue
 			}
-			body, err := bson.Marshal(bson.D{
-				{Key: "chatId", Value: chatID},
-				{Key: "chatLog", Value: bson.Raw(raw)},
-			})
-			if err != nil {
-				return nil, ErrProtocol
-			}
-			event, err := events.DecodeForDelivery(loco.Packet{Header: loco.Header{Method: "MSG"}, Body: body})
+			event, err := events.DecodeChatLog(chatID, raw)
 			if err != nil {
 				return nil, err
 			}
