@@ -142,6 +142,9 @@ type KakaoClient struct {
 	sendState func(status.BridgeState)
 	// reserveOutbound defaults to the bridge's durable store.
 	reserveOutbound func(context.Context, id.EventID) (bool, error)
+	// refreshMembership re-reads a group's source roster outside the portal
+	// event loop that delivered a Matrix change.
+	refreshMembership func(kakaoClient, int64)
 
 	groupGate      sync.Mutex
 	displayGate    sync.Mutex
@@ -202,6 +205,7 @@ func newKakaoClient(login *bridgev2.UserLogin, userID int64, open func() (kakaoC
 	}
 	kc.wait = waitForRecovery
 	kc.reserveOutbound = kc.reserveOutboundKV
+	kc.refreshMembership = kc.refreshMembershipAsync
 	kc.sendState = func(state status.BridgeState) { kc.stateQueue().Send(state) }
 	return kc
 }

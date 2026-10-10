@@ -78,6 +78,9 @@ type fakeKakao struct {
 	modifyErr         error
 	deletes           []chat.DeleteRequest
 	deleteErr         error
+	invites           []chat.AddMembersRequest
+	inviteResp        chat.AddMembersResponse
+	inviteErr         error
 	closeCalls        int
 	shutdownCalls     int
 	shutdownFailures  int
@@ -1642,6 +1645,10 @@ func (f *fakeKakao) CreateChat(context.Context, chat.CreateRequest) (chat.Create
 	return chat.CreateResponse{}, errors.New("unexpected creation")
 }
 
-func (f *fakeKakao) AddMembers(context.Context, chat.AddMembersRequest) (chat.AddMembersResponse, error) {
-	return chat.AddMembersResponse{}, errors.New("unexpected invitation")
+func (f *fakeKakao) AddMembers(_ context.Context, request chat.AddMembersRequest) (chat.AddMembersResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, fmt.Sprintf("AddMembers(%d,%v)", request.ChatID, request.MemberIDs))
+	f.invites = append(f.invites, request)
+	return f.inviteResp, f.inviteErr
 }
