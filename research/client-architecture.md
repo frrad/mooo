@@ -39,7 +39,7 @@ can move from `internal/client` to a public package without exposing wire types.
 - No operation transparently reconnects. A disconnect during a mutation is
   ambiguous, so reconnect and reconciliation must be an explicit higher-level
   decision.
-- `Client.Close` is terminal. Creating another client/session is deliberate.
+- `Client.Shutdown` is terminal. Creating another client/session is deliberate.
 - Only the process holding the profile's exclusive lease may connect. This
   prevents two CLI invocations, bridge processes, or probes from independently
   logging in with the same secondary-device identity.

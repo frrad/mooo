@@ -703,46 +703,6 @@ func (c *Client) ReactionDetails(ctx context.Context, change events.ReactionChan
 	return mergedReactionDetails(ctx, doer, state, change)
 }
 
-// Close permanently closes this Client and its owned session.
-func (c *Client) Close() error {
-	if c == nil {
-		return nil
-	}
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return nil
-	}
-	c.closed = true
-	session, cleanup, checkpoint, lease := c.session, c.cleanupSession, c.checkpoint, c.lease
-	if c.connectActive || c.commitActive > 0 {
-		c.mu.Unlock()
-		if session != nil {
-			err := session.Close()
-			if cleanup != nil && cleanup != session {
-				err = errors.Join(err, cleanup.Close())
-			}
-			return err
-		}
-		return nil
-	}
-	c.mu.Unlock()
-	var err error
-	if session != nil {
-		err = session.Close()
-	}
-	if cleanup != nil && cleanup != session {
-		err = errors.Join(err, cleanup.Close())
-	}
-	if session != nil && checkpoint != nil {
-		err = errors.Join(err, checkpoint.MarkClean())
-	}
-	if lease != nil {
-		err = errors.Join(err, lease.Close())
-	}
-	return err
-}
-
 // Shutdown marks the Client closed, interrupts its Session without holding
 // Client.mu, and joins in-flight connect, commit and event-decoder work before
 // releasing checkpoint and profile ownership. A deadline leaves ownership

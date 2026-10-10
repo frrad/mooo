@@ -4,10 +4,12 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/buildinfo"
@@ -127,6 +129,19 @@ func presentAbsent(present bool) string {
 func usageError(stderr io.Writer) int {
 	_, _ = io.WriteString(stderr, "invalid command; run `mooo-lab --help` for usage\n")
 	return 2
+}
+
+// profileShutdownTimeout bounds how long a command waits for an opened
+// profile's in-flight connect and session work to join before giving up. A
+// timed-out shutdown leaves the profile lease held and reports cleanup failure.
+const profileShutdownTimeout = 10 * time.Second
+
+// shutdownProfile shuts an opened profile client down on its own deadline, so
+// cleanup still runs after the command's operation context has expired.
+func shutdownProfile(c interface{ Shutdown(context.Context) error }) error {
+	ctx, cancel := context.WithTimeout(context.Background(), profileShutdownTimeout)
+	defer cancel()
+	return c.Shutdown(ctx)
 }
 
 func commandError(stderr io.Writer, message string) int {

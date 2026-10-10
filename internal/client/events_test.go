@@ -314,7 +314,7 @@ func TestRawPushConsumerLeavesTerminalShutdownToCaller(t *testing.T) {
 	if session.closed {
 		t.Fatal("raw Pushes unexpectedly closed Session on terminal packet")
 	}
-	if err := api.Close(); err != nil {
+	if err := api.Shutdown(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 }

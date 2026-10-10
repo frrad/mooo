@@ -99,7 +99,7 @@ exponential backoff between failed auth attempts, no rapid reconnects after
 - A reconnect supervisor that owns the lifecycle the carriage layer does
   not: it observes session end, consults the `sessionlogin` recovery
   reducer, waits out the backoff, and establishes a new session with the
-  same profile lease and checkpoint. `Client.Close` stays terminal; the
+  same profile lease and checkpoint. `Client.Shutdown` stays terminal; the
   supervisor either reuses the `Client` with a new session or opens a new
   one, but never runs two sessions for one profile.
 - Keep-alive `PING` at the official interval, with the official receive
