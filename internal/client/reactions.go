@@ -6,39 +6,39 @@ import (
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/protocol/events"
-	"github.com/frrad/mooo/internal/protocol/friends"
+	"github.com/frrad/mooo/internal/protocol/macweb"
 	"github.com/frrad/mooo/internal/protocol/reactions"
 )
 
-func sendReaction(ctx context.Context, doer friends.Doer, state authstate.State, request reactions.Request) (reactions.Response, error) {
-	profile, err := reactionProfile(state)
+func sendReaction(ctx context.Context, doer macweb.Doer, state authstate.State, request reactions.Request) (reactions.Response, error) {
+	profile, err := webProfile(state)
 	if err != nil {
 		return reactions.Response{}, err
 	}
 	return reactions.Send(ctx, doer, profile, request)
 }
 
-func reactionMembers(ctx context.Context, doer friends.Doer, state authstate.State, chatID, logID int64) (reactions.MembersResponse, error) {
-	profile, err := reactionProfile(state)
+func reactionMembers(ctx context.Context, doer macweb.Doer, state authstate.State, chatID, logID int64) (reactions.MembersResponse, error) {
+	profile, err := webProfile(state)
 	if err != nil {
 		return reactions.MembersResponse{}, err
 	}
 	return reactions.FetchMembers(ctx, doer, profile, chatID, logID)
 }
 
-func miniReactionDetails(ctx context.Context, doer friends.Doer, state authstate.State, chatID, linkID, logID int64) (reactions.DetailsResponse, error) {
-	profile, err := reactionProfile(state)
+func miniReactionDetails(ctx context.Context, doer macweb.Doer, state authstate.State, chatID, linkID, logID int64) (reactions.DetailsResponse, error) {
+	profile, err := webProfile(state)
 	if err != nil {
 		return reactions.DetailsResponse{}, err
 	}
 	return reactions.FetchDetails(ctx, doer, profile, chatID, linkID, logID)
 }
 
-func mergedReactionDetails(ctx context.Context, doer friends.Doer, state authstate.State, change events.ReactionChanged) ([]reactions.Detail, error) {
+func mergedReactionDetails(ctx context.Context, doer macweb.Doer, state authstate.State, change events.ReactionChanged) ([]reactions.Detail, error) {
 	if ctx == nil || change.ChatID <= 0 || change.LinkID < 0 || change.LogID <= 0 {
 		return nil, ErrProtocol
 	}
-	profile, err := reactionProfile(state)
+	profile, err := webProfile(state)
 	if err != nil {
 		return nil, err
 	}
@@ -82,15 +82,17 @@ func mergedReactionDetails(ctx context.Context, doer friends.Doer, state authsta
 	return reactions.MergeDetails(members, mini), nil
 }
 
-func reactionProfile(state authstate.State) (reactions.ClientProfile, error) {
+// webProfile is the authenticated Mac web API profile for every HTTP endpoint
+// the client calls.
+func webProfile(state authstate.State) (macweb.Profile, error) {
 	if state.Credentials == nil {
-		return reactions.ClientProfile{}, ErrCredentialsAbsent
+		return macweb.Profile{}, ErrCredentialsAbsent
 	}
 	wireUUID, err := state.Identity.WireDeviceUUID()
 	if err != nil {
-		return reactions.ClientProfile{}, ErrBootstrap
+		return macweb.Profile{}, ErrBootstrap
 	}
-	return reactions.ClientProfile{
+	return macweb.Profile{
 		AppVersion: state.Identity.Metadata.AppVersion, OSVersion: state.Identity.Metadata.OSVersion,
 		Language: "en", UserID: state.Credentials.UserID,
 		AccessToken: state.Credentials.AccessToken, DeviceUUID: wireUUID,

@@ -22,6 +22,7 @@ import (
 	"maunium.net/go/mautrix/id"
 
 	"github.com/frrad/mooo/internal/protocol/events"
+	"github.com/frrad/mooo/internal/protocol/macweb"
 	"github.com/frrad/mooo/internal/protocol/reactions"
 )
 
@@ -799,7 +800,7 @@ func TestMatrixReactionMutationErrorCategoriesAreRedacted(t *testing.T) {
 		contextErr error
 	}{
 		{name: "transport", cause: errors.New(secret), category: reactions.ErrOutcomeUnknown},
-		{name: "wrapped transport", cause: fmt.Errorf("%w: %s", reactions.ErrTransport, secret), category: reactions.ErrOutcomeUnknown, reason: reactions.ErrTransport},
+		{name: "wrapped transport", cause: fmt.Errorf("%w: %s", macweb.ErrTransport, secret), category: reactions.ErrOutcomeUnknown, reason: macweb.ErrTransport},
 		{name: "rejected", cause: reactions.ErrRejected, category: reactions.ErrOutcomeUnconfirmed, reason: reactions.ErrRejected},
 		{name: "wrapped rejected", cause: fmt.Errorf("%w: %s", reactions.ErrRejected, secret), category: reactions.ErrOutcomeUnconfirmed, reason: reactions.ErrRejected},
 		{name: "malformed", cause: reactions.ErrInvalidResponse, category: reactions.ErrOutcomeUnknown, reason: reactions.ErrInvalidResponse},
@@ -875,7 +876,7 @@ func TestMatrixReactionRemoveMutationCategoriesAreSingleAttempt(t *testing.T) {
 		category error
 		reason   error
 	}{
-		{name: "transport", cause: fmt.Errorf("%w: dropped", reactions.ErrTransport), category: reactions.ErrOutcomeUnknown, reason: reactions.ErrTransport},
+		{name: "transport", cause: fmt.Errorf("%w: dropped", macweb.ErrTransport), category: reactions.ErrOutcomeUnknown, reason: macweb.ErrTransport},
 		{name: "rejected", cause: reactions.ErrRejected, category: reactions.ErrOutcomeUnconfirmed, reason: reactions.ErrRejected},
 		{name: "canceled", cause: context.Canceled, category: reactions.ErrOutcomeUnknown, reason: context.Canceled},
 	}

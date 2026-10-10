@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/frrad/mooo/internal/protocol/macweb"
 )
 
 const (
@@ -20,23 +21,10 @@ const (
 )
 
 var (
-	ErrInvalidRequest       = errors.New("tokenrefresh: invalid request")
-	ErrUnexpectedHTTPStatus = errors.New("tokenrefresh: unexpected HTTP status")
-	ErrInvalidResponse      = errors.New("tokenrefresh: invalid response")
-	ErrRejected             = errors.New("tokenrefresh: rejected")
+	ErrInvalidRequest  = errors.New("tokenrefresh: invalid request")
+	ErrInvalidResponse = errors.New("tokenrefresh: invalid response")
+	ErrRejected        = errors.New("tokenrefresh: rejected")
 )
-
-type Doer interface {
-	Do(*http.Request) (*http.Response, error)
-}
-
-type ClientProfile struct {
-	AppVersion  string
-	OSVersion   string
-	Language    string
-	AccessToken string
-	DeviceUUID  string
-}
 
 type Request struct {
 	RefreshToken string
@@ -52,8 +40,8 @@ type Rotation struct {
 func (Rotation) String() string     { return "[redacted token rotation]" }
 func (r Rotation) GoString() string { return r.String() }
 
-func NewHTTPRequest(ctx context.Context, profile ClientProfile, request Request) (*http.Request, error) {
-	if ctx == nil || !validProfile(profile) || !validSecret(request.RefreshToken) {
+func NewHTTPRequest(ctx context.Context, profile macweb.Profile, request Request) (*http.Request, error) {
+	if ctx == nil || profile.Validate(true) != nil || !validSecret(request.RefreshToken) {
 		return nil, ErrInvalidRequest
 	}
 	form := url.Values{
@@ -64,15 +52,15 @@ func NewHTTPRequest(ctx context.Context, profile ClientProfile, request Request)
 	if err != nil {
 		return nil, ErrInvalidRequest
 	}
-	req.Header.Set("A", "mac/"+profile.AppVersion+"/"+profile.Language)
-	req.Header.Set("Accept-Language", profile.Language)
-	req.Header.Set("User-Agent", "KT/"+profile.AppVersion+" Mc/"+profile.OSVersion+" "+profile.Language)
-	req.Header.Set("Authorization", profile.AccessToken+"-"+profile.DeviceUUID)
+	macweb.ApplyHeaders(req, profile, true)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
 	return req, nil
 }
 
-func Execute(ctx context.Context, doer Doer, profile ClientProfile, request Request) (Rotation, error) {
+// Execute sends one renewal request. Any 2xx status is decoded; a non-2xx
+// status returns a *macweb.StatusError and a transport failure wraps
+// macweb.ErrTransport.
+func Execute(ctx context.Context, doer macweb.Doer, profile macweb.Profile, request Request) (Rotation, error) {
 	if doer == nil {
 		return Rotation{}, ErrInvalidRequest
 	}
@@ -80,32 +68,19 @@ func Execute(ctx context.Context, doer Doer, profile ClientProfile, request Requ
 	if err != nil {
 		return Rotation{}, err
 	}
-	response, err := doer.Do(req)
+	body, err := macweb.Do(doer, req, maxBody)
+	if errors.Is(err, macweb.ErrResponseTooLarge) || errors.Is(err, macweb.ErrInvalidResponse) {
+		return Rotation{}, fmt.Errorf("%w: %w", ErrInvalidResponse, err)
+	}
 	if err != nil {
 		return Rotation{}, err
-	}
-	if response == nil || response.Body == nil {
-		return Rotation{}, ErrInvalidResponse
-	}
-	defer func() { _ = response.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxBody+1))
-	if err != nil || len(body) > maxBody {
-		return Rotation{}, ErrInvalidResponse
-	}
-	if response.StatusCode != http.StatusOK {
-		return Rotation{}, fmt.Errorf("%w: %d", ErrUnexpectedHTTPStatus, response.StatusCode)
 	}
 	return DecodeResponse(body)
 }
 
 func DecodeResponse(body []byte) (Rotation, error) {
 	var object map[string]json.RawMessage
-	decoder := json.NewDecoder(strings.NewReader(string(body)))
-	if err := decoder.Decode(&object); err != nil || object == nil {
-		return Rotation{}, ErrInvalidResponse
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+	if err := macweb.DecodeJSONObject(body, &object); err != nil {
 		return Rotation{}, ErrInvalidResponse
 	}
 	if raw, ok := object["status"]; ok {
@@ -128,15 +103,6 @@ func DecodeResponse(body []byte) (Rotation, error) {
 		}
 	}
 	return rotation, nil
-}
-
-func validProfile(profile ClientProfile) bool {
-	for _, value := range []string{profile.AppVersion, profile.OSVersion, profile.Language, profile.AccessToken, profile.DeviceUUID} {
-		if !validSecret(value) {
-			return false
-		}
-	}
-	return true
 }
 
 func validSecret(value string) bool {

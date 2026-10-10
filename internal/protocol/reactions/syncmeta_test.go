@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"testing"
+
+	"github.com/frrad/mooo/internal/protocol/macweb"
 )
 
 type syncMetaDoer struct {
@@ -36,7 +38,7 @@ func observedSyncMetaPage(t *testing.T) []byte {
 }
 
 func TestFetchSyncMetaRequestAndObservedPage(t *testing.T) {
-	profile := ClientProfile{AppVersion: "26.8.0", OSVersion: "15.0", Language: "en", UserID: 7, AccessToken: "token", DeviceUUID: "device"}
+	profile := macweb.Profile{AppVersion: "26.8.0", OSVersion: "15.0", Language: "en", UserID: 7, AccessToken: "token", DeviceUUID: "device"}
 	doer := &syncMetaDoer{status: http.StatusOK, body: observedSyncMetaPage(t)}
 	page, err := FetchSyncMeta(t.Context(), doer, profile, 3000, 3948377092013952281)
 	if err != nil {
@@ -54,7 +56,7 @@ func TestFetchSyncMetaRequestAndObservedPage(t *testing.T) {
 }
 
 func TestFetchSyncMetaRejectsMissingContentAndHTTPFailure(t *testing.T) {
-	profile := ClientProfile{AppVersion: "26.8.0", OSVersion: "15.0", Language: "en", UserID: 7, AccessToken: "token", DeviceUUID: "device"}
+	profile := macweb.Profile{AppVersion: "26.8.0", OSVersion: "15.0", Language: "en", UserID: 7, AccessToken: "token", DeviceUUID: "device"}
 	for name, doer := range map[string]*syncMetaDoer{
 		"no content": {status: http.StatusOK, body: []byte(`{"last":true}`)},
 		"http 400":   {status: http.StatusBadRequest, body: []byte(`{"status":400}`)},

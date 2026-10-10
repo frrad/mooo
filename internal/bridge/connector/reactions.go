@@ -17,6 +17,7 @@ import (
 	"maunium.net/go/mautrix/event"
 
 	"github.com/frrad/mooo/internal/protocol/events"
+	"github.com/frrad/mooo/internal/protocol/macweb"
 	"github.com/frrad/mooo/internal/protocol/reactions"
 )
 
@@ -266,8 +267,8 @@ func classifyReactionFailure(base, cause error) error {
 		reason = reactions.ErrRejected
 	} else if errors.Is(cause, reactions.ErrInvalidResponse) {
 		reason = reactions.ErrInvalidResponse
-	} else if errors.Is(cause, reactions.ErrTransport) {
-		reason = reactions.ErrTransport
+	} else if errors.Is(cause, macweb.ErrTransport) {
+		reason = macweb.ErrTransport
 	}
 	if errors.Is(cause, context.Canceled) {
 		reason = context.Canceled
@@ -291,8 +292,8 @@ func classifyReactionLookup(cause error) error {
 	if errors.Is(cause, context.DeadlineExceeded) {
 		return fmt.Errorf("%w: %w: %w", errReactionLookup, reactions.ErrLookupFailed, context.DeadlineExceeded)
 	}
-	if errors.Is(cause, reactions.ErrTransport) {
-		return fmt.Errorf("%w: %w: %w", errReactionLookup, reactions.ErrLookupFailed, reactions.ErrTransport)
+	if errors.Is(cause, macweb.ErrTransport) {
+		return fmt.Errorf("%w: %w: %w", errReactionLookup, reactions.ErrLookupFailed, macweb.ErrTransport)
 	}
 	if errors.Is(cause, reactions.ErrInvalidResponse) {
 		return fmt.Errorf("%w: %w: %w", errReactionLookup, reactions.ErrLookupFailed, reactions.ErrInvalidResponse)
