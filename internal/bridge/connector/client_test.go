@@ -67,6 +67,9 @@ type fakeKakao struct {
 	imageData         []byte
 	imageCaption      string
 	imageCalls        int
+	uploads           []media.Upload
+	uploadResp        media.SendResult
+	uploadErr         error
 	closeCalls        int
 	shutdownCalls     int
 	shutdownFailures  int

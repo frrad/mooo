@@ -603,6 +603,15 @@ func (c *Client) SendImage(ctx context.Context, chatID int64, data []byte, capti
 	return session.SendImage(ctx, chatID, data, caption)
 }
 
+// SendUpload sends one prepared file or video through the current session.
+func (c *Client) SendUpload(ctx context.Context, chatID int64, upload media.Upload) (media.SendResult, error) {
+	session, err := c.ensureSession(ctx)
+	if err != nil {
+		return media.SendResult{}, err
+	}
+	return session.SendUpload(ctx, chatID, upload)
+}
+
 // AddFriendByPhone performs the authenticated HTTP mutation without changing
 // the LOCO session lifecycle.
 func (c *Client) AddFriendByPhone(ctx context.Context, request friends.AddByPhoneRequest) (friends.Friend, error) {

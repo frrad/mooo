@@ -25,6 +25,33 @@ func (s *Session) SendImage(ctx context.Context, chatID int64, data []byte, capt
 	if err != nil {
 		return media.SendResult{}, err
 	}
+	return s.trailerUpload(ctx, shipBody, image.Data, func(key string) ([]byte, error) {
+		return (media.PostRequest{
+			UserID: s.userID, Key: key, ChatID: chatID, Image: image, Comment: caption,
+			AppVersion: s.appVersion, MediaID: time.Now().UnixMilli(),
+		}).MarshalBSON()
+	})
+}
+
+// SendUpload uploads one prepared file or video with the same single-attempt
+// SHIP, POST, stream and COMPLETE sequence as a photo.
+func (s *Session) SendUpload(ctx context.Context, chatID int64, upload media.Upload) (media.SendResult, error) {
+	shipBody, err := (media.UploadShipRequest{ChatID: chatID, Upload: upload}).MarshalBSON()
+	if err != nil {
+		return media.SendResult{}, err
+	}
+	if s == nil || ctx == nil {
+		return media.SendResult{}, ErrProtocol
+	}
+	return s.trailerUpload(ctx, shipBody, upload.Data, func(key string) ([]byte, error) {
+		return (media.UploadPostRequest{
+			UserID: s.userID, Key: key, ChatID: chatID, Upload: upload,
+			AppVersion: s.appVersion, MediaID: time.Now().UnixMilli(),
+		}).MarshalBSON()
+	})
+}
+
+func (s *Session) trailerUpload(ctx context.Context, shipBody, data []byte, post func(key string) ([]byte, error)) (media.SendResult, error) {
 	shipPacket, err := s.Request(ctx, media.ShipCommand, shipBody)
 	if err != nil {
 		return media.SendResult{}, err
@@ -52,10 +79,7 @@ func (s *Session) SendImage(ctx context.Context, chatID int64, data []byte, capt
 	} else {
 		_ = upload.c.SetDeadline(time.Now().Add(60 * time.Second))
 	}
-	postBody, err := (media.PostRequest{
-		UserID: s.userID, Key: ship.Key, ChatID: chatID, Image: image, Comment: caption,
-		AppVersion: s.appVersion, MediaID: time.Now().UnixMilli(),
-	}).MarshalBSON()
+	postBody, err := post(ship.Key)
 	if err != nil {
 		return media.SendResult{}, err
 	}
@@ -70,12 +94,12 @@ func (s *Session) SendImage(ctx context.Context, chatID int64, data []byte, capt
 	if status != 0 {
 		return media.SendResult{}, StatusError{Command: media.PostCommand, Status: status}
 	}
-	offset, err := media.DecodePostOffset(postPacket.Body, len(image.Data))
+	offset, err := media.DecodePostOffset(postPacket.Body, len(data))
 	if err != nil {
 		return media.SendResult{}, err
 	}
-	if offset < len(image.Data) {
-		encrypted, err := upload.secure.Encrypt(image.Data[offset:])
+	if offset < len(data) {
+		encrypted, err := upload.secure.Encrypt(data[offset:])
 		if err != nil {
 			return media.SendResult{}, fmt.Errorf("client: media encrypt: %w", err)
 		}

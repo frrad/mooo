@@ -229,7 +229,7 @@ func (r *countingReader) Read(dst []byte) (int, error) {
 
 func TestReadBoundedMatrixImageStopsAtLimitPlusOne(t *testing.T) {
 	reader := &countingReader{remaining: media.MaxImageBytes + 1024}
-	data, err := readBoundedMatrixImage(reader, io.NopCloser(strings.NewReader("")))
+	data, err := readBoundedMatrixMedia(reader, io.NopCloser(strings.NewReader("")), media.MaxImageBytes)
 	if err == nil || data != nil || reader.reads > media.MaxImageBytes+1 {
 		t.Fatalf("bounded read data=%d err=%v read=%d", len(data), err, reader.reads)
 	}
