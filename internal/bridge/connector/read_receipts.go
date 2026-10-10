@@ -101,8 +101,7 @@ func (kc *KakaoClient) readReceiptTarget(ctx context.Context, chatID, watermark 
 // not re-sent; a failed one is reported without retrying, matching the shared
 // request path.
 func (kc *KakaoClient) HandleMatrixReadReceipt(ctx context.Context, receipt *bridgev2.MatrixReadReceipt) error {
-	kc.groupGate.Lock()
-	defer kc.groupGate.Unlock()
+	// See HandleMatrixMessage: no connector gate under the portal event lock.
 	if receipt == nil || receipt.Portal == nil || receipt.Portal.Portal == nil {
 		return nil
 	}

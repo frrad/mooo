@@ -136,6 +136,8 @@ type KakaoClient struct {
 	// replaced in tests.
 	queue     func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult
 	sendState func(status.BridgeState)
+	// reserveOutbound defaults to the bridge's durable store.
+	reserveOutbound func(context.Context, id.EventID) (bool, error)
 
 	groupGate      sync.Mutex
 	displayGate    sync.Mutex
@@ -190,6 +192,7 @@ func newKakaoClient(login *bridgev2.UserLogin, userID int64, open func() (kakaoC
 		reactionNotices:   make(map[string]time.Time),
 	}
 	kc.wait = waitForRecovery
+	kc.reserveOutbound = kc.reserveOutboundKV
 	kc.sendState = func(state status.BridgeState) { kc.stateQueue().Send(state) }
 	return kc
 }
@@ -1371,8 +1374,10 @@ var matrixImageDownloader = downloadMatrixImageBounded
 // HandleMatrixMessage sends one plain text message. A failed or ambiguous
 // send is reported to Matrix and never retried.
 func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.MatrixMessage) (*bridgev2.MatrixMessageResponse, error) {
-	kc.groupGate.Lock()
-	defer kc.groupGate.Unlock()
+	// No connector gate here: the SDK calls this while holding the portal's
+	// event lock, and the Kakao pump holds the gate while queueing into that
+	// portal. Source blocks are set in memory before they are persisted, so
+	// checkSourceAccess remains the authority.
 	if msg == nil || msg.Portal == nil || msg.Content == nil {
 		return nil, errSourceAccessRemoved
 	}
@@ -1411,6 +1416,9 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		if !ok {
 			return nil, bridgev2.ErrFailedToGetIntent
 		}
+		if err := kc.beginOutbound(ctx, msg); err != nil {
+			return nil, err
+		}
 		return kc.sendMatrixImage(ctx, c, intent, chatID, msg.Content.URL, msg.Content.File)
 	}
 	body := msg.Content.Body
@@ -1423,11 +1431,17 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		if err != nil {
 			return nil, err
 		}
+		if err := kc.beginOutbound(ctx, msg); err != nil {
+			return nil, err
+		}
 		response, err = c.SendReply(ctx, chat.ReplyRequest{ChatID: chatID, Message: body, Target: target})
 		if err != nil {
 			return nil, outboundSendError(err)
 		}
 	} else {
+		if err := kc.beginOutbound(ctx, msg); err != nil {
+			return nil, err
+		}
 		response, err = c.SendText(ctx, chatID, body)
 		if err != nil {
 			return nil, outboundSendError(err)

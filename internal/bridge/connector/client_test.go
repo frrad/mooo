@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
@@ -336,6 +338,18 @@ func newTestClient(t *testing.T, open func() (kakaoClient, error)) (*KakaoClient
 	harness := &testHarness{}
 	kc.queue = harness.queue
 	kc.sendState = harness.sendState
+	// This client has no bridge database; keep reservations in memory.
+	var reservedMu sync.Mutex
+	reserved := map[id.EventID]bool{}
+	kc.reserveOutbound = func(_ context.Context, eventID id.EventID) (bool, error) {
+		reservedMu.Lock()
+		defer reservedMu.Unlock()
+		if reserved[eventID] {
+			return false, nil
+		}
+		reserved[eventID] = true
+		return true, nil
+	}
 	return kc, harness
 }
 
@@ -1152,8 +1166,11 @@ func connectedClient(t *testing.T, fake *fakeKakao) *KakaoClient {
 	return kc
 }
 
+var matrixMessageSeq atomic.Int64
+
 func matrixMessage(msgType event.MessageType, body string) *bridgev2.MatrixMessage {
 	msg := &bridgev2.MatrixMessage{}
+	msg.Event = &event.Event{ID: id.EventID(fmt.Sprintf("$synthetic-%d", matrixMessageSeq.Add(1)))}
 	msg.Content = &event.MessageEventContent{MsgType: msgType, Body: body}
 	msg.Portal = &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, "1000")}}
 	return msg
