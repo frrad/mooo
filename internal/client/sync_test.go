@@ -302,7 +302,7 @@ func testContinuityClient(t *testing.T, checkpoint *continuity.Store, backend *s
 	api.dial = func(context.Context, authstate.State) (*Session, error) {
 		session := &Session{
 			wire: backend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
-			pending: make(map[uint32]chan requestResult),
+			pending: make(map[uint32]pendingRequest),
 		}
 		go session.readLoop()
 		return session, nil
