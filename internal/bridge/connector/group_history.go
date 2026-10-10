@@ -2,7 +2,6 @@ package connector
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -271,37 +270,35 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 }
 
 func (kc *KakaoClient) loadGroupHistory(ctx context.Context, key string) (groupHistoryProgress, bool, error) {
-	var raw string
-	db := kc.login.Bridge.DB.KV
-	err := db.QueryRow(ctx, "SELECT value FROM kv_store WHERE bridge_id=$1 AND key=$2", db.BridgeID, key).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return groupHistoryProgress{}, false, nil
-	}
-	if err != nil {
+	raw, found, err := newKVStore(kc.login.Bridge.DB.KV).get(ctx, key)
+	if err != nil || !found {
 		return groupHistoryProgress{}, false, err
 	}
 	var p groupHistoryProgress
-	if len(raw) > 4096 || json.Unmarshal([]byte(raw), &p) != nil || p.After < 0 || p.Through < p.After || p.Remaining < 0 || p.Remaining > 1000 || p.Attempts < 0 || p.Done != (p.After == p.Through) {
-		return p, false, errors.New("connector: history journal is invalid")
+	if len(raw) > 4096 || json.Unmarshal([]byte(raw), &p) != nil || !p.valid() {
+		return p, false, errGroupHistoryInvalid
 	}
 	return p, true, nil
 }
+
+var errGroupHistoryInvalid = errors.New("connector: history journal is invalid")
+
+func (p groupHistoryProgress) valid() bool {
+	return p.After >= 0 && p.Through >= p.After && p.Remaining >= 0 && p.Remaining <= 1000 && p.Attempts >= 0 && p.Done == (p.After == p.Through)
+}
+
+// saveGroupHistory persists p durably. An out-of-range p is still written, as
+// a later load must refuse it, and the save reports the journal invalid.
 func (kc *KakaoClient) saveGroupHistory(ctx context.Context, key string, p groupHistoryProgress) error {
 	b, err := json.Marshal(p)
 	if err != nil {
 		return err
 	}
-	db := kc.login.Bridge.DB.KV
-	_, err = db.Exec(ctx, "INSERT INTO kv_store (bridge_id,key,value) VALUES ($1,$2,$3) ON CONFLICT (bridge_id,key) DO UPDATE SET value=excluded.value", db.BridgeID, key, string(b))
-	if err != nil {
+	if err = newKVStore(kc.login.Bridge.DB.KV).put(ctx, key, string(b)); err != nil {
 		return err
 	}
-	got, found, err := kc.loadGroupHistory(ctx, key)
-	if err != nil {
-		return err
-	}
-	if !found || got != p {
-		return errors.New("connector: history progress was not durable")
+	if len(b) > 4096 || !p.valid() {
+		return errGroupHistoryInvalid
 	}
 	return nil
 }
