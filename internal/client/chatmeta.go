@@ -10,15 +10,7 @@ import (
 // and does not follow a positive LinkID with INFOLINK: OpenChat link
 // resolution is left to the caller.
 func (s *Session) ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error) {
-	body, err := chatmeta.ChatInfoRequest{ChatID: chatID}.MarshalBSON()
-	if err != nil {
-		return chatmeta.ChatInfoResponse{}, err
-	}
-	reply, err := s.Request(ctx, chatmeta.ChatInfoCommand, body)
-	if err != nil {
-		return chatmeta.ChatInfoResponse{}, err
-	}
-	return chatmeta.DecodeChatInfoResponse(reply.Body)
+	return call(s, ctx, chatmeta.ChatInfoCommand, chatmeta.ChatInfoRequest{ChatID: chatID}, chatmeta.DecodeChatInfoResponse)
 }
 
 // Members resolves member profiles with MEMBER, following the official
@@ -44,15 +36,7 @@ func (s *Session) Members(ctx context.Context, chatID int64, userIDs []int64) ([
 	for len(ids) > 0 {
 		batch := ids[:min(len(ids), chatmeta.MaxMemberBatch)]
 		ids = ids[len(batch):]
-		body, err := chatmeta.MemberRequest{ChatID: chatID, MemberIDs: batch}.MarshalBSON()
-		if err != nil {
-			return members, err
-		}
-		reply, err := s.Request(ctx, chatmeta.MemberCommand, body)
-		if err != nil {
-			return members, err
-		}
-		response, err := chatmeta.DecodeMemberResponse(reply.Body)
+		response, err := call(s, ctx, chatmeta.MemberCommand, chatmeta.MemberRequest{ChatID: chatID, MemberIDs: batch}, chatmeta.DecodeMemberResponse)
 		if err != nil {
 			return members, err
 		}
@@ -67,63 +51,40 @@ func (s *Session) Members(ctx context.Context, chatID int64, userIDs []int64) ([
 // MemberList refreshes a room's member-ID roster with MEMLIST. The official
 // client issues it only from member-list UI; it sends exactly once.
 func (s *Session) MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error) {
-	body, err := chatmeta.MemberListRequest{ChatID: chatID, Token: token}.MarshalBSON()
-	if err != nil {
-		return chatmeta.MemberListResponse{}, err
-	}
-	reply, err := s.Request(ctx, chatmeta.MemberListCommand, body)
-	if err != nil {
-		return chatmeta.MemberListResponse{}, err
-	}
-	return chatmeta.DecodeMemberListResponse(reply.Body)
+	return call(s, ctx, chatmeta.MemberListCommand, chatmeta.MemberListRequest{ChatID: chatID, Token: token}, chatmeta.DecodeMemberListResponse)
 }
 
 // ChatInfo lazily connects once, then fetches one room's chat data.
 func (c *Client) ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error) {
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return chatmeta.ChatInfoResponse{}, err
-	}
-	return session.ChatInfo(ctx, chatID)
+	return withSession(c, ctx, func(session *Session) (chatmeta.ChatInfoResponse, error) {
+		return session.ChatInfo(ctx, chatID)
+	})
 }
 
 // Members lazily connects once, then resolves member profiles in batches
 // without retrying a failed batch.
 func (c *Client) Members(ctx context.Context, chatID int64, userIDs []int64) ([]chatmeta.Member, error) {
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return session.Members(ctx, chatID, userIDs)
+	return withSession(c, ctx, func(session *Session) ([]chatmeta.Member, error) {
+		return session.Members(ctx, chatID, userIDs)
+	})
 }
 
 // MemberList lazily connects once, then refreshes a room's member-ID roster.
 func (c *Client) MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error) {
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return chatmeta.MemberListResponse{}, err
-	}
-	return session.MemberList(ctx, chatID, token)
+	return withSession(c, ctx, func(session *Session) (chatmeta.MemberListResponse, error) {
+		return session.MemberList(ctx, chatID, token)
+	})
 }
 
 // MoimMeta fetches the current Boards announcement, independently of CHATINFO.
 func (s *Session) MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error) {
-	body, err := (chatmeta.MoimRequest{ChatID: chatID}).MarshalBSON()
-	if err != nil {
-		return chatmeta.MoimResponse{}, err
-	}
-	reply, err := s.Request(ctx, chatmeta.GetMoimMetaCommand, body)
-	if err != nil {
-		return chatmeta.MoimResponse{}, err
-	}
-	return chatmeta.DecodeMoimResponse(reply.Body)
+	return call(s, ctx, chatmeta.GetMoimMetaCommand, chatmeta.MoimRequest{ChatID: chatID}, chatmeta.DecodeMoimResponse)
 }
+
 func (c *Client) MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error) {
-	s, err := c.ensureSession(ctx)
-	if err != nil {
-		return chatmeta.MoimResponse{}, err
-	}
-	return s.MoimMeta(ctx, chatID)
+	return withSession(c, ctx, func(session *Session) (chatmeta.MoimResponse, error) {
+		return session.MoimMeta(ctx, chatID)
+	})
 }
 
 // PersonalMeta reads the account-wide personal settings once and selects only
@@ -132,15 +93,7 @@ func (s *Session) PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.Roo
 	if chatID <= 0 {
 		return nil, chatmeta.ErrInvalidRequest
 	}
-	body, err := (chatmeta.PersonalMetaRequest{}).MarshalBSON()
-	if err != nil {
-		return nil, err
-	}
-	reply, err := s.Request(ctx, chatmeta.PersonalMetaCommand, body)
-	if err != nil {
-		return nil, err
-	}
-	response, err := chatmeta.DecodePersonalMetaResponse(reply.Body)
+	response, err := call(s, ctx, chatmeta.PersonalMetaCommand, chatmeta.PersonalMetaRequest{}, chatmeta.DecodePersonalMetaResponse)
 	if err != nil {
 		return nil, err
 	}
@@ -155,31 +108,19 @@ func (c *Client) PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.Room
 	if chatID <= 0 {
 		return nil, chatmeta.ErrInvalidRequest
 	}
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return session.PersonalMeta(ctx, chatID)
+	return withSession(c, ctx, func(session *Session) (*chatmeta.RoomMeta, error) {
+		return session.PersonalMeta(ctx, chatID)
+	})
 }
 
 // ChatOnRoom sends one CHATONROOM for a chat and returns its member read
 // watermarks. It sends no read acknowledgement of its own.
 func (s *Session) ChatOnRoom(ctx context.Context, chatID int64) (chatmeta.ChatOnRoomResponse, error) {
-	body, err := (chatmeta.ChatOnRoomRequest{ChatID: chatID}).MarshalBSON()
-	if err != nil {
-		return chatmeta.ChatOnRoomResponse{}, err
-	}
-	reply, err := s.Request(ctx, chatmeta.ChatOnRoomCommand, body)
-	if err != nil {
-		return chatmeta.ChatOnRoomResponse{}, err
-	}
-	return chatmeta.DecodeChatOnRoomResponse(reply.Body)
+	return call(s, ctx, chatmeta.ChatOnRoomCommand, chatmeta.ChatOnRoomRequest{ChatID: chatID}, chatmeta.DecodeChatOnRoomResponse)
 }
 
 func (c *Client) ChatOnRoom(ctx context.Context, chatID int64) (chatmeta.ChatOnRoomResponse, error) {
-	s, err := c.ensureSession(ctx)
-	if err != nil {
-		return chatmeta.ChatOnRoomResponse{}, err
-	}
-	return s.ChatOnRoom(ctx, chatID)
+	return withSession(c, ctx, func(session *Session) (chatmeta.ChatOnRoomResponse, error) {
+		return session.ChatOnRoom(ctx, chatID)
+	})
 }

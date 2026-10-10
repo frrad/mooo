@@ -141,6 +141,17 @@ func (c *Client) Connect(ctx context.Context) error {
 	return err
 }
 
+// withSession lazily establishes the Client's one Session and runs fn on it.
+// Client operations reach the Session only through it.
+func withSession[T any](c *Client, ctx context.Context, fn func(*Session) (T, error)) (T, error) {
+	session, err := c.ensureSession(ctx)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return fn(session)
+}
+
 func (c *Client) ensureSession(ctx context.Context) (*Session, error) {
 	if c == nil || ctx == nil {
 		return nil, ErrProtocol
@@ -256,11 +267,21 @@ func (c *Client) adoptSession(session *Session) (*Session, error) {
 // InitialChatData returns the synchronized login snapshot, connecting once if
 // needed and reusing that connection for later operations.
 func (c *Client) InitialChatData(ctx context.Context) ([]bson.Raw, error) {
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return session.InitialChatData(), nil
+	return withSession(c, ctx, func(session *Session) ([]bson.Raw, error) {
+		return session.InitialChatData(), nil
+	})
+}
+
+// sessionPushes lazily establishes the session and returns its
+// unsolicited-packet stream for Pushes and Events.
+func (c *Client) sessionPushes(ctx context.Context) (<-chan loco.Packet, error) {
+	return withSession(c, ctx, func(session *Session) (<-chan loco.Packet, error) {
+		raw := session.Pushes()
+		if raw == nil {
+			return nil, ErrProtocol
+		}
+		return raw, nil
+	})
 }
 
 // Pushes returns the live unsolicited-packet stream, including MSG events,
@@ -269,13 +290,9 @@ func (c *Client) InitialChatData(ctx context.Context) ([]bson.Raw, error) {
 // receive terminal packets without typed terminal shutdown and must close the
 // client explicitly after applying their own terminal policy.
 func (c *Client) Pushes(ctx context.Context) (<-chan loco.Packet, error) {
-	session, err := c.ensureSession(ctx)
+	raw, err := c.sessionPushes(ctx)
 	if err != nil {
 		return nil, err
-	}
-	raw := session.Pushes()
-	if raw == nil {
-		return nil, ErrProtocol
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -291,13 +308,9 @@ func (c *Client) Pushes(ctx context.Context) (<-chan loco.Packet, error) {
 // Pushes and typed Events are mutually exclusive because each session has one
 // ordered unsolicited-packet consumer.
 func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
-	session, err := c.ensureSession(ctx)
+	raw, err := c.sessionPushes(ctx)
 	if err != nil {
 		return nil, err
-	}
-	raw := session.Pushes()
-	if raw == nil {
-		return nil, ErrProtocol
 	}
 	c.mu.Lock()
 	// ensureSession may have returned immediately before Shutdown marked the
@@ -534,11 +547,9 @@ func (c *Client) queueCommit(chatID, logID int64) {
 // CreateChat uses the client's existing session, or lazily establishes its
 // first one. It does not reconnect or retry after any transport failure.
 func (c *Client) CreateChat(ctx context.Context, request chat.CreateRequest) (chat.CreateResponse, error) {
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return chat.CreateResponse{}, err
-	}
-	return session.CreateChat(ctx, request)
+	return withSession(c, ctx, func(session *Session) (chat.CreateResponse, error) {
+		return session.CreateChat(ctx, request)
+	})
 }
 
 // AddMembers uses the existing profile session and sends the invitation once.
@@ -546,90 +557,80 @@ func (c *Client) AddMembers(ctx context.Context, request chat.AddMembersRequest)
 	if _, err := request.MarshalBSON(); err != nil {
 		return chat.AddMembersResponse{}, err
 	}
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return chat.AddMembersResponse{}, err
-	}
-	return session.AddMembers(ctx, request)
+	return withSession(c, ctx, func(session *Session) (chat.AddMembersResponse, error) {
+		return session.AddMembers(ctx, request)
+	})
 }
 
 // SendText lazily connects once, then sends one text message without retrying
 // an ambiguous transport result.
 func (c *Client) SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error) {
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return chat.WriteResponse{}, err
-	}
-	return session.SendText(ctx, chatID, message)
+	return withSession(c, ctx, func(session *Session) (chat.WriteResponse, error) {
+		return session.SendText(ctx, chatID, message)
+	})
 }
 
 // SendReply lazily connects once, then sends one reply without retrying an
 // ambiguous transport result.
 func (c *Client) SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error) {
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return chat.WriteResponse{}, err
-	}
-	return session.SendReply(ctx, request)
+	return withSession(c, ctx, func(session *Session) (chat.WriteResponse, error) {
+		return session.SendReply(ctx, request)
+	})
 }
 
 // SendImage lazily connects once, then sends one JPEG or PNG without retrying
 // any ambiguous mutation or upload stage.
 func (c *Client) SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error) {
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return media.SendResult{}, err
-	}
-	return session.SendImage(ctx, chatID, data, caption)
+	return withSession(c, ctx, func(session *Session) (media.SendResult, error) {
+		return session.SendImage(ctx, chatID, data, caption)
+	})
 }
 
 // SendUpload sends one prepared file or video through the current session.
 func (c *Client) SendUpload(ctx context.Context, chatID int64, upload media.Upload) (media.SendResult, error) {
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return media.SendResult{}, err
-	}
-	return session.SendUpload(ctx, chatID, upload)
+	return withSession(c, ctx, func(session *Session) (media.SendResult, error) {
+		return session.SendUpload(ctx, chatID, upload)
+	})
 }
 
 // SendAlbum sends 2 to 30 photos as one album through the current session.
 func (c *Client) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, caption string) (chat.WriteResponse, error) {
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return chat.WriteResponse{}, err
+	return withSession(c, ctx, func(session *Session) (chat.WriteResponse, error) {
+		return session.SendAlbum(ctx, chatID, photos, caption)
+	})
+}
+
+// httpProfile admits one authenticated HTTP call: it rejects a nil Client or
+// Context and a closed Client, then snapshots the state and HTTP doer.
+func (c *Client) httpProfile(ctx context.Context) (macweb.Doer, authstate.State, error) {
+	if c == nil || ctx == nil {
+		return nil, authstate.State{}, ErrProtocol
 	}
-	return session.SendAlbum(ctx, chatID, photos, caption)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return nil, authstate.State{}, ErrClientClosed
+	}
+	return c.http, c.state, nil
 }
 
 // AddFriendByPhone performs the authenticated HTTP mutation without changing
 // the LOCO session lifecycle.
 func (c *Client) AddFriendByPhone(ctx context.Context, request friends.AddByPhoneRequest) (friends.Friend, error) {
-	if c == nil || ctx == nil {
-		return friends.Friend{}, ErrProtocol
+	doer, state, err := c.httpProfile(ctx)
+	if err != nil {
+		return friends.Friend{}, err
 	}
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return friends.Friend{}, ErrClientClosed
-	}
-	state, doer := c.state, c.http
-	c.mu.Unlock()
 	return addFriendByPhone(ctx, doer, state, request)
 }
 
 // React applies or cancels one reaction through the authenticated HTTP API.
 // It sends the mutation exactly once and does not require a new LOCO login.
 func (c *Client) React(ctx context.Context, request reactions.Request) (reactions.Response, error) {
-	if c == nil || ctx == nil {
-		return reactions.Response{}, ErrProtocol
+	doer, state, err := c.httpProfile(ctx)
+	if err != nil {
+		return reactions.Response{}, err
 	}
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return reactions.Response{}, ErrClientClosed
-	}
-	state, doer := c.state, c.http
-	c.mu.Unlock()
 	if request.RequestID == 0 {
 		request.RequestID = time.Now().UnixMilli()
 	}
@@ -639,32 +640,20 @@ func (c *Client) React(ctx context.Context, request reactions.Request) (reaction
 // ReactionMembers returns the current user IDs grouped by reaction type for one
 // message. It is a read-only HTTP lookup and does not open a LOCO session.
 func (c *Client) ReactionMembers(ctx context.Context, chatID, logID int64) (reactions.MembersResponse, error) {
-	if c == nil || ctx == nil {
-		return reactions.MembersResponse{}, ErrProtocol
+	doer, state, err := c.httpProfile(ctx)
+	if err != nil {
+		return reactions.MembersResponse{}, err
 	}
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return reactions.MembersResponse{}, ErrClientClosed
-	}
-	state, doer := c.state, c.http
-	c.mu.Unlock()
 	return reactionMembers(ctx, doer, state, chatID, logID)
 }
 
 // ReactionMetaSync reads one page of message metadata (reaction) changes
 // newer than cur, without opening a LOCO session.
 func (c *Client) ReactionMetaSync(ctx context.Context, chatID, cur int64) (reactions.SyncMetaPage, error) {
-	if c == nil || ctx == nil {
-		return reactions.SyncMetaPage{}, ErrProtocol
+	doer, state, err := c.httpProfile(ctx)
+	if err != nil {
+		return reactions.SyncMetaPage{}, err
 	}
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return reactions.SyncMetaPage{}, ErrClientClosed
-	}
-	state, doer := c.state, c.http
-	c.mu.Unlock()
 	profile, err := webProfile(state)
 	if err != nil {
 		return reactions.SyncMetaPage{}, err
@@ -675,32 +664,20 @@ func (c *Client) ReactionMetaSync(ctx context.Context, chatID, cur int64) (react
 // MiniReactionDetails returns attribution for the separate mini/custom-
 // reaction data source without opening a LOCO session.
 func (c *Client) MiniReactionDetails(ctx context.Context, chatID, linkID, logID int64) (reactions.DetailsResponse, error) {
-	if c == nil || ctx == nil {
-		return reactions.DetailsResponse{}, ErrProtocol
+	doer, state, err := c.httpProfile(ctx)
+	if err != nil {
+		return reactions.DetailsResponse{}, err
 	}
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return reactions.DetailsResponse{}, ErrClientClosed
-	}
-	state, doer := c.state, c.http
-	c.mu.Unlock()
 	return miniReactionDetails(ctx, doer, state, chatID, linkID, logID)
 }
 
 // ReactionDetails resolves and merges the attribution sources indicated by one
 // aggregate reaction update, matching the current Mac client's detail model.
 func (c *Client) ReactionDetails(ctx context.Context, change events.ReactionChanged) ([]reactions.Detail, error) {
-	if c == nil || ctx == nil {
-		return nil, ErrProtocol
+	doer, state, err := c.httpProfile(ctx)
+	if err != nil {
+		return nil, err
 	}
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return nil, ErrClientClosed
-	}
-	state, doer := c.state, c.http
-	c.mu.Unlock()
 	return mergedReactionDetails(ctx, doer, state, change)
 }
 
