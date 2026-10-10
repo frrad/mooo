@@ -116,7 +116,11 @@ func (b qrServiceBackend) Poll(ctx context.Context, req registration.QRLoginRequ
 	if err != nil {
 		return qrPollResult{}, err
 	}
-	interval, present := result.NextRequestIntervalSeconds.Value()
+	var interval int64
+	present := result.NextRequestIntervalSeconds != nil
+	if present {
+		interval = *result.NextRequestIntervalSeconds
+	}
 	if result.ServerError != nil {
 		zerolog.Ctx(ctx).Debug().Int64("status", result.ServerError.Status).Int64("next_poll_seconds", interval).Msg("Kakao QR approval pending or rejected")
 	}
@@ -737,7 +741,11 @@ func qrDeadline(seconds float64) (time.Time, error) {
 }
 
 func credentialsFromQR(result registration.QRLoginSuccess) (authstate.Credentials, int64, error) {
-	userID, ok := result.UserID.Value()
+	var userID int64
+	ok := result.UserID != nil
+	if ok {
+		userID = *result.UserID
+	}
 	accessToken, accessOK := result.AccessToken.Value()
 	refreshToken, refreshOK := result.RefreshToken.Value()
 	tokenType, tokenTypeOK := result.TokenType.Value()
