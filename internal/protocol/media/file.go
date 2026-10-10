@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -34,29 +35,12 @@ type FileMessage struct {
 func (FileMessage) String() string     { return "FileMessage{<redacted>}" }
 func (m FileMessage) GoString() string { return m.String() }
 
-func DecodeFileMessage(body []byte) (FileMessage, error) {
-	raw := bson.Raw(body)
-	if raw.Validate() != nil {
+func DecodeFileMessage(env chatlog.Envelope) (FileMessage, error) {
+	if env.Type != messagetype.File || !env.LogIDInChatLog {
 		return FileMessage{}, ErrInvalidMessage
 	}
-	chat, err := integerField(raw, "chatId")
-	if err != nil || chat <= 0 {
-		return FileMessage{}, ErrInvalidMessage
-	}
-	v, err := raw.LookupErr("chatLog")
-	if err != nil || v.Type != bson.TypeEmbeddedDocument {
-		return FileMessage{}, ErrInvalidMessage
-	}
-	log := v.Document()
-	typ, err := integerField(log, "type")
-	if err != nil || typ != int64(messagetype.File) {
-		return FileMessage{}, ErrInvalidMessage
-	}
-	id, err := integerField(log, "logId")
-	if err != nil || id <= 0 {
-		return FileMessage{}, ErrInvalidMessage
-	}
-	v, err = log.LookupErr("attachment")
+	log := env.Log
+	v, err := log.LookupErr("attachment")
 	if err != nil || v.Type != bson.TypeString || len(v.StringValue()) > 64<<10 || !utf8.ValidString(v.StringValue()) {
 		return FileMessage{}, ErrInvalidMessage
 	}
@@ -90,7 +74,7 @@ func DecodeFileMessage(body []byte) (FileMessage, error) {
 	if json.Unmarshal([]byte(text), &a) != nil || !validFileAttachment(a) {
 		return FileMessage{}, ErrInvalidMessage
 	}
-	return FileMessage{ChatID: chat, LogID: id, AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt"), Attachment: a}, nil
+	return FileMessage{ChatID: env.ChatID, LogID: env.LogID, AuthorID: env.AuthorID, SentAt: env.SentAt, Attachment: a}, nil
 }
 
 func validFileAttachment(a FileAttachment) bool {

@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
 )
 
 // ProfileMessage preserves the identity and text of an inbound shared profile.
@@ -58,5 +60,5 @@ func decodeProfile(chatID, logID int64, log bson.Raw) (Event, error) {
 	if json.Unmarshal([]byte(value), &a) != nil || a.UserID <= 0 || strings.TrimSpace(a.NickName) == "" || len(a.NickName) > 1024 || len(a.StatusMessage) > 16<<10 || !validEventString(a.NickName) || !validEventString(a.StatusMessage) {
 		return nil, ErrMalformedEvent
 	}
-	return ProfileMessage{ChatID: chatID, LogID: logID, AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt"), UserID: a.UserID, NickName: a.NickName, StatusMessage: a.StatusMessage}, nil
+	return ProfileMessage{ChatID: chatID, LogID: logID, AuthorID: bsonfield.Int64OrZero(log, "authorId"), SentAt: bsonfield.Int64OrZero(log, "sendAt"), UserID: a.UserID, NickName: a.NickName, StatusMessage: a.StatusMessage}, nil
 }

@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
 )
 
 // PostMessage preserves a text-only board-post snapshot, not board interaction.
@@ -35,7 +37,7 @@ func decodePost(chatID, logID int64, log bson.Raw) (Event, error) {
 	if json.Unmarshal([]byte(value), &a) != nil || len(a.Objects) == 0 || len(a.Objects) > 16 {
 		return nil, ErrMalformedEvent
 	}
-	m := PostMessage{ChatID: chatID, LogID: logID, AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt")}
+	m := PostMessage{ChatID: chatID, LogID: logID, AuthorID: bsonfield.Int64OrZero(log, "authorId"), SentAt: bsonfield.Int64OrZero(log, "sendAt")}
 	found := false
 	for _, raw := range a.Objects {
 		var object struct {

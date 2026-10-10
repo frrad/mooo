@@ -41,13 +41,13 @@ func audioBody(t *testing.T, a map[string]any) []byte {
 	return b
 }
 func TestObservedAudioMetadata(t *testing.T) {
-	m, err := DecodeAudioMessage(audioBody(t, audioFixture(t)))
+	m, err := DecodeAudioMessage(decodeEnvelope(t, audioBody(t, audioFixture(t))))
 	if err != nil || m.ChatID != 42 || m.LogID != 99 || m.Attachment.Size != 110298 || m.Attachment.Duration != 51000 {
 		t.Fatal("observed audio metadata lost", err)
 	}
 }
 func TestAudioDownloadWithoutChecksumAndMillisecondExpiry(t *testing.T) {
-	m, err := DecodeAudioMessage(audioBody(t, audioFixture(t)))
+	m, err := DecodeAudioMessage(decodeEnvelope(t, audioBody(t, audioFixture(t))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestAudioMalformedAttachments(t *testing.T) {
 	for _, change := range []func(map[string]any){func(a map[string]any) { a["s"] = MaxAudioBytes + 1 }, func(a map[string]any) { a["d"] = -1 }, func(a map[string]any) { a["expire"] = 0 }, func(a map[string]any) { a["url"] = "https://example.com/audio" }, func(a map[string]any) { delete(a, "url") }} {
 		a := audioFixture(t)
 		change(a)
-		if _, err := DecodeAudioMessage(audioBody(t, a)); err != ErrInvalidMessage {
+		if _, err := DecodeAudioMessage(decodeEnvelope(t, audioBody(t, a))); err != ErrInvalidMessage {
 			t.Fatal("invalid audio accepted")
 		}
 	}

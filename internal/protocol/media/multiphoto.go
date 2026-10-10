@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -31,29 +32,12 @@ type MultiPhotoMessage struct {
 func (MultiPhotoMessage) String() string     { return "MultiPhotoMessage{<redacted>}" }
 func (m MultiPhotoMessage) GoString() string { return m.String() }
 
-func DecodeMultiPhotoMessage(body []byte) (MultiPhotoMessage, error) {
-	raw := bson.Raw(body)
-	if raw.Validate() != nil {
+func DecodeMultiPhotoMessage(env chatlog.Envelope) (MultiPhotoMessage, error) {
+	if env.Type != messagetype.MultiPhoto || !env.LogIDInChatLog {
 		return MultiPhotoMessage{}, ErrInvalidMessage
 	}
-	chatID, err := integerField(raw, "chatId")
-	if err != nil || chatID <= 0 {
-		return MultiPhotoMessage{}, ErrInvalidMessage
-	}
-	value, err := raw.LookupErr("chatLog")
-	if err != nil || value.Type != bson.TypeEmbeddedDocument {
-		return MultiPhotoMessage{}, ErrInvalidMessage
-	}
-	log := value.Document()
-	typ, err := integerField(log, "type")
-	if err != nil || typ != int64(messagetype.MultiPhoto) {
-		return MultiPhotoMessage{}, ErrInvalidMessage
-	}
-	logID, err := integerField(log, "logId")
-	if err != nil || logID <= 0 {
-		return MultiPhotoMessage{}, ErrInvalidMessage
-	}
-	value, err = log.LookupErr("attachment")
+	log := env.Log
+	value, err := log.LookupErr("attachment")
 	if err != nil || value.Type != bson.TypeString || len(value.StringValue()) > 128<<10 {
 		return MultiPhotoMessage{}, ErrInvalidMessage
 	}
@@ -126,7 +110,7 @@ func DecodeMultiPhotoMessage(body []byte) (MultiPhotoMessage, error) {
 		}
 		photos[i] = p
 	}
-	return MultiPhotoMessage{ChatID: chatID, LogID: logID, AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt"), Photos: photos, Comments: comments}, nil
+	return MultiPhotoMessage{ChatID: env.ChatID, LogID: env.LogID, AuthorID: env.AuthorID, SentAt: env.SentAt, Photos: photos, Comments: comments}, nil
 }
 
 // DownloadAlbumPhoto additionally bounds the actual image canvas, not just metadata.
