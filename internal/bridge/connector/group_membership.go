@@ -12,6 +12,8 @@ import (
 	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
+
+	"github.com/frrad/mooo/internal/protocol/events"
 )
 
 var errMembershipPending = errors.New("connector: Matrix membership has not converged with the source roster; forwarding is paused")
@@ -155,4 +157,17 @@ func (kc *KakaoClient) managedMembershipEvent(ctx context.Context, c kakaoClient
 		kc.sendReadyState()
 	}
 	return true, err == nil
+}
+
+// handleMembershipEvent refreshes managed group membership for a member
+// change. It reports whether the event was consumed and, if so, whether it
+// succeeded.
+func (kc *KakaoClient) handleMembershipEvent(ctx context.Context, c kakaoClient, evt events.Event) (handled, success bool) {
+	switch notice := evt.(type) {
+	case events.MemberAdded:
+		return kc.managedMembershipEvent(ctx, c, notice.ChatID, true)
+	case events.MemberRemoved:
+		return kc.managedMembershipEvent(ctx, c, notice.ChatID, false)
+	}
+	return false, false
 }
