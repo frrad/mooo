@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"sync"
 )
 
@@ -112,4 +113,34 @@ func (kc *KakaoClient) release(c kakaoClient, err error) {
 		kc.cleanup = nil
 		kc.retained.pumpDone = nil
 	}
+}
+
+// openDetached opens a temporary profile client outside the connection
+// lifecycle. It refuses while a session is connecting, connected, stopping or
+// still retaining an owner, since the profile lease admits one owner.
+func (kc *KakaoClient) openDetached() (kakaoClient, error) {
+	kc.mu.Lock()
+	busy := kc.stopping || kc.connecting || kc.cleanup != nil
+	kc.mu.Unlock()
+	if busy || kc.open == nil {
+		return nil, errors.New("connector: profile cleanup or connection is still in progress")
+	}
+	return kc.open()
+}
+
+// releaseDetached shuts down a client from openDetached. When shutdown fails
+// and no other owner is retained, c becomes the retained owner so a later
+// Disconnect finishes its cleanup.
+func (kc *KakaoClient) releaseDetached(c kakaoClient) error {
+	ctx, cancel := context.WithTimeout(context.Background(), recoveryCleanupTimeout)
+	defer cancel()
+	err := c.Shutdown(ctx)
+	if err != nil {
+		kc.mu.Lock()
+		if kc.cleanup == nil {
+			kc.retain(c)
+		}
+		kc.mu.Unlock()
+	}
+	return err
 }
