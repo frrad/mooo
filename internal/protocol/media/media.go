@@ -29,7 +29,6 @@ const (
 	ShipCommand     = "SHIP"
 	PostCommand     = "POST"
 	CompleteCommand = "COMPLETE"
-	PhotoType       = messagetype.Photo
 	MaxImageBytes   = 16 << 20
 )
 
@@ -105,7 +104,7 @@ type PhotoMessage struct {
 // media key. Unknown attachment fields are retained by neither this decoder nor
 // its callers, allowing the wire schema to grow safely.
 func DecodePhotoMessage(env chatlog.Envelope) (PhotoMessage, error) {
-	if env.Type != PhotoType || !env.LogIDInChatLog {
+	if env.Type != messagetype.Photo || !env.LogIDInChatLog {
 		return PhotoMessage{}, ErrInvalidMessage
 	}
 	log := env.Log
@@ -256,7 +255,7 @@ func (r ShipRequest) MarshalBSON() ([]byte, error) {
 		return nil, ErrInvalidImage
 	}
 	return bson.Marshal(bson.D{
-		{Key: "c", Value: r.ChatID}, {Key: "t", Value: PhotoType},
+		{Key: "c", Value: r.ChatID}, {Key: "t", Value: messagetype.Photo},
 		{Key: "s", Value: int64(len(r.Image.Data))}, {Key: "cs", Value: r.Image.Checksum},
 		{Key: "e", Value: r.Image.Extension}, {Key: "ex", Value: "{}"},
 	})
@@ -314,7 +313,7 @@ func (r PostRequest) MarshalBSON() ([]byte, error) {
 		extra = string(encoded)
 	}
 	return bson.Marshal(bson.D{
-		{Key: "u", Value: r.UserID}, {Key: "k", Value: r.Key}, {Key: "t", Value: PhotoType},
+		{Key: "u", Value: r.UserID}, {Key: "k", Value: r.Key}, {Key: "t", Value: messagetype.Photo},
 		{Key: "s", Value: int64(len(r.Image.Data))}, {Key: "c", Value: r.ChatID}, {Key: "mid", Value: r.MediaID},
 		{Key: "w", Value: r.Image.Width}, {Key: "h", Value: r.Image.Height},
 		{Key: "mm", Value: "99999"}, {Key: "nt", Value: int32(0)}, {Key: "os", Value: "mac"},

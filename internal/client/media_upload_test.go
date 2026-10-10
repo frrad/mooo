@@ -11,6 +11,7 @@ import (
 
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 // A file goes through SHIP, POST and COMPLETE once, with its type, extension
@@ -29,7 +30,7 @@ func TestSendUploadSendsFileTypeNameAndBytesOnce(t *testing.T) {
 		}
 		ships++
 		body := bson.Raw(request.Body)
-		if request.Header.Method != "SHIP" || body.Lookup("t").Int32() != media.FileType || body.Lookup("e").StringValue() != "txt" ||
+		if request.Header.Method != "SHIP" || body.Lookup("t").Int32() != messagetype.File || body.Lookup("e").StringValue() != "txt" ||
 			body.Lookup("s").Int64() != int64(len(fileData)) || body.Lookup("cs").StringValue() != upload.Checksum {
 			return errors.New("unexpected SHIP")
 		}
@@ -44,7 +45,7 @@ func TestSendUploadSendsFileTypeNameAndBytesOnce(t *testing.T) {
 			return err
 		}
 		body := bson.Raw(request.Body)
-		if request.Header.Method != "POST" || body.Lookup("t").Int32() != media.FileType || body.Lookup("f").StringValue() != "synthetic.txt" ||
+		if request.Header.Method != "POST" || body.Lookup("t").Int32() != messagetype.File || body.Lookup("f").StringValue() != "synthetic.txt" ||
 			body.Lookup("k").StringValue() != "synthetic-ticket" || body.Lookup("c").Int64() != 42 || body.Lookup("u").Int64() != 7 {
 			return errors.New("unexpected POST")
 		}

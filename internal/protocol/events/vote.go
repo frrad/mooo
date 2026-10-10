@@ -17,10 +17,11 @@ type VoteMessage struct {
 	Options                         []string
 }
 
-func (VoteMessage) Kind() Kind         { return KindVoteMessage }
-func (VoteMessage) isEvent()           {}
-func (VoteMessage) String() string     { return "VoteMessage{<redacted>}" }
-func (m VoteMessage) GoString() string { return m.String() }
+func (VoteMessage) Kind() Kind           { return KindVoteMessage }
+func (m VoteMessage) Position() Position { return Position{m.ChatID, m.LogID} }
+func (VoteMessage) isEvent()             {}
+func (VoteMessage) String() string       { return "VoteMessage{<redacted>}" }
+func (m VoteMessage) GoString() string   { return m.String() }
 
 func decodeVote(chatID, logID int64, log bson.Raw) (Event, error) {
 	value, err := requiredString(log, "attachment")

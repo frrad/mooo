@@ -30,6 +30,7 @@ import (
 
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 type photoMatrixAPI struct {
@@ -186,7 +187,7 @@ func TestConvertPhotoDeterministicFailureBecomesPersistableNotice(t *testing.T) 
 	}
 	content := converted.Parts[0].Content
 	metadata, ok := converted.Parts[0].DBMetadata.(*KakaoMessageMetadata)
-	if content.MsgType != event.MsgNotice || !ok || metadata.ChatID != testChatID || metadata.LogID != 77 || metadata.AuthorID != testOtherID || metadata.Type != media.PhotoType || metadata.ConversionGap != "expired" {
+	if content.MsgType != event.MsgNotice || !ok || metadata.ChatID != testChatID || metadata.LogID != 77 || metadata.AuthorID != testOtherID || metadata.Type != messagetype.Photo || metadata.ConversionGap != "expired" {
 		t.Fatalf("notice content=%+v metadata=%+v", content, metadata)
 	}
 	if strings.Contains(content.Body, "https://") || strings.Contains(content.Body, "file") {

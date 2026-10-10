@@ -15,7 +15,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/frrad/mooo/internal/protocol/loco"
-	"github.com/frrad/mooo/internal/protocol/media"
+
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 func albumItemBackend(t *testing.T, key string, want []byte) *scriptedBackend {
@@ -26,7 +27,7 @@ func albumItemBackend(t *testing.T, key string, want []byte) *scriptedBackend {
 			return err
 		}
 		body := bson.Raw(request.Body)
-		if request.Header.Method != "MPOST" || body.Lookup("k").StringValue() != key || body.Lookup("t").Int32() != media.MultiPhotoType {
+		if request.Header.Method != "MPOST" || body.Lookup("k").StringValue() != key || body.Lookup("t").Int32() != messagetype.MultiPhoto {
 			return fmt.Errorf("unexpected item request %s", request.Header.Method)
 		}
 		if err := writeBackendPacket(server, request.Header.PacketID, "MPOST", mustBSON(statusDocument())); err != nil {
@@ -54,7 +55,7 @@ func TestSendAlbumUploadsEachPhotoThenWritesOnce(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if request.Header.Method != "MSHIP" || bson.Raw(request.Body).Lookup("t").Int32() != media.MultiPhotoType {
+		if request.Header.Method != "MSHIP" || bson.Raw(request.Body).Lookup("t").Int32() != messagetype.MultiPhoto {
 			return fmt.Errorf("unexpected %s", request.Header.Method)
 		}
 		if err := writeBackendPacket(server, request.Header.PacketID, "MSHIP", mustBSON(statusDocument(
@@ -102,7 +103,7 @@ func TestSendAlbumUploadsEachPhotoThenWritesOnce(t *testing.T) {
 	if len(dialed) != 2 || dialed[0] != "media1.invalid" || dialed[1] != "media2.invalid" {
 		t.Fatalf("dialed %q", dialed)
 	}
-	if len(writes) != 1 || writes[0].Lookup("type").Int32() != media.MultiPhotoType || writes[0].Lookup("msg").StringValue() != "" {
+	if len(writes) != 1 || writes[0].Lookup("type").Int32() != messagetype.MultiPhoto || writes[0].Lookup("msg").StringValue() != "" {
 		t.Fatalf("writes = %v", writes)
 	}
 	var extra struct {

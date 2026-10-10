@@ -18,10 +18,11 @@ type ProfileMessage struct {
 	NickName, StatusMessage         string
 }
 
-func (ProfileMessage) Kind() Kind         { return KindProfileMessage }
-func (ProfileMessage) isEvent()           {}
-func (ProfileMessage) String() string     { return "ProfileMessage{<redacted>}" }
-func (m ProfileMessage) GoString() string { return m.String() }
+func (ProfileMessage) Kind() Kind           { return KindProfileMessage }
+func (m ProfileMessage) Position() Position { return Position{m.ChatID, m.LogID} }
+func (ProfileMessage) isEvent()             {}
+func (ProfileMessage) String() string       { return "ProfileMessage{<redacted>}" }
+func (m ProfileMessage) GoString() string   { return m.String() }
 func decodeProfile(chatID, logID int64, log bson.Raw) (Event, error) {
 	value, err := requiredString(log, "attachment")
 	if err != nil || len(value) > 64<<10 || !validEventString(value) {

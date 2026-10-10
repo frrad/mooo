@@ -10,6 +10,7 @@ import (
 
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/loco"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 func scriptedSession(t *testing.T, script func(*wireConn) error) (*session, *scriptedBackend) {
@@ -39,7 +40,7 @@ func TestModifyMessageSendsOnceAndReturnsTheRevision(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	revision, err := session.ModifyMessage(ctx, chat.ModifyRequest{ChatID: 42, LogID: 101, Type: chat.TextType, Message: "synthetic edit", Extra: "{}"})
+	revision, err := session.ModifyMessage(ctx, chat.ModifyRequest{ChatID: 42, LogID: 101, Type: messagetype.Text, Message: "synthetic edit", Extra: "{}"})
 	if err != nil || revision != 1 {
 		t.Fatalf("revision=%d err=%v", revision, err)
 	}
