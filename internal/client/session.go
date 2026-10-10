@@ -1638,6 +1638,11 @@ func loginChatTarget(raw bson.Raw) (continuity.ChatTarget, error) {
 	if nestedChatID, nestedErr := bsonInt64(last.Document(), "chatId"); nestedErr == nil && nestedChatID != chatID {
 		return continuity.ChatTarget{}, ErrProtocol
 	}
+	// l is the last displayable chat log; ll, the last log ID, also covers
+	// later feeds such as edits, which catch-up must reach.
+	if lastLogID, err := bsonInt64(raw, "ll"); err == nil && lastLogID > logID {
+		logID = lastLogID
+	}
 	target.MaxLogID = logID
 	return target, nil
 }

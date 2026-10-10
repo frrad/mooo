@@ -88,8 +88,11 @@ classification, and otherwise looks up exact enum values with UNDEFINED fallback
 Other helpers clear selected flags and classify MultiPhoto as Photo for a specific
 consumer. These are static leads, not a general normalization contract.
 
-mooo preserves raw positive flagged values as unsupported; it does not clear
-flags and render deleted, blinded or secret-chat content as ordinary messages.
+A text or other ordinary base type with `DELETED_ALL_CHAT_TYPE` is a message
+deleted for everyone; the server still returns its content, which mooo never
+renders ([edits and deletions](bridge/GROUP-EDITS-DELETIONS.md)). mooo
+preserves other raw positive flagged values as unsupported; it does not clear
+flags and render blinded or secret-chat content as ordinary messages.
 The existing MSG envelope accepts only positive types: enum feed/sentinel values
 are documented but do not gain support in this naming change. Wire delivery,
 persistence, rendering and failure behavior of those values remain untraced.

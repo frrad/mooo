@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.mau.fi/util/jsontime"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	bridgematrix "maunium.net/go/mautrix/bridgev2/matrix"
@@ -49,6 +50,8 @@ type kakaoClient interface {
 	SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error)
 	SendUpload(ctx context.Context, chatID int64, upload media.Upload) (media.SendResult, error)
 	SendAlbum(ctx context.Context, chatID int64, photos [][]byte, caption string) (chat.WriteResponse, error)
+	ModifyMessage(ctx context.Context, request chat.ModifyRequest) (int64, error)
+	DeleteMessage(ctx context.Context, request chat.DeleteRequest) error
 	MarkRead(ctx context.Context, chatID, watermark int64) (syncmsg.Response, error)
 	Close() error
 	Shutdown(ctx context.Context) error
@@ -803,6 +806,34 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		}
 		return kc.handleReadState(notice)
 	}
+	if edit, ok := evt.(events.MessageEdited); ok && edit.Modified == nil {
+		completed, err := kc.completeEdit(context.Background(), c, edit)
+		if err != nil {
+			kc.log().Warn().Err(err).Msg("Kakao edited message could not be fetched; leaving the edit uncommitted")
+			return false
+		}
+		evt = completed
+	}
+	if deleted, ok := evt.(events.DeletedMessage); ok && kc.deletedFromMatrix(makeMessageID(deleted.ChatID, deleted.LogID)) {
+		if kc.checkSourceAccess(context.Background(), deleted.ChatID, nil) != nil {
+			return false
+		}
+		if err := c.CommitEvent(evt); err != nil {
+			kc.log().Err(err).Msg("Failed to commit Kakao log deleted from Matrix")
+			return false
+		}
+		return true
+	}
+	if deletion, ok := evt.(events.MessageDeleted); ok && kc.targetAlreadyDeleted(deletion) {
+		if kc.checkSourceAccess(context.Background(), deletion.ChatID, nil) != nil {
+			return false
+		}
+		if err := c.CommitEvent(evt); err != nil {
+			kc.log().Err(err).Msg("Failed to commit Kakao delete feed")
+			return false
+		}
+		return true
+	}
 	remote := kc.remoteEventFor(evt)
 	if remote != nil && removedChat == 0 {
 		chatID, parseErr := parseChatID(remote.GetPortalKey().ID)
@@ -1337,6 +1368,10 @@ func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 		ReactionCount:    1,
 		ReadReceipts:     true,
 		AllowedReactions: []string{"❤️", "👍", "✅", "😆", "😮", "😢"},
+		Edit:             event.CapLevelPartialSupport,
+		EditMaxAge:       secondsPtr(kakaoEditWindow),
+		Delete:           event.CapLevelPartialSupport,
+		DeleteMaxAge:     secondsPtr(kakaoDeleteWindow),
 		File: event.FileFeatureMap{
 			event.MsgImage: &event.FileFeatures{
 				MimeTypes: map[string]event.CapabilitySupportLevel{"image/jpeg": event.CapLevelPartialSupport, "image/png": event.CapLevelPartialSupport},
@@ -1354,6 +1389,11 @@ func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 			},
 		},
 	}
+}
+
+func secondsPtr(d time.Duration) *jsontime.Seconds {
+	seconds := jsontime.S(d)
+	return &seconds
 }
 
 func uploadFeatures(caption event.CapabilitySupportLevel) *event.FileFeatures {

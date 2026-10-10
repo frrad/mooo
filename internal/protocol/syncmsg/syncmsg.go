@@ -71,6 +71,11 @@ func TargetFromChatData(raw bson.Raw) (Target, error) {
 	if nestedChatID, nestedErr := integer(last.Document(), "chatId"); nestedErr == nil && nestedChatID != chatID {
 		return Target{}, ErrInvalidResponse
 	}
+	// l is the last displayable chat log; ll, the last log ID, also covers
+	// later feeds such as edits, which catch-up must reach.
+	if lastLogID, err := integer(raw, "ll"); err == nil && lastLogID > logID {
+		logID = lastLogID
+	}
 	return Target{ChatID: chatID, MaxLogID: logID}, nil
 }
 

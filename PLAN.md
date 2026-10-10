@@ -134,14 +134,22 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
 - [ ] Outbound media follow-ups: streaming uploads for the Mac's 300 MiB
       limit, large media, server deny-list refresh, GIF/WebP album photos,
       voice messages, live upload faults for files and albums.
-- [ ] Source-supported message edits/deletions with permission/time limits,
-      attribution, replay/restart correctness and clear unsupported outcomes.
+- [x] Edits and deletions (this PR): SYNCMODMSG/SYNCDLMSG and feed-25/14
+      catch-up become Matrix edits and redactions with author and revision
+      guards; deleted logs never reveal content; offline edits read with
+      GETMSGS and reached through LOGINLIST `ll`; own Matrix edits and
+      redactions send one MODIFYMSG/DELETEMSG within Kakao's limits; three
+      live regressions fixed:
+      [edits and deletions](research/bridge/GROUP-EDITS-DELETIONS.md).
+- [ ] Edit/delete follow-ups: outbound reply and emoticon edits, the
+      account delete-time setting, live provocation of −210/−211/−212 and the
+      24-hour limits, media edit/delete coverage, hidden trailing feeds.
 - [ ] Group settings and permissions: explicit mappings for personal mute and
       notifications, source roles and management permissions; prevent personal
       settings from changing shared state and reject unsupported actions.
 
-Next active slice: edits and deletions. Discovery through outbound media
-shipped in PRs #270–285.
+Next active slice: group settings and permissions. Discovery through edits
+and deletions shipped in PRs #270–286.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.

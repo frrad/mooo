@@ -73,6 +73,11 @@ type fakeKakao struct {
 	albums            []sentAlbum
 	albumResp         chat.WriteResponse
 	albumErr          error
+	modifies          []chat.ModifyRequest
+	modifyRevision    int64
+	modifyErr         error
+	deletes           []chat.DeleteRequest
+	deleteErr         error
 	closeCalls        int
 	shutdownCalls     int
 	shutdownFailures  int

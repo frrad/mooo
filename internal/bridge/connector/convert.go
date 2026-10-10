@@ -85,6 +85,12 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 	case events.PhotoMessage:
 		chatID, logID := evt.Message.ChatID, evt.Message.LogID
 		return newMessage(kc.messageMeta(chatID, logID, evt.Message.AuthorID, evt.Message.SentAt), makeMessageID(chatID, logID), evt, convertPhoto)
+	case events.MessageEdited:
+		return kc.editEvent(evt)
+	case events.MessageDeleted:
+		return kc.deletionEvent(evt)
+	case events.DeletedMessage:
+		return kc.deletedMessageEvent(evt)
 	case events.MessageGap:
 		metadata := newKakaoMessageMetadata(evt.ChatID, evt.LogID, evt.AuthorID, evt.Type, "[message unavailable]", 0)
 		metadata.ConversionGap = "malformed_payload"
@@ -392,7 +398,9 @@ func (kc *KakaoClient) senderFor(authorID int64) bridgev2.EventSender {
 }
 
 func convertText(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.TextMessage) (*bridgev2.ConvertedMessage, error) {
-	return messageWithMetadata(event.MsgText, msg.Message, newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, chat.TextType, msg.Message, 0)), nil
+	metadata := newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, chat.TextType, msg.Message, 0)
+	metadata.Revision = msg.Revision
+	return messageWithMetadata(event.MsgText, msg.Message, metadata), nil
 }
 
 func convertReply(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.ReplyMessage) (*bridgev2.ConvertedMessage, error) {

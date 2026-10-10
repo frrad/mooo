@@ -116,3 +116,24 @@ func TestRequestAcceptsZeroHeldMessages(t *testing.T) {
 		t.Fatalf("cnt = %v", count)
 	}
 }
+
+// Regression (owned acceptance, 2026-10-10): after an edit made while the
+// bridge was offline, the chat-list l (last chat log) stayed at the edited
+// message while ll (last log ID) covered the edit feed. Using l alone never
+// caught the edit up.
+func TestTargetFromChatDataIncludesFeedsAfterTheLastChatLog(t *testing.T) {
+	raw, err := bson.Marshal(bson.D{{Key: "c", Value: int64(42)}, {Key: "ll", Value: int64(102)},
+		{Key: "l", Value: bson.D{{Key: "chatId", Value: int64(42)}, {Key: "logId", Value: int64(100)}, {Key: "type", Value: int32(1)}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := TargetFromChatData(raw)
+	if err != nil || target.MaxLogID != 102 {
+		t.Fatalf("target = %+v err=%v", target, err)
+	}
+	older, _ := bson.Marshal(bson.D{{Key: "c", Value: int64(42)}, {Key: "ll", Value: int64(99)},
+		{Key: "l", Value: bson.D{{Key: "logId", Value: int64(100)}}}})
+	if target, err := TargetFromChatData(older); err != nil || target.MaxLogID != 100 {
+		t.Fatalf("older ll target = %+v err=%v", target, err)
+	}
+}

@@ -95,6 +95,12 @@ func MessagePosition(event Event) (chatID, logID int64, ok bool) {
 		if value != nil {
 			return value.ChatID, value.LogID, true
 		}
+	case MessageEdited:
+		return value.ChatID, value.LogID, true
+	case MessageDeleted:
+		return value.ChatID, value.LogID, true
+	case DeletedMessage:
+		return value.ChatID, value.LogID, true
 	case MessageGap:
 		return value.ChatID, value.LogID, true
 	case *MessageGap:
@@ -193,6 +199,8 @@ type TextMessage struct {
 	AuthorID int64
 	SentAt   int64
 	Message  string
+	// Revision counts edits; an edited message arrives with revision >= 1.
+	Revision int64
 }
 
 func (TextMessage) Kind() Kind { return KindTextMessage }
@@ -500,6 +508,10 @@ func Decode(packet loco.Packet) (Event, error) {
 		return decodeChatMCMetaChanged(packet.Body)
 	case "LEFT":
 		return decodeChatLeft(packet.Body)
+	case "SYNCMODMSG":
+		return decodeEditPush(packet)
+	case "SYNCDLMSG":
+		return decodeDeletePush(packet)
 	default:
 		return UnknownPacket{Method: packet.Header.Method}, nil
 	}
@@ -721,6 +733,12 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 	if err != nil {
 		return nil, ErrMalformedEvent
 	}
+	if messageType == messagetype.Feed {
+		return decodeFeed(chatID, logID, chatLog)
+	}
+	if deletedFlagged(messageType) {
+		return DeletedMessage{ChatID: chatID, LogID: logID, AuthorID: optionalInt64(chatLog, "authorId"), SentAt: optionalInt64(chatLog, "sendAt"), BaseType: messageType &^ messagetype.DeletedAllChatTypeFlag}, nil
+	}
 	switch messageType {
 	case messagetype.Post:
 		return decodePost(chatID, logID, chatLog)
@@ -742,6 +760,7 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 		return decodeMiniText(TextMessage{
 			ChatID: chatID, LogID: logID, Message: messageValue.StringValue(),
 			AuthorID: optionalInt64(chatLog, "authorId"), SentAt: optionalInt64(chatLog, "sendAt"),
+			Revision: optionalInt64(chatLog, "revision"),
 		}, chatLog)
 	case media.PhotoType:
 		photo, err := media.DecodePhotoMessage(packet.Body)
@@ -979,7 +998,7 @@ func messageEnvelope(raw bson.Raw) (int64, int64, int32, bson.Raw, error) {
 		return 0, 0, 0, nil, ErrMalformedEvent
 	}
 	typeValue, err := requiredInt64(chatLog, "type")
-	if err != nil || typeValue <= 0 || typeValue > int64(^uint32(0)>>1) {
+	if err != nil || typeValue < 0 || typeValue > int64(^uint32(0)>>1) {
 		return 0, 0, 0, nil, ErrMalformedEvent
 	}
 	return chatID, logID, int32(typeValue), chatLog, nil
