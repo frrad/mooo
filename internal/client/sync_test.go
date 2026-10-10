@@ -13,8 +13,14 @@ import (
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
+
+// These tests run one request path on a bare session over a testloco
+// backend instead of connectSession: scripting booking, checkin, and
+// LOGINLIST for each would exercise nothing new. login_sync_test.go and
+// client_test.go cover the bootstrap end to end.
 
 func TestCatchUpPagesWithoutAdvancingCheckpoint(t *testing.T) {
 	checkpoint := testCheckpoint(t)
@@ -25,13 +31,13 @@ func TestCatchUpPagesWithoutAdvancingCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := newScriptedBackend(t, false,
-		expectRequest("SYNCMSG", checkSyncRequest(42, 100, 105), statusDocument(
+		testloco.Expect("SYNCMSG", checkSyncRequest(42, 100, 105), statusDocument(
 			bson.E{Key: "chatLogs", Value: bson.A{
 				bson.D{{Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "one"}},
 				bson.D{{Key: "logId", Value: int64(103)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "three"}},
 			}},
 		)),
-		expectRequest("SYNCMSG", checkSyncRequest(42, 103, 105), statusDocument(
+		testloco.Expect("SYNCMSG", checkSyncRequest(42, 103, 105), statusDocument(
 			bson.E{Key: "chatLogs", Value: bson.A{
 				bson.D{{Key: "logId", Value: int64(105)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "five"}},
 			}},
@@ -65,7 +71,7 @@ func TestCatchUpPagesWithoutAdvancingCheckpoint(t *testing.T) {
 	if !checkpoint.IsCommitted(42, 105) {
 		t.Fatal("explicit commit did not advance checkpoint")
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestCatchUpPreservesMalformedMessagePositionAndCommitOrder(t *testing.T) {
@@ -74,7 +80,7 @@ func TestCatchUpPreservesMalformedMessagePositionAndCommitOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := newScriptedBackend(t, false,
-		expectRequest("SYNCMSG", checkSyncRequest(42, 99, 101), statusDocument(
+		testloco.Expect("SYNCMSG", checkSyncRequest(42, 99, 101), statusDocument(
 			bson.E{Key: "chatLogs", Value: bson.A{
 				bson.D{{Key: "logId", Value: int64(100)}, {Key: "type", Value: int32(2)}, {Key: "attachment", Value: "malformed"}},
 				bson.D{{Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "after gap"}},
@@ -108,7 +114,7 @@ func TestCatchUpPreservesMalformedMessagePositionAndCommitOrder(t *testing.T) {
 	if !checkpoint.IsCommitted(42, 101) {
 		t.Fatal("ordered catch-up commits did not advance checkpoint")
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestCatchUpRejectsConflictingValidMessageIdentity(t *testing.T) {
@@ -117,7 +123,7 @@ func TestCatchUpRejectsConflictingValidMessageIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := newScriptedBackend(t, false,
-		expectRequest("SYNCMSG", checkSyncRequest(42, 99, 100), statusDocument(
+		testloco.Expect("SYNCMSG", checkSyncRequest(42, 99, 100), statusDocument(
 			bson.E{Key: "chatLogs", Value: bson.A{
 				bson.D{{Key: "logId", Value: int64(100)}, {Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "valid"}},
 			}},
@@ -130,7 +136,7 @@ func TestCatchUpRejectsConflictingValidMessageIdentity(t *testing.T) {
 	if !checkpoint.IsCommitted(42, 99) || checkpoint.IsCommitted(42, 100) {
 		t.Fatal("conflicting identity changed the durable checkpoint")
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 // Regression (C5 review): ReadHistoryPage and GetMessages rejected a chat log
@@ -142,7 +148,7 @@ func TestCatchUpRejectsALogFromAnotherChat(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := newScriptedBackend(t, false,
-		expectRequest("SYNCMSG", checkSyncRequest(42, 100, 101), statusDocument(
+		testloco.Expect("SYNCMSG", checkSyncRequest(42, 100, 101), statusDocument(
 			bson.E{Key: "chatLogs", Value: bson.A{
 				bson.D{{Key: "chatId", Value: int64(43)}, {Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "foreign"}},
 			}},
@@ -155,7 +161,7 @@ func TestCatchUpRejectsALogFromAnotherChat(t *testing.T) {
 	if !checkpoint.IsCommitted(42, 100) || checkpoint.IsCommitted(42, 101) {
 		t.Fatal("foreign chat log changed the durable checkpoint")
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestCatchUpFailsOnNoProgress(t *testing.T) {
@@ -164,7 +170,7 @@ func TestCatchUpFailsOnNoProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := newScriptedBackend(t, false,
-		expectRequest("SYNCMSG", checkSyncRequest(42, 100, 105), statusDocument(
+		testloco.Expect("SYNCMSG", checkSyncRequest(42, 100, 105), statusDocument(
 			bson.E{Key: "chatLogs", Value: bson.A{}},
 		)),
 	)
@@ -178,16 +184,16 @@ func TestCatchUpFailsOnNoProgress(t *testing.T) {
 	if got := checkpoint.Snapshot().HistoryGaps; len(got) != 1 || got[0] != (continuity.HistoryGap{ChatID: 42, FromLogID: 101, ToLogID: 105}) {
 		t.Fatalf("failed catch-up gap = %#v", got)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestCatchUpPageLimitPersistsWholeUncommittedGap(t *testing.T) {
 	checkpoint := testCheckpoint(t)
-	steps := make([]backendStep, 0, maxCatchUpPages)
+	steps := make([]testloco.Step, 0, maxCatchUpPages)
 	for page := range maxCatchUpPages {
 		cur := int64(page)
 		logID := cur + 1
-		steps = append(steps, expectRequest("SYNCMSG", checkSyncRequest(42, cur, 101), statusDocument(
+		steps = append(steps, testloco.Expect("SYNCMSG", checkSyncRequest(42, cur, 101), statusDocument(
 			bson.E{Key: "chatLogs", Value: bson.A{
 				bson.D{{Key: "logId", Value: logID}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "synthetic"}},
 			}},
@@ -201,7 +207,7 @@ func TestCatchUpPageLimitPersistsWholeUncommittedGap(t *testing.T) {
 	if got := checkpoint.Snapshot().HistoryGaps; len(got) != 1 || got[0] != (continuity.HistoryGap{ChatID: 42, FromLogID: 1, ToLogID: 101}) {
 		t.Fatalf("page-limit gap = %#v", got)
 	}
-	backend.wait(t)
+	waitBackends(t, backend)
 }
 
 func TestCommitEventRejectsPerChatReordering(t *testing.T) {
@@ -317,7 +323,7 @@ func testCheckpoint(t *testing.T) *continuity.Store {
 	return checkpoint
 }
 
-func testContinuityClient(t *testing.T, checkpoint *continuity.Store, backend *scriptedBackend) *Client {
+func testContinuityClient(t *testing.T, checkpoint *continuity.Store, backend *testloco.Backend) *Client {
 	t.Helper()
 	api, err := newClient(reusableTestState(), nil)
 	if err != nil {
@@ -326,7 +332,7 @@ func testContinuityClient(t *testing.T, checkpoint *continuity.Store, backend *s
 	api.checkpoint = checkpoint
 	api.dial = func(context.Context, authstate.State) (*session, error) {
 		session := &session{
-			wire: backend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
+			wire: clientWire(backend), nextID: 1, pushes: make(chan loco.Packet, 4),
 			pending: make(map[uint32]pendingRequest),
 		}
 		go session.readLoop()

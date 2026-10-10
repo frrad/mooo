@@ -1,10 +1,11 @@
 package client
 
 import (
+	"testing"
+
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
-	"testing"
 )
 
 func TestMalformedMembershipCannotBeSkippedBeforeLaterContent(t *testing.T) {

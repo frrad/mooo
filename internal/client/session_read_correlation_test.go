@@ -10,6 +10,11 @@ import (
 	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
+// White-box tests: they drive a bare session or wireConn over a raw net.Pipe
+// so they can control framing, write blocking, pending-request state, or
+// read-loop timing directly. A scripted testloco peer cannot express those
+// conditions, so these tests do not go through connectSession.
+
 // Correlation is exercised through Session.readLoop, not a standalone map
 // lookup. The validated header method and packet ID form the unique-ID key.
 func TestSessionReadLoopCorrelatesPendingPacketSplitAtHeader(t *testing.T) {

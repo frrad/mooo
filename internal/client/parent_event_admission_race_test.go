@@ -2,9 +2,10 @@ package client
 
 import (
 	"context"
-	"github.com/frrad/mooo/internal/protocol/loco"
 	"testing"
 	"time"
+
+	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
 func TestParentEventsRechecksShutdownAdmission(t *testing.T) {

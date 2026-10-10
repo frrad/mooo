@@ -84,7 +84,5 @@ func TestPacketObserverSeesEveryBootstrapReplyAndLeavesLoginUnchanged(t *testing
 		}
 	}
 	_ = session.Close()
-	for _, backend := range backends {
-		backend.wait(t)
-	}
+	waitBackends(t, backends...)
 }
