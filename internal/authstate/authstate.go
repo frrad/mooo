@@ -12,16 +12,16 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"unicode/utf8"
+
+	"github.com/frrad/mooo/internal/privatejson"
 )
 
 const (
@@ -183,7 +183,7 @@ func Create(path string, cfg Config) (*Store, error) {
 			},
 		},
 	}
-	if err := writeInitial(path, state); err != nil {
+	if err := translate(privatejson.WriteInitial(path, state)); err != nil {
 		return nil, err
 	}
 	return &Store{path: path}, nil
@@ -196,13 +196,7 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := validatePrivateDir(filepath.Dir(path)); err != nil {
-		return nil, err
-	}
-	if err := validatePrivateFile(path); err != nil {
-		return nil, err
-	}
-	if _, err := read(path); err != nil {
+	if _, err := load(path); err != nil {
 		return nil, err
 	}
 	return &Store{path: path}, nil
@@ -215,13 +209,7 @@ func (s *Store) Snapshot() (State, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := validatePrivateDir(filepath.Dir(s.path)); err != nil {
-		return State{}, err
-	}
-	if err := validatePrivateFile(s.path); err != nil {
-		return State{}, err
-	}
-	state, err := read(s.path)
+	state, err := load(s.path)
 	if err != nil {
 		return State{}, err
 	}
@@ -239,19 +227,13 @@ func (s *Store) InstallCredentials(c Credentials) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := validatePrivateDir(filepath.Dir(s.path)); err != nil {
-		return err
-	}
-	if err := validatePrivateFile(s.path); err != nil {
-		return err
-	}
-	state, err := read(s.path)
+	state, err := load(s.path)
 	if err != nil {
 		return err
 	}
 	copy := c.Clone()
 	state.Credentials = &copy
-	return writeAtomic(s.path, state)
+	return translate(privatejson.WriteAtomic(s.path, state))
 }
 
 // CompareAndSwapCredentials atomically replaces one exact credential snapshot.
@@ -269,13 +251,7 @@ func (s *Store) CompareAndSwapCredentials(expected, replacement Credentials) err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := validatePrivateDir(filepath.Dir(s.path)); err != nil {
-		return err
-	}
-	if err := validatePrivateFile(s.path); err != nil {
-		return err
-	}
-	state, err := read(s.path)
+	state, err := load(s.path)
 	if err != nil {
 		return err
 	}
@@ -284,7 +260,7 @@ func (s *Store) CompareAndSwapCredentials(expected, replacement Credentials) err
 	}
 	copy := replacement.Clone()
 	state.Credentials = &copy
-	return writeAtomic(s.path, state)
+	return translate(privatejson.WriteAtomic(s.path, state))
 }
 
 // HasCredentials reports whether a complete credential set is installed.
@@ -336,52 +312,20 @@ func ensurePrivateDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return ErrCorrupt
 	}
-	return validatePrivateDir(dir)
+	return translate(privatejson.ValidatePrivateDir(dir))
 }
 
-func validatePrivateDir(dir string) error {
-	info, err := os.Lstat(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return ErrNotFound
+// load validates the private directory and file and decodes the state.
+func load(path string) (State, error) {
+	if err := translate(privatejson.ValidatePrivateDir(filepath.Dir(path))); err != nil {
+		return State{}, err
 	}
+	state, found, err := privatejson.Read[State](path)
 	if err != nil {
-		return ErrCorrupt
+		return State{}, translate(err)
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() || info.Mode().Perm() != 0o700 {
-		return ErrUnsafePermissions
-	}
-	return nil
-}
-
-func validatePrivateFile(path string) error {
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return ErrNotFound
-	}
-	if err != nil {
-		return ErrCorrupt
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
-		return ErrUnsafePermissions
-	}
-	return nil
-}
-
-func read(path string) (State, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return State{}, ErrCorrupt
-	}
-	defer func() { _ = f.Close() }()
-	var state State
-	decoder := json.NewDecoder(io.LimitReader(f, 2<<20))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&state); err != nil {
-		return State{}, ErrCorrupt
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return State{}, ErrCorrupt
+	if !found {
+		return State{}, ErrNotFound
 	}
 	if state.Version != StateVersion {
 		return State{}, ErrVersionMismatch
@@ -395,6 +339,22 @@ func read(path string) (State, error) {
 		}
 	}
 	return state, nil
+}
+
+// translate maps privatejson sentinels onto this package's errors.
+func translate(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, privatejson.ErrNotFound):
+		return ErrNotFound
+	case errors.Is(err, privatejson.ErrAlreadyExists):
+		return ErrAlreadyExists
+	case errors.Is(err, privatejson.ErrUnsafePermissions):
+		return ErrUnsafePermissions
+	default:
+		return ErrCorrupt
+	}
 }
 
 func validateIdentity(id Identity) error {
@@ -414,113 +374,6 @@ func cloneState(state State) State {
 		state.Credentials = &copy
 	}
 	return state
-}
-
-func writeAtomic(path string, state State) error {
-	dir := filepath.Dir(path)
-	if err := validatePrivateDir(dir); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, ".authstate-*")
-	if err != nil {
-		return ErrCorrupt
-	}
-	tmpName := tmp.Name()
-	remove := true
-	defer func() {
-		_ = tmp.Close()
-		if remove {
-			_ = os.Remove(tmpName)
-		}
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		return ErrUnsafePermissions
-	}
-	encoder := json.NewEncoder(tmp)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(state); err != nil {
-		return ErrCorrupt
-	}
-	if err := tmp.Sync(); err != nil {
-		return ErrCorrupt
-	}
-	if err := tmp.Close(); err != nil {
-		return ErrCorrupt
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return ErrCorrupt
-	}
-	remove = false
-	// Keep the replacement owner-only even on filesystems with unusual umask
-	// behavior. Rename is used only after the complete file is synced.
-	if err := os.Chmod(path, 0o600); err != nil {
-		return ErrUnsafePermissions
-	}
-	if err := syncDirectory(dir); err != nil {
-		return err
-	}
-	return nil
-}
-
-// writeInitial uses O_EXCL so concurrent creators cannot replace one
-// another's freshly generated UUID. Credential replacement uses writeAtomic.
-func writeInitial(path string, state State) error {
-	dir := filepath.Dir(path)
-	if err := validatePrivateDir(dir); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return ErrAlreadyExists
-		}
-		return ErrCorrupt
-	}
-	remove := true
-	defer func() {
-		_ = f.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if err := f.Chmod(0o600); err != nil {
-		return ErrUnsafePermissions
-	}
-	encoder := json.NewEncoder(f)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(state); err != nil {
-		return ErrCorrupt
-	}
-	if err := f.Sync(); err != nil {
-		return ErrCorrupt
-	}
-	if err := f.Close(); err != nil {
-		return ErrCorrupt
-	}
-	remove = false
-	if err := syncDirectory(dir); err != nil {
-		return err
-	}
-	return nil
-}
-
-// syncDirectory makes a completed create/rename durable on filesystems that
-// support syncing directory entries. Windows does not expose this operation;
-// file contents remain individually flushed there and directory syncing is
-// intentionally treated as an unsupported no-op.
-func syncDirectory(dir string) error {
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	f, err := os.Open(dir)
-	if err != nil {
-		return ErrCorrupt
-	}
-	defer func() { _ = f.Close() }()
-	if err := f.Sync(); err != nil {
-		return ErrCorrupt
-	}
-	return nil
 }
 
 func newUUID() (string, error) {
