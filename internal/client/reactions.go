@@ -90,7 +90,7 @@ func webProfile(state authstate.State) (macweb.Profile, error) {
 	}
 	wireUUID, err := state.Identity.WireDeviceUUID()
 	if err != nil {
-		return macweb.Profile{}, errBootstrap
+		return macweb.Profile{}, stageErr(errBootstrap, "device uuid", err)
 	}
 	return macweb.Profile{
 		AppVersion: state.Identity.Metadata.AppVersion, OSVersion: state.Identity.Metadata.OSVersion,

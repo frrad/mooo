@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -55,7 +56,7 @@ func TestSessionExplicitRequestIDRejectsPendingCollision(t *testing.T) {
 	session.nextID = 2
 	session.pending[2] = pendingRequest{method: "PING", result: waiter}
 	_, err := session.requestRaw(context.Background(), 2, "LCHATLIST", nil)
-	if err != ErrProtocol {
+	if !errors.Is(err, ErrProtocol) {
 		t.Fatalf("requestRaw collision error = %v, want %v", err, ErrProtocol)
 	}
 	if got := session.pending[2]; got.result != waiter {
