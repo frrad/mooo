@@ -166,3 +166,52 @@ func TestSuppressedMultipartRefusalRetainsProgressAndResumesMissingParts(t *test
 		t.Fatal("recovery lost, reordered or duplicated a part")
 	}
 }
+
+// A Matrix outage can outlast the first reconnect, so the catch-up replay of
+// the paused event fails too. That is the same retained-progress condition as
+// the live pause and must keep using the bounded recovery budget instead of
+// stopping until an operator reconnects.
+func TestCatchUpDeliveryFailureKeepsBoundedRecovery(t *testing.T) {
+	one := events.TextMessage{ChatID: testChatID, LogID: 11, AuthorID: testOtherID, Message: "first"}
+	first := &fakeKakao{stream: make(chan events.Result, 1)}
+	second := &fakeKakao{stream: make(chan events.Result), resumeTargets: []syncmsg.Target{{ChatID: testChatID, MaxLogID: 11}}, catchUps: map[int64]catchUpResult{testChatID: {events: []events.Event{one}}}}
+	third := &fakeKakao{stream: make(chan events.Result), resumeTargets: []syncmsg.Target{{ChatID: testChatID, MaxLogID: 11}}, catchUps: map[int64]catchUpResult{testChatID: {events: []events.Event{one}}}}
+	owners := []*fakeKakao{first, second, third}
+	var opens atomic.Int32
+	kc, harness := newTestClient(t, func() (kakaoClient, error) {
+		n := int(opens.Add(1))
+		if n > len(owners) {
+			return nil, errors.New("unexpected extra connection")
+		}
+		return owners[n-1], nil
+	})
+	harness.results = []bridgev2.EventHandlingResult{
+		{Error: errors.New("synthetic Matrix outage")},
+		{Error: errors.New("synthetic Matrix outage continues")},
+	}
+	kc.wait = func(context.Context, time.Duration) error { return nil }
+	defer func() { close(first.stream); close(second.stream); close(third.stream); kc.Disconnect() }()
+	kc.Connect(t.Context())
+	first.stream <- events.Result{Event: one}
+	waitFor(t, func() bool { return opens.Load() == 3 && kc.IsLoggedIn() })
+	if len(first.committed()) != 0 || len(second.committed()) != 0 {
+		t.Fatal("failed delivery advanced progress")
+	}
+	if commits := third.committed(); len(commits) != 1 || commits[0] != one {
+		t.Fatal("recovery did not replay the paused event once")
+	}
+	if harness.queuedCount() != 3 {
+		t.Fatalf("queued %d deliveries", harness.queuedCount())
+	}
+}
+
+func TestCatchUpRetriesOnlyUnconfirmedMatrixDelivery(t *testing.T) {
+	if !retryableRecoveryError(bootstrapFailure{stage: "catch-up", err: fmt.Errorf("catch-up event: %w", errDeliveryNotConfirmed)}) {
+		t.Fatal("unconfirmed catch-up delivery is not retried")
+	}
+	for _, err := range []error{client.ErrClosed, client.ErrGapUnresolved, errors.New("catch up chat: synthetic source failure")} {
+		if retryableRecoveryError(bootstrapFailure{stage: "catch-up", err: err}) {
+			t.Fatalf("source-side catch-up failure became retryable: %v", err)
+		}
+	}
+}

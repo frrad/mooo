@@ -297,6 +297,9 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 			return
 		}
 		if recovering && retryableRecoveryError(err) && kc.retryAfter(err, generation) {
+			if errors.Is(err, errDeliveryNotConfirmed) && kc.isCurrent(generation, ctx) {
+				kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDeliveryPaused})
+			}
 			return
 		}
 		if kc.isCurrent(generation, ctx) {
@@ -408,6 +411,10 @@ func recoveryDelay(err error, attempt int) time.Duration {
 	return delays[attempt]
 }
 
+// errDeliveryNotConfirmed marks a catch-up stopped because Matrix did not
+// confirm an event; its source progress is retained for replay.
+var errDeliveryNotConfirmed = errors.New("connector: delivery not confirmed")
+
 func retryableRecoveryError(err error) bool {
 	if err == nil || errors.Is(err, client.ErrLogin) || errors.Is(err, client.ErrCredentialRenewal) {
 		return false
@@ -415,7 +422,9 @@ func retryableRecoveryError(err error) bool {
 	var bootstrapErr bootstrapFailure
 	if errors.As(err, &bootstrapErr) {
 		if bootstrapErr.stage == "catch-up" {
-			return false
+			// Only Matrix-side delivery is retried here; source failures during
+			// catch-up stay terminal. Progress was retained, so replay is safe.
+			return errors.Is(bootstrapErr.err, errDeliveryNotConfirmed)
 		}
 		err = bootstrapErr.err
 	}
@@ -502,7 +511,7 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 		if errors.Is(err, client.ErrGapUnresolved) {
 			kc.log().Warn().Int64("kakao_chat_id", target.ChatID).Msg("Could not recover messages missed while disconnected")
 			if result := kc.queue(kc.gapNotice(target.ChatID, target.MaxLogID)); !committable(result) {
-				return errors.New("catch-up gap notice was not confirmed as bridged")
+				return fmt.Errorf("catch-up gap notice: %w", errDeliveryNotConfirmed)
 			}
 			continue
 		} else if err != nil {
@@ -513,7 +522,7 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 		}
 		for _, evt := range missed {
 			if !kc.handleEvent(c, evt) {
-				return errors.New("catch-up event was not committed")
+				return fmt.Errorf("catch-up event: %w", errDeliveryNotConfirmed)
 			}
 		}
 	}
