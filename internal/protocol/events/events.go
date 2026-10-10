@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/frrad/mooo/internal/protocol/chat"
+	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/media"
@@ -728,11 +729,11 @@ func decodeReadState(body []byte) (Event, error) {
 }
 
 func decodeMessage(packet loco.Packet) (Event, error) {
-	raw := bson.Raw(packet.Body)
-	chatID, logID, messageType, chatLog, err := messageEnvelope(raw)
+	env, err := chatlog.Decode(packet.Body)
 	if err != nil {
 		return nil, ErrMalformedEvent
 	}
+	chatID, logID, messageType, chatLog := env.ChatID, env.LogID, env.Type, env.Log
 	if messageType == messagetype.Feed {
 		return decodeFeed(chatID, logID, chatLog)
 	}
@@ -763,37 +764,37 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 			Revision: optionalInt64(chatLog, "revision"),
 		}, chatLog)
 	case media.PhotoType:
-		photo, err := media.DecodePhotoMessage(packet.Body)
+		photo, err := media.DecodePhotoMessage(env)
 		if err != nil {
 			return nil, ErrMalformedEvent
 		}
 		return PhotoMessage{Message: photo}, nil
 	case messagetype.Contact:
-		contact, err := media.DecodeContactMessage(packet.Body)
+		contact, err := media.DecodeContactMessage(env)
 		if err != nil {
 			return nil, ErrMalformedEvent
 		}
 		return ContactMessage{Message: contact}, nil
 	case messagetype.File:
-		file, err := media.DecodeFileMessage(packet.Body)
+		file, err := media.DecodeFileMessage(env)
 		if err != nil {
 			return nil, ErrMalformedEvent
 		}
 		return FileMessage{Message: file}, nil
 	case messagetype.Audio:
-		audio, err := media.DecodeAudioMessage(packet.Body)
+		audio, err := media.DecodeAudioMessage(env)
 		if err != nil {
 			return nil, ErrMalformedEvent
 		}
 		return AudioMessage{Message: audio}, nil
 	case messagetype.Video:
-		video, err := media.DecodeVideoMessage(packet.Body)
+		video, err := media.DecodeVideoMessage(env)
 		if err != nil {
 			return nil, ErrMalformedEvent
 		}
 		return VideoMessage{Message: video}, nil
 	case messagetype.MultiPhoto:
-		album, err := media.DecodeMultiPhotoMessage(packet.Body)
+		album, err := media.DecodeMultiPhotoMessage(env)
 		if err != nil {
 			return nil, ErrMalformedEvent
 		}
@@ -977,32 +978,6 @@ func logMetaEvent(chatID, logID, revision, linkID, metaType int64, content strin
 	return ReactionChanged{MetadataType: 2, ChatID: chatID, LinkID: linkID, LogID: logID, Revision: revision, Items: items}, nil
 }
 
-func messageEnvelope(raw bson.Raw) (int64, int64, int32, bson.Raw, error) {
-	if err := raw.Validate(); err != nil {
-		return 0, 0, 0, nil, err
-	}
-	chatID, err := requiredInt64(raw, "chatId")
-	if err != nil || chatID <= 0 {
-		return 0, 0, 0, nil, ErrMalformedEvent
-	}
-	logValue, err := raw.LookupErr("chatLog")
-	if err != nil || logValue.Type != bson.TypeEmbeddedDocument {
-		return 0, 0, 0, nil, ErrMalformedEvent
-	}
-	chatLog := logValue.Document()
-	logID, err := requiredInt64(chatLog, "logId")
-	if err != nil {
-		logID, err = requiredInt64(raw, "logId")
-	}
-	if err != nil || logID <= 0 {
-		return 0, 0, 0, nil, ErrMalformedEvent
-	}
-	typeValue, err := requiredInt64(chatLog, "type")
-	if err != nil || typeValue < 0 || typeValue > int64(^uint32(0)>>1) {
-		return 0, 0, 0, nil, ErrMalformedEvent
-	}
-	return chatID, logID, int32(typeValue), chatLog, nil
-}
 
 func requiredInt64(raw bson.Raw, key string) (int64, error) {
 	value, err := raw.LookupErr(key)

@@ -42,7 +42,7 @@ func videoBody(t *testing.T, a map[string]any) []byte {
 	return b
 }
 func TestObservedVideoMetadata(t *testing.T) {
-	m, err := DecodeVideoMessage(videoBody(t, videoFixture(t)))
+	m, err := DecodeVideoMessage(decodeEnvelope(t, videoBody(t, videoFixture(t))))
 	if err != nil || m.ChatID != 42 || m.LogID != 99 || m.AuthorID != 8 || m.SentAt != 1234 || m.Attachment.Size != 146274 || m.Attachment.Duration != 3 || m.Attachment.Width != 320 || m.Attachment.Height != 240 {
 		t.Fatal("observed metadata lost", err)
 	}
@@ -59,7 +59,7 @@ func TestVideoRejectsUnsafeAndUnboundedAttachments(t *testing.T) {
 	} {
 		a := videoFixture(t)
 		change(a)
-		if _, err := DecodeVideoMessage(videoBody(t, a)); err != ErrInvalidMessage {
+		if _, err := DecodeVideoMessage(decodeEnvelope(t, videoBody(t, a))); err != ErrInvalidMessage {
 			t.Fatal("invalid video accepted")
 		}
 	}
@@ -72,7 +72,7 @@ func TestVideoRejectsDuplicateFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = DecodeVideoMessage(x); err != ErrInvalidMessage {
+	if _, err = DecodeVideoMessage(decodeEnvelope(t, x)); err != ErrInvalidMessage {
 		t.Fatal("duplicate field accepted")
 	}
 }
@@ -83,7 +83,7 @@ func videoEnvelope() []byte {
 }
 func TestVideoDownloadBoundsChecksumExpiryAndFraming(t *testing.T) {
 	data := videoEnvelope()
-	m, err := DecodeVideoMessage(videoBody(t, videoFixture(t)))
+	m, err := DecodeVideoMessage(decodeEnvelope(t, videoBody(t, videoFixture(t))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestVideoDownloadBoundsChecksumExpiryAndFraming(t *testing.T) {
 	}
 }
 func TestVideoRedirectCannotLeaveAllowedOrigins(t *testing.T) {
-	m, _ := DecodeVideoMessage(videoBody(t, videoFixture(t)))
+	m, _ := DecodeVideoMessage(decodeEnvelope(t, videoBody(t, videoFixture(t))))
 	calls := 0
 	client := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		calls++

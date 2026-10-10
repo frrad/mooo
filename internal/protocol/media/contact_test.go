@@ -43,7 +43,7 @@ func contactBody(t *testing.T, a map[string]any) []byte {
 }
 func TestObservedContactPreservesMetadataAndOriginalBytes(t *testing.T) {
 	a, data := contactFixture(t)
-	m, err := DecodeContactMessage(contactBody(t, a))
+	m, err := DecodeContactMessage(decodeEnvelope(t, contactBody(t, a)))
 	if err != nil || m.ChatID != 42 || m.LogID != 99 || m.AuthorID != 8 || m.SentAt != 1234 || m.Attachment.Name != "Mooo-Synthetic-Contact" {
 		t.Fatal("observed contact metadata lost", err)
 	}
@@ -57,7 +57,7 @@ func TestObservedContactPreservesMetadataAndOriginalBytes(t *testing.T) {
 }
 func TestContactExpiryUsesMillisecondsAndStopsBeforeFetch(t *testing.T) {
 	a, _ := contactFixture(t)
-	m, err := DecodeContactMessage(contactBody(t, a))
+	m, err := DecodeContactMessage(decodeEnvelope(t, contactBody(t, a)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestContactRejectsMalformedMetadata(t *testing.T) {
 	} {
 		a, _ := contactFixture(t)
 		change(a)
-		if _, err := DecodeContactMessage(contactBody(t, a)); err != ErrInvalidMessage {
+		if _, err := DecodeContactMessage(decodeEnvelope(t, contactBody(t, a))); err != ErrInvalidMessage {
 			t.Fatal("invalid contact accepted")
 		}
 	}
@@ -86,13 +86,13 @@ func TestContactRejectsDuplicateJSONFields(t *testing.T) {
 	a, _ := contactFixture(t)
 	x, _ := json.Marshal(a)
 	body, _ := bson.Marshal(bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.D{{Key: "logId", Value: int64(99)}, {Key: "type", Value: messagetype.Contact}, {Key: "attachment", Value: string(x[:len(x)-1]) + `,"name":"duplicate"}`}}}})
-	if _, err := DecodeContactMessage(body); err != ErrInvalidMessage {
+	if _, err := DecodeContactMessage(decodeEnvelope(t, body)); err != ErrInvalidMessage {
 		t.Fatal("duplicate contact name accepted")
 	}
 }
 func TestContactResponseBoundsAndFraming(t *testing.T) {
 	a, data := contactFixture(t)
-	m, err := DecodeContactMessage(contactBody(t, a))
+	m, err := DecodeContactMessage(decodeEnvelope(t, contactBody(t, a)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestContactResponseBoundsAndFraming(t *testing.T) {
 
 func TestContactCRLFPolicyPreservesBytes(t *testing.T) {
 	a, data := contactFixture(t)
-	m, err := DecodeContactMessage(contactBody(t, a))
+	m, err := DecodeContactMessage(decodeEnvelope(t, contactBody(t, a)))
 	if err != nil {
 		t.Fatal(err)
 	}

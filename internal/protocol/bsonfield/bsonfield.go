@@ -73,6 +73,16 @@ func (r Reader) Int64(raw bson.Raw, keys ...string) (int64, bool, error) {
 	return n, true, nil
 }
 
+// Int64OrZero reads an int32 or int64 field leniently: an absent field or a
+// field of any other type is zero.
+func Int64OrZero(raw bson.Raw, keys ...string) int64 {
+	n, _, err := Reader{}.Int64(raw, keys...)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 // Int64Exact reads a field that must be a BSON int64; int32 is a type error.
 func (r Reader) Int64Exact(raw bson.Raw, keys ...string) (int64, bool, error) {
 	value, ok := r.Lookup(raw, keys...)

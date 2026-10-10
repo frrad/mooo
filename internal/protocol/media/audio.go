@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -31,29 +32,12 @@ type AudioMessage struct {
 func (AudioMessage) String() string     { return "AudioMessage{<redacted>}" }
 func (m AudioMessage) GoString() string { return m.String() }
 
-func DecodeAudioMessage(body []byte) (AudioMessage, error) {
-	raw := bson.Raw(body)
-	if raw.Validate() != nil {
+func DecodeAudioMessage(env chatlog.Envelope) (AudioMessage, error) {
+	if env.Type != messagetype.Audio || !env.LogIDInChatLog {
 		return AudioMessage{}, ErrInvalidMessage
 	}
-	chat, err := integerField(raw, "chatId")
-	if err != nil || chat <= 0 {
-		return AudioMessage{}, ErrInvalidMessage
-	}
-	v, err := raw.LookupErr("chatLog")
-	if err != nil || v.Type != bson.TypeEmbeddedDocument {
-		return AudioMessage{}, ErrInvalidMessage
-	}
-	log := v.Document()
-	typ, err := integerField(log, "type")
-	if err != nil || typ != int64(messagetype.Audio) {
-		return AudioMessage{}, ErrInvalidMessage
-	}
-	id, err := integerField(log, "logId")
-	if err != nil || id <= 0 {
-		return AudioMessage{}, ErrInvalidMessage
-	}
-	v, err = log.LookupErr("attachment")
+	log := env.Log
+	v, err := log.LookupErr("attachment")
 	if err != nil || v.Type != bson.TypeString || len(v.StringValue()) > 64<<10 || !utf8.ValidString(v.StringValue()) {
 		return AudioMessage{}, ErrInvalidMessage
 	}
@@ -87,7 +71,7 @@ func DecodeAudioMessage(body []byte) (AudioMessage, error) {
 	if json.Unmarshal([]byte(text), &a) != nil || !validAudioAttachment(a) {
 		return AudioMessage{}, ErrInvalidMessage
 	}
-	return AudioMessage{ChatID: chat, LogID: id, AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt"), Attachment: a}, nil
+	return AudioMessage{ChatID: env.ChatID, LogID: env.LogID, AuthorID: env.AuthorID, SentAt: env.SentAt, Attachment: a}, nil
 }
 
 func validAudioAttachment(a AudioAttachment) bool {
