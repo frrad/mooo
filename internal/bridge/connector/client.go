@@ -186,9 +186,22 @@ type KakaoClient struct {
 	// event loop that delivered a Matrix change.
 	refreshMembership func(kakaoClient, int64)
 
-	groupGate      sync.Mutex
-	displayGate    sync.Mutex
-	sourceBlocked  map[int64]error
+	groupGate   sync.Mutex
+	displayGate sync.Mutex
+
+	// cacheMu guards the source caches below. It is never held together with
+	// mu, and never across I/O.
+	cacheMu       sync.Mutex
+	sourceBlocked map[int64]error
+	profiles      map[int64]chatmeta.Member
+	// profileRefreshAfter is the periodic profile refresh cursor; groupGate
+	// guards it.
+	profileRefreshAfter string
+
+	reactionNoticeMu sync.Mutex
+	reactionNotices  map[string]time.Time
+
+	// mu guards the connection lifecycle state below.
 	mu             sync.Mutex
 	disconnectGate chan struct{}
 	client         kakaoClient
@@ -220,10 +233,6 @@ type KakaoClient struct {
 	connectingGeneration uint64
 	recoveryTry          int
 	wait                 func(context.Context, time.Duration) error
-	profiles             map[int64]chatmeta.Member
-	profileRefreshAfter  string
-	reactionNoticeMu     sync.Mutex
-	reactionNotices      map[string]time.Time
 }
 
 var (
@@ -1170,9 +1179,9 @@ func (kc *KakaoClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 	if err != nil {
 		return nil, err
 	}
-	kc.mu.Lock()
+	kc.cacheMu.Lock()
 	profile, ok := kc.profiles[userID]
-	kc.mu.Unlock()
+	kc.cacheMu.Unlock()
 	if !ok {
 		return &bridgev2.UserInfo{}, nil
 	}

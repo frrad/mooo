@@ -42,9 +42,9 @@ func (kc *KakaoClient) ResolveIdentifier(ctx context.Context, identifier string,
 	if err != nil {
 		return nil, err
 	}
-	kc.mu.Lock()
+	kc.cacheMu.Lock()
 	profile, ok := kc.profiles[userID]
-	kc.mu.Unlock()
+	kc.cacheMu.Unlock()
 	if !ok {
 		return nil, errors.New("connector: participant is not a previously resolved Kakao identity")
 	}

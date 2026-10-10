@@ -49,12 +49,12 @@ func (kc *KakaoClient) refreshGroupMembership(ctx context.Context, c kakaoClient
 	if err != nil {
 		return err
 	}
-	kc.mu.Lock()
+	kc.cacheMu.Lock()
 	if kc.sourceBlocked == nil {
 		kc.sourceBlocked = map[int64]error{}
 	}
 	kc.sourceBlocked[chatID] = errMembershipPending
-	kc.mu.Unlock()
+	kc.cacheMu.Unlock()
 	// Persist the pause before source or Matrix work, including a failed refresh.
 	if err = kc.saveMembershipCheckpoint(ctx, p, true, nil); err != nil {
 		return err
@@ -124,9 +124,9 @@ func (kc *KakaoClient) refreshGroupMembership(ctx context.Context, c kakaoClient
 	if err = kc.saveMembershipCheckpoint(ctx, p, false, snap.roster); err != nil {
 		return err
 	}
-	kc.mu.Lock()
+	kc.cacheMu.Lock()
 	delete(kc.sourceBlocked, chatID)
-	kc.mu.Unlock()
+	kc.cacheMu.Unlock()
 	return nil
 }
 
