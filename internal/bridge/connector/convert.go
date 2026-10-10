@@ -509,34 +509,20 @@ func messageWithMetadata(msgType event.MessageType, body string, metadata *Kakao
 }
 
 func convertPhoto(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.PhotoMessage) (*bridgev2.ConvertedMessage, error) {
-	transferCtx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)
-	defer cancel()
-	data, err := media.DownloadPhoto(transferCtx, photoHTTPClient, msg.Message.Attachment)
-	if err != nil {
-		if category, ok := deterministicPhotoFailure(err); ok {
-			return photoConversionGapNotice(msg, category), nil
-		}
-		return nil, errPhotoTransfer
-	}
-	attachment := msg.Message.Attachment
-	ext, mimeType := matrixPhotoType(attachment.MediaType)
-	filename := "photo." + ext
-	uri, file, err := intent.UploadMedia(transferCtx, portal.MXID, data, filename, mimeType)
-	if err != nil {
-		return nil, errPhotoTransfer
-	}
-	content := &event.MessageEventContent{MsgType: event.MsgImage, Body: filename, URL: uri, FileName: filename}
-	if attachment.Comment != "" {
-		content.Body = attachment.Comment
-	}
-	if file != nil {
-		content.File = file
-		content.URL = ""
-	}
-	content.Info = &event.FileInfo{MimeType: mimeType, Size: len(data), Width: int(attachment.Width), Height: int(attachment.Height)}
-	converted := &bridgev2.ConvertedMessage{Parts: []*bridgev2.ConvertedMessagePart{{Type: event.EventMessage, Content: content}}}
-	converted.Parts[0].DBMetadata = newKakaoMessageMetadata(msg.Message.ChatID, msg.Message.LogID, msg.Message.AuthorID, media.PhotoType, "[image]", 0)
-	return converted, nil
+	p := msg.Message
+	a := p.Attachment
+	ext, mimeType := matrixPhotoType(a.MediaType)
+	return convertAttachment(ctx, portal, intent, attachmentSpec{
+		kind: "photo", failedTo: "displayed", msgType: event.MsgImage, body: a.Comment,
+		metadata:    newKakaoMessageMetadata(p.ChatID, p.LogID, p.AuthorID, media.PhotoType, "[image]", 0),
+		gapMetadata: newKakaoMessageMetadata(p.ChatID, p.LogID, p.AuthorID, media.PhotoType, "[photo unavailable]", 0),
+		transferErr: errPhotoTransfer,
+		download: func(ctx context.Context) (attachmentMedia, error) {
+			data, err := media.DownloadPhoto(ctx, photoHTTPClient, a)
+			info := event.FileInfo{Width: int(a.Width), Height: int(a.Height)}
+			return attachmentMedia{data: data, name: "photo." + ext, mime: mimeType, info: info}, err
+		},
+	})
 }
 
 // matrixPhotoType maps a validated Kakao photo media type to a file extension
@@ -565,12 +551,6 @@ func deterministicPhotoFailure(err error) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-func photoConversionGapNotice(msg events.PhotoMessage, category string) *bridgev2.ConvertedMessage {
-	metadata := newKakaoMessageMetadata(msg.Message.ChatID, msg.Message.LogID, msg.Message.AuthorID, media.PhotoType, "[photo unavailable]", 0)
-	metadata.ConversionGap = category
-	return messageWithMetadata(event.MsgNotice, fmt.Sprintf("A KakaoTalk photo could not be displayed (%s).", category), metadata)
 }
 
 // GetChatInfo supplies the creation snapshot before bridgev2 creates a room.

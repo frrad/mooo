@@ -57,30 +57,26 @@ func convertAlbum(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 		if existing[partID] {
 			continue
 		}
-		metadata := newKakaoMessageMetadata(a.ChatID, a.LogID, a.AuthorID, messagetype.MultiPhoto, "[album]", 0)
-		data, err := media.DownloadAlbumPhoto(ctx, photoHTTPClient, photo)
-		if err != nil {
-			if category, ok := deterministicPhotoFailure(err); ok {
-				metadata.ConversionGap = category
-				converted.Parts = append(converted.Parts, &bridgev2.ConvertedMessagePart{ID: partID, Type: event.EventMessage, Content: &event.MessageEventContent{MsgType: event.MsgNotice, Body: fmt.Sprintf("A KakaoTalk album photo could not be displayed (%s).", category)}, DBMetadata: metadata})
-				continue
-			}
-			return nil, errPhotoTransfer
+		comment := ""
+		if i < len(a.Comments) {
+			comment = a.Comments[i]
 		}
 		ext, mimeType := matrixPhotoType(photo.MediaType)
-		name := fmt.Sprintf("photo-%d.%s", i+1, ext)
-		uri, file, err := intent.UploadMedia(ctx, portal.MXID, data, name, mimeType)
+		part, err := attachmentPart(ctx, portal, intent, attachmentSpec{
+			kind: "album photo", failedTo: "displayed", msgType: event.MsgImage, body: comment,
+			metadata:    newKakaoMessageMetadata(a.ChatID, a.LogID, a.AuthorID, messagetype.MultiPhoto, "[album]", 0),
+			transferErr: errPhotoTransfer,
+			download: func(ctx context.Context) (attachmentMedia, error) {
+				data, err := media.DownloadAlbumPhoto(ctx, photoHTTPClient, photo)
+				info := event.FileInfo{Width: int(photo.Width), Height: int(photo.Height)}
+				return attachmentMedia{data: data, name: fmt.Sprintf("photo-%d.%s", i+1, ext), mime: mimeType, info: info}, err
+			},
+		})
 		if err != nil {
-			return nil, errPhotoTransfer
+			return nil, err
 		}
-		content := &event.MessageEventContent{MsgType: event.MsgImage, Body: name, FileName: name, URL: uri, File: file, Info: &event.FileInfo{MimeType: mimeType, Size: len(data), Width: int(photo.Width), Height: int(photo.Height)}}
-		if i < len(a.Comments) && a.Comments[i] != "" {
-			content.Body = a.Comments[i]
-		}
-		if file != nil {
-			content.URL = ""
-		}
-		converted.Parts = append(converted.Parts, &bridgev2.ConvertedMessagePart{ID: partID, Type: event.EventMessage, Content: content, DBMetadata: metadata})
+		part.ID = partID
+		converted.Parts = append(converted.Parts, part)
 	}
 	return converted, nil
 }
