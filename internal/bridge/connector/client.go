@@ -46,7 +46,7 @@ type kakaoClient interface {
 	MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error)
 	SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error)
 	SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error)
-	SendImage(ctx context.Context, chatID int64, data []byte) (media.SendResult, error)
+	SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error)
 	MarkRead(ctx context.Context, chatID, watermark int64) (syncmsg.Response, error)
 	Close() error
 	Shutdown(ctx context.Context) error
@@ -161,6 +161,11 @@ type KakaoClient struct {
 	cleanupRetryAttempts int
 	cleanupRetryDone     chan struct{}
 	connectCancel        context.CancelFunc
+	// lifecycle spans one Connect..Disconnect cycle, including bounded
+	// recovery reconnects. Disconnect cancels it before waiting for the event
+	// pump, which interrupts in-flight inbound conversions.
+	lifecycle            context.Context
+	lifecycleCancel      context.CancelFunc
 	retryCancel          context.CancelFunc
 	retryDone            chan struct{}
 	retryID              uint64
@@ -217,6 +222,9 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	}
 	kc.connecting = true
 	kc.stopping = false
+	if kc.lifecycle == nil {
+		kc.lifecycle, kc.lifecycleCancel = context.WithCancel(context.Background())
+	}
 	kc.generation++
 	generation := kc.generation
 	kc.connectingGeneration = generation
@@ -324,6 +332,14 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	kc.mu.Unlock()
 	kc.sendReadyState()
 	go kc.run(c, stream, done, generation)
+}
+
+// connectionLifecycle returns the current connection lifecycle, or nil when
+// the client is not between Connect and Disconnect.
+func (kc *KakaoClient) connectionLifecycle() context.Context {
+	kc.mu.Lock()
+	defer kc.mu.Unlock()
+	return kc.lifecycle
 }
 
 func (kc *KakaoClient) isCurrent(generation uint64, ctx context.Context) bool {
@@ -937,6 +953,10 @@ func (kc *KakaoClient) Disconnect() {
 		return
 	}
 	kc.mu.Lock()
+	if kc.lifecycleCancel != nil {
+		kc.lifecycleCancel()
+		kc.lifecycle, kc.lifecycleCancel = nil, nil
+	}
 	var retryDone chan struct{}
 	if kc.retryCancel != nil {
 		kc.retryCancel()
@@ -1416,10 +1436,9 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		if !ok {
 			return nil, bridgev2.ErrFailedToGetIntent
 		}
-		if err := kc.beginOutbound(ctx, msg); err != nil {
-			return nil, err
-		}
-		return kc.sendMatrixImage(ctx, c, intent, chatID, msg.Content.URL, msg.Content.File)
+		return kc.sendMatrixImage(ctx, c, intent, chatID, msg.Content, func(ctx context.Context) error {
+			return kc.beginOutbound(ctx, msg)
+		})
 	}
 	body := msg.Content.Body
 	if msg.Content.MsgType == event.MsgEmote {
@@ -1495,14 +1514,52 @@ func outboundAcceptedWithoutPosition(err error) error {
 		WithSendNotice(true)
 }
 
-func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c kakaoClient, intent bridgev2.MatrixAPI, chatID int64, uri id.ContentURIString, fileInfo *event.EncryptedFileInfo) (*bridgev2.MatrixMessageResponse, error) {
+// sendMatrixImage fetches and validates the Matrix image before begin
+// reserves the event's single source send, so a failed fetch or an image
+// KakaoTalk cannot accept never consumes the reservation or reaches Kakao.
+// Disconnect interrupts the transfer through the connection lifecycle.
+func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c kakaoClient, intent bridgev2.MatrixAPI, chatID int64, content *event.MessageEventContent, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)
 	defer cancel()
-	data, err := matrixImageDownloader(ctx, intent, uri, fileInfo)
-	if err != nil {
-		return nil, errors.New("download Matrix image failed")
+	if lifecycle := kc.connectionLifecycle(); lifecycle != nil {
+		var release func()
+		ctx, release = withConnectionLifecycle(context.WithValue(ctx, connectionLifecycleKey{}, lifecycle))
+		defer release()
 	}
-	response, err := c.SendImage(ctx, chatID, data)
+	// A body that differs from the filename is the image's caption.
+	caption := ""
+	if content.FileName != "" && content.Body != content.FileName {
+		caption = content.Body
+	}
+	if !media.ValidCaption(caption) {
+		return nil, bridgev2.WrapErrorInStatus(media.ErrInvalidCaption).
+			WithStatus(event.MessageStatusFail).
+			WithErrorReason(event.MessageStatusUnsupported).
+			WithIsCertain(true).
+			WithMessage("The image caption is too long for KakaoTalk; the image was not sent.").
+			WithSendNotice(true)
+	}
+	data, err := matrixImageDownloader(ctx, intent, content.URL, content.File)
+	if err != nil {
+		return nil, bridgev2.WrapErrorInStatus(errors.New("download Matrix image failed")).
+			WithStatus(event.MessageStatusRetriable).
+			WithErrorReason(event.MessageStatusNetworkError).
+			WithIsCertain(true).
+			WithMessage("The image could not be fetched from Matrix, so it was not sent to KakaoTalk.").
+			WithSendNotice(true)
+	}
+	if _, err := media.PrepareImage(data); err != nil {
+		return nil, bridgev2.WrapErrorInStatus(err).
+			WithStatus(event.MessageStatusFail).
+			WithErrorReason(event.MessageStatusUnsupported).
+			WithIsCertain(true).
+			WithMessage("KakaoTalk accepts only JPEG and PNG photos up to 16 MiB; this image was not sent.").
+			WithSendNotice(true)
+	}
+	if err := begin(ctx); err != nil {
+		return nil, err
+	}
+	response, err := c.SendImage(ctx, chatID, data, caption)
 	if err != nil {
 		return nil, outboundSendError(err)
 	}

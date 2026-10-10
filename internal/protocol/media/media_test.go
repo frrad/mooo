@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -105,7 +107,7 @@ func TestDecodeAndDownloadPhotoMessage(t *testing.T) {
 	data := syntheticJPEG(t)
 	sum := sha1.Sum(data)
 	checksum := strings.ToUpper(hex.EncodeToString(sum[:]))
-	attachment := fmt.Sprintf(`{"k":"opaque","w":3,"h":2,"s":%d,"cs":"%s","mt":"image/jpg","url":"https://talk.kakaocdn.net/p/file?token=synthetic","thumbnailUrl":"https://talk.kakaocdn.net/p/thumb?token=synthetic","expire":4102444800}`, len(data), checksum)
+	attachment := fmt.Sprintf(`{"k":"opaque","w":3,"h":2,"s":%d,"cs":"%s","mt":"image/jpg","url":"https://talk.kakaocdn.net/p/file?token=synthetic","thumbnailUrl":"https://talk.kakaocdn.net/p/thumb?token=synthetic","expire":4102444800000}`, len(data), checksum)
 	log, _ := bson.Marshal(bson.D{{Key: "type", Value: PhotoType}, {Key: "logId", Value: int64(99)}, {Key: "authorId", Value: int64(7)}, {Key: "sendAt", Value: int64(1234)}, {Key: "attachment", Value: attachment}})
 	body, _ := bson.Marshal(bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.Raw(log)}})
 	message, err := DecodePhotoMessage(body)
@@ -195,5 +197,73 @@ func TestPhotoDownloadRejectsUnsafeRedirectBeforeFollowing(t *testing.T) {
 	}
 	if requests != 1 {
 		t.Fatalf("requests = %d, unsafe redirect was followed", requests)
+	}
+}
+
+func TestDecodePhotoMessageCaptionBounds(t *testing.T) {
+	encode := func(comment string) []byte {
+		fields := map[string]any{"k": "opaque", "w": 3, "h": 2, "s": 10, "cs": strings.Repeat("A", 40), "mt": "image/jpeg",
+			"url": "https://talk.kakaocdn.net/p/file", "thumbnailUrl": "https://talk.kakaocdn.net/p/thumb", "expire": 4102444800000, "cmt": comment}
+		attachment, _ := json.Marshal(fields)
+		log, _ := bson.Marshal(bson.D{{Key: "type", Value: PhotoType}, {Key: "logId", Value: int64(99)}, {Key: "attachment", Value: string(attachment)}})
+		body, _ := bson.Marshal(bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.Raw(log)}})
+		return body
+	}
+	message, err := DecodePhotoMessage(encode("synthetic caption"))
+	if err != nil || message.Attachment.Comment != "synthetic caption" {
+		t.Fatalf("caption message=%q err=%v", message.Attachment.Comment, err)
+	}
+	for name, comment := range map[string]string{"oversize": strings.Repeat("c", 16<<10+1), "nul": "a\x00b"} {
+		if _, err := DecodePhotoMessage(encode(comment)); !errors.Is(err, ErrInvalidMessage) {
+			t.Fatalf("%s caption error = %v", name, err)
+		}
+	}
+}
+
+func TestPhotoDownloadUnavailableStatusIsFinal(t *testing.T) {
+	for _, code := range []int{http.StatusForbidden, http.StatusNotFound, http.StatusGone, http.StatusServiceUnavailable} {
+		client := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: code, Body: io.NopCloser(strings.NewReader("")), Request: req}, nil
+		})}
+		_, err := DownloadPhoto(t.Context(), client, PhotoAttachment{Size: 10, MediaType: "image/jpeg", URL: "https://talk.kakaocdn.net/p/file", Checksum: strings.Repeat("A", 40)})
+		if got, want := errors.Is(err, ErrUnavailable), code != http.StatusServiceUnavailable; got != want || !errors.Is(err, ErrDownload) {
+			t.Fatalf("status %d: unavailable=%v err=%v", code, got, err)
+		}
+	}
+}
+
+func TestPostRequestCarriesCaptionInExtra(t *testing.T) {
+	image, err := PrepareImage(syntheticJPEG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ comment, want string }{{"", "{}"}, {"synthetic caption", `{"cmt":"synthetic caption"}`}} {
+		body, err := (PostRequest{UserID: 7, Key: "k", ChatID: 42, Image: image, AppVersion: "26.8.0", MediaID: 1, Comment: tc.comment}).MarshalBSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := bson.Raw(body).Lookup("ex").StringValue(); got != tc.want {
+			t.Fatalf("POST ex = %q, want %q", got, tc.want)
+		}
+		ship, err := (ShipRequest{ChatID: 42, Image: image}).MarshalBSON()
+		if err != nil || bson.Raw(ship).Lookup("ex").StringValue() != "{}" {
+			t.Fatalf("SHIP ex changed: err=%v", err)
+		}
+	}
+}
+
+// Photo expire is epoch milliseconds (observed). A photo that expired an hour
+// ago must not be requested, although the same number read as seconds would
+// lie far in the future.
+func TestPhotoExpiryUsesMilliseconds(t *testing.T) {
+	requested := false
+	client := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		requested = true
+		return nil, errors.New("unexpected request")
+	})}
+	expired := time.Now().Add(-time.Hour).UnixMilli()
+	_, err := DownloadPhoto(t.Context(), client, PhotoAttachment{Size: 1, Checksum: strings.Repeat("0", 40), MediaType: "image/jpeg", URL: "https://talk.kakaocdn.net/file", ExpiresAt: expired})
+	if !errors.Is(err, ErrExpired) || requested {
+		t.Fatalf("expired-by-milliseconds photo err=%v requested=%v", err, requested)
 	}
 }

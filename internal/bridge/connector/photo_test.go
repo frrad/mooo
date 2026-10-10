@@ -278,7 +278,7 @@ func TestDownloadMatrixImageBoundedRejectsUnsupportedIntent(t *testing.T) {
 }
 
 func TestSendMatrixImageUsesEncryptedMediaAndSendsOnce(t *testing.T) {
-	data := []byte("matrix-image")
+	data := connectorPNG(t)
 	chatLog, _ := bson.Marshal(bson.D{{Key: "logId", Value: int64(77)}, {Key: "sendAt", Value: int64(1700000000)}})
 	fake := &fakeKakao{imageResp: media.SendResult{ChatLog: chatLog}}
 	kc := connectedClient(t, fake)
@@ -291,7 +291,7 @@ func TestSendMatrixImageUsesEncryptedMediaAndSendsOnce(t *testing.T) {
 	}
 	t.Cleanup(func() { matrixImageDownloader = oldDownloader })
 	enc := &event.EncryptedFileInfo{}
-	resp, err := kc.sendMatrixImage(context.Background(), fake, intent, 3000, "mxc://example/image", enc)
+	resp, err := kc.sendMatrixImage(context.Background(), fake, intent, 3000, imageContent("mxc://example/image", enc), noReservation)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +309,7 @@ func TestSendMatrixImageRejectsOversizeBeforeMutation(t *testing.T) {
 		return nil, media.ErrInvalidImage
 	}
 	t.Cleanup(func() { matrixImageDownloader = oldDownloader })
-	if _, err := kc.sendMatrixImage(context.Background(), fake, intent, 3000, "mxc://example/image", nil); err == nil {
+	if _, err := kc.sendMatrixImage(context.Background(), fake, intent, 3000, imageContent("mxc://example/image", nil), noReservation); err == nil {
 		t.Fatal("oversize image unexpectedly sent")
 	}
 	if fake.imageCalls != 0 {
@@ -323,13 +323,13 @@ func TestSendMatrixImageDoesNotRetryAmbiguousSend(t *testing.T) {
 	intent := &photoMatrixAPI{}
 	oldDownloader := matrixImageDownloader
 	matrixImageDownloader = func(context.Context, bridgev2.MatrixAPI, id.ContentURIString, *event.EncryptedFileInfo) ([]byte, error) {
-		return []byte("image"), nil
+		return connectorPNG(t), nil
 	}
 	t.Cleanup(func() { matrixImageDownloader = oldDownloader })
-	if _, err := kc.sendMatrixImage(context.Background(), fake, intent, 3000, "mxc://example/image", nil); err == nil {
+	if _, err := kc.sendMatrixImage(context.Background(), fake, intent, 3000, imageContent("mxc://example/image", nil), noReservation); err == nil {
 		t.Fatal("ambiguous send unexpectedly succeeded")
 	}
-	if fake.imageCalls != 1 || !bytes.Equal(fake.imageData, []byte("image")) {
+	if fake.imageCalls != 1 || !bytes.Equal(fake.imageData, connectorPNG(t)) {
 		t.Fatal("image was not attempted exactly once")
 	}
 }
@@ -343,13 +343,15 @@ func TestSendMatrixImageUsesCapturedClientAfterDisconnect(t *testing.T) {
 		kc.mu.Lock()
 		kc.client = nil
 		kc.mu.Unlock()
-		return []byte("image"), nil
+		return connectorPNG(t), nil
 	}
 	t.Cleanup(func() { matrixImageDownloader = oldDownloader })
-	if _, err := kc.sendMatrixImage(context.Background(), fake, &photoMatrixAPI{}, 3000, "mxc://example/image", nil); err != nil {
+	if _, err := kc.sendMatrixImage(context.Background(), fake, &photoMatrixAPI{}, 3000, imageContent("mxc://example/image", nil), noReservation); err != nil {
 		t.Fatal(err)
 	}
 	if fake.imageCalls != 1 {
 		t.Fatalf("image calls=%d, want 1", fake.imageCalls)
 	}
 }
+
+func noReservation(context.Context) error { return nil }

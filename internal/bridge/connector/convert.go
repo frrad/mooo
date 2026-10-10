@@ -21,7 +21,15 @@ import (
 
 var photoHTTPClient = http.DefaultClient
 
-var errPhotoTransfer = errors.New("connector: Kakao photo transfer failed")
+// transientTransferError marks a media transfer failure that replay may
+// recover. It wraps bridgev2.ErrIgnoringRemoteEvent so the framework does not
+// post its generic error notice on each attempt; the event has no mapping, so
+// handleEvent and history backfill still retain source progress.
+func transientTransferError(message string) error {
+	return fmt.Errorf("%w: %s", bridgev2.ErrIgnoringRemoteEvent, message)
+}
+
+var errPhotoTransfer = transientTransferError("connector: Kakao photo transfer failed")
 
 func placeholderUserName(userID int64) string {
 	return fmt.Sprintf("KakaoTalk user %d", userID)
@@ -309,6 +317,8 @@ func newMessage[T any](
 		ID:        id,
 		Data:      data,
 		ConvertMessageFunc: func(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, value T) (*bridgev2.ConvertedMessage, error) {
+			ctx, release := withConnectionLifecycle(ctx)
+			defer release()
 			converted, err := convert(ctx, portal, intent, value)
 			if err != nil || converted == nil {
 				return converted, err
@@ -323,8 +333,36 @@ func newMessage[T any](
 	}
 }
 
+// connectionLifecycleKey carries the connection lifecycle context from event
+// creation into conversion. The SDK converts on the portal's own background
+// context, which Disconnect cannot cancel.
+type connectionLifecycleKey struct{}
+
+// withConnectionLifecycle bounds a conversion by the connection that admitted
+// its event, so Disconnect interrupts media transfers instead of waiting for
+// them. The returned release must be called when conversion returns.
+func withConnectionLifecycle(ctx context.Context) (context.Context, func()) {
+	lifecycle, ok := ctx.Value(connectionLifecycleKey{}).(context.Context)
+	if !ok || lifecycle == nil {
+		return ctx, func() {}
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(lifecycle, cancel)
+	return ctx, func() {
+		stop()
+		cancel()
+	}
+}
+
 func (kc *KakaoClient) messageMeta(chatID, logID, authorID, sentAt int64) simplevent.EventMeta {
+	lifecycle := kc.connectionLifecycle()
 	return simplevent.EventMeta{
+		MutateContextFunc: func(ctx context.Context) context.Context {
+			if lifecycle == nil {
+				return ctx
+			}
+			return context.WithValue(ctx, connectionLifecycleKey{}, lifecycle)
+		},
 		Type:      bridgev2.RemoteEventMessage,
 		PortalKey: makePortalKey(chatID, kc.login.ID),
 		LogContext: func(c zerolog.Context) zerolog.Context {
@@ -405,28 +443,40 @@ func convertPhoto(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 		return nil, errPhotoTransfer
 	}
 	attachment := msg.Message.Attachment
-	filename := "photo.jpg"
-	if attachment.MediaType == "image/png" {
-		filename = "photo.png"
-	}
-	uri, file, err := intent.UploadMedia(transferCtx, portal.MXID, data, filename, attachment.MediaType)
+	ext, mimeType := matrixPhotoType(attachment.MediaType)
+	filename := "photo." + ext
+	uri, file, err := intent.UploadMedia(transferCtx, portal.MXID, data, filename, mimeType)
 	if err != nil {
 		return nil, errPhotoTransfer
 	}
 	content := &event.MessageEventContent{MsgType: event.MsgImage, Body: filename, URL: uri, FileName: filename}
+	if attachment.Comment != "" {
+		content.Body = attachment.Comment
+	}
 	if file != nil {
 		content.File = file
 	}
-	content.Info = &event.FileInfo{MimeType: attachment.MediaType, Size: len(data), Width: int(attachment.Width), Height: int(attachment.Height)}
+	content.Info = &event.FileInfo{MimeType: mimeType, Size: len(data), Width: int(attachment.Width), Height: int(attachment.Height)}
 	converted := &bridgev2.ConvertedMessage{Parts: []*bridgev2.ConvertedMessagePart{{Type: event.EventMessage, Content: content}}}
 	converted.Parts[0].DBMetadata = newKakaoMessageMetadata(msg.Message.ChatID, msg.Message.LogID, msg.Message.AuthorID, media.PhotoType, "[image]", 0)
 	return converted, nil
+}
+
+// matrixPhotoType maps a validated Kakao photo media type to a file extension
+// and the registered MIME type. Kakao labels JPEG photos "image/jpg".
+func matrixPhotoType(kakaoType string) (ext, mimeType string) {
+	if kakaoType == "image/png" {
+		return "png", "image/png"
+	}
+	return "jpg", "image/jpeg"
 }
 
 func deterministicPhotoFailure(err error) (string, bool) {
 	switch {
 	case errors.Is(err, media.ErrExpired):
 		return "expired", true
+	case errors.Is(err, media.ErrUnavailable):
+		return "unavailable", true
 	case errors.Is(err, media.ErrChecksumMismatch):
 		return "checksum", true
 	case errors.Is(err, media.ErrInvalidAttachment):

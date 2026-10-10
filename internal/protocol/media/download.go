@@ -65,7 +65,13 @@ func downloadBoundedResource(ctx context.Context, client *http.Client, rawURL st
 		return nil, ErrDownload
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK || resp.Request != nil && validateDownloadURL(resp.Request.URL.String()) != nil {
+	if resp.Request != nil && validateDownloadURL(resp.Request.URL.String()) != nil {
+		return nil, ErrDownload
+	}
+	if unavailableStatus(resp.StatusCode) {
+		return nil, ErrUnavailable
+	}
+	if resp.StatusCode != http.StatusOK {
 		return nil, ErrDownload
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, size+1))

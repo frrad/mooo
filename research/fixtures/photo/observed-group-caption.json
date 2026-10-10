@@ -1,0 +1,25 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-10",
+    "method": "Owned A sent one synthetic JPEG with a typed caption into the owned encrypted A/B/C regular group; a scoped read-only B MSG push probe recorded only the chat-log and attachment key sets, value kinds and the synthetic caption.",
+    "doc": "research/bridge/GROUP-PHOTOS.md"
+  },
+  "chat_log_message": "photo",
+  "expire_unit": "milliseconds (observed 13 digits, 14 days after send)",
+  "attachment": {
+    "k": "synthetic-photo-key",
+    "url": "https://talk.kakaocdn.net/synthetic/photo.jpg",
+    "thumbnailUrl": "https://talk.kakaocdn.net/synthetic/thumb.jpg",
+    "thumbnailWidth": 240,
+    "thumbnailHeight": 180,
+    "expire": 4102444800000,
+    "cs": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "s": 124851,
+    "mt": "image/jpg",
+    "w": 640,
+    "h": 480,
+    "cmt": "mooo-s8-a-caption-synthetic"
+  }
+}

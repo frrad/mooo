@@ -2,7 +2,6 @@ package connector
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -14,7 +13,7 @@ import (
 	"maunium.net/go/mautrix/event"
 )
 
-var errFileTransfer = errors.New("connector: file transfer failed")
+var errFileTransfer = transientTransferError("connector: file transfer failed")
 
 func convertFile(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.FileMessage) (*bridgev2.ConvertedMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)

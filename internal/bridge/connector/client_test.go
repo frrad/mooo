@@ -65,6 +65,7 @@ type fakeKakao struct {
 	imageResp         media.SendResult
 	imageErr          error
 	imageData         []byte
+	imageCaption      string
 	imageCalls        int
 	closeCalls        int
 	shutdownCalls     int
@@ -99,8 +100,9 @@ func (f *fakeKakao) PersonalMeta(context.Context, int64) (*chatmeta.RoomMeta, er
 	return f.personalMeta, f.personalMetaErr
 }
 
-func (f *fakeKakao) SendImage(ctx context.Context, chatID int64, data []byte) (media.SendResult, error) {
+func (f *fakeKakao) SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error) {
 	f.imageData = append([]byte(nil), data...)
+	f.imageCaption = caption
 	f.imageCalls++
 	return f.imageResp, f.imageErr
 }

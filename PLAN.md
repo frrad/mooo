@@ -21,7 +21,7 @@ These are scoped capabilities, not full official-client parity.
 | Priority | Missing implementation or acceptance | Code/evidence boundary |
 |---|---|---|
 | 1 | Regular-group announcements; rename, join/leave and metadata lifecycle acceptance | Inbound text Boards announcements now project to the room topic (PR #269); rich and outbound announcements remain open. Initial shared title/roster works. Membership handlers exist, but live mutations remain unvalidated. See [chat metadata](research/chat-metadata.md) and [group evidence](research/bridge/GROUP-MESSAGING-VALIDATION.md). |
-| 2 | Group photos, replies, reactions and media/restart acceptance | Direct-room evidence does not cover group behavior. Group acceptance currently proves text, initial identities/name/avatar and restart only. |
+| 2 | Group replies, reactions and remaining media acceptance | Group JPEG/PNG photos, captions and media faults are accepted (PR #277). Direct-room evidence does not cover group replies or reactions. |
 | 3 | Live read-receipt and catch-up read-side-effect policy; operator malformed-message recovery; terminal/failure lifecycle acceptance | Routing, bounded recovery and ownership are implemented; `SYNCMSG cnt=0`, terminal events, Matrix failures and cleanup timeouts need controlled acceptance. Receive-header timeout and push receipts are not installed by default. |
 | 4 | Reproducible deployment acceptance and Matrix crypto recovery | Docker/configuration exist. Complete standard appservice installation and separate Beeper validation; test key rotation, missing keys/trust transitions and encrypted replies/reactions. |
 | 5 | Broader outbound messaging and interactive content | `HandleMatrixMessage` accepts text/notice/emote and JPEG/PNG photos only; image replies are rejected. Outbound video/audio/files/albums/stickers/cards/polls/posts, edits/deletions and poll/board actions have no supported connector path. |
@@ -63,10 +63,17 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       owned multipart partial success, a reproduced applied-but-unacknowledged
       outbound send, linking a later source echo of an unconfirmed send to its
       Matrix event, and the remaining Mac recovery trace gaps.
-- [ ] Group JPEG/PNG photos: exact bytes, captions, downloads/expiry, attribution,
-      offline catch-up and restart uniqueness. Includes the media faults moved
-      from failure recovery: interrupted download/upload and a cancellable,
-      bounded shutdown during an in-flight transfer.
+- [x] Group JPEG/PNG photos (PR #277): exact bytes both directions, inbound and
+      outbound captions (`cmt`), unavailable/expired downloads as committed
+      notices, millisecond expiry, `image/jpeg` MIME, no framework error notices
+      on transient failure, fetch-before-reservation for outbound images,
+      cancellable inbound/outbound transfers on Disconnect, owned offline
+      catch-up, restart and media-fault acceptance:
+      [group photos](research/bridge/GROUP-PHOTOS.md).
+- [ ] Group-photo follow-ups: live expired/CDN-refused download, a final Matrix
+      status for an outbound image interrupted by shutdown, observed video and
+      album expiry units, the Mac download/upload strategy selection gaps, and
+      resumable uploads if a manual-retry surface is added.
 - [ ] Group text replies both directions and in history, with correct targets and
       documented missing-target fallback after encrypted restart.
 - [ ] Outbound image replies and inbound image/reply context; reject unsupported
@@ -89,9 +96,8 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       notifications, source roles and management permissions; prevent personal
       settings from changing shared state and reject unsupported actions.
 
-Next active slice: group JPEG/PNG photos, including the media faults carried
-from failure recovery. Discovery through failure recovery shipped in PRs
-#270–276.
+Next active slice: group text replies. Discovery through group photos shipped
+in PRs #270–277.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.
