@@ -8,18 +8,20 @@ import (
 	"unicode/utf16"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 func TestReplyRequestMarshalBSON(t *testing.T) {
 	body, err := (ReplyRequest{
 		ChatID: 42, Message: "reply text",
-		Target: ReplyTarget{LogID: 99, UserID: 7, Type: TextType, Message: "source text"},
+		Target: ReplyTarget{LogID: 99, UserID: 7, Type: messagetype.Text, Message: "source text"},
 	}).MarshalBSON()
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw := bson.Raw(body)
-	if raw.Lookup("chatId").Int64() != 42 || raw.Lookup("type").Int32() != ReplyType || raw.Lookup("msg").StringValue() != "reply text" || raw.Lookup("noSeen").Boolean() {
+	if raw.Lookup("chatId").Int64() != 42 || raw.Lookup("type").Int32() != messagetype.Reply || raw.Lookup("msg").StringValue() != "reply text" || raw.Lookup("noSeen").Boolean() {
 		t.Fatalf("unexpected reply WRITE: %v", raw)
 	}
 	elements, err := raw.Elements()

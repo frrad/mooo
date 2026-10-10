@@ -19,6 +19,7 @@ import (
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 func (f *fakeKakao) SendUpload(ctx context.Context, chatID int64, upload media.Upload) (media.SendResult, error) {
@@ -61,22 +62,22 @@ func TestOutboundMatrixFileVideoAndAudioReserveOnceAndSendOnce(t *testing.T) {
 		{
 			label:    "file",
 			content:  &event.MessageEventContent{MsgType: event.MsgFile, Body: "synthetic.txt", FileName: "synthetic.txt", URL: "mxc://example/file"},
-			wantType: media.FileType, wantName: "synthetic.txt",
+			wantType: messagetype.File, wantName: "synthetic.txt",
 		},
 		{
 			label:    "legacy file without filename",
 			content:  &event.MessageEventContent{MsgType: event.MsgFile, Body: "synthetic.pdf", URL: "mxc://example/file"},
-			wantType: media.FileType, wantName: "synthetic.pdf",
+			wantType: messagetype.File, wantName: "synthetic.pdf",
 		},
 		{
 			label:    "video with caption",
 			content:  &event.MessageEventContent{MsgType: event.MsgVideo, Body: "synthetic video caption", FileName: "clip.mp4", URL: "mxc://example/video"},
-			wantType: media.VideoType, wantName: "clip.mp4", wantComment: "synthetic video caption",
+			wantType: messagetype.Video, wantName: "clip.mp4", wantComment: "synthetic video caption",
 		},
 		{
 			label:    "audio is a file like the Mac client",
 			content:  &event.MessageEventContent{MsgType: event.MsgAudio, Body: "voice.m4a", FileName: "voice.m4a", URL: "mxc://example/audio"},
-			wantType: media.FileType, wantName: "voice.m4a",
+			wantType: messagetype.File, wantName: "voice.m4a",
 		},
 	}
 	for _, tc := range cases {
@@ -256,7 +257,7 @@ func TestOutboundMatrixGalleryBecomesOneAlbumInOrder(t *testing.T) {
 		t.Fatalf("album photos=%d caption=%q", len(sent.photos), sent.caption)
 	}
 	meta, ok := resp.DB.Metadata.(*KakaoMessageMetadata)
-	if resp.DB.ID != makeMessageID(testChatID, 160) || !ok || meta.Type != media.MultiPhotoType {
+	if resp.DB.ID != makeMessageID(testChatID, 160) || !ok || meta.Type != messagetype.MultiPhoto {
 		t.Fatalf("db = %+v", resp.DB)
 	}
 }

@@ -36,12 +36,9 @@ type MessageEdited struct {
 	Modified       Event
 }
 
-func (MessageEdited) Kind() Kind { return KindMessageEdited }
-func (MessageEdited) isEvent()   {}
-
-func (m MessageEdited) String() string {
-	return fmt.Sprintf("MessageEdited{chatId=%d, logId=%d, target=%d, revision=%d}", m.ChatID, m.LogID, m.TargetLogID, m.TargetRevision)
-}
+func (MessageEdited) Kind() Kind           { return KindMessageEdited }
+func (m MessageEdited) Position() Position { return Position{m.ChatID, m.LogID} }
+func (MessageEdited) isEvent()             {}
 
 // MessageDeleted is the feed log that records a delete-for-everyone of
 // TargetLogID by AuthorID. It occupies its own position in the log sequence.
@@ -54,12 +51,9 @@ type MessageDeleted struct {
 	ByHost      bool
 }
 
-func (MessageDeleted) Kind() Kind { return KindMessageDeleted }
-func (MessageDeleted) isEvent()   {}
-
-func (m MessageDeleted) String() string {
-	return fmt.Sprintf("MessageDeleted{chatId=%d, logId=%d, target=%d}", m.ChatID, m.LogID, m.TargetLogID)
-}
+func (MessageDeleted) Kind() Kind           { return KindMessageDeleted }
+func (m MessageDeleted) Position() Position { return Position{m.ChatID, m.LogID} }
+func (MessageDeleted) isEvent()             {}
 
 // DeletedMessage is a chat log whose type carries the deleted-for-everyone
 // flag. The server still returns the original content; it is never decoded.
@@ -71,8 +65,9 @@ type DeletedMessage struct {
 	BaseType int32
 }
 
-func (DeletedMessage) Kind() Kind { return KindDeletedMessage }
-func (DeletedMessage) isEvent()   {}
+func (DeletedMessage) Kind() Kind           { return KindDeletedMessage }
+func (m DeletedMessage) Position() Position { return Position{m.ChatID, m.LogID} }
+func (DeletedMessage) isEvent()             {}
 
 func (m DeletedMessage) String() string {
 	return fmt.Sprintf("DeletedMessage{chatId=%d, logId=%d, type=%d, content=<withheld>}", m.ChatID, m.LogID, m.BaseType)
