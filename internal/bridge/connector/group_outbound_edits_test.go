@@ -64,13 +64,15 @@ func countReservations(kc *KakaoClient) *int {
 	return &n
 }
 
-func requireStatus(t *testing.T, err error, want event.MessageStatus, certain bool) bridgev2.MessageStatus {
+// requireStatus checks a handler's message status and reports whether it
+// asks for a notice.
+func requireStatus(t *testing.T, err error, want event.MessageStatus, certain bool) (sendNotice bool) {
 	t.Helper()
 	var status bridgev2.MessageStatus
 	if !errors.As(err, &status) || status.Status != want || status.IsCertain != certain {
 		t.Fatalf("err = %v status = %+v, want %s certain=%v", err, status, want, certain)
 	}
-	return status
+	return status.SendNotice
 }
 
 func TestMatrixEditOfOwnTextIsSentOnceAndRecordsTheRevision(t *testing.T) {
@@ -118,9 +120,9 @@ func TestMatrixEditIsRejectedBeforeAnySendWhenKakaoWouldRefuse(t *testing.T) {
 			fake := &fakeKakao{modifyRevision: 1}
 			kc := connectedClient(t, fake)
 			reservations := countReservations(kc)
-			status := requireStatus(t, kc.HandleMatrixEdit(context.Background(), matrixEdit(tc.target, "synthetic matrix edit")), event.MessageStatusFail, true)
-			if !status.SendNotice || *reservations != 0 || len(fake.modifies) != 0 {
-				t.Fatalf("notice=%v reservations=%d sends=%d", status.SendNotice, *reservations, len(fake.modifies))
+			notice := requireStatus(t, kc.HandleMatrixEdit(context.Background(), matrixEdit(tc.target, "synthetic matrix edit")), event.MessageStatusFail, true)
+			if !notice || *reservations != 0 || len(fake.modifies) != 0 {
+				t.Fatalf("notice=%v reservations=%d sends=%d", notice, *reservations, len(fake.modifies))
 			}
 		})
 	}

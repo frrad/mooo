@@ -12,7 +12,6 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/util/jsontime"
-	"go.mau.fi/util/ptr"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	bridgematrix "maunium.net/go/mautrix/bridgev2/matrix"
@@ -1370,9 +1369,9 @@ func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 		ReadReceipts:     true,
 		AllowedReactions: []string{"❤️", "👍", "✅", "😆", "😮", "😢"},
 		Edit:             event.CapLevelPartialSupport,
-		EditMaxAge:       ptr.Ptr(jsontime.S(kakaoEditWindow)),
+		EditMaxAge:       secondsPtr(kakaoEditWindow),
 		Delete:           event.CapLevelPartialSupport,
-		DeleteMaxAge:     ptr.Ptr(jsontime.S(kakaoDeleteWindow)),
+		DeleteMaxAge:     secondsPtr(kakaoDeleteWindow),
 		File: event.FileFeatureMap{
 			event.MsgImage: &event.FileFeatures{
 				MimeTypes: map[string]event.CapabilitySupportLevel{"image/jpeg": event.CapLevelPartialSupport, "image/png": event.CapLevelPartialSupport},
@@ -1390,6 +1389,11 @@ func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 			},
 		},
 	}
+}
+
+func secondsPtr(d time.Duration) *jsontime.Seconds {
+	seconds := jsontime.S(d)
+	return &seconds
 }
 
 func uploadFeatures(caption event.CapabilitySupportLevel) *event.FileFeatures {
