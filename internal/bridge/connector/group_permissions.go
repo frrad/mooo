@@ -34,12 +34,7 @@ func (kc *KakaoClient) HandleMatrixPowerLevels(ctx context.Context, msg *bridgev
 	if !touchesMember {
 		return false, nil
 	}
-	status := bridgev2.WrapErrorInStatus(errNoSourceRoles).
-		WithStatus(event.MessageStatusFail).
-		WithErrorReason(event.MessageStatusUnsupported).
-		WithIsCertain(true).
-		WithSendNotice(true).
-		WithMessage("KakaoTalk regular groups have no member roles, so KakaoTalk members keep the default power level. The previous levels were restored.")
+	status := certainRefusal(errNoSourceRoles, "KakaoTalk regular groups have no member roles, so KakaoTalk members keep the default power level. The previous levels were restored.")
 	if msg.PrevContent == nil || msg.Portal == nil || msg.Portal.MXID == "" || msg.Portal.Bridge == nil || msg.Portal.Bridge.Bot == nil {
 		return false, status.WithMessage("KakaoTalk regular groups have no member roles; the power level change does not apply to KakaoTalk members.")
 	}
@@ -79,12 +74,7 @@ func (kc *KakaoClient) HandleMatrixMembership(ctx context.Context, msg *bridgev2
 	default:
 		return nil, nil
 	}
-	status := bridgev2.WrapErrorInStatus(errMembershipNotBridged).
-		WithStatus(event.MessageStatusFail).
-		WithErrorReason(event.MessageStatusUnsupported).
-		WithIsCertain(true).
-		WithSendNotice(true).
-		WithMessage(message)
+	status := certainRefusal(errMembershipNotBridged, message)
 	if msg.Portal == nil || msg.Portal.MXID == "" || msg.Portal.Bridge == nil || msg.Portal.Bridge.Bot == nil || ghost.Intent == nil {
 		return nil, status
 	}
