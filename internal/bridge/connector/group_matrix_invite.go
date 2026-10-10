@@ -36,12 +36,7 @@ var blockedFriendInviteStatuses = map[int32]bool{-402: true, -405: true}
 func (kc *KakaoClient) handleMatrixInvite(ctx context.Context, msg *bridgev2.MatrixMembershipChange, ghost *bridgev2.Ghost) error {
 	refuse := func(err error, message string) error {
 		revokeGhostMembership(ctx, msg, ghost)
-		return bridgev2.WrapErrorInStatus(err).
-			WithStatus(event.MessageStatusFail).
-			WithErrorReason(event.MessageStatusUnsupported).
-			WithIsCertain(true).
-			WithSendNotice(true).
-			WithMessage(message)
+		return certainRefusal(err, message)
 	}
 	const notRegular = "Only regular KakaoTalk groups can add members from Matrix; invite them in KakaoTalk. The invite was revoked."
 	if msg.Portal == nil || msg.Portal.RoomType == database.RoomTypeDM {
@@ -103,11 +98,8 @@ func (kc *KakaoClient) handleMatrixInvite(ctx context.Context, msg *bridgev2.Mat
 	}
 	kc.refreshMembership(c, chatID)
 	unconfirmed := func(message string) error {
-		return bridgev2.WrapErrorInStatus(errInviteUnconfirmed).
-			WithStatus(event.MessageStatusFail).
-			WithIsCertain(false).
-			WithSendNotice(true).
-			WithMessage(message)
+		// An unconfirmed invite keeps WrapErrorInStatus's generic reason.
+		return noticeStatus(errInviteUnconfirmed, event.MessageStatusFail, event.MessageStatusGenericError, false, message)
 	}
 	switch {
 	case err != nil:

@@ -8,7 +8,6 @@ import (
 
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/networkid"
-	"maunium.net/go/mautrix/event"
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
@@ -48,15 +47,15 @@ func (kc *KakaoClient) HandleMatrixEdit(ctx context.Context, msg *bridgev2.Matri
 	meta, _ := msg.EditTarget.Metadata.(*KakaoMessageMetadata)
 	switch {
 	case meta == nil || meta.ChatID != chatID || meta.LogID <= 0:
-		return editRejected("This message cannot be edited in KakaoTalk.")
+		return certainRefusal(errEditNotAllowed, "This message cannot be edited in KakaoTalk.")
 	case meta.AuthorID != kc.userID:
-		return editRejected("KakaoTalk only allows editing your own messages; the edit was not sent.")
+		return certainRefusal(errEditNotAllowed, "KakaoTalk only allows editing your own messages; the edit was not sent.")
 	case meta.Type&messagetype.DeletedAllChatTypeFlag != 0:
-		return editRejected("This KakaoTalk message was deleted and cannot be edited.")
+		return certainRefusal(errEditNotAllowed, "This KakaoTalk message was deleted and cannot be edited.")
 	case meta.Type != chat.TextType:
-		return editRejected("The bridge can only edit KakaoTalk text messages; the edit was not sent.")
+		return certainRefusal(errEditNotAllowed, "The bridge can only edit KakaoTalk text messages; the edit was not sent.")
 	case time.Since(msg.EditTarget.Timestamp) > kakaoEditWindow:
-		return editRejected("KakaoTalk only allows editing messages for 24 hours; the edit was not sent.")
+		return certainRefusal(errEditNotAllowed, "KakaoTalk only allows editing messages for 24 hours; the edit was not sent.")
 	}
 	body := msg.Content.Body
 	if body == meta.Preview {
@@ -64,7 +63,7 @@ func (kc *KakaoClient) HandleMatrixEdit(ctx context.Context, msg *bridgev2.Matri
 		return nil
 	}
 	if body == "" || len(body) > maxTextLength {
-		return editRejected("The edited text is empty or too long for KakaoTalk; the edit was not sent.")
+		return certainRefusal(errEditNotAllowed, "The edited text is empty or too long for KakaoTalk; the edit was not sent.")
 	}
 	kc.mu.Lock()
 	c := kc.client
@@ -86,15 +85,6 @@ func (kc *KakaoClient) HandleMatrixEdit(ctx context.Context, msg *bridgev2.Matri
 	return nil
 }
 
-func editRejected(message string) error {
-	return bridgev2.WrapErrorInStatus(errEditNotAllowed).
-		WithStatus(event.MessageStatusFail).
-		WithErrorReason(event.MessageStatusUnsupported).
-		WithIsCertain(true).
-		WithMessage(message).
-		WithSendNotice(true)
-}
-
 // HandleMatrixMessageRemove deletes the user's own message for everyone in
 // KakaoTalk once. KakaoTalk has no member-wide delete of others' messages in
 // regular groups.
@@ -112,14 +102,14 @@ func (kc *KakaoClient) HandleMatrixMessageRemove(ctx context.Context, msg *bridg
 	meta, _ := msg.TargetMessage.Metadata.(*KakaoMessageMetadata)
 	switch {
 	case meta == nil || meta.ChatID != chatID || meta.LogID <= 0:
-		return deleteRejected("This message cannot be deleted in KakaoTalk.")
+		return certainRefusal(errDeleteNotAllowed, "This message cannot be deleted in KakaoTalk.")
 	case meta.Type&messagetype.DeletedAllChatTypeFlag != 0:
 		// Already deleted in KakaoTalk; removing the placeholder is local.
 		return nil
 	case meta.AuthorID != kc.userID:
-		return deleteRejected("KakaoTalk only allows deleting your own messages for everyone; the message was removed only from Matrix.")
+		return certainRefusal(errDeleteNotAllowed, "KakaoTalk only allows deleting your own messages for everyone; the message was removed only from Matrix.")
 	case time.Since(msg.TargetMessage.Timestamp) > kakaoDeleteWindow:
-		return deleteRejected("KakaoTalk only allows deleting messages for everyone for 24 hours; the message was removed only from Matrix.")
+		return certainRefusal(errDeleteNotAllowed, "KakaoTalk only allows deleting messages for everyone for 24 hours; the message was removed only from Matrix.")
 	}
 	kc.mu.Lock()
 	c := kc.client
@@ -137,21 +127,12 @@ func (kc *KakaoClient) HandleMatrixMessageRemove(ctx context.Context, msg *bridg
 		kc.recordMatrixDeletion(ctx, msg.TargetMessage.ID)
 		return nil
 	case errors.As(err, &status) && status.Status == chat.StatusDeleteTimeExpired:
-		return deleteRejected("KakaoTalk refused: the time limit for deleting this message for everyone has passed.")
+		return certainRefusal(errDeleteNotAllowed, "KakaoTalk refused: the time limit for deleting this message for everyone has passed.")
 	case errors.As(err, &status) && status.Status == chat.StatusDeleteTypeNotAllowed:
-		return deleteRejected("KakaoTalk refused: this message type cannot be deleted for everyone.")
+		return certainRefusal(errDeleteNotAllowed, "KakaoTalk refused: this message type cannot be deleted for everyone.")
 	default:
 		return outboundSendError(err)
 	}
-}
-
-func deleteRejected(message string) error {
-	return bridgev2.WrapErrorInStatus(errDeleteNotAllowed).
-		WithStatus(event.MessageStatusFail).
-		WithErrorReason(event.MessageStatusUnsupported).
-		WithIsCertain(true).
-		WithMessage(message).
-		WithSendNotice(true)
 }
 
 // The redaction removes the message mapping. Outbound sends do not move the

@@ -38,12 +38,7 @@ func (*KakaoClient) HandleMatrixRoomAvatar(context.Context, *bridgev2.MatrixRoom
 // otherwise keep the rejected text until the announcement next changes. The
 // rejection is certain and never retried.
 func (kc *KakaoClient) HandleMatrixRoomTopic(ctx context.Context, msg *bridgev2.MatrixRoomTopic) (bool, error) {
-	status := bridgev2.WrapErrorInStatus(errOutboundAnnouncement).
-		WithStatus(event.MessageStatusFail).
-		WithErrorReason(event.MessageStatusUnsupported).
-		WithIsCertain(true).
-		WithSendNotice(true).
-		WithMessage("Changing the topic does not change the KakaoTalk announcement; post or remove the announcement in KakaoTalk. The topic was restored.")
+	status := certainRefusal(errOutboundAnnouncement, "Changing the topic does not change the KakaoTalk announcement; post or remove the announcement in KakaoTalk. The topic was restored.")
 	if msg == nil || msg.Portal == nil || msg.Portal.MXID == "" || msg.Portal.Bridge == nil || msg.Portal.Bridge.Bot == nil {
 		return false, status
 	}
@@ -56,12 +51,7 @@ func (kc *KakaoClient) HandleMatrixRoomTopic(ctx context.Context, msg *bridgev2.
 }
 
 func unsupportedRoomMetadataStatus() error {
-	return bridgev2.WrapErrorInStatus(errOutboundRoomMetadata).
-		WithStatus(event.MessageStatusFail).
-		WithErrorReason(event.MessageStatusUnsupported).
-		WithIsCertain(true).
-		WithSendNotice(true).
-		WithMessage("Outbound Matrix room name and avatar changes are not supported; change the connected Kakao profile's chat settings in the native client.")
+	return certainRefusal(errOutboundRoomMetadata, "Outbound Matrix room name and avatar changes are not supported; change the connected Kakao profile's chat settings in the native client.")
 }
 
 // A separate KV record avoids rewriting shared portal access/announcement
