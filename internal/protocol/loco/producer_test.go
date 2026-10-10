@@ -206,7 +206,7 @@ func TestProducerExecutesReviewedSecureFramingProducerVectors(t *testing.T) {
 			if err := p.Append(frames[0][:HeaderSize]); err != nil {
 				t.Fatal(err)
 			}
-			if _, ok, err := p.Next(nil); err != nil || ok {
+			if _, ok, err := p.Next(); err != nil || ok {
 				t.Fatalf("vector=%q seed ok=%v err=%v", vector.Name, ok, err)
 			}
 			if err := p.Append(stream[HeaderSize:vector.Accumulated]); err != nil {
@@ -221,7 +221,7 @@ func TestProducerExecutesReviewedSecureFramingProducerVectors(t *testing.T) {
 			if !vector.HeaderCapable {
 				onHeader = nil
 			}
-			packet, ok, nextErr := p.Next(onHeader)
+			packet, ok, nextErr := p.next(onHeader)
 			if nextErr != nil {
 				t.Fatal(nextErr)
 			}

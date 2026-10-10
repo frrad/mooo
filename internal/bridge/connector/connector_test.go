@@ -11,7 +11,6 @@ import (
 	"maunium.net/go/mautrix/bridgev2/bridgeconfig"
 
 	"github.com/frrad/mooo/internal/authstate"
-	"github.com/frrad/mooo/internal/client"
 )
 
 func TestEventDeliveryMustBeInline(t *testing.T) {
@@ -62,7 +61,6 @@ func TestStartRequiresPrivateProfileDir(t *testing.T) {
 }
 
 func TestStartValidatesBSONShadowConfig(t *testing.T) {
-	t.Cleanup(func() { client.SetBSONShadow(client.BSONShadowConfig{}) })
 	profiles := t.TempDir()
 	if err := os.Chmod(profiles, 0o700); err != nil {
 		t.Fatal(err)
@@ -94,8 +92,31 @@ func TestStartValidatesBSONShadowConfig(t *testing.T) {
 	if err := os.Chmod(private, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := newConnector(BSONShadowConfig{Mode: "log", DumpDir: private}).Start(context.Background()); err != nil {
+	logging := newConnector(BSONShadowConfig{Mode: "log", DumpDir: private})
+	if err := logging.Start(context.Background()); err != nil {
 		t.Fatalf("valid shadow config rejected: %v", err)
+	}
+	if logging.packetObserver == nil {
+		t.Fatal("log mode built no packet observer")
+	}
+}
+
+func TestStartLeavesBSONShadowOffByDefault(t *testing.T) {
+	profiles := t.TempDir()
+	if err := os.Chmod(profiles, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"", "off"} {
+		kc := &KakaoConnector{
+			Bridge: &bridgev2.Bridge{Config: &bridgeconfig.BridgeConfig{PortalEventBuffer: 0}},
+			Config: Config{ProfileDir: profiles, BSONShadow: BSONShadowConfig{Mode: mode}},
+		}
+		if err := kc.Start(context.Background()); err != nil {
+			t.Fatalf("mode %q rejected: %v", mode, err)
+		}
+		if kc.packetObserver != nil {
+			t.Fatalf("mode %q built a packet observer; the bridge must not decode every packet twice by default", mode)
+		}
 	}
 }
 
