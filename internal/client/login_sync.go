@@ -10,8 +10,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// This file holds the bootstrap target parsing and the LOGINLIST/LCHATLIST
-// page synchronization that connectSessionWithResumeOptions drives.
+// This file holds the CHECKIN dial order and the LOGINLIST/LCHATLIST page
+// synchronization that connectSessionWithResumeOptions drives.
 
 type loginCursor struct {
 	chatData         map[int64]bson.Raw
