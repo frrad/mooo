@@ -17,7 +17,7 @@ import (
 
 type contactPhotoClient interface {
 	ContactProfilePhoto(context.Context, int64, int64, *http.Client) ([]byte, error)
-	Close() error
+	Shutdown(context.Context) error
 }
 
 func openContactPhotoClient(path string, packetObserver func(loco.Packet)) (contactPhotoClient, error) {
@@ -53,7 +53,7 @@ func runContactPhoto(args []string, stdout, stderr io.Writer, open func(string) 
 	closed := false
 	defer func() {
 		if !closed {
-			_ = c.Close()
+			_ = shutdownProfile(c)
 		}
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -66,7 +66,7 @@ func runContactPhoto(args []string, stdout, stderr io.Writer, open func(string) 
 		return commandError(stderr, "contact photo retrieval failed")
 	}
 	closed = true
-	if c.Close() != nil {
+	if shutdownProfile(c) != nil {
 		return commandError(stderr, "selected profile cleanup failed")
 	}
 	if _, err = file.Write(data); err != nil {

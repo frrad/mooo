@@ -42,7 +42,6 @@ type sessionAPI interface {
 	CommitEvent(event events.Event) error
 	ResumeTargets(ctx context.Context) ([]syncmsg.Target, error)
 	CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error)
-	Close() error
 	Shutdown(ctx context.Context) error
 }
 
