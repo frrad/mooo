@@ -799,109 +799,119 @@ func shutdownWithRecoveryTimeout(c kakaoClient) error {
 func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 	kc.groupGate.Lock()
 	defer kc.groupGate.Unlock()
-	var removedChat int64
-	switch notice := evt.(type) {
-	case events.ChatLeft:
-		removedChat = notice.ChatID
-	case events.MemberRemoved:
-		if notice.UserID == kc.userID {
-			removedChat = notice.ChatID
-		}
-	}
-	if removedChat > 0 {
-		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupAccessRemoved})
-		if err := kc.recordSourceRemoval(context.Background(), removedChat); err != nil {
-			return false
-		}
-		// The departed account cannot authorize a metadata request. Apply only
-		// its explicit leave rather than fetching CHATINFO after removal.
-		evt = events.ChatLeft{ChatID: removedChat}
+	ctx := context.Background()
+	removedChat := kc.removedChatOf(evt)
+	if removedChat > 0 && !kc.beginSourceRemoval(ctx, removedChat) {
+		return false
 	}
 	if err := kc.checkUnresolvedGroupCreates(); err != nil {
 		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupCreateUnresolved})
 		return false
 	}
-	if removedChat == 0 {
-		switch notice := evt.(type) {
-		case events.MemberAdded:
-			if handled, success := kc.managedMembershipEvent(context.Background(), c, notice.ChatID, true); handled {
-				return success
-			}
-		case events.MemberRemoved:
-			if handled, success := kc.managedMembershipEvent(context.Background(), c, notice.ChatID, false); handled {
-				return success
-			}
-		}
+	if removedChat > 0 {
+		return kc.applyRemovedSource(ctx, removedChat)
 	}
-	if reaction, ok := evt.(events.ReactionChanged); ok {
-		if kc.checkSourceAccess(context.Background(), reaction.ChatID, nil) != nil {
-			return false
-		}
-		handled, err := kc.applyReactionChange(c, reaction)
-		if err != nil {
-			return kc.reportReactionFailure(reaction, err)
-		}
-		return handled
-	}
-	if notice, ok := evt.(events.ReadStateChanged); ok {
-		if kc.checkSourceAccess(context.Background(), notice.ChatID, nil) != nil {
-			return false
-		}
-		return kc.handleReadState(notice)
-	}
-	if edit, ok := evt.(events.MessageEdited); ok && edit.Modified == nil {
-		completed, err := kc.completeEdit(context.Background(), c, edit)
-		if err != nil {
-			kc.log().Warn().Err(err).Msg("Kakao edited message could not be fetched; leaving the edit uncommitted")
-			return false
-		}
-		evt = completed
-	}
-	if deleted, ok := evt.(events.DeletedMessage); ok && kc.deletedFromMatrix(makeMessageID(deleted.ChatID, deleted.LogID)) {
-		if kc.checkSourceAccess(context.Background(), deleted.ChatID, nil) != nil {
-			return false
-		}
-		if err := c.CommitEvent(evt); err != nil {
-			kc.log().Err(err).Msg("Failed to commit Kakao log deleted from Matrix")
-			return false
-		}
-		return true
-	}
-	if deletion, ok := evt.(events.MessageDeleted); ok && kc.targetAlreadyDeleted(deletion) {
-		if kc.checkSourceAccess(context.Background(), deletion.ChatID, nil) != nil {
-			return false
-		}
-		if err := c.CommitEvent(evt); err != nil {
-			kc.log().Err(err).Msg("Failed to commit Kakao delete feed")
-			return false
-		}
-		return true
+	if handled, success := kc.handleMembershipEvent(ctx, c, evt); handled {
+		return success
 	}
 	remote := kc.remoteEventFor(evt)
-	if remote != nil && removedChat == 0 {
-		chatID, parseErr := parseChatID(remote.GetPortalKey().ID)
-		if parseErr != nil || kc.checkSourceAccess(context.Background(), chatID, nil) != nil {
-			return false
-		}
+	chatID, guarded, err := sourceChatOf(evt, remote)
+	if err != nil || (guarded && kc.checkSourceAccess(ctx, chatID, nil) != nil) {
+		return false
 	}
-	if added, ok := evt.(events.MemberAdded); ok {
-		change := remote.(*chatInfoChangeEvent)
-		if err := kc.prepareMemberDiscovery(context.Background(), c, added.ChatID, change); err != nil {
+	switch evt := evt.(type) {
+	case events.ReactionChanged:
+		handled, err := kc.applyReactionChange(c, evt)
+		if err != nil {
+			return kc.reportReactionFailure(evt, err)
+		}
+		return handled
+	case events.ReadStateChanged:
+		return kc.handleReadState(evt)
+	case events.MessageEdited:
+		if evt.Modified == nil {
+			completed, err := kc.completeEdit(ctx, c, evt)
+			if err != nil {
+				kc.log().Warn().Err(err).Msg("Kakao edited message could not be fetched; leaving the edit uncommitted")
+				return false
+			}
+			return kc.deliverRemote(c, completed, kc.remoteEventFor(completed))
+		}
+	case events.DeletedMessage:
+		if kc.deletedFromMatrix(makeMessageID(evt.ChatID, evt.LogID)) {
+			return kc.commitIfPositioned(c, evt, "Failed to commit Kakao log deleted from Matrix")
+		}
+	case events.MessageDeleted:
+		if kc.targetAlreadyDeleted(evt) {
+			return kc.commitIfPositioned(c, evt, "Failed to commit Kakao delete feed")
+		}
+	case events.MemberAdded:
+		if err := kc.prepareMemberDiscovery(ctx, c, evt.ChatID, remote.(*chatInfoChangeEvent)); err != nil {
 			kc.log().Warn().Msg("Kakao group discovery snapshot failed; leaving event uncommitted")
 			return false
 		}
 	}
+	return kc.deliverRemote(c, evt, remote)
+}
+
+// removedChatOf reports the chat whose source access an event revokes: an
+// explicit leave, or the connected account's own removal.
+func (kc *KakaoClient) removedChatOf(evt events.Event) int64 {
+	switch notice := evt.(type) {
+	case events.ChatLeft:
+		return notice.ChatID
+	case events.MemberRemoved:
+		if notice.UserID == kc.userID {
+			return notice.ChatID
+		}
+	}
+	return 0
+}
+
+// beginSourceRemoval reports the lost access and persists the source block
+// before anything else about the event is handled.
+func (kc *KakaoClient) beginSourceRemoval(ctx context.Context, chatID int64) bool {
+	kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupAccessRemoved})
+	return kc.recordSourceRemoval(ctx, chatID) == nil
+}
+
+// applyRemovedSource applies the account's departure from a chat. The
+// departed account cannot authorize a metadata request, so only its explicit
+// leave is applied rather than fetching CHATINFO after removal.
+func (kc *KakaoClient) applyRemovedSource(ctx context.Context, chatID int64) bool {
+	if err := kc.applySourceLeave(ctx, chatID); err != nil {
+		kc.log().Warn().Err(err).Bool("success", false).Bool("queued", false).
+			Msg("Kakao message was not confirmed as bridged; leaving it uncommitted for replay")
+		return false
+	}
+	return kc.verifySourceLeave(ctx, chatID) == nil
+}
+
+// sourceChatOf names the chat whose source access gates an event. Reactions
+// and read states are gated by their own chat; every other event is gated
+// only when it becomes a bridge event, by that event's portal.
+func sourceChatOf(evt events.Event, remote bridgev2.RemoteEvent) (int64, bool, error) {
+	switch evt := evt.(type) {
+	case events.ReactionChanged:
+		return evt.ChatID, true, nil
+	case events.ReadStateChanged:
+		return evt.ChatID, true, nil
+	}
+	if remote == nil {
+		return 0, false, nil
+	}
+	chatID, err := parseChatID(remote.GetPortalKey().ID)
+	return chatID, err == nil, err
+}
+
+// deliverRemote queues a bridge event and commits the source event once the
+// bridge confirms it.
+func (kc *KakaoClient) deliverRemote(c kakaoClient, evt events.Event, remote bridgev2.RemoteEvent) bool {
 	if remote == nil {
 		kc.log().Debug().Str("kind", string(evt.Kind())).Msg("Ignoring Kakao event not bridged yet")
 		return true
 	}
-	var result bridgev2.EventHandlingResult
-	if removedChat > 0 {
-		err := kc.applySourceLeave(context.Background(), removedChat)
-		result = bridgev2.EventHandlingResult{Success: err == nil, Error: err}
-	} else {
-		result = kc.queue(remote)
-	}
+	result := kc.queue(remote)
 	if !committable(result) {
 		kc.log().Warn().Err(result.Error).
 			Bool("success", result.Success).
@@ -915,18 +925,20 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 			return false
 		}
 	}
-	if removedChat > 0 && kc.verifySourceLeave(context.Background(), removedChat) != nil {
-		return false
-	}
-	// Membership and metadata events can be delivered to the bridge without
-	// carrying a Kakao message cursor. They are complete once the bridge
-	// accepts them; attempting CommitEvent would report a successful refresh as
-	// an ErrProtocol because no message position exists.
+	return kc.commitIfPositioned(c, evt, "Failed to commit bridged Kakao message")
+}
+
+// commitIfPositioned commits a handled source event. Membership and metadata
+// events can be delivered to the bridge without carrying a Kakao message
+// cursor. They are complete once the bridge accepts them; attempting
+// CommitEvent would report a successful refresh as an ErrProtocol because no
+// message position exists.
+func (kc *KakaoClient) commitIfPositioned(c kakaoClient, evt events.Event, failure string) bool {
 	if _, _, ok := events.MessagePosition(evt); !ok {
 		return true
 	}
 	if err := c.CommitEvent(evt); err != nil {
-		kc.log().Err(err).Msg("Failed to commit bridged Kakao message")
+		kc.log().Err(err).Msg(failure)
 		return false
 	}
 	return true
