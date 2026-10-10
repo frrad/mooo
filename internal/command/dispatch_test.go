@@ -108,6 +108,26 @@ func TestOptionGrammarGolden(t *testing.T) {
 	}
 }
 
+func TestIsLiveNamesOnlyProfileCommands(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		live bool
+	}{
+		{args: []string{"chats", "list"}, live: true},
+		{args: []string{"chats", "list", "--state", "/x"}, live: true},
+		{args: []string{"contacts", "photo"}, live: true},
+		{args: []string{"auth", "init", "--state", "/x"}, live: false},
+		{args: []string{"auth", "inspect", "--state", "/x"}, live: false},
+		{args: []string{"chats"}, live: false},
+		{args: []string{"list", "chats"}, live: false},
+		{args: nil, live: false},
+	} {
+		if got := IsLive(tc.args); got != tc.live {
+			t.Errorf("IsLive(%q) = %v, want %v", tc.args, got, tc.live)
+		}
+	}
+}
+
 func TestLiveCommandOptionsAreNotEchoed(t *testing.T) {
 	const secret = "synthetic-secret-value"
 	for _, args := range [][]string{

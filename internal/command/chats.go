@@ -3,10 +3,10 @@ package command
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -29,35 +29,27 @@ type chatSummary struct {
 	Unread       int32    `json:"unread_count"`
 }
 
-func openChatLister(path string, packetObserver func(loco.Packet)) (chatLister, error) {
-	return client.OpenWithOptions(path, &http.Client{Timeout: 20 * time.Second}, client.OpenOptions{FullChatList: true, PacketObserver: packetObserver})
+func listChats(args []string, stdout io.Writer, packetObserver func(loco.Packet)) error {
+	return runListChats(args, stdout, func(path string) (chatLister, error) {
+		return client.OpenWithOptions(path, &http.Client{Timeout: 20 * time.Second}, client.OpenOptions{FullChatList: true, PacketObserver: packetObserver})
+	})
 }
 
-func runListChats(args []string, stdout, stderr io.Writer, open func(string) (chatLister, error)) int {
-	options, err := parseOptions(args, map[string]struct{}{"state": {}, "output": {}})
+func runListChats(args []string, stdout io.Writer, open func(string) (chatLister, error)) error {
+	options, err := parseOptions(args, "state", "output")
 	if err != nil || !filepath.IsAbs(options["state"]) || !filepath.IsAbs(options["output"]) {
-		return commandError(stderr, "chats list requires absolute --state and --output")
+		return errors.New("chats list requires absolute --state and --output")
 	}
 	// Validate the destination before authenticating. Results contain private
 	// room identifiers and names, never raw messages, profiles or credentials.
-	parent, err := os.Lstat(filepath.Dir(options["output"]))
-	if err != nil || !parent.IsDir() || parent.Mode().Perm()&0077 != 0 {
-		return commandError(stderr, "chat output requires a private directory")
-	}
-	file, err := os.OpenFile(options["output"], os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	file, commit, abort, err := reservePrivateOutput(options["output"], "chat")
 	if err != nil {
-		return commandError(stderr, "could not reserve chat output")
+		return err
 	}
-	keep := false
-	defer func() {
-		_ = file.Close()
-		if !keep {
-			_ = os.Remove(options["output"])
-		}
-	}()
+	defer abort()
 	c, err := open(options["state"])
 	if err != nil {
-		return commandError(stderr, "could not open selected profile")
+		return errors.New("could not open selected profile")
 	}
 	closed := false
 	defer func() {
@@ -69,11 +61,11 @@ func runListChats(args []string, stdout, stderr io.Writer, open func(string) (ch
 	defer cancel()
 	chats, err := c.ListChats(ctx)
 	if err != nil {
-		return commandError(stderr, "complete chat listing failed")
+		return errors.New("complete chat listing failed")
 	}
 	closed = true
 	if shutdownProfile(c) != nil {
-		return commandError(stderr, "selected profile cleanup failed")
+		return errors.New("selected profile cleanup failed")
 	}
 	result := make([]chatSummary, 0, len(chats))
 	for _, chat := range chats {
@@ -83,10 +75,9 @@ func runListChats(args []string, stdout, stderr io.Writer, open func(string) (ch
 		}
 		result = append(result, entry)
 	}
-	if json.NewEncoder(file).Encode(result) != nil || file.Sync() != nil || file.Close() != nil {
-		return commandError(stderr, "could not write chat output")
+	if json.NewEncoder(file).Encode(result) != nil || commit() != nil {
+		return errors.New("could not write chat output")
 	}
-	keep = true
 	_, _ = fmt.Fprintf(stdout, "listed %d chats in private output\n", len(result))
-	return 0
+	return nil
 }
