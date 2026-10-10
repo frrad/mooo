@@ -61,12 +61,14 @@ type ChatData struct {
 	LastSeenLogID     int64
 	LastServerLogID   int64
 	// LastChatLog is the raw chat-log document, left for the message decoders.
-	LastChatLog       bson.Raw
-	DisplayUserIDs    []int64
-	DisplayNicknames  []string
-	DisplayImageURLs  []string
-	Suspicions        []string
-	PushAlert         bool
+	LastChatLog      bson.Raw
+	DisplayUserIDs   []int64
+	DisplayNicknames []string
+	DisplayImageURLs []string
+	Suspicions       []string
+	PushAlert        bool
+	// PushAlertSet reports whether the response carried pushAlert.
+	PushAlertSet      bool
 	Meta              *RoomMeta
 	ChatMetas         []ChatMeta
 	MetaMaxRevision   int64
@@ -194,7 +196,7 @@ func DecodeChatData(raw bson.Raw) (ChatData, error) {
 	if err := decodeDisplay(raw, &data); err != nil {
 		return ChatData{}, err
 	}
-	if data.PushAlert, _, err = boolField(raw, "p", "pushAlert"); err != nil {
+	if data.PushAlert, data.PushAlertSet, err = boolField(raw, "p", "pushAlert"); err != nil {
 		return ChatData{}, err
 	}
 	if data.Meta, err = decodeRoomMeta(raw); err != nil {
