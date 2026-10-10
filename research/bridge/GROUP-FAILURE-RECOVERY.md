@@ -1,8 +1,9 @@
 # Regular-group failure recovery
 
-Evidence date: 2026-10-10. Selected-room Matrix outage acceptance is recorded
-below. Broader fault acceptance and the remaining Mac manager/consumer trace
-are pending.
+Evidence date: 2026-10-10. Owned acceptance of selected-room Matrix outage,
+refusal, lost acknowledgement, restart and process-stall faults is recorded
+below. Media faults, owned server session termination and the remaining Mac
+manager/consumer trace are recorded gaps.
 
 ## Observed production gap and regression
 
@@ -94,20 +95,73 @@ the captured cursor. This closes the static failure-to-reschedule edge; the
 floating-point delay argument still needs instruction-level ABI verification,
 and this edge alone does not prove a maximum retry count.
 
-## Acceptance still required
+## Remaining gaps
 
-- Owned A/B/C encrypted inbound text through network loss and a selected-room
-  Matrix outage; exact content, identities, source ordering and deduplication.
-- Restart/offline recovery and cursor readback before and after failed delivery.
-- Controlled server/session termination without unsafe authentication retries.
-- Partial media transfer and bounded shutdown/resource release.
-- Ambiguous outbound acceptance with no automatic repeat and a useful error.
-- Lost Matrix acknowledgements and multipart partial-success replay, which the
-  live-pump regressions above do not cover.
+Owned acceptance below covers selected-room Matrix outage, refusal and lost
+acknowledgement, restart during an outage, a process stall long enough to lose
+the source session, and outbound sends across that stall. These remain open:
+
+- Owned encrypted multipart (album or Mini text) partial success; only the
+  synthetic production-path regression covers it.
+- Media faults: interrupted inbound download, interrupted outbound upload and
+  Disconnect during an in-flight transfer. Inbound conversion runs without a
+  cancellable context, so a transfer can outlast the five-second shutdown
+  bound, which then retains the source owner rather than releasing it. Owned
+  media fault acceptance moves to the group photo slice.
+- Server-initiated session termination (kickout, change-server) in an owned
+  session; synthetic tests cover the policy.
+- A reproducible ambiguous outbound send where Kakao applied the write but the
+  bridge saw no reply. The status is regression-tested; the stall run below did
+  not happen to produce one.
+- An ambiguous send that did reach Kakao later arrives as a self-authored source
+  message without a mapping and is bridged as a new Matrix event beside the
+  failed original. That is visible rather than silent, but it is a duplicate in
+  Matrix.
+- The Mac recovery trace gaps listed above.
 
 Each injected fault and source/Matrix mutation needs a private durable attempt
 receipt before dispatch. Real account-specific artifacts remain outside tracked
 files. The current implementation is not a claim of complete failure parity.
+
+## Catch-up replay during a continuing outage
+
+A live delivery pause reconnects after a short delay, and its catch-up replays
+the paused event. If Matrix is still unavailable, that replay fails too.
+Catch-up failures were never retried, so recovery stopped with a connect
+failure until an operator reconnected; the first owned outage run recovered
+only because Matrix returned while the SDK was still retrying one request. A
+production regression with three source sessions reproduced the stop. An
+unconfirmed Matrix delivery during catch-up now uses the same bounded recovery
+budget as the live pause and reports `kakao-delivery-paused`; source-side
+catch-up failures remain terminal. After five attempts (about two minutes plus
+SDK retry time) recovery stops and needs an explicit reconnect.
+
+## Outbound sends
+
+A single Kakao send is never retried. Its Matrix status previously defaulted
+to the SDK's retriable failure, which invites a manual resend of a message Kakao
+may already have delivered. A server status reply is now reported as a certain
+refusal. Any other failure, and an accepted send without a log position, is a
+permanent failure whose notice says delivery is unconfirmed and asks the user
+to check KakaoTalk before resending.
+
+The homeserver resends an appservice transaction it did not see acknowledged,
+and the SDK hands every copy of the event to the connector before any copy is
+saved; its optional Matrix-message deduplication runs before the send and is
+off by default. Owned acceptance reproduced this: one Matrix message reached
+KakaoTalk three times. Each Matrix event now reserves a durable attempt record
+in the bridge's key-value store immediately before its one source send. A later
+copy, including one after a restart, is not sent and does not overwrite the
+original event's status. Records are pruned after 30 days.
+
+The same run deadlocked the bridge. The SDK holds a portal's event lock while
+it calls the Matrix message, reaction and read-receipt handlers. Those handlers
+waited for the connector gate, which the Kakao pump holds while it queues a
+remote event into the same portal. A regression reproduces the cycle with the
+real handlers. The Matrix handlers no longer take the gate. Source access blocks
+are set in memory before they are persisted, so the per-send access check still
+refuses a chat once removal is observed; a send admitted just before a
+concurrent removal is processed may still proceed, as it would have just before.
 
 ## Owned encrypted Matrix outage acceptance
 
@@ -139,6 +193,31 @@ Subsequent read-only checks of the official B and C clients confirmed the
 baseline, failed-delivery and later texts exactly once, in source order, in the
 same three-member group.
 
+## Owned fault acceptance, second run (2026-10-10)
+
+Method: a fresh build of this branch used the original B secondary profile and
+the same owned encrypted A/B/C regular group. The checkpoint migrated from
+version 5 to 6 on first open with cursors intact; a private backup preceded
+the run. A localhost proxy faulted only send requests for the selected room
+and wrote a private receipt for each faulted request, recording the mode and
+the request's transaction path segment but no body. A sent each synthetic text
+exactly once through a guarded native helper with a private receipt written
+before typing. A tester device in the room decrypted results with the Matrix
+SDK. Per-step checkpoint and mapping readbacks were kept privately.
+
+| Fault | Observed | Result |
+|---|---|---|
+| None (baseline) | One mapping; cursor equal to the latest mapping. | Pass |
+| 403 `M_FORBIDDEN` for about 75 s | One live refusal and three catch-up replay refusals, each reported `kakao-delivery-paused` and retried within budget; no mapping or cursor progress. After restore, one event and the cursor advanced. | Pass; the catch-up retry fix was required |
+| Applied, acknowledgement dropped, about 80 s | Seven send attempts across SDK retries and reconnect replays, all with one stable `mooo-history-` transaction ID. After restore, exactly one Matrix event. | Pass |
+| 503, then SIGINT during the pause, restore, new process | Shutdown completed in 5 s with the in-flight event uncommitted; the new process delivered it once. | Pass |
+| SIGSTOP for 4 minutes, with one native A text and one tester Matrix text sent during the stall | First run: inbound recovered once, but the outbound text reached KakaoTalk three times and one handler deadlocked. Rerun after the fixes above: the homeserver redelivered the outbound event twice more, both copies were refused, the text appeared once on A and once in Matrix, and the inbound text once. | Pass after fixes |
+| None (final) | One inbound and one outbound text, each once. Clean SIGINT. | Pass |
+
+All six native A texts in the run decrypted to their exact private fixtures,
+once each, from the same sender, in source order. Native B and C clients were
+not re-read in this run.
+
 ## Suppressed Matrix refusals
 
 The SDK converts selected Matrix errors into an ignored-success result to avoid
@@ -150,8 +229,8 @@ missing mapping or database read failure leaves progress retained for recovery.
 
 Regression cases cover forbidden, not-found, bad-JSON, invalid-parameter and
 bad-state errors, followed by restored delivery and duplicate reconciliation.
-They verify one Matrix send and one stored mapping after recovery. These are
-synthetic SDK/connector tests; owned-account refusal acceptance is still pending.
+They verify one Matrix send and one stored mapping after recovery. The owned
+acceptance below exercises the forbidden case end to end.
 Ignored source messages in filtered or uncreated portals no longer authorize
 source progress merely because the SDK returned ignored success.
 The same SDK result also affected history's independent journal. A failing
@@ -187,10 +266,18 @@ text had no stable transaction identity. Its synthetic server applies the first
 request and drops the acknowledgement. A fresh connector/conversion path then
 replays the source event with a different SDK URL transaction; the adapter sends
 the same stable transaction and the server retains one applied event. This does
-not yet verify the complete encrypted SDK send, database recovery, or an owned
-homeserver's retention of transaction deduplication. External double-puppet
-clients without the installed transport currently fail closed; preserving their
-live delivery support requires additional integration before this slice lands.
+not by itself verify the complete encrypted SDK send or an owned homeserver's
+transaction deduplication; the owned acceptance below does.
+
+A double puppet on another homeserver gets its own SDK HTTP client, which the
+bridge-wide adapter cannot reach. Failing closed there would have stopped live
+delivery for that sender. Live conversion now leaves such parts unmarked and
+keeps SDK transaction IDs, so that one case retains the pre-existing
+lost-acknowledgement exposure; history still refuses it before sending. A
+regression also showed that any other send in a live handling context, such as
+an unmarked encrypted event, inherited the previous part's stable ID, which a
+homeserver would deduplicate away. Unmarked live sends now clear the selected
+identity and keep their own transaction.
 
 ## First admitted message before any commit
 
