@@ -166,14 +166,16 @@ room/member unread store, so the earlier pure reducer was deleted
 ([bridge policy](bridge/read-receipt-policy.md)). DECUNREAD never advances the
 message checkpoint or the explicit local read watermark checkpoint.
 
-`NOTIREAD` is a distinct automatic response in the official inbound-message
-path, not sufficient evidence of an explicit user mark-read action. After an
-accepted `MSG` callback and an existing room lookup, the official client sends
-`NOTIREAD` with int64 chat ID, link ID, and message-log watermark, plus the
-room's boolean notification-read value and the message service ID. The clean-room
-client does not emit it, and its unused request model was deleted; the
-accepted-message/room-state consumer and live acknowledgement semantics remain
-open ([bridge policy](bridge/read-receipt-policy.md)). The explicit `CHATONROOM` lifecycle also remains under review. Static tracing
+`NOTIREAD` is the official client's read acknowledgement for a live message
+read on arrival. It is sent only for another member's `MSG` in a locally known
+room whose chat window is open and focused. The body has five keys:
+`chatId`, `li` and `watermark` as int64, `notiRead` as bool (the room flag
+from `CHATONROOM`, defaulting to true) and `serviceId` as int32 (from the `MSG`
+notice). It has one caller and no completion handler. Closed or background
+rooms get no `NOTIREAD`. The clean-room client does not send it. An owned
+differential showed that the bridge's explicit `SYNCMSG cnt=1` read clears the
+primary phone's notification
+([dossier](read-state-notiread.md), [bridge policy](bridge/read-receipt-policy.md#notiread-not-sent)). The explicit `CHATONROOM` lifecycle also remains under review. Static tracing
 of the Mac client's explicit `markAsRead` and read-all entry points routes those
 operations through `SYNCMSG`; no separate mark-read LOCO request was found.
 `CHATOFF` in this path is local room teardown, and no distinct `CHATOFF` wire
@@ -196,21 +198,15 @@ did not prove it. Synthetic decoder contracts are in
 
 A bounded owned A/B experiment on 2026-09-30 found that LOGINLIST alone left the
 sender's unread marker in place, while a status-zero `SYNCMSG` crossing the
-one-message boundary removed it. Receiving a live `MSG` while connected also
-appeared to clear the sender's unread marker even though the clean-room client
-did not emit `NOTIREAD`; the mechanism and official-client path remain
-unresolved. `SYNCMSG` is consequently not semantically read-only: catch-up can
-have read side effects. Until the acknowledgement and failure contract is
-traced, the clean-room client must keep inbound delivery, application commit,
-and explicit read state distinct rather than inferring read state from receipt.
-The request initializer uses the short `li` property for link ID and writes all
-five fields before dispatch through the shared carriage request path. The
-response callback forwards a non-null packet as a response object without a
-status branch; carriage-unavailable sends fail before a packet, and receive
-timeouts disconnect the agent. No NOTIREAD-specific persistence consumer was
-found, while pending-callback fan-out after disconnect and the server meaning
-of the response boolean remain open. The static chain and synthetic contracts
-are recorded in [`research/read-state-notiread.md`](read-state-notiread.md) and
+one-message boundary removed it. In the same direct-chat run, receiving a live
+`MSG` while connected appeared to clear the sender's unread marker without
+`NOTIREAD`. The 2026-10-10 group differential did not reproduce this: the
+marker stayed until an explicit `SYNCMSG cnt=1`. `SYNCMSG` is consequently not
+semantically read-only: catch-up can have read side effects. The clean-room
+client must keep inbound delivery, application commit and explicit read state
+distinct rather than inferring read state from receipt. The static chain and
+the live differential are recorded in
+[`research/read-state-notiread.md`](read-state-notiread.md) and
 [`research/read-state-notiread-response.md`](read-state-notiread-response.md).
 
 ## Membership and chat-change inventory
@@ -280,14 +276,14 @@ least one official branch or storage effect remains unresolved.
 | QR secondary-device registration | Substantial | Partial | Partial | Partial | Substantial | Partial |
 | Booking/check-in/secure carriage | Substantial | Partial | Endpoint cache partial | Partial | Substantial | Partial |
 | LOGINLIST/LCHATLIST | Substantial | Pagination, partial success, and OpenChat metadata follow-up traced | Delta/global cursor split implemented; OpenChat link store not implemented | Detailed official room DB/UI model partial | Strong synthetic coverage | Partial |
-| Inbound message events | Common text/reply/photo/read-state mapped | Basic dispatch mapped | Explicit durable message commit implemented; SYNCMSG may also affect read state | Live MSG appeared to clear sender unread without an observed NOTIREAD; mechanism unresolved | Strong for implemented types | Partial |
+| Inbound message events | Common text/reply/photo/read-state mapped | Basic dispatch mapped | Explicit durable message commit implemented; SYNCMSG may also affect read state | A 2026-09-30 direct-chat result (live MSG cleared sender unread) did not reproduce in the 2026-10-10 group differential | Strong for implemented types | Partial |
 | SYNCMSG continuity | Core schema mapped | Recovery, marker, restore-only boundary repair, and post-sync callback traced | Durable gap lifecycle implemented; principal marker and local-thread transitions mapped | Retention/error boundaries and UI presentation open | Paging, persistence, migration, deletion, no-progress, and live regressions covered | Partial |
 | Text send | Baseline mapped | No-retry behavior mapped | Message-ID lifecycle partial | Ambiguous delivery modeled | Strong baseline | Partial |
 | Photo transfer | Baseline mapped | Multi-stage flow mapped | Resume state partial | Ambiguous stage failures covered | Strong baseline | Partial |
 | Replies and reactions | Implemented subset mapped | Primary paths mapped | Revision/storage behavior partial | Some aggregate/detail paths mapped | Implemented subset covered | Partial |
 | Membership and chat changes | DELMEM/NEWMEM/LEFT/CHGCHATST/CHGMETA/CHGMCMETA typed decoder subset implemented | CHGCHATST revision gate and bounded CHGMETA effect selection implemented; broader follow-ups partial | Official member removal and selected room mutations traced; client durable membership store missing | Completion failures, subtype consumers, and remaining chat-type guards open | Synthetic decoder and CHGCHATST/CHGMETA reducer coverage | Partial |
 | Chat info, members, member list | CHATINFO/MEMBER/MEMLIST models and wire keys implemented; GETMEM unreachable | Explicit one-shot APIs, MEMBER filtering/batching and stop-on-failure implemented; INFOLINK deferral traced but not implemented | Member/user upsert mapped; shared room upsert partial; client APIs do not persist room/member state | Live key encoding and NEWMEM predicates open | Synthetic wire/model decoding, null/absence, malformed identities, MEMBER batching and partial-result failure coverage | Partial |
-| Read receipts, typing, deletion | DECUNREAD, NOTIREAD, and SYNCMSG read-side effect path mapped | Bounded pure DECUNREAD reducer implemented; Mac markAsRead/read-all routes through SYNCMSG; CHATOFF is local teardown | DECUNREAD durable room/member consumer missing; successful SYNCMSG read watermarks are persisted separately from message commits | SYNCMSG is not read-only; automatic NOTIREAD consumer, live acknowledgement semantics, and DECUNREAD storage failures remain open | DECUNREAD parser, guarded reducer/effect order, count predicate, ownership and checkpoint exclusion; NOTIREAD response/disconnect; SYNCMSG success/failure/persistence coverage | Partial |
+| Read receipts, typing, deletion | DECUNREAD, NOTIREAD, and SYNCMSG read-side effect path mapped | Bounded pure DECUNREAD reducer implemented; Mac markAsRead/read-all routes through SYNCMSG; CHATOFF is local teardown | DECUNREAD durable room/member consumer missing; successful SYNCMSG read watermarks are persisted separately from message commits | SYNCMSG is not read-only; NOTIREAD gates traced (chat-on window only) and omitted by the bridge; DECUNREAD storage failures remain open | DECUNREAD parser, guarded reducer/effect order, count predicate, ownership and checkpoint exclusion; NOTIREAD response/disconnect; SYNCMSG success/failure/persistence coverage | Partial |
 | CHANGESVR/KICKOUT/reconnect | Commands and some reasons mapped | Manager delegation, pending-failure fan-out, and packet-ID lifecycle traced | Route clearing/reset ownership mapped; full durable recovery partial | Reconnect remains an explicit manager decision | Reducer plus lifecycle characterization, collision skipping, packet-ID wrap, and unauthenticated-KICKOUT coverage | Partial |
 
 ## Immediate work queue

@@ -63,17 +63,35 @@ backfill policy, but it no longer blocks receipts.
 
 ## `NOTIREAD`: not sent
 
-After accepting an inbound `MSG`, the official client sends `NOTIREAD` with the
-room's notification-read flag ([dossier](../read-state-notiread.md)). Its
-server meaning is untraced: the response is not status-checked, and the meaning
-of its notification-read value is unknown. What it does to the primary
-device's notifications is also untraced. The bridge does not send it, and the
-unused request model (`internal/protocol/notiread`) was deleted rather than
-wired in speculatively. An owned A/B run on 2026-09-30 suggested that
-receiving a live `MSG` already cleared the sender's unread marker without
-`NOTIREAD` ([parity notes](../protocol-parity.md)). Whether omitting it leaves
-stale notifications on the primary device is an open question in
-[`PLAN.md`](PLAN.md).
+The official Mac client sends `NOTIREAD` only for a live message from another
+member that arrives while that chat's window is open and focused. In that
+case the message is read on arrival, and `NOTIREAD` is its read
+acknowledgement. With the window closed or in the background, it sends
+nothing and counts the message as unread
+([dossier](../read-state-notiread.md)).
+
+The bridge has no equivalent of an open, focused window. Matrix tells it that
+the user has read something only through read receipts, which already go to
+`MarkRead`. The bridge therefore does not send `NOTIREAD`. That matches the
+Mac client with no chat window open, which is its usual state.
+
+An owned A/B/C group differential on 2026-10-10 confirmed that this omission
+leaves nothing stale, as long as a Matrix read receipt eventually arrives:
+
+- While the bridge was online without sending `NOTIREAD`, B's phone kept its
+  notification for the group, and A still counted B as unread.
+- A Matrix read receipt sent `MarkRead` (`SYNCMSG cnt=1`). B's phone
+  notification disappeared within 5 seconds, and A's unread count dropped by
+  one.
+
+A Matrix client that never sends read receipts leaves the phone notification
+in place. The official Mac client does the same when its window stays closed.
+
+Sending `NOTIREAD` would only make sense if Matrix gained a signal for "the
+user is looking at this room right now". The request would then follow the
+dossier: five keys, fire and forget, and only for another member's live `MSG`
+in a room that exists locally. Its `notiRead` value would come from the
+`CHATONROOM` room object, defaulting to true.
 
 ## Regular groups (2026-10-10)
 
