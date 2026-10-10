@@ -144,12 +144,18 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
 - [ ] Edit/delete follow-ups: outbound reply and emoticon edits, the
       account delete-time setting, live provocation of −210/−211/−212 and the
       24-hour limits, media edit/delete coverage, hidden trailing feeds.
-- [ ] Group settings and permissions: explicit mappings for personal mute and
-      notifications, source roles and management permissions; prevent personal
-      settings from changing shared state and reject unsupported actions.
+- [x] Group settings and permissions (this PR): server `p` maps to the Matrix
+      user's mute at portal creation; Matrix mute stays local (the Mac sends
+      no request); no roles in regular groups, so member power changes are
+      rejected and restored; Matrix kicks, bans and invites of KakaoTalk
+      members are rejected and undone:
+      [settings and permissions](research/bridge/GROUP-SETTINGS-PERMISSIONS.md).
+- [ ] Settings follow-ups: Matrix invites via ADDMEM, favorites via SETMCMETA
+      `favorite`, team-chat roles, the server notification flag, and live
+      mute verification with a double puppet.
 
-Next active slice: group settings and permissions. Discovery through edits
-and deletions shipped in PRs #270–286.
+The regular-group slices through settings and permissions shipped in PRs
+#270–287; remaining work is the follow-ups above.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.
