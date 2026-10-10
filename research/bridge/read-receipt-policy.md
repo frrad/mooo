@@ -74,3 +74,9 @@ receiving a live `MSG` already cleared the sender's unread marker without
 `NOTIREAD` ([parity notes](../protocol-parity.md)). Whether omitting it leaves
 stale notifications on the primary device is an open question in
 [`PLAN.md`](PLAN.md).
+
+## Regular groups (2026-10-10)
+
+Forward-only per-member receipts, offline read recovery through `CHATONROOM`
+and the owned catch-up differential are recorded in
+[group read receipts](GROUP-READ-RECEIPTS.md).

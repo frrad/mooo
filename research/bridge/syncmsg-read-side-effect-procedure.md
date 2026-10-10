@@ -1,5 +1,10 @@
 # SYNCMSG read-side-effect differential
 
+An owned regular-group run of this differential on 2026-10-10 (catch-up
+`cnt=0` left the sender's unread count unchanged; `MarkRead` `cnt=1` lowered it)
+is recorded in [group read receipts](GROUP-READ-RECEIPTS.md). The original
+procedure follows.
+
 This is a proposed controlled experiment, not a live validation result. It
 resolves whether `SYNCMSG` with `cnt=0` changes Kakao's server-side unread/read
 state while the client records a local read watermark. Run only with two

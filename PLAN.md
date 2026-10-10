@@ -96,8 +96,12 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       `/rx/logmetas` batch path, double-puppet attribution for the bridge
       account's phone, offline legacy changes from another device, and long
       resync backlogs.
-- [ ] Group read receipts/unread state with monotonic member watermarks and
-      observed catch-up side effects.
+- [x] Group read receipts (PR #281): forward-only per-member receipts, offline
+      reads recovered through `CHATONROOM` watermarks, and an owned differential
+      showing catch-up's `cnt=0` and `CHATONROOM` produced no visible read
+      acknowledgement: [group read receipts](research/bridge/GROUP-READ-RECEIPTS.md).
+- [ ] Read-receipt follow-ups: the one unexplained own-watermark advance, room
+      tokens for delta snapshots, double-puppet attribution, and large rooms.
 - [ ] More inbound group formats: albums, video, audio, files, contacts, profiles,
       locations, stickers, polls and Boards; observed fixtures for each claim.
 - [ ] Rich announcement text summaries, replacement/clear/reconnect behavior and
@@ -112,8 +116,8 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       notifications, source roles and management permissions; prevent personal
       settings from changing shared state and reject unsupported actions.
 
-Next active slice: group read receipts and unread state. Discovery through
-reactions shipped in PRs #270–280.
+Next active slice: more inbound group formats. Discovery through read
+receipts shipped in PRs #270–281.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.
