@@ -21,22 +21,7 @@ const maxCatchUpPages = 100
 // must treat this as a read-state mutation even though it does not advance the
 // local application commit checkpoint.
 func (s *Session) SyncMessages(ctx context.Context, request syncmsg.Request) (syncmsg.Response, error) {
-	if s == nil || ctx == nil {
-		return syncmsg.Response{}, ErrProtocol
-	}
-	body, err := request.MarshalBSON()
-	if err != nil {
-		return syncmsg.Response{}, err
-	}
-	reply, err := s.Request(ctx, "SYNCMSG", body)
-	if err != nil {
-		return syncmsg.Response{}, err
-	}
-	response, err := syncmsg.ParseResponse(reply.Body)
-	if err != nil {
-		return syncmsg.Response{}, err
-	}
-	return response, nil
+	return call(s, ctx, "SYNCMSG", request, syncmsg.ParseResponse)
 }
 
 // SyncMessages performs one page through the client's existing session. It
@@ -49,11 +34,9 @@ func (c *Client) SyncMessages(ctx context.Context, request syncmsg.Request) (syn
 	}
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return syncmsg.Response{}, err
-	}
-	return session.SyncMessages(ctx, request)
+	return withSession(c, ctx, func(session *Session) (syncmsg.Response, error) {
+		return session.SyncMessages(ctx, request)
+	})
 }
 
 // InitialSyncTargets returns each synchronized chat's current last-log ceiling.
