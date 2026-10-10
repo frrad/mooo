@@ -125,16 +125,23 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       response, permissions, failures) before sending any announcement or post
       mutation; restore Matrix name/avatar after their rejection; encrypt the
       bot's status notices in encrypted rooms.
-- [ ] Supported outbound video/audio/files/albums with source limits and native
-      usability, without automatic duplicate sends.
+- [x] Outbound files, video, audio and albums (this PR): Mac-traced SHIP/POST
+      and MSHIP/MPOST/WRITE paths, extension classification and deny list,
+      pre-send limits, one reserved send per Matrix event, native A opened
+      each result (byte-identical except server-re-encoded video), and a
+      catch-up album duplicate fixed:
+      [outbound media](research/bridge/GROUP-OUTBOUND-MEDIA.md).
+- [ ] Outbound media follow-ups: streaming uploads for the Mac's 300 MiB
+      limit, large media, server deny-list refresh, GIF/WebP album photos,
+      voice messages, live upload faults for files and albums.
 - [ ] Source-supported message edits/deletions with permission/time limits,
       attribution, replay/restart correctness and clear unsupported outcomes.
 - [ ] Group settings and permissions: explicit mappings for personal mute and
       notifications, source roles and management permissions; prevent personal
       settings from changing shared state and reject unsupported actions.
 
-Next active slice: outbound video, audio, files and albums. Discovery
-through outbound announcements shipped in PRs #270–284.
+Next active slice: edits and deletions. Discovery through outbound media
+shipped in PRs #270–285.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.

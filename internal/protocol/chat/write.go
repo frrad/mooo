@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	WriteCommand = "WRITE"
-	TextType     = messagetype.Text
+	WriteCommand   = "WRITE"
+	TextType       = messagetype.Text
+	multiPhotoType = messagetype.MultiPhoto
 )
 
 var (
@@ -52,7 +53,9 @@ func (r WriteRequest) Validate() error {
 	if r.Type <= 0 {
 		return ErrInvalidWriteType
 	}
-	if r.Message == "" || !utf8.ValidString(r.Message) || len(r.Message) > maxTextBytes || strings.IndexByte(r.Message, 0) >= 0 {
+	// An album (type 27) has an empty msg; its photos are listed in extra.
+	emptyAllowed := r.Type == multiPhotoType && r.Extra != ""
+	if (r.Message == "" && !emptyAllowed) || !utf8.ValidString(r.Message) || len(r.Message) > maxTextBytes || strings.IndexByte(r.Message, 0) >= 0 {
 		return ErrInvalidMessage
 	}
 	for _, value := range []string{r.Extra, r.Supplement, r.FeatureStat} {

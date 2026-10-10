@@ -91,4 +91,4 @@ Static names, mappings and policy branches are research leads. Owned type-27
 shape/bytes and encrypted delivery are observations; synthetic Mac accessor/model
 executions are scoped executions. Full official cache/persistence/error callback
 parity, mixed-format/maximum-size albums, actual Matrix application gallery UI,
-caption interoperability and native outbound album creation remain unvalidated.
+caption interoperability and native outbound album creation from Matrix is covered in [group outbound media](bridge/GROUP-OUTBOUND-MEDIA.md).

@@ -47,6 +47,8 @@ type kakaoClient interface {
 	SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error)
 	SendReply(ctx context.Context, request chat.ReplyRequest) (chat.WriteResponse, error)
 	SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error)
+	SendUpload(ctx context.Context, chatID int64, upload media.Upload) (media.SendResult, error)
+	SendAlbum(ctx context.Context, chatID int64, photos [][]byte, caption string) (chat.WriteResponse, error)
 	MarkRead(ctx context.Context, chatID, watermark int64) (syncmsg.Response, error)
 	Close() error
 	Shutdown(ctx context.Context) error
@@ -1335,11 +1337,35 @@ func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 		ReactionCount:    1,
 		ReadReceipts:     true,
 		AllowedReactions: []string{"❤️", "👍", "✅", "😆", "😮", "😢"},
-		File: event.FileFeatureMap{event.MsgImage: &event.FileFeatures{
-			MimeTypes: map[string]event.CapabilitySupportLevel{"image/jpeg": event.CapLevelPartialSupport, "image/png": event.CapLevelPartialSupport},
-			MaxSize:   media.MaxImageBytes,
-		}},
+		File: event.FileFeatureMap{
+			event.MsgImage: &event.FileFeatures{
+				MimeTypes: map[string]event.CapabilitySupportLevel{"image/jpeg": event.CapLevelPartialSupport, "image/png": event.CapLevelPartialSupport},
+				MaxSize:   media.MaxImageBytes,
+			},
+			// Files and audio carry no caption in KakaoTalk; video does.
+			event.MsgFile:  uploadFeatures(event.CapLevelRejected),
+			event.MsgAudio: uploadFeatures(event.CapLevelRejected),
+			event.MsgVideo: uploadFeatures(event.CapLevelFullySupported),
+			event.MsgBeeperGallery: &event.FileFeatures{
+				MimeTypes:        map[string]event.CapabilitySupportLevel{"image/jpeg": event.CapLevelPartialSupport, "image/png": event.CapLevelPartialSupport},
+				Caption:          event.CapLevelPartialSupport,
+				MaxCaptionLength: media.MaxCaptionBytes,
+				MaxSize:          media.MaxImageBytes,
+			},
+		},
 	}
+}
+
+func uploadFeatures(caption event.CapabilitySupportLevel) *event.FileFeatures {
+	features := &event.FileFeatures{
+		MimeTypes: map[string]event.CapabilitySupportLevel{"*/*": event.CapLevelPartialSupport},
+		Caption:   caption,
+		MaxSize:   media.MaxUploadBytes,
+	}
+	if caption != event.CapLevelRejected {
+		features.MaxCaptionLength = media.MaxCaptionBytes
+	}
+	return features
 }
 
 // maxTextLength is a conservative bound; the official limit is not yet
@@ -1361,7 +1387,7 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		return nil, errSourceAccessRemoved
 	}
 	switch msg.Content.MsgType {
-	case event.MsgText, event.MsgNotice, event.MsgEmote, event.MsgImage:
+	case event.MsgText, event.MsgNotice, event.MsgEmote, event.MsgImage, event.MsgFile, event.MsgVideo, event.MsgAudio, event.MsgBeeperGallery:
 	default:
 		return nil, bridgev2.ErrUnsupportedMessageType
 	}
@@ -1404,6 +1430,28 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		return kc.sendMatrixImage(ctx, c, intent, chatID, msg.Content, func(ctx context.Context) error {
 			return kc.beginOutbound(ctx, msg)
 		})
+	}
+	if msg.Content.MsgType == event.MsgFile || msg.Content.MsgType == event.MsgVideo || msg.Content.MsgType == event.MsgAudio || msg.Content.MsgType == event.MsgBeeperGallery {
+		if msg.ReplyTo != nil || msg.Content.RelatesTo != nil && msg.Content.RelatesTo.GetReplyTo() != "" {
+			return nil, bridgev2.WrapErrorInStatus(errUnsupportedUploadReply).
+				WithStatus(event.MessageStatusFail).
+				WithErrorReason(event.MessageStatusUnsupported).
+				WithIsCertain(true).
+				WithMessage("KakaoTalk cannot send a file, video or album as a reply; it was not sent. Send it without the reply.").
+				WithSendNotice(true)
+		}
+		if msg.Portal.Bridge == nil {
+			return nil, bridgev2.ErrFailedToGetIntent
+		}
+		intent, ok := msg.Portal.GetIntentFor(ctx, kc.selfSender(), kc.login, bridgev2.RemoteEventMessage)
+		if !ok {
+			return nil, bridgev2.ErrFailedToGetIntent
+		}
+		begin := func(ctx context.Context) error { return kc.beginOutbound(ctx, msg) }
+		if msg.Content.MsgType == event.MsgBeeperGallery {
+			return kc.sendMatrixAlbum(ctx, c, intent, chatID, msg.Content, begin)
+		}
+		return kc.sendMatrixUpload(ctx, c, intent, chatID, msg.Content, begin)
 	}
 	body := msg.Content.Body
 	if msg.Content.MsgType == event.MsgEmote {
@@ -1547,7 +1595,173 @@ func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c kakaoClient, inten
 	return &bridgev2.MatrixMessageResponse{DB: &database.Message{ID: makeMessageID(chatID, logID), SenderID: makeUserID(kc.userID), Timestamp: kakaoTime(sendAt), Metadata: newKakaoMessageMetadata(chatID, logID, kc.userID, media.PhotoType, "[image]", 0)}}, nil
 }
 
+const matrixUploadTransferTimeout = 3 * time.Minute
+
+var matrixUploadDownloader = func(ctx context.Context, intent bridgev2.MatrixAPI, uri id.ContentURIString, fileInfo *event.EncryptedFileInfo) ([]byte, error) {
+	return downloadMatrixMediaBounded(ctx, intent, uri, fileInfo, media.MaxUploadBytes)
+}
+
+var errUnsupportedUploadReply = errors.New("connector: KakaoTalk has no file, video or album reply")
+
+// sendMatrixUpload sends one Matrix file, video or audio as a KakaoTalk file
+// or video. Name, type and size are checked before the download, the bytes
+// are validated before the durable reservation, and the upload runs once.
+func (kc *KakaoClient) sendMatrixUpload(ctx context.Context, c kakaoClient, intent bridgev2.MatrixAPI, chatID int64, content *event.MessageEventContent, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, matrixUploadTransferTimeout)
+	defer cancel()
+	if lifecycle := kc.connectionLifecycle(); lifecycle != nil {
+		var release func()
+		ctx, release = withConnectionLifecycle(context.WithValue(ctx, connectionLifecycleKey{}, lifecycle))
+		defer release()
+	}
+	name, caption := content.FileName, ""
+	if name == "" {
+		name = content.Body
+	} else if content.Body != name {
+		caption = content.Body
+	}
+	if content.Info != nil && content.Info.Size > media.MaxUploadBytes {
+		return nil, uploadRejectedStatus(media.ErrUploadTooLarge)
+	}
+	if _, err := media.ClassifyUpload(name, caption); err != nil {
+		return nil, uploadRejectedStatus(err)
+	}
+	data, err := matrixUploadDownloader(ctx, intent, content.URL, content.File)
+	if err != nil {
+		return nil, bridgev2.WrapErrorInStatus(errors.New("download Matrix file failed")).
+			WithStatus(event.MessageStatusRetriable).
+			WithErrorReason(event.MessageStatusNetworkError).
+			WithIsCertain(true).
+			WithMessage("The file could not be fetched from Matrix, so it was not sent to KakaoTalk.").
+			WithSendNotice(true)
+	}
+	upload, err := media.PrepareUpload(name, data, caption)
+	if err != nil {
+		return nil, uploadRejectedStatus(err)
+	}
+	if err := begin(ctx); err != nil {
+		return nil, err
+	}
+	response, err := c.SendUpload(ctx, chatID, upload)
+	if err != nil {
+		return nil, outboundSendError(err)
+	}
+	logID, sendAt, err := media.SendResultPosition(response)
+	if err != nil {
+		return nil, outboundAcceptedWithoutPosition(err)
+	}
+	return &bridgev2.MatrixMessageResponse{DB: &database.Message{ID: makeMessageID(chatID, logID), SenderID: makeUserID(kc.userID), Timestamp: kakaoTime(sendAt), Metadata: newKakaoMessageMetadata(chatID, logID, kc.userID, upload.Type, upload.Name, 0)}}, nil
+}
+
+// sendMatrixAlbum sends one Matrix gallery as one KakaoTalk album. Like the
+// Mac client, a single photo is sent as an ordinary photo. Every photo is
+// fetched and validated before the durable reservation, and the album is
+// sent once.
+func (kc *KakaoClient) sendMatrixAlbum(ctx context.Context, c kakaoClient, intent bridgev2.MatrixAPI, chatID int64, content *event.MessageEventContent, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
+	images, caption := content.BeeperGalleryImages, content.BeeperGalleryCaption
+	if len(images) == 1 && images[0] != nil {
+		single := *images[0]
+		if caption != "" {
+			single.FileName, single.Body = single.Body, caption
+		}
+		return kc.sendMatrixImage(ctx, c, intent, chatID, &single, begin)
+	}
+	if len(images) < media.MinAlbumPhotos || len(images) > media.MaxAlbumPhotos {
+		return nil, albumRejectedStatus(media.ErrInvalidAlbum, "KakaoTalk albums hold 2 to 30 photos; the album was not sent.")
+	}
+	if !media.ValidCaption(caption) {
+		return nil, albumRejectedStatus(media.ErrInvalidCaption, "The album caption is too long for KakaoTalk; the album was not sent.")
+	}
+	ctx, cancel := context.WithTimeout(ctx, matrixUploadTransferTimeout)
+	defer cancel()
+	if lifecycle := kc.connectionLifecycle(); lifecycle != nil {
+		var release func()
+		ctx, release = withConnectionLifecycle(context.WithValue(ctx, connectionLifecycleKey{}, lifecycle))
+		defer release()
+	}
+	photos := make([][]byte, 0, len(images))
+	total := 0
+	for _, image := range images {
+		if image == nil {
+			return nil, albumRejectedStatus(media.ErrInvalidAlbum, "The album contains an invalid photo; it was not sent.")
+		}
+		data, err := matrixImageDownloader(ctx, intent, image.URL, image.File)
+		if err != nil {
+			return nil, bridgev2.WrapErrorInStatus(errors.New("download Matrix album photo failed")).
+				WithStatus(event.MessageStatusRetriable).
+				WithErrorReason(event.MessageStatusNetworkError).
+				WithIsCertain(true).
+				WithMessage("A photo could not be fetched from Matrix, so the album was not sent to KakaoTalk.").
+				WithSendNotice(true)
+		}
+		if _, err := media.PrepareImage(data); err != nil {
+			return nil, albumRejectedStatus(err, "KakaoTalk albums accept only JPEG and PNG photos up to 16 MiB; the album was not sent.")
+		}
+		total += len(data)
+		if total > media.MaxAlbumBytes {
+			return nil, albumRejectedStatus(media.ErrInvalidAlbum, "Albums sent to KakaoTalk from Matrix are limited to 64 MiB in total; the album was not sent.")
+		}
+		photos = append(photos, data)
+	}
+	if err := begin(ctx); err != nil {
+		return nil, err
+	}
+	response, err := c.SendAlbum(ctx, chatID, photos, caption)
+	if errors.Is(err, client.ErrAlbumNotCreated) {
+		// No WRITE was sent, so no message exists. The reservation keeps this
+		// Matrix event from being sent again.
+		return nil, bridgev2.WrapErrorInStatus(err).
+			WithStatus(event.MessageStatusFail).
+			WithErrorReason(event.MessageStatusNetworkError).
+			WithIsCertain(true).
+			WithMessage("The album could not be uploaded to KakaoTalk; no message was created.").
+			WithSendNotice(true)
+	}
+	if err != nil {
+		return nil, outboundSendError(err)
+	}
+	if response.LogID <= 0 {
+		return nil, outboundAcceptedWithoutPosition(errors.New("KakaoTalk accepted the album without a log ID"))
+	}
+	return &bridgev2.MatrixMessageResponse{DB: &database.Message{ID: makeMessageID(chatID, response.LogID), SenderID: makeUserID(kc.userID), Timestamp: kakaoTime(response.SendAt), Metadata: newKakaoMessageMetadata(chatID, response.LogID, kc.userID, media.MultiPhotoType, "[album]", 0)}}, nil
+}
+
+func albumRejectedStatus(err error, message string) error {
+	return bridgev2.WrapErrorInStatus(err).
+		WithStatus(event.MessageStatusFail).
+		WithErrorReason(event.MessageStatusUnsupported).
+		WithIsCertain(true).
+		WithMessage(message).
+		WithSendNotice(true)
+}
+
+// uploadRejectedStatus reports a file KakaoTalk would not accept. Nothing was
+// sent, so the refusal is certain.
+func uploadRejectedStatus(err error) error {
+	message := "The file name is not valid for KakaoTalk; the file was not sent."
+	switch {
+	case errors.Is(err, media.ErrUploadTooLarge):
+		message = "Files sent to KakaoTalk from Matrix are limited to 64 MiB; the file was not sent."
+	case errors.Is(err, media.ErrDeniedExtension):
+		message = "KakaoTalk does not allow this file type; the file was not sent."
+	case errors.Is(err, media.ErrCaptionNotSupported):
+		message = "KakaoTalk files cannot carry a caption; the file was not sent. Send the file and the text separately."
+	case errors.Is(err, media.ErrInvalidCaption):
+		message = "The video caption is too long for KakaoTalk; the video was not sent."
+	}
+	return bridgev2.WrapErrorInStatus(err).
+		WithStatus(event.MessageStatusFail).
+		WithErrorReason(event.MessageStatusUnsupported).
+		WithIsCertain(true).
+		WithMessage(message).
+		WithSendNotice(true)
+}
+
 func downloadMatrixImageBounded(ctx context.Context, intent bridgev2.MatrixAPI, uri id.ContentURIString, fileInfo *event.EncryptedFileInfo) ([]byte, error) {
+	return downloadMatrixMediaBounded(ctx, intent, uri, fileInfo, media.MaxImageBytes)
+}
+
+func downloadMatrixMediaBounded(ctx context.Context, intent bridgev2.MatrixAPI, uri id.ContentURIString, fileInfo *event.EncryptedFileInfo, limit int64) ([]byte, error) {
 	asIntent, ok := intent.(*bridgematrix.ASIntent)
 	if !ok || asIntent == nil || asIntent.Matrix == nil {
 		return nil, bridgev2.ErrFailedToGetIntent
@@ -1567,7 +1781,7 @@ func downloadMatrixImageBounded(ctx context.Context, intent bridgev2.MatrixAPI, 
 		return nil, media.ErrInvalidImage
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.ContentLength > media.MaxImageBytes {
+	if resp.ContentLength > limit {
 		return nil, media.ErrInvalidImage
 	}
 	reader := io.Reader(resp.Body)
@@ -1577,13 +1791,13 @@ func downloadMatrixImageBounded(ctx context.Context, intent bridgev2.MatrixAPI, 
 		reader = decryptReader
 		closeReader = decryptReader
 	}
-	return readBoundedMatrixImage(reader, closeReader)
+	return readBoundedMatrixMedia(reader, closeReader, limit)
 }
 
-func readBoundedMatrixImage(reader io.Reader, closer io.Closer) ([]byte, error) {
-	data, readErr := io.ReadAll(io.LimitReader(reader, media.MaxImageBytes+1))
+func readBoundedMatrixMedia(reader io.Reader, closer io.Closer, limit int64) ([]byte, error) {
+	data, readErr := io.ReadAll(io.LimitReader(reader, limit+1))
 	closeErr := closer.Close()
-	if readErr != nil || closeErr != nil || len(data) > media.MaxImageBytes {
+	if readErr != nil || closeErr != nil || int64(len(data)) > limit {
 		return nil, media.ErrInvalidImage
 	}
 	return data, nil

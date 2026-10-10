@@ -77,6 +77,7 @@ mooo limits attachment JSON to 64 KiB, media to 64 MiB and duration to 24 hours;
 these are implementation policy. Duplicate JSON fields and missing direct URLs
 are rejected. Legacy 3GP, relay-only resources, cloud/drawer entitlement expiry,
 full uploader callbacks, cache/database persistence, and complete playback
-failure paths remain untraced or unvalidated. Outbound audio and actual Matrix
-application playback remain unsupported/unverified. Converter tests use explicit
+failure paths remain untraced or unvalidated. Matrix audio is sent outbound as an
+ordinary file, like the Mac client ([group outbound media](bridge/GROUP-OUTBOUND-MEDIA.md));
+actual Matrix application playback remains unverified. Converter tests use explicit
 synthetic framing bytes, not an imitation of official codec behavior.
