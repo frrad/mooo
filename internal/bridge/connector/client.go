@@ -506,6 +506,7 @@ func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (
 		return nil, bootstrapFailure{stage: "catch-up", err: err}
 	}
 	kc.resyncReactions(ctx, c)
+	kc.recoverReadWatermarks(ctx, c)
 	if err := kc.refreshAnnouncements(ctx); err != nil {
 		return nil, bootstrapFailure{stage: "announcements", err: err}
 	}

@@ -4,13 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
+	"time"
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/bridgev2"
+	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/bridgev2/simplevent"
 
 	"github.com/frrad/mooo/internal/client"
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 )
 
@@ -48,7 +53,13 @@ func (kc *KakaoClient) readReceiptEvent(ctx context.Context, notice events.ReadS
 // position, so a failure is logged and dropped rather than replayed; it never
 // stops the event loop.
 func (kc *KakaoClient) handleReadState(notice events.ReadStateChanged) bool {
-	remote, err := kc.readReceiptEvent(context.Background(), notice)
+	ctx := context.Background()
+	stored := kc.memberReadWatermark(ctx, notice.ChatID, notice.UserID)
+	if notice.Watermark <= stored {
+		// A member's receipt only moves forward, including after a restart.
+		return true
+	}
+	remote, err := kc.readReceiptEvent(ctx, notice)
 	if err != nil {
 		kc.log().Warn().Msg("Kakao read receipt target lookup failed")
 		return false
@@ -61,7 +72,29 @@ func (kc *KakaoClient) handleReadState(notice events.ReadStateChanged) bool {
 		kc.log().Warn().Err(result.Error).Msg("Kakao read receipt was not bridged")
 		return false
 	}
+	kc.setMemberReadWatermark(ctx, notice.ChatID, notice.UserID, notice.Watermark)
 	return true
+}
+
+func memberReadWatermarkKey(login string, chatID, userID int64) database.Key {
+	return database.Key(fmt.Sprintf("kakao:read-watermark:%s:%d:%d", login, chatID, userID))
+}
+
+// memberReadWatermark returns the highest watermark bridged for one member,
+// or zero when none was recorded.
+func (kc *KakaoClient) memberReadWatermark(ctx context.Context, chatID, userID int64) int64 {
+	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
+		return 0
+	}
+	value, _ := strconv.ParseInt(kc.login.Bridge.DB.KV.Get(ctx, memberReadWatermarkKey(string(kc.login.ID), chatID, userID)), 10, 64)
+	return value
+}
+
+func (kc *KakaoClient) setMemberReadWatermark(ctx context.Context, chatID, userID, watermark int64) {
+	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
+		return
+	}
+	kc.login.Bridge.DB.KV.Set(ctx, memberReadWatermarkKey(string(kc.login.ID), chatID, userID), strconv.FormatInt(watermark, 10))
 }
 
 // readReceiptTarget returns the bridged message at the watermark or, failing
@@ -153,5 +186,50 @@ func classifyReadReceiptFailure(cause error) error {
 		return fmt.Errorf("%w: session closed", errReadReceiptMutation)
 	default:
 		return fmt.Errorf("%w: outcome unknown", errReadReceiptMutation)
+	}
+}
+
+type chatOnRoomReader interface {
+	ChatOnRoom(ctx context.Context, chatID int64) (chatmeta.ChatOnRoomResponse, error)
+}
+
+// recoverReadWatermarks bridges member reads that happened while the bridge
+// was away. Read notices are live-only; CHATONROOM returns every active
+// member's watermark and, in owned observation, acknowledged nothing. Each
+// watermark passes the same forward-only guard as a live notice. Failures
+// are logged and never block the connection.
+func (kc *KakaoClient) recoverReadWatermarks(ctx context.Context, c kakaoClient) {
+	reader, ok := c.(chatOnRoomReader)
+	if !ok || kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
+		return
+	}
+	portals, err := kc.login.Bridge.DB.Portal.GetAllWithMXID(ctx)
+	if err != nil {
+		kc.log().Warn().Err(err).Msg("Could not list portals for read recovery")
+		return
+	}
+	for _, portal := range portals {
+		if portal.Receiver != kc.login.ID {
+			continue
+		}
+		chatID, err := parseChatID(portal.ID)
+		if err != nil || chatID <= 0 || kc.checkSourceAccess(ctx, chatID, nil) != nil {
+			continue
+		}
+		requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		room, err := reader.ChatOnRoom(requestCtx, chatID)
+		cancel()
+		if err != nil || room.ChatID != chatID {
+			kc.log().Warn().Int64("kakao_chat_id", chatID).Msg("Read watermark recovery skipped for chat")
+			continue
+		}
+		members := make([]int64, 0, len(room.Watermarks))
+		for member := range room.Watermarks {
+			members = append(members, member)
+		}
+		sort.Slice(members, func(i, j int) bool { return members[i] < members[j] })
+		for _, member := range members {
+			kc.handleReadState(events.ReadStateChanged{ChatID: chatID, UserID: member, Watermark: room.Watermarks[member]})
+		}
 	}
 }

@@ -161,3 +161,25 @@ func (c *Client) PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.Room
 	}
 	return session.PersonalMeta(ctx, chatID)
 }
+
+// ChatOnRoom sends one CHATONROOM for a chat and returns its member read
+// watermarks. It sends no read acknowledgement of its own.
+func (s *Session) ChatOnRoom(ctx context.Context, chatID int64) (chatmeta.ChatOnRoomResponse, error) {
+	body, err := (chatmeta.ChatOnRoomRequest{ChatID: chatID}).MarshalBSON()
+	if err != nil {
+		return chatmeta.ChatOnRoomResponse{}, err
+	}
+	reply, err := s.Request(ctx, chatmeta.ChatOnRoomCommand, body)
+	if err != nil {
+		return chatmeta.ChatOnRoomResponse{}, err
+	}
+	return chatmeta.DecodeChatOnRoomResponse(reply.Body)
+}
+
+func (c *Client) ChatOnRoom(ctx context.Context, chatID int64) (chatmeta.ChatOnRoomResponse, error) {
+	s, err := c.ensureSession(ctx)
+	if err != nil {
+		return chatmeta.ChatOnRoomResponse{}, err
+	}
+	return s.ChatOnRoom(ctx, chatID)
+}
