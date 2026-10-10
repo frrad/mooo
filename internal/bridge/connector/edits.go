@@ -80,25 +80,17 @@ func editedText(modified events.Event, target int64) (string, bool) {
 	}
 }
 
-type messageFetcher interface {
-	GetMessages(ctx context.Context, chatID int64, logIDs []int64) ([]events.Event, error)
-}
-
 // completeEdit reads the edited message for an edit feed delivered without it
 // (catch-up), by position with GETMSGS like the Mac client. A failed read
 // leaves the feed uncommitted; a target the server does not return leaves
 // nothing to apply.
-func (kc *KakaoClient) completeEdit(ctx context.Context, c kakaoClient, edit events.MessageEdited) (events.MessageEdited, error) {
+func (kc *KakaoClient) completeEdit(ctx context.Context, c historyAPI, edit events.MessageEdited) (events.MessageEdited, error) {
 	if edit.Modified != nil {
 		return edit, nil
 	}
-	fetcher, ok := c.(messageFetcher)
-	if !ok {
-		return edit, fmt.Errorf("connector: edited message cannot be fetched")
-	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	got, err := fetcher.GetMessages(ctx, edit.ChatID, []int64{edit.TargetLogID})
+	got, err := c.GetMessages(ctx, edit.ChatID, []int64{edit.TargetLogID})
 	if err != nil {
 		return edit, err
 	}

@@ -44,34 +44,18 @@ func TestMemberReadReceiptsNeverMoveBackwards(t *testing.T) {
 	}
 }
 
-// chatOnRoomKakao serves CHATONROOM watermarks for the recovery path.
-type chatOnRoomKakao struct {
-	*fakeKakao
-	responses map[int64]chatmeta.ChatOnRoomResponse
-	calls     []int64
-	err       error
-}
-
-func (c *chatOnRoomKakao) ChatOnRoom(_ context.Context, chatID int64) (chatmeta.ChatOnRoomResponse, error) {
-	c.calls = append(c.calls, chatID)
-	if c.err != nil {
-		return chatmeta.ChatOnRoomResponse{}, c.err
-	}
-	return c.responses[chatID], nil
-}
-
 // Members who read while the bridge was offline are recovered on the next
 // connection from CHATONROOM's watermarks, forward-only per member.
 func TestReconnectRecoversMemberReadWatermarks(t *testing.T) {
 	f := newReadReceiptFramework(t)
 	first := f.bridgeText(t, 100)
 	second := f.bridgeText(t, 102)
-	backend := &chatOnRoomKakao{fakeKakao: &fakeKakao{}, responses: map[int64]chatmeta.ChatOnRoomResponse{
+	backend := &fakeKakao{chatOnRoom: map[int64]chatmeta.ChatOnRoomResponse{
 		testChatID: {ChatID: testChatID, Full: true, Watermarks: map[int64]int64{testOtherID: 102, testSelfID: 100}},
 	}}
 	f.kc.recoverReadWatermarks(context.Background(), backend)
-	if len(backend.calls) != 1 || backend.calls[0] != testChatID {
-		t.Fatalf("CHATONROOM calls = %v", backend.calls)
+	if len(backend.chatOnRoomCalls) != 1 || backend.chatOnRoomCalls[0] != testChatID {
+		t.Fatalf("CHATONROOM calls = %v", backend.chatOnRoomCalls)
 	}
 	if got := f.matrix.ghost.markedEvents(); len(got) != 1 || got[0].eventID != second {
 		t.Fatalf("member receipt = %v, want %s", got, second)
@@ -80,12 +64,12 @@ func TestReconnectRecoversMemberReadWatermarks(t *testing.T) {
 		t.Fatalf("own receipt = %v, want %s", got, first)
 	}
 	// A later snapshot with a lower watermark never moves a member back.
-	backend.responses[testChatID] = chatmeta.ChatOnRoomResponse{ChatID: testChatID, Full: true, Watermarks: map[int64]int64{testOtherID: 100}}
+	backend.chatOnRoom[testChatID] = chatmeta.ChatOnRoomResponse{ChatID: testChatID, Full: true, Watermarks: map[int64]int64{testOtherID: 100}}
 	f.kc.recoverReadWatermarks(context.Background(), backend)
 	if got := f.matrix.ghost.markedEvents(); len(got) != 1 {
 		t.Fatalf("lower snapshot moved a member back: %v", got)
 	}
 	// A failed request is skipped without blocking the connection.
-	backend.err = errors.New("synthetic chat-on failure")
+	backend.chatOnRoomErr = errors.New("synthetic chat-on failure")
 	f.kc.recoverReadWatermarks(context.Background(), backend)
 }

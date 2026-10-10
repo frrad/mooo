@@ -111,27 +111,6 @@ func TestOutboundLegacyReactionKeepsSendersMiniReaction(t *testing.T) {
 	}
 }
 
-// metaSyncBackend serves resync pages and records the requested cursors.
-type metaSyncBackend struct {
-	*reactionTestBackend
-	pages   []reactions.SyncMetaPage
-	cursors []int64
-	syncErr error
-}
-
-func (b *metaSyncBackend) ReactionMetaSync(_ context.Context, chatID, cur int64) (reactions.SyncMetaPage, error) {
-	b.cursors = append(b.cursors, cur)
-	if b.syncErr != nil {
-		return reactions.SyncMetaPage{}, b.syncErr
-	}
-	if len(b.pages) == 0 {
-		return reactions.SyncMetaPage{Items: []json.RawMessage{}, Last: true}, nil
-	}
-	page := b.pages[0]
-	b.pages = b.pages[1:]
-	return page, nil
-}
-
 func syncedMeta(t *testing.T, logID, revision int64, content string) json.RawMessage {
 	t.Helper()
 	raw, err := json.Marshal(map[string]any{"chatId": testChatID, "logId": logID, "type": 1, "revision": revision, "content": content})
@@ -156,12 +135,12 @@ func TestReconnectResyncsReactionsChangedWhileOffline(t *testing.T) {
 	if err := kc.login.Bridge.DB.Reaction.Delete(ctx, old); err != nil {
 		t.Fatal(err)
 	}
-	backend := &metaSyncBackend{reactionTestBackend: &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
 		Revision: 500,
 		Members:  map[reactions.Type][]int64{reactions.Like: {testOtherID}},
 		Fields:   map[string]json.RawMessage{"2": []byte(`[2000]`)},
-	}}}
-	backend.pages = []reactions.SyncMetaPage{{Items: []json.RawMessage{
+	}}
+	backend.reactionPages = []reactions.SyncMetaPage{{Items: []json.RawMessage{
 		syncedMeta(t, 99, 500, `{"2":1}`),
 		syncedMeta(t, 1234, 501, `{"1":1}`), // not bridged: skipped
 	}, Last: true}}
@@ -171,8 +150,8 @@ func TestReconnectResyncsReactionsChangedWhileOffline(t *testing.T) {
 		return (*bridgev2.PortalInternals)(portal).HandleRemoteEvent(ctx, login, evt.GetType(), evt)
 	}
 	kc.resyncReactions(ctx, backend)
-	if len(backend.cursors) != 1 || backend.cursors[0] != 99 {
-		t.Fatalf("first resync cursors = %v, want the oldest bridged log 99", backend.cursors)
+	if len(backend.reactionCursors) != 1 || backend.reactionCursors[0] != 99 {
+		t.Fatalf("first resync cursors = %v, want the oldest bridged log 99", backend.reactionCursors)
 	}
 	row, err := kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(ctx, kc.login.ID, makeMessageID(testChatID, 99), makeUserID(testOtherID), "kakao:legacy:2")
 	if err != nil || row == nil {
@@ -180,15 +159,15 @@ func TestReconnectResyncsReactionsChangedWhileOffline(t *testing.T) {
 	}
 	// The next connection resumes after the applied page.
 	kc.resyncReactions(ctx, backend)
-	if len(backend.cursors) != 2 || backend.cursors[1] != 501 {
-		t.Fatalf("second resync cursors = %v, want 501", backend.cursors)
+	if len(backend.reactionCursors) != 2 || backend.reactionCursors[1] != 501 {
+		t.Fatalf("second resync cursors = %v, want 501", backend.reactionCursors)
 	}
 	// A failed resync leaves the cursor for the next connection.
-	backend.syncErr = errors.New("synthetic resync failure")
+	backend.reactionSyncErr = errors.New("synthetic resync failure")
 	kc.resyncReactions(ctx, backend)
-	backend.syncErr = nil
+	backend.reactionSyncErr = nil
 	kc.resyncReactions(ctx, backend)
-	if got := backend.cursors[len(backend.cursors)-1]; got != 501 {
+	if got := backend.reactionCursors[len(backend.reactionCursors)-1]; got != 501 {
 		t.Fatalf("cursor after failure = %d, want 501", got)
 	}
 }
@@ -201,8 +180,8 @@ func TestResyncFailureInReactionApplyKeepsCursor(t *testing.T) {
 	if _, err := raw.RawDB.ExecContext(ctx, `UPDATE portal SET mxid='!room:test'`); err != nil {
 		t.Fatal(err)
 	}
-	backend := &metaSyncBackend{reactionTestBackend: &reactionTestBackend{fakeKakao: &fakeKakao{}, err: errors.New("synthetic members failure")}}
-	backend.pages = []reactions.SyncMetaPage{{Items: []json.RawMessage{syncedMeta(t, 99, 600, `{"2":1}`)}, Last: true}}
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, err: errors.New("synthetic members failure")}
+	backend.reactionPages = []reactions.SyncMetaPage{{Items: []json.RawMessage{syncedMeta(t, 99, 600, `{"2":1}`)}, Last: true}}
 	kc.client = backend
 	login.Client = kc
 	kc.queue = func(evt bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
@@ -214,7 +193,7 @@ func TestResyncFailureInReactionApplyKeepsCursor(t *testing.T) {
 	}
 	kc.resyncReactions(ctx, backend)
 	kc.resyncReactions(ctx, backend)
-	if len(backend.cursors) != 2 || backend.cursors[1] != 99 {
-		t.Fatalf("cursors = %v, want unchanged 99 after a failed apply", backend.cursors)
+	if len(backend.reactionCursors) != 2 || backend.reactionCursors[1] != 99 {
+		t.Fatalf("cursors = %v, want unchanged 99 after a failed apply", backend.reactionCursors)
 	}
 }

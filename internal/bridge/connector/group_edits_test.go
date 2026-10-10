@@ -122,26 +122,6 @@ func TestEditAndDeleteFeedsCommitWhenTargetIsNotBridged(t *testing.T) {
 	}
 }
 
-type fetchingKakao struct {
-	*fakeKakao
-	results  [][]events.Event
-	requests [][]int64
-	fetchErr error
-}
-
-func (f *fetchingKakao) GetMessages(_ context.Context, chatID int64, logIDs []int64) ([]events.Event, error) {
-	f.requests = append(f.requests, append([]int64{chatID}, logIDs...))
-	if f.fetchErr != nil {
-		return nil, f.fetchErr
-	}
-	if len(f.results) == 0 {
-		return nil, nil
-	}
-	got := f.results[0]
-	f.results = f.results[1:]
-	return got, nil
-}
-
 // Regression (owned acceptance, 2026-10-10): an edit made while the bridge
 // was offline arrives in catch-up without content. Reading it with a SYNCMSG
 // range returned nothing and the edit was lost. Like the Mac client, the
@@ -150,7 +130,7 @@ func (f *fetchingKakao) GetMessages(_ context.Context, chatID int64, logIDs []in
 func TestCatchUpEditFetchesTheEditedMessageBeforeQueueing(t *testing.T) {
 	feed := events.MessageEdited{ChatID: testChatID, LogID: 202, AuthorID: 2000, TargetLogID: 201, TargetRevision: 2}
 	kc, _ := newTestClient(t, nil)
-	source := &fetchingKakao{fakeKakao: &fakeKakao{}, fetchErr: errors.New("synthetic read failure")}
+	source := &fakeKakao{fetchErr: errors.New("synthetic read failure")}
 	queued := 0
 	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		queued++
@@ -160,7 +140,7 @@ func TestCatchUpEditFetchesTheEditedMessageBeforeQueueing(t *testing.T) {
 		t.Fatal("edit with an unreadable target was queued or committed")
 	}
 	source.fetchErr = nil
-	source.results = [][]events.Event{{events.TextMessage{ChatID: testChatID, LogID: 201, AuthorID: 2000, Message: "synthetic second edit", Revision: 2}}}
+	source.fetchResults = [][]events.Event{{events.TextMessage{ChatID: testChatID, LogID: 201, AuthorID: 2000, Message: "synthetic second edit", Revision: 2}}}
 	var got *kakaoEdit
 	kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		got, _ = remote.(*kakaoEdit)
@@ -169,7 +149,7 @@ func TestCatchUpEditFetchesTheEditedMessageBeforeQueueing(t *testing.T) {
 	if !kc.handleEvent(source, feed) || got == nil || len(source.committed()) != 1 {
 		t.Fatal("completed edit was not queued and committed")
 	}
-	if last := source.requests[len(source.requests)-1]; len(last) != 2 || last[0] != testChatID || last[1] != 201 {
+	if last := source.fetchRequests[len(source.fetchRequests)-1]; len(last) != 2 || last[0] != testChatID || last[1] != 201 {
 		t.Fatalf("GETMSGS request = %v", last)
 	}
 	if text, ok := editedText(got.edit.Modified, 201); !ok || text != "synthetic second edit" {

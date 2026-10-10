@@ -2,7 +2,6 @@ package connector
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 	"maunium.net/go/mautrix/bridgev2"
@@ -18,10 +16,6 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
-
-type groupHistorySource interface {
-	ReadHistoryPage(context.Context, int64, int64, int64, int) (client.HistoryPage, error)
-}
 
 type groupHistoryProgress struct {
 	After          int64 `json:"after"`
@@ -96,8 +90,7 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 	c := kc.client
 	stopping := kc.stopping
 	kc.mu.Unlock()
-	source, ok := c.(groupHistorySource)
-	if !ok || stopping {
+	if c == nil || stopping {
 		return false, bridgev2.ErrNotLoggedIn
 	}
 	p, err := kc.login.Bridge.GetPortalByMXID(ctx, room)
@@ -169,17 +162,13 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 			// Read rooms can omit CHATINFO's last-log fields. The original
 			// account's login inventory (including observed live maxima) still
 			// supplies a bounded ceiling; Matrix mappings are never authority.
-			if inventory, ok := c.(interface {
-				InitialSyncTargets(context.Context) ([]syncmsg.Target, error)
-			}); ok {
-				targets, inventoryErr := inventory.InitialSyncTargets(ctx)
-				if inventoryErr != nil {
-					return false, errors.New("connector: history source inventory unavailable")
-				}
-				for _, target := range targets {
-					if target.ChatID == chatID && target.MaxLogID > ceiling {
-						ceiling = target.MaxLogID
-					}
+			targets, inventoryErr := c.InitialSyncTargets(ctx)
+			if inventoryErr != nil {
+				return false, errors.New("connector: history source inventory unavailable")
+			}
+			for _, target := range targets {
+				if target.ChatID == chatID && target.MaxLogID > ceiling {
+					ceiling = target.MaxLogID
 				}
 			}
 		}
@@ -192,7 +181,7 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 			return false, err
 		}
 		limit := min(progress.Remaining, int(syncmsg.MaxPageSize))
-		page, err := source.ReadHistoryPage(ctx, chatID, progress.After, progress.Through, limit)
+		page, err := c.ReadHistoryPage(ctx, chatID, progress.After, progress.Through, limit)
 		if err != nil {
 			return false, errors.New("connector: source history unavailable or request outcome unresolved; not retried")
 		}
@@ -271,37 +260,35 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 }
 
 func (kc *KakaoClient) loadGroupHistory(ctx context.Context, key string) (groupHistoryProgress, bool, error) {
-	var raw string
-	db := kc.login.Bridge.DB.KV
-	err := db.QueryRow(ctx, "SELECT value FROM kv_store WHERE bridge_id=$1 AND key=$2", db.BridgeID, key).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return groupHistoryProgress{}, false, nil
-	}
-	if err != nil {
+	raw, found, err := newKVStore(kc.login.Bridge.DB.KV).get(ctx, key)
+	if err != nil || !found {
 		return groupHistoryProgress{}, false, err
 	}
 	var p groupHistoryProgress
-	if len(raw) > 4096 || json.Unmarshal([]byte(raw), &p) != nil || p.After < 0 || p.Through < p.After || p.Remaining < 0 || p.Remaining > 1000 || p.Attempts < 0 || p.Done != (p.After == p.Through) {
-		return p, false, errors.New("connector: history journal is invalid")
+	if len(raw) > 4096 || json.Unmarshal([]byte(raw), &p) != nil || !p.valid() {
+		return p, false, errGroupHistoryInvalid
 	}
 	return p, true, nil
 }
+
+var errGroupHistoryInvalid = errors.New("connector: history journal is invalid")
+
+func (p groupHistoryProgress) valid() bool {
+	return p.After >= 0 && p.Through >= p.After && p.Remaining >= 0 && p.Remaining <= 1000 && p.Attempts >= 0 && p.Done == (p.After == p.Through)
+}
+
+// saveGroupHistory persists p durably. An out-of-range p is still written, as
+// a later load must refuse it, and the save reports the journal invalid.
 func (kc *KakaoClient) saveGroupHistory(ctx context.Context, key string, p groupHistoryProgress) error {
 	b, err := json.Marshal(p)
 	if err != nil {
 		return err
 	}
-	db := kc.login.Bridge.DB.KV
-	_, err = db.Exec(ctx, "INSERT INTO kv_store (bridge_id,key,value) VALUES ($1,$2,$3) ON CONFLICT (bridge_id,key) DO UPDATE SET value=excluded.value", db.BridgeID, key, string(b))
-	if err != nil {
+	if err = newKVStore(kc.login.Bridge.DB.KV).put(ctx, key, string(b)); err != nil {
 		return err
 	}
-	got, found, err := kc.loadGroupHistory(ctx, key)
-	if err != nil {
-		return err
-	}
-	if !found || got != p {
-		return errors.New("connector: history progress was not durable")
+	if len(b) > 4096 || !p.valid() {
+		return errGroupHistoryInvalid
 	}
 	return nil
 }

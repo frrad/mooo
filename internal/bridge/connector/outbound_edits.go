@@ -165,8 +165,7 @@ func (kc *KakaoClient) recordMatrixDeletion(ctx context.Context, messageID netwo
 	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
 		return
 	}
-	db := kc.login.Bridge.DB.KV
-	if _, err := db.Exec(ctx, "INSERT INTO kv_store (bridge_id,key,value) VALUES ($1,$2,$3) ON CONFLICT (bridge_id,key) DO NOTHING", db.BridgeID, matrixDeletionKey(kc, messageID), fmt.Sprintf("%020d", time.Now().Unix())); err != nil {
+	if _, err := newKVStore(kc.login.Bridge.DB.KV).putIfAbsent(ctx, matrixDeletionKey(kc, messageID), kvTimeStamp(time.Now())); err != nil {
 		kc.log().Warn().Err(err).Msg("Failed to record a Matrix deletion tombstone")
 	}
 }
@@ -177,7 +176,6 @@ func (kc *KakaoClient) deletedFromMatrix(messageID networkid.MessageID) bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	db := kc.login.Bridge.DB.KV
-	var value string
-	return db.QueryRow(ctx, "SELECT value FROM kv_store WHERE bridge_id=$1 AND key=$2", db.BridgeID, matrixDeletionKey(kc, messageID)).Scan(&value) == nil
+	_, found, err := newKVStore(kc.login.Bridge.DB.KV).get(ctx, matrixDeletionKey(kc, messageID))
+	return err == nil && found
 }

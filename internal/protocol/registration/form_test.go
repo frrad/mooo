@@ -1,6 +1,8 @@
 package registration
 
 import (
+	"context"
+	"errors"
 	"testing"
 )
 
@@ -18,10 +20,10 @@ func TestBuildQRGenerateRequestJSONGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.Profile.Route != RouteQRGenerate || request.Profile.Method != HTTPMethodPost {
-		t.Fatalf("profile = %#v", request.Profile)
+	if request.Route != RouteQRGenerate {
+		t.Fatalf("route = %q", request.Route)
 	}
-	if request.ContentType != RegistrationFormContentType {
+	if request.ContentType != RegistrationJSONContentType {
 		t.Fatalf("content type = %q", request.ContentType)
 	}
 	want := `{"device":{"model":"MacBook Air [M]","name":"Mooo Lab & /?","osVersion":"mac OS/26?x","uuid":"u+id=1"},"previousId":"prev value/?&=+"}`
@@ -46,5 +48,30 @@ func TestBuildQRGenerateRequestOptionalPreviousID(t *testing.T) {
 	}
 	if got := string(withEmpty.Body); got != `{"device":{"model":"model","name":"name","osVersion":"os","uuid":"uuid"},"previousId":""}` {
 		t.Fatalf("explicit empty previousId = %q", got)
+	}
+}
+
+func TestNewHTTPRequestRejectsUnreviewedRouteAndContentType(t *testing.T) {
+	built, err := BuildQRLoginRequest(QRLoginRequest{ID: "synthetic-id", Device: UUIDOnlyDevice{UUID: "uuid"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewHTTPRequest(context.Background(), built)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Method != "POST" || request.URL.String() != "https://katalk.kakao.com/mac/account/qrCodeLogin/login" {
+		t.Fatalf("request = %s %s", request.Method, request.URL)
+	}
+
+	unknownRoute := built
+	unknownRoute.Route = Route("/mac/account/passcodeLogin/generate")
+	if _, err := NewHTTPRequest(context.Background(), unknownRoute); !errors.Is(err, ErrInvalidHTTPProfile) {
+		t.Fatalf("unknown route error = %v", err)
+	}
+	wrongContentType := built
+	wrongContentType.ContentType = "text/plain"
+	if _, err := NewHTTPRequest(context.Background(), wrongContentType); !errors.Is(err, ErrInvalidHTTPProfile) {
+		t.Fatalf("wrong content type error = %v", err)
 	}
 }

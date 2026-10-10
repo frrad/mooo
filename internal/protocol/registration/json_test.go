@@ -54,17 +54,14 @@ func TestDecodeQRGenerateResponseRejectsInvalidStatusURLDelayAndFraming(t *testi
 	}
 }
 
-func TestDecodeQRLoginSuccessPreservesOptionalPresenceAndMinimumPredicate(t *testing.T) {
+func TestDecodeQRLoginSuccessPreservesOptionalPresence(t *testing.T) {
 	body := []byte(`{"status":0,"permanent":true,"user":{"userId":9223372036854775807},"accessToken":"secret-access","refreshToken":"secret-refresh","tokenType":"Bearer","autoLoginAccountId":"account","displayAccountId":"display"}`)
 	response, err := DecodeQRLoginSuccess(200, body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !response.Permanent.Present() || !response.UserPresent || !response.UserID.Present() || !response.AccessToken.Present() || !response.RefreshToken.Present() || !response.TokenType.Present() || !response.AutoLoginAccountID.Present() || !response.DisplayAccountID.Present() {
+	if response.Permanent == nil || !*response.Permanent || !response.UserPresent || response.UserID == nil || *response.UserID != 9223372036854775807 || !response.AccessToken.Present() || !response.RefreshToken.Present() || !response.TokenType.Present() || !response.AutoLoginAccountID.Present() || !response.DisplayAccountID.Present() {
 		t.Fatalf("presence = %#v", response)
-	}
-	if !response.MinimumFieldsPresent() {
-		t.Fatal("minimum completeness predicate rejected justified fields")
 	}
 	if value, ok := response.AccessToken.Value(); !ok || value != "secret-access" {
 		t.Fatalf("access token accessor = %q/%v", value, ok)
@@ -73,7 +70,7 @@ func TestDecodeQRLoginSuccessPreservesOptionalPresenceAndMinimumPredicate(t *tes
 		t.Fatal("String/GoString leaked access token")
 	}
 	minimal, err := DecodeQRLoginSuccess(200, []byte(`{"status":0,"user":{"userId":1},"accessToken":"token"}`))
-	if err != nil || !minimal.MinimumFieldsPresent() || minimal.RefreshToken.Present() || minimal.Permanent.Present() {
+	if err != nil || minimal.UserID == nil || *minimal.UserID != 1 || !minimal.AccessToken.Present() || minimal.RefreshToken.Present() || minimal.Permanent != nil {
 		t.Fatalf("minimal optional model = %#v, err=%v", minimal, err)
 	}
 }
@@ -112,7 +109,7 @@ func TestDecodeServerErrorEnvelopeRetainsBoundedRawPresenceAndMapsQRStatus(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if envelope.Status != 29 || envelope.QROutcome() != OutcomeInvalidResponse || !envelope.Reason.Present() || !envelope.DetailCode.Present() || !envelope.Response.Present() {
+	if envelope.Status != 29 || envelope.QROutcome() != outcomeTerminal || !envelope.Reason.Present() || !envelope.DetailCode.Present() || !envelope.Response.Present() {
 		t.Fatalf("envelope = %#v", envelope)
 	}
 	if string(envelope.Reason.Raw()) != `"secret reason"` || string(envelope.DetailCode.Raw()) != "null" {
@@ -122,7 +119,7 @@ func TestDecodeServerErrorEnvelopeRetainsBoundedRawPresenceAndMapsQRStatus(t *te
 		t.Fatal("error envelope formatting leaked raw values")
 	}
 	unknown, err := DecodeServerErrorEnvelope([]byte(`{"status":-999}`))
-	if err != nil || unknown.QROutcome() != OutcomeUnknownFailure {
+	if err != nil || unknown.QROutcome() != outcomeTerminal {
 		t.Fatalf("unknown outcome = %#v, err=%v", unknown, err)
 	}
 }

@@ -2,7 +2,6 @@ package connector
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,8 +65,7 @@ func unsupportedRoomMetadataStatus() error {
 }
 
 // A separate KV record avoids rewriting shared portal access/announcement
-// metadata. Database methods are used directly because KV.Set logs values on
-// failure and suppresses errors. Profile URLs must never enter such logs.
+// metadata. kvStore explains why it is not written through KVQuery.Set.
 func (kc *KakaoClient) checkpointGroupDisplay(ctx context.Context, p *bridgev2.Portal, data chatmeta.ChatData) (chatmeta.ChatData, error) {
 	// Validate the incoming snapshot before the persistent revision gate can
 	// discard contradictory fields. Admission rules also apply on a cold start.
@@ -82,10 +80,9 @@ func (kc *KakaoClient) checkpointGroupDisplay(ctx context.Context, p *bridgev2.P
 	kc.displayGate.Lock()
 	defer kc.displayGate.Unlock()
 	key := fmt.Sprintf("kakao:group-display:%s:%s", p.Receiver, p.ID)
-	db := kc.login.Bridge.DB.KV
-	var raw string
-	err := db.QueryRow(ctx, "SELECT value FROM kv_store WHERE bridge_id=$1 AND key=$2", db.BridgeID, key).Scan(&raw)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	kv := newKVStore(kc.login.Bridge.DB.KV)
+	raw, _, err := kv.get(ctx, key)
+	if err != nil {
 		return chatmeta.ChatData{}, err
 	}
 	if len(raw) > 256<<10 {
@@ -143,16 +140,9 @@ func (kc *KakaoClient) checkpointGroupDisplay(ctx context.Context, p *bridgev2.P
 		return chatmeta.ChatData{}, errors.New("connector: display checkpoint exceeds its bound")
 	}
 	if string(encoded) != raw {
-		if _, err = db.Exec(ctx, "INSERT INTO kv_store (bridge_id,key,value) VALUES ($1,$2,$3) ON CONFLICT (bridge_id,key) DO UPDATE SET value=excluded.value", db.BridgeID, key, string(encoded)); err != nil {
+		if err = kv.put(ctx, key, string(encoded)); err != nil {
 			return chatmeta.ChatData{}, err
 		}
-	}
-	var saved string
-	if err = db.QueryRow(ctx, "SELECT value FROM kv_store WHERE bridge_id=$1 AND key=$2", db.BridgeID, key).Scan(&saved); err != nil {
-		return chatmeta.ChatData{}, err
-	}
-	if saved != string(encoded) {
-		return chatmeta.ChatData{}, errors.New("connector: display checkpoint was not durable")
 	}
 	return data, nil
 }
