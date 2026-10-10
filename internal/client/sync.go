@@ -15,33 +15,33 @@ var ErrGapUnresolved = errors.New("client: message gap unresolved")
 
 const maxCatchUpPages = 100
 
-// SyncMessages performs one reviewed SYNCMSG page request. Kakao may also
+// syncMessages performs one reviewed SYNCMSG page request. Kakao may also
 // advance the account's server-visible read watermark through max, so callers
 // must treat this as a read-state mutation even though it does not advance the
 // local application commit checkpoint.
-func (s *Session) SyncMessages(ctx context.Context, request syncmsg.Request) (syncmsg.Response, error) {
+func (s *session) syncMessages(ctx context.Context, request syncmsg.Request) (syncmsg.Response, error) {
 	return call(s, ctx, "SYNCMSG", request, syncmsg.ParseResponse)
 }
 
-// SyncMessages performs one page through the client's existing session. It
+// syncMessages performs one page through the client's existing session. It
 // does not record a read acknowledgement: whether a catch-up page (cnt=0)
 // changes the server's read state is unproven, and recording one would make
 // MarkRead skip positions the server may still show as unread.
-func (c *Client) SyncMessages(ctx context.Context, request syncmsg.Request) (syncmsg.Response, error) {
+func (c *Client) syncMessages(ctx context.Context, request syncmsg.Request) (syncmsg.Response, error) {
 	if c == nil || ctx == nil {
 		return syncmsg.Response{}, ErrProtocol
 	}
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
-	return withSession(c, ctx, func(session *Session) (syncmsg.Response, error) {
-		return session.SyncMessages(ctx, request)
+	return withSession(c, ctx, func(session *session) (syncmsg.Response, error) {
+		return session.syncMessages(ctx, request)
 	})
 }
 
 // InitialSyncTargets returns each synchronized chat's current last-log ceiling.
 // Chats without any last log are omitted.
 func (c *Client) InitialSyncTargets(ctx context.Context) ([]syncmsg.Target, error) {
-	data, err := c.InitialChatData(ctx)
+	data, err := c.initialChatData(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 
 	result := make([]events.Event, 0)
 	for range maxCatchUpPages {
-		page, err := c.SyncMessages(ctx, syncmsg.Request{
+		page, err := c.syncMessages(ctx, syncmsg.Request{
 			// This client holds none of the messages after its commit, so it
 			// declares zero and the server returns the missing ones.
 			ChatID: chatID, Cur: current, Max: targetMax, Count: 0,

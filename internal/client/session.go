@@ -24,8 +24,8 @@ const (
 )
 
 var (
-	ErrCredentialsAbsent = errors.New("client: credentials absent")
-	ErrBootstrap         = errors.New("client: bootstrap failed")
+	errCredentialsAbsent = errors.New("client: credentials absent")
+	errBootstrap         = errors.New("client: bootstrap failed")
 	ErrLogin             = errors.New("client: login rejected")
 	ErrClosed            = errors.New("client: session closed")
 	ErrProtocol          = errors.New("client: protocol error")
@@ -56,9 +56,9 @@ type lifecycleShutdown interface {
 	shutdown()
 }
 
-// Session owns one authenticated carriage. A background reader dispatches
+// session owns one authenticated carriage. A background reader dispatches
 // correlated responses and preserves unsolicited packets for the caller.
-type Session struct {
+type session struct {
 	mu                 sync.Mutex
 	writeGateOnce      sync.Once
 	writeGate          chan struct{}
@@ -81,8 +81,8 @@ type Session struct {
 	readLoopStarted    bool
 }
 
-func newSession(scheduler lifecycleScheduler) *Session {
-	return &Session{
+func newSession(scheduler lifecycleScheduler) *session {
+	return &session{
 		pending:            make(map[uint32]pendingRequest),
 		lifecycleScheduler: scheduler,
 		bootstrapDone:      true,
@@ -92,7 +92,7 @@ func newSession(scheduler lifecycleScheduler) *Session {
 // queueSchedule and queueCancelRequest keep owner callbacks out of Session.mu.
 // lifecycleMu serializes them with stopLifecycle so shutdown cannot be
 // followed by an effective timer rearm.
-func (s *Session) queueSchedule() {
+func (s *session) queueSchedule() {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
 	if s.lifecycleStopped || s.lifecycleScheduler == nil {
@@ -101,7 +101,7 @@ func (s *Session) queueSchedule() {
 	s.lifecycleScheduler.queueSchedule()
 }
 
-func (s *Session) queueCancelRequest() {
+func (s *session) queueCancelRequest() {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
 	if s.lifecycleStopped || s.lifecycleScheduler == nil {
@@ -110,7 +110,7 @@ func (s *Session) queueCancelRequest() {
 	s.lifecycleScheduler.queueCancel()
 }
 
-func (s *Session) stopLifecycle() {
+func (s *session) stopLifecycle() {
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
 	if s.lifecycleStopped {
@@ -176,46 +176,52 @@ func (d sessionDialers) observed(observer func(loco.Packet)) sessionDialers {
 	return sessionDialers{tls: wrap(d.tls), secure: wrap(d.secure)}
 }
 
+// sessionConfig selects how connectSession bootstraps one session: the login
+// resume checkpoint, the transport dialers and the keepalive ping policy.
+type sessionConfig struct {
+	resume  continuity.Checkpoint
+	dialers sessionDialers
+	ping    pingSessionOptions
+}
+
+// realtimePingOptions is the production keepalive policy.
+func realtimePingOptions() pingSessionOptions {
+	return pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout}
+}
+
 // connectSession performs GETCONF, CHECKIN, secure carriage setup, and
 // LOGINLIST from client-owned state. Client owns and reuses the result.
-func connectSession(ctx context.Context, state authstate.State) (*Session, error) {
-	return connectSessionWithResumeOptions(ctx, state, continuity.Checkpoint{Version: continuity.Version}, productionSessionDialers(), pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout})
-}
-
-func connectSessionWithResume(ctx context.Context, state authstate.State, resume continuity.Checkpoint, dialers sessionDialers) (*Session, error) {
-	return connectSessionWithResumeOptions(ctx, state, resume, dialers, pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout})
-}
-
-func connectSessionWithResumeOptions(ctx context.Context, state authstate.State, resume continuity.Checkpoint, dialers sessionDialers, pingOptions pingSessionOptions) (*Session, error) {
+func connectSession(ctx context.Context, state authstate.State, config sessionConfig) (*session, error) {
+	resume, dialers, pingOptions := config.resume, config.dialers, config.ping
 	if ctx == nil || state.Credentials == nil {
-		return nil, ErrCredentialsAbsent
+		return nil, errCredentialsAbsent
 	}
 	if dialers.tls == nil || dialers.secure == nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	wireUUID, err := state.Identity.WireDeviceUUID()
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	bookingBody, err := (booking.GetConfRequest{
 		MCCMNC: "99999", Model: state.Identity.Metadata.DeviceModel, OS: "mac", UserID: state.Credentials.UserID,
 	}).MarshalBSON()
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	bookingWire, err := dialers.tls(ctx, booking.Host, 443)
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	bookingReply, _, err := bookingWire.request(1, booking.GetConfCommand, bookingBody)
 	_ = bookingWire.close()
 	bookingStatus, statusErr := loco.Status(bookingReply)
 	if err != nil || statusErr != nil || bookingStatus != 0 {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	hosts, ports, err := booking.DecodeBookingTargets(bookingReply.Body)
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 
 	checkinBody, err := (booking.CheckinRequest{
@@ -223,24 +229,24 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 		MCCMNC: "99999", Lang: "en", CountryISO: "US", UseSub: true,
 	}).MarshalBSON()
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	checkinReply, _, err := checkin(ctx, hosts, ports, checkinBody, dialers)
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	carriageHost, carriagePort, err := booking.DecodeCheckinEndpoint(checkinReply.Body)
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	carriage, err := dialers.secure(ctx, carriageHost, carriagePort)
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	if pingOptions.timeout <= 0 {
 		pingOptions.timeout = defaultPingRequestTimeout
 	}
-	var session *Session
+	var session *session
 	var owner lifecycleScheduler
 	if pingOptions.clock != nil && pingOptions.interval > 0 {
 		owner = newPingTimerOwner(pingOptions.clock, pingOptions.interval, func() {
@@ -249,7 +255,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 			}
 			pingCtx, cancel := context.WithTimeout(context.Background(), pingOptions.timeout)
 			defer cancel()
-			if _, err := session.Request(pingCtx, "PING", []byte{5, 0, 0, 0, 0}); err != nil {
+			if _, err := session.request(pingCtx, "PING", []byte{5, 0, 0, 0, 0}); err != nil {
 				_ = session.Close()
 			}
 		})
@@ -278,7 +284,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 		ChatIDs: chatIDs, MaxIDs: maxIDs, LastTokenID: resume.LastTokenID, LBK: resume.LBK,
 	}).MarshalBSON()
 	if err != nil {
-		return nil, ErrBootstrap
+		return nil, errBootstrap
 	}
 	session.startReadLoop()
 	loginReply, err := session.requestRaw(ctx, 2, "LOGINLIST", loginBody)
@@ -307,9 +313,9 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	return session, nil
 }
 
-// InitialChatData returns independent copies of the chat-data documents
+// chatDataSnapshot returns independent copies of the chat-data documents
 // obtained while completing LOGINLIST/LCHATLIST synchronization.
-func (s *Session) InitialChatData() []bson.Raw {
+func (s *session) chatDataSnapshot() []bson.Raw {
 	if s == nil {
 		return nil
 	}
@@ -322,25 +328,25 @@ func (s *Session) InitialChatData() []bson.Raw {
 	return out
 }
 
-// Pushes exposes unsolicited packets from the background reader, including
+// pushStream exposes unsolicited packets from the background reader, including
 // packets received while no request is active. Callers should drain it
 // continuously once mutations or subscriptions can produce events.
-func (s *Session) Pushes() <-chan loco.Packet {
+func (s *session) pushStream() <-chan loco.Packet {
 	if s == nil {
 		return nil
 	}
 	return s.pushes
 }
 
-// call marshals req, sends it once with Request and decodes the successful
-// reply body. A nil Session or Context is rejected by Request.
-func call[Req interface{ MarshalBSON() ([]byte, error) }, Resp any](s *Session, ctx context.Context, command string, req Req, decode func([]byte) (Resp, error)) (Resp, error) {
+// call marshals req, sends it once with request and decodes the successful
+// reply body. A nil session or Context is rejected by request.
+func call[Req interface{ MarshalBSON() ([]byte, error) }, Resp any](s *session, ctx context.Context, command string, req Req, decode func([]byte) (Resp, error)) (Resp, error) {
 	var zero Resp
 	body, err := req.MarshalBSON()
 	if err != nil {
 		return zero, err
 	}
-	reply, err := s.Request(ctx, command, body)
+	reply, err := s.request(ctx, command, body)
 	if err != nil {
 		return zero, err
 	}
@@ -351,10 +357,10 @@ func call[Req interface{ MarshalBSON() ([]byte, error) }, Resp any](s *Session, 
 // beyond its status.
 func ignoreReply([]byte) (struct{}, error) { return struct{}{}, nil }
 
-// Request sends exactly once. A timeout or disconnect is ambiguous and is
+// request sends exactly once. A timeout or disconnect is ambiguous and is
 // returned without retrying the command. It rejects a nil Session or Context,
 // so callers need no guard of their own unless they dereference s first.
-func (s *Session) Request(ctx context.Context, command string, body []byte) (loco.Packet, error) {
+func (s *session) request(ctx context.Context, command string, body []byte) (loco.Packet, error) {
 	reply, err := s.requestRaw(ctx, 0, command, body)
 	if err != nil {
 		return loco.Packet{}, err
@@ -369,7 +375,7 @@ func (s *Session) Request(ctx context.Context, command string, body []byte) (loc
 	return reply, nil
 }
 
-func (s *Session) requestRaw(ctx context.Context, id uint32, command string, body []byte) (loco.Packet, error) {
+func (s *session) requestRaw(ctx context.Context, id uint32, command string, body []byte) (loco.Packet, error) {
 	if s == nil || ctx == nil || command == "" {
 		return loco.Packet{}, ErrProtocol
 	}
@@ -419,7 +425,7 @@ func (s *Session) requestRaw(ctx context.Context, id uint32, command string, bod
 // allocateRequestIDLocked returns one ID from the official bounded request
 // range. The caller must hold s.mu. IDs still present in pending are skipped
 // so wraparound cannot correlate a new request with an older callback.
-func (s *Session) allocateRequestIDLocked() (uint32, error) {
+func (s *session) allocateRequestIDLocked() (uint32, error) {
 	if s.nextID < requestIDMin || s.nextID >= requestIDMax {
 		s.nextID = requestIDMin
 	}
@@ -439,7 +445,7 @@ func (s *Session) allocateRequestIDLocked() (uint32, error) {
 	}
 }
 
-func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, command string, body []byte) error {
+func (s *session) writeRequest(ctx context.Context, wire *wireConn, id uint32, command string, body []byte) error {
 	raw, err := (loco.Packet{Header: loco.Header{PacketID: id, Method: command, BodyType: loco.BodyTypeBSON}, Body: body}).MarshalBinary(0)
 	if err != nil {
 		return err
@@ -454,7 +460,7 @@ func (s *Session) writeRequest(ctx context.Context, wire *wireConn, id uint32, c
 	return err
 }
 
-func (s *Session) writeRawPayload(ctx context.Context, wire *wireConn, raw []byte) (int, error) {
+func (s *session) writeRawPayload(ctx context.Context, wire *wireConn, raw []byte) (int, error) {
 	if err := s.acquireWrite(ctx); err != nil {
 		return 0, err
 	}
@@ -516,7 +522,7 @@ func (s *Session) writeRawPayload(ctx context.Context, wire *wireConn, raw []byt
 	return written, err
 }
 
-func (s *Session) acquireWrite(ctx context.Context) error {
+func (s *session) acquireWrite(ctx context.Context) error {
 	s.writeGateOnce.Do(func() {
 		s.writeGate = make(chan struct{}, 1)
 		s.writeGate <- struct{}{}
@@ -529,11 +535,11 @@ func (s *Session) acquireWrite(ctx context.Context) error {
 	}
 }
 
-func (s *Session) releaseWrite() {
+func (s *session) releaseWrite() {
 	s.writeGate <- struct{}{}
 }
 
-func (s *Session) removePending(id uint32, expected chan requestResult) {
+func (s *session) removePending(id uint32, expected chan requestResult) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.pending[id].result == expected {
@@ -541,7 +547,7 @@ func (s *Session) removePending(id uint32, expected chan requestResult) {
 	}
 }
 
-func (s *Session) startReadLoop() {
+func (s *session) startReadLoop() {
 	s.mu.Lock()
 	if s.readLoopStarted {
 		s.mu.Unlock()
@@ -552,7 +558,7 @@ func (s *Session) startReadLoop() {
 	go s.readLoopBody()
 }
 
-func (s *Session) readLoopBody() {
+func (s *session) readLoopBody() {
 	for {
 		packet, err := s.wire.read()
 		if err != nil {
@@ -584,7 +590,7 @@ func (s *Session) readLoopBody() {
 // dispatchPacket correlates by the packet header unique ID, which is the
 // pair (method, packet ID). A packet that reuses a pending ID with a different
 // method is not a completion and stays on the push path.
-func (s *Session) dispatchPacket(packet loco.Packet) bool {
+func (s *session) dispatchPacket(packet loco.Packet) bool {
 	s.mu.Lock()
 	request, ok := s.pending[packet.Header.PacketID]
 	ok = ok && request.method == packet.Header.Method
@@ -600,7 +606,7 @@ func (s *Session) dispatchPacket(packet loco.Packet) bool {
 	return true
 }
 
-func (s *Session) finishBootstrap() bool {
+func (s *session) finishBootstrap() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || s.closing {
@@ -620,7 +626,7 @@ func (s *Session) finishBootstrap() bool {
 	return true
 }
 
-func (s *Session) finishRead(err error) {
+func (s *session) finishRead(err error) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -646,7 +652,7 @@ func (s *Session) finishRead(err error) {
 	}
 }
 
-func (s *Session) Close() error {
+func (s *session) Close() error {
 	if s == nil {
 		return nil
 	}
@@ -670,7 +676,7 @@ func (s *Session) Close() error {
 
 // Shutdown interrupts the Session. It is currently equivalent to Close apart
 // from rejecting a nil context.
-func (s *Session) Shutdown(ctx context.Context) error {
+func (s *session) Shutdown(ctx context.Context) error {
 	if s == nil {
 		return nil
 	}

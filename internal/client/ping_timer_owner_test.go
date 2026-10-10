@@ -200,7 +200,7 @@ func TestSessionCompletionArmsInjectedTimerOwner(t *testing.T) {
 	fired := make(chan struct{}, 1)
 	owner := newPingTimerOwner(clock, time.Second, func() { fired <- struct{}{} })
 	waiter := make(chan requestResult, 1)
-	session := &Session{
+	session := &session{
 		wire:               &wireConn{c: clientConn},
 		pushes:             make(chan loco.Packet, 1),
 		pending:            map[uint32]pendingRequest{100000000: {method: "PING", result: waiter}},
@@ -244,7 +244,7 @@ func TestSessionTerminalFinishShutsInjectedTimerOwner(t *testing.T) {
 	clock := &queuedTimerClock{}
 	fired := make(chan struct{}, 1)
 	owner := newPingTimerOwner(clock, time.Second, func() { fired <- struct{}{} })
-	session := &Session{
+	session := &session{
 		pushes:             make(chan loco.Packet, 1),
 		pending:            make(map[uint32]pendingRequest),
 		lifecycleScheduler: owner,

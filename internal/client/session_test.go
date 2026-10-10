@@ -17,7 +17,7 @@ import (
 
 func TestSessionBackgroundReaderDispatchesIdlePushAndResponse(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
-	s := &Session{
+	s := &session{
 		wire: &wireConn{c: clientConn}, nextID: 1,
 		pushes: make(chan loco.Packet, 4), pending: make(map[uint32]pendingRequest),
 	}
@@ -35,7 +35,7 @@ func TestSessionBackgroundReaderDispatchesIdlePushAndResponse(t *testing.T) {
 		writeErr <- err
 	}()
 	select {
-	case push := <-s.Pushes():
+	case push := <-s.pushStream():
 		if push.Header.Method != "MSG" {
 			t.Fatalf("push method = %q", push.Header.Method)
 		}
@@ -76,7 +76,7 @@ func TestSessionBackgroundReaderDispatchesIdlePushAndResponse(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if _, err := s.Request(ctx, "PING", []byte{5, 0, 0, 0, 0}); err != nil {
+	if _, err := s.request(ctx, "PING", []byte{5, 0, 0, 0, 0}); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-serverDone; err != nil {
@@ -120,8 +120,8 @@ func TestUpdateLoginCursorCapturesInventoryAndDeletion(t *testing.T) {
 }
 
 func TestSessionClosed(t *testing.T) {
-	s := &Session{closed: true}
-	_, err := s.Request(t.Context(), "CREATE", []byte{5, 0, 0, 0, 0})
+	s := &session{closed: true}
+	_, err := s.request(t.Context(), "CREATE", []byte{5, 0, 0, 0, 0})
 	if !errors.Is(err, ErrClosed) {
 		t.Fatalf("error=%v", err)
 	}

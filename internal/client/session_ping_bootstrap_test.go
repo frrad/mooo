@@ -105,7 +105,7 @@ func TestConnectSessionArmsPingOnlyAfterLoginCompletion(t *testing.T) {
 		},
 	}
 	clock := &queuedTimerClock{}
-	session, err := connectSessionWithResumeOptions(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers, pingSessionOptions{clock: clock, interval: time.Second, timeout: time.Second})
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: pingSessionOptions{clock: clock, interval: time.Second, timeout: time.Second}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
 		},
 	}
 	clock := &queuedTimerClock{}
-	session, err := connectSessionWithResumeOptions(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers, pingSessionOptions{clock: clock, interval: time.Second, timeout: 20 * time.Millisecond})
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: pingSessionOptions{clock: clock, interval: time.Second, timeout: 20 * time.Millisecond}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,15 +286,15 @@ func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.
 	}
 	clock := &queuedTimerClock{}
 	result := make(chan struct {
-		session *Session
+		session *session
 		err     error
 	}, 1)
 	go func() {
-		session, err := connectSessionWithResumeOptions(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers, pingSessionOptions{clock: clock, interval: time.Second, timeout: time.Second, beforeBootstrapRequest: func() { close(gapReady); <-allowLchat }})
+		connected, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: pingSessionOptions{clock: clock, interval: time.Second, timeout: time.Second, beforeBootstrapRequest: func() { close(gapReady); <-allowLchat }}})
 		result <- struct {
-			session *Session
+			session *session
 			err     error
-		}{session: session, err: err}
+		}{session: connected, err: err}
 	}()
 	select {
 	case <-gapReady:
@@ -319,7 +319,7 @@ func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.
 		defer func() { _ = outcome.session.Close() }()
 		for want := 0; want < 70; want++ {
 			select {
-			case packet := <-outcome.session.Pushes():
+			case packet := <-outcome.session.pushStream():
 				if packet.Header.Method != "PUSH" {
 					t.Fatalf("buffered push %d method = %q, want PUSH", want, packet.Header.Method)
 				}

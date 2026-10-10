@@ -11,7 +11,7 @@ import (
 )
 
 // This file holds the CHECKIN dial order and the LOGINLIST/LCHATLIST page
-// synchronization that connectSessionWithResumeOptions drives.
+// synchronization that connectSession drives.
 
 type loginCursor struct {
 	chatData         map[int64]bson.Raw
@@ -50,12 +50,12 @@ func checkin(ctx context.Context, hosts []string, ports []int, body []byte, dial
 			}
 		}
 	}
-	return loco.Packet{}, nil, ErrBootstrap
+	return loco.Packet{}, nil, errBootstrap
 }
 
 // finishLoginSyncSession applies the LOGINLIST reply body first and follows
 // LCHATLIST until the list ends. It returns every page's chat data in order.
-func finishLoginSyncSession(ctx context.Context, session *Session, first []byte, beforeRequest func()) ([]bson.Raw, loginCursor, error) {
+func finishLoginSyncSession(ctx context.Context, session *session, first []byte, beforeRequest func()) ([]bson.Raw, loginCursor, error) {
 	body := bson.Raw(first)
 	var chats []bson.Raw
 	var cursor loginCursor

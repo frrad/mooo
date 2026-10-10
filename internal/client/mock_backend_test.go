@@ -326,7 +326,7 @@ func TestScriptedBackendResumedLoginUsesDurableCursors(t *testing.T) {
 		Version: continuity.Version, LastTokenID: 77, LBK: 6,
 		Chats: []continuity.ChatCursor{{ChatID: 3, MaxLogID: 30}, {ChatID: 9, MaxLogID: 90}},
 	}
-	session, err := connectSessionWithResume(t.Context(), state, resume, dialers)
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: resume, dialers: dialers, ping: realtimePingOptions()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +399,7 @@ func TestScriptedBackendFullListPreservesDurableMessageCursors(t *testing.T) {
 		Version: continuity.Version, LastTokenID: 77, LBK: 6,
 		Chats: []continuity.ChatCursor{{ChatID: 3, MaxLogID: 30}, {ChatID: 9, MaxLogID: 90}},
 	}
-	session, err := connectSessionWithResume(t.Context(), state, (OpenOptions{FullChatList: true}).loginResume(resume), dialers)
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: (OpenOptions{FullChatList: true}).loginResume(resume), dialers: dialers, ping: realtimePingOptions()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,7 +468,7 @@ func TestScriptedBackendPartialLChatListKeepsDeltasWithoutAdvancingGlobalCursor(
 			return carriage.client, nil
 		},
 	}
-	session, err := connectSessionWithResume(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers)
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: realtimePingOptions()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,7 +540,7 @@ func TestScriptedBackendFullPagedListRemovesEarlierRoom(t *testing.T) {
 			return carriage.client, nil
 		},
 	}
-	session, err := connectSessionWithResume(t.Context(), state, continuity.Checkpoint{Version: continuity.Version}, dialers)
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: realtimePingOptions()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -572,7 +572,7 @@ func TestScriptedBackendLoginAlreadyCurrentDoesNotPageOrAdvanceGlobalCursor(t *t
 		{Key: "lastChatId", Value: int64(42)},
 		{Key: "lbk", Value: int32(8)},
 	})
-	session, err := connectSessionWithResume(t.Context(), reusableTestState(), continuity.Checkpoint{Version: continuity.Version}, dialers)
+	session, err := connectSession(t.Context(), reusableTestState(), sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: realtimePingOptions()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -767,14 +767,14 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	api.dial = func(ctx context.Context, got authstate.State) (*Session, error) {
+	api.dial = func(ctx context.Context, got authstate.State) (*session, error) {
 		return connectSessionWithDialers(ctx, got, dialers)
 	}
 	defer func() { _ = api.Shutdown(t.Context()) }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	chats, err := api.InitialChatData(ctx)
+	chats, err := api.initialChatData(ctx)
 	if err != nil || len(chats) != 2 {
 		t.Fatalf("initial chats = %d, err=%v", len(chats), err)
 	}
@@ -785,9 +785,6 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	secondEventStream, err := api.Events(ctx)
 	if err != nil || secondEventStream != eventStream {
 		t.Fatal("Events did not return the reusable typed stream")
-	}
-	if _, err := api.Pushes(ctx); !errors.Is(err, ErrPushConsumerSelected) {
-		t.Fatalf("Pushes after Events error = %v", err)
 	}
 	close(pushTrigger)
 	select {
@@ -833,20 +830,20 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 func TestScriptedBackendAmbiguousWriteIsNeverRetried(t *testing.T) {
 	requests := 0
 	backend := newScriptedBackend(t, true, disconnectAfterRequest("WRITE", &requests))
-	session := &Session{
+	scripted := &session{
 		wire: backend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 	}
-	go session.readLoop()
+	go scripted.readLoop()
 	state := reusableTestState()
 	api, err := newClient(state, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	dials := 0
-	api.dial = func(context.Context, authstate.State) (*Session, error) {
+	api.dial = func(context.Context, authstate.State) (*session, error) {
 		dials++
-		return session, nil
+		return scripted, nil
 	}
 	defer func() { _ = api.Shutdown(t.Context()) }()
 
@@ -908,7 +905,7 @@ func TestScriptedBackendExpiredTokenRenewsThenLogsInOnce(t *testing.T) {
 	}
 	api.store = store
 	loginAttempts := 0
-	api.dial = func(ctx context.Context, got authstate.State) (*Session, error) {
+	api.dial = func(ctx context.Context, got authstate.State) (*session, error) {
 		loginAttempts++
 		switch loginAttempts {
 		case 1:
@@ -997,7 +994,7 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 		return server.close()
 	})
 	mediaDials := 0
-	session := &Session{
+	session := &session{
 		wire: mainBackend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 		mediaDial: func(_ context.Context, host string, _ int) (*wireConn, error) {

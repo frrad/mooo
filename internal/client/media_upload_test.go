@@ -61,7 +61,7 @@ func TestSendUploadSendsFileTypeNameAndBytesOnce(t *testing.T) {
 		}
 		return writeBackendPacket(server, 0, "COMPLETE", mustBSON(statusDocument(bson.E{Key: "chatLog", Value: bson.Raw(completeLog)})))
 	})
-	session := &Session{
+	session := &session{
 		wire: mainBackend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 		mediaDial: func(context.Context, string, int) (*wireConn, error) { return mediaBackend.client, nil },
@@ -81,7 +81,7 @@ func TestSendUploadSendsFileTypeNameAndBytesOnce(t *testing.T) {
 }
 
 func TestSendUploadRejectsUnpreparedUploadBeforeTransport(t *testing.T) {
-	session := &Session{}
+	session := &session{}
 	if _, err := session.SendUpload(context.Background(), 42, media.Upload{}); !errors.Is(err, media.ErrInvalidUpload) {
 		t.Fatalf("err = %v", err)
 	}

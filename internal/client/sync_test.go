@@ -96,7 +96,7 @@ func TestCatchUpPreservesMalformedMessagePositionAndCommitOrder(t *testing.T) {
 	if !ok || second.LogID != 101 {
 		t.Fatalf("second recovered event = %#v, want log 101 text", recovered[1])
 	}
-	if err := api.CommitEvent(recovered[1]); !errors.Is(err, ErrCommitOrder) {
+	if err := api.CommitEvent(recovered[1]); !errors.Is(err, errCommitOrder) {
 		t.Fatalf("later event commit = %v, want ErrCommitOrder", err)
 	}
 	if err := api.CommitEvent(recovered[0]); err != nil {
@@ -215,7 +215,7 @@ func TestCommitEventRejectsPerChatReordering(t *testing.T) {
 	api.queueCommit(42, 105)
 	first := events.TextMessage{ChatID: 42, LogID: 101, Message: "first"}
 	second := events.TextMessage{ChatID: 42, LogID: 105, Message: "second"}
-	if err := api.CommitEvent(second); !errors.Is(err, ErrCommitOrder) {
+	if err := api.CommitEvent(second); !errors.Is(err, errCommitOrder) {
 		t.Fatalf("out-of-order commit error = %v", err)
 	}
 	if checkpoint.IsCommitted(42, 105) {
@@ -240,8 +240,8 @@ func TestInitialSyncTargetsAreTypedAndSorted(t *testing.T) {
 			{Key: "l", Value: bson.D{{Key: "logId", Value: logID}, {Key: "chatId", Value: chatID}}},
 		})
 	}
-	api.dial = func(context.Context, authstate.State) (*Session, error) {
-		return &Session{initialChatData: []bson.Raw{document(9, 90), document(3, 30)}}, nil
+	api.dial = func(context.Context, authstate.State) (*session, error) {
+		return &session{initialChatData: []bson.Raw{document(9, 90), document(3, 30)}}, nil
 	}
 	targets, err := api.InitialSyncTargets(t.Context())
 	if err != nil {
@@ -267,8 +267,8 @@ func TestInitialSyncTargetsUsePersistedInventoryAfterEmptyDelta(t *testing.T) {
 		t.Fatal(err)
 	}
 	api.checkpoint = checkpoint
-	api.dial = func(context.Context, authstate.State) (*Session, error) {
-		return &Session{initialChatData: []bson.Raw{}}, nil
+	api.dial = func(context.Context, authstate.State) (*session, error) {
+		return &session{initialChatData: []bson.Raw{}}, nil
 	}
 	targets, err := api.InitialSyncTargets(t.Context())
 	if err != nil {
@@ -324,8 +324,8 @@ func testContinuityClient(t *testing.T, checkpoint *continuity.Store, backend *s
 		t.Fatal(err)
 	}
 	api.checkpoint = checkpoint
-	api.dial = func(context.Context, authstate.State) (*Session, error) {
-		session := &Session{
+	api.dial = func(context.Context, authstate.State) (*session, error) {
+		session := &session{
 			wire: backend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
 			pending: make(map[uint32]pendingRequest),
 		}
@@ -357,8 +357,8 @@ func TestResumeTargetsOnlyIncludeCommittedChatsThatFellBehind(t *testing.T) {
 		t.Fatal(err)
 	}
 	api.checkpoint = checkpoint
-	api.dial = func(context.Context, authstate.State) (*Session, error) {
-		return &Session{initialChatData: []bson.Raw{}}, nil
+	api.dial = func(context.Context, authstate.State) (*session, error) {
+		return &session{initialChatData: []bson.Raw{}}, nil
 	}
 
 	targets, err := api.ResumeTargets(t.Context())

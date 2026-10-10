@@ -30,7 +30,7 @@ func TestListChatsDecodesFullInventoryIncludingEmptyRooms(t *testing.T) {
 
 func TestListChatsRejectsPartialOrDeltaInventory(t *testing.T) {
 	for _, cursor := range []loginCursor{{}, {complete: true}, {replaceInventory: true}} {
-		s := &Session{loginCursor: cursor}
+		s := &session{loginCursor: cursor}
 		if _, err := s.ListChats(); !errors.Is(err, ErrChatListIncomplete) {
 			t.Fatalf("list error: %v", err)
 		}
@@ -86,7 +86,7 @@ func TestLaterListPageDeletionRemovesEarlierRecoveryTarget(t *testing.T) {
 	}
 }
 
-func fullChatListSession(t *testing.T, rooms []bson.Raw) *Session {
+func fullChatListSession(t *testing.T, rooms []bson.Raw) *session {
 	t.Helper()
 	values := make(bson.A, 0, len(rooms))
 	for _, room := range rooms {
@@ -98,7 +98,7 @@ func fullChatListSession(t *testing.T, rooms []bson.Raw) *Session {
 		t.Fatal(err)
 	}
 	cursor.replaceInventory = true
-	return &Session{loginCursor: cursor, initialChatData: raw}
+	return &session{loginCursor: cursor, initialChatData: raw}
 }
 
 func TestListChatsAppliesPageDeletionBeforeRecreationAndLatestMetadata(t *testing.T) {
@@ -116,7 +116,7 @@ func TestListChatsAppliesPageDeletionBeforeRecreationAndLatestMetadata(t *testin
 		cursor.apply(page)
 	}
 	cursor.complete, cursor.replaceInventory = true, true
-	s := &Session{loginCursor: cursor}
+	s := &session{loginCursor: cursor}
 	chats, err := s.ListChats()
 	if err != nil || len(chats) != 1 || chats[0].ChatID != 42 || chats[0].ActiveMemberCount != 4 {
 		t.Fatalf("recreated latest inventory: %#v, %v", chats, err)

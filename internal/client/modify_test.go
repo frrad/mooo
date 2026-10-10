@@ -13,10 +13,10 @@ import (
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
-func scriptedSession(t *testing.T, script func(*wireConn) error) (*Session, *scriptedBackend) {
+func scriptedSession(t *testing.T, script func(*wireConn) error) (*session, *scriptedBackend) {
 	t.Helper()
 	backend := newScriptedBackend(t, true, script)
-	session := &Session{
+	session := &session{
 		wire: backend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 	}

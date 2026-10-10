@@ -29,7 +29,7 @@ func TestClientReactDoesNotOpenLocoSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	dials := 0
-	api.dial = func(_ context.Context, _ authstate.State) (*Session, error) {
+	api.dial = func(_ context.Context, _ authstate.State) (*session, error) {
 		dials++
 		return nil, errors.New("unexpected dial")
 	}
@@ -64,7 +64,7 @@ func TestClientReactionDetailsMergesMacSourcesWithoutLocoSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	dials := 0
-	api.dial = func(_ context.Context, _ authstate.State) (*Session, error) {
+	api.dial = func(_ context.Context, _ authstate.State) (*session, error) {
 		dials++
 		return nil, errors.New("unexpected dial")
 	}
@@ -99,7 +99,7 @@ func TestClientReactionMembersDoesNotOpenLocoSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	dials := 0
-	api.dial = func(_ context.Context, _ authstate.State) (*Session, error) {
+	api.dial = func(_ context.Context, _ authstate.State) (*session, error) {
 		dials++
 		return nil, errors.New("unexpected dial")
 	}

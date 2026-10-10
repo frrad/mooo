@@ -81,7 +81,7 @@ func TestSendAlbumUploadsEachPhotoThenWritesOnce(t *testing.T) {
 		"media2.invalid": albumItemBackend(t, "k2", second),
 	}
 	var dialed []string
-	session := &Session{
+	session := &session{
 		wire: mainBackend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 		mediaDial: func(_ context.Context, host string, _ int) (*wireConn, error) {
@@ -143,7 +143,7 @@ func TestSendAlbumUploadFailureNeverWrites(t *testing.T) {
 		}
 		return writeBackendPacket(server, request.Header.PacketID, "MPOST", mustBSON(bson.D{{Key: "status", Value: int32(-1)}}))
 	})
-	session := &Session{
+	session := &session{
 		wire: mainBackend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
 		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 		mediaDial: func(context.Context, string, int) (*wireConn, error) { return failing.client, nil },

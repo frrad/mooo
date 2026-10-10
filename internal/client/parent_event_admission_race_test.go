@@ -11,7 +11,7 @@ func TestParentEventsRechecksShutdownAdmission(t *testing.T) {
 	for i := 0; i < 10000; i++ {
 		raw := make(chan loco.Packet)
 		close(raw)
-		c := &Client{session: &Session{pushes: raw}}
+		c := &Client{session: &session{pushes: raw}}
 		start := make(chan struct{})
 		returned := make(chan error, 2)
 		go func() { <-start; _, e := c.Events(context.Background()); returned <- e }()

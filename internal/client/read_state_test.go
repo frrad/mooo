@@ -36,7 +36,7 @@ func TestSessionMarkReadUsesOneMessageSyncShape(t *testing.T) {
 		}
 		return nil
 	}, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})))
-	session := &Session{
+	session := &session{
 		wire:    backend.client,
 		nextID:  1,
 		pushes:  make(chan loco.Packet, 1),
@@ -55,7 +55,7 @@ func TestSessionMarkReadUsesOneMessageSyncShape(t *testing.T) {
 }
 
 func TestSessionMarkReadRejectsInvalidInput(t *testing.T) {
-	session := &Session{}
+	session := &session{}
 	for _, test := range []struct {
 		name      string
 		ctx       context.Context
@@ -155,7 +155,7 @@ func TestClientMarkReadSkipsPersistedWatermark(t *testing.T) {
 	}
 	api.checkpoint = checkpoint
 	dials := 0
-	api.dial = func(context.Context, authstate.State) (*Session, error) {
+	api.dial = func(context.Context, authstate.State) (*session, error) {
 		dials++
 		return nil, errors.New("unexpected dial")
 	}
@@ -178,7 +178,7 @@ func TestClientMarkReadSkipsOlderPersistedWatermark(t *testing.T) {
 	}
 	api.checkpoint = checkpoint
 	dials := 0
-	api.dial = func(context.Context, authstate.State) (*Session, error) {
+	api.dial = func(context.Context, authstate.State) (*session, error) {
 		dials++
 		return nil, errors.New("unexpected dial")
 	}
@@ -212,7 +212,7 @@ func TestClientMarkReadSkipsWatermarkAfterCheckpointReopen(t *testing.T) {
 		t.Fatal(err)
 	}
 	api.checkpoint = second
-	api.dial = func(context.Context, authstate.State) (*Session, error) {
+	api.dial = func(context.Context, authstate.State) (*session, error) {
 		return nil, errors.New("unexpected dial after restart")
 	}
 	if _, err := api.MarkRead(context.Background(), 42, 99); err != nil {
@@ -270,7 +270,7 @@ func TestClientSyncMessagesCatchUpDoesNotSuppressLaterMarkRead(t *testing.T) {
 	api := testContinuityClient(t, checkpoint, backend)
 	// Catch-up declares zero held messages. Whether that marks the interval
 	// read on the server is unproven, so it must not record an acknowledgement.
-	if _, err := api.SyncMessages(context.Background(), syncmsg.Request{ChatID: 42, Cur: 90, Max: 99, Count: 0}); err != nil {
+	if _, err := api.syncMessages(context.Background(), syncmsg.Request{ChatID: 42, Cur: 90, Max: 99, Count: 0}); err != nil {
 		t.Fatal(err)
 	}
 	if got := checkpoint.ReadWatermark(42); got != 0 {
