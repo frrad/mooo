@@ -5,14 +5,15 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/event"
 
-	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 func bridgedTextPart(chatID, logID, author int64, text string, revision int64) *database.Message {
@@ -121,40 +122,45 @@ func TestEditAndDeleteFeedsCommitWhenTargetIsNotBridged(t *testing.T) {
 	}
 }
 
-type historyKakao struct {
+type fetchingKakao struct {
 	*fakeKakao
-	pages   []client.HistoryPage
-	reads   [][3]int64
-	readErr error
+	results  [][]events.Event
+	requests [][]int64
+	fetchErr error
 }
 
-func (h *historyKakao) ReadHistoryPage(_ context.Context, chatID, after, through int64, _ int) (client.HistoryPage, error) {
-	h.reads = append(h.reads, [3]int64{chatID, after, through})
-	if h.readErr != nil {
-		return client.HistoryPage{}, h.readErr
+func (f *fetchingKakao) GetMessages(_ context.Context, chatID int64, logIDs []int64) ([]events.Event, error) {
+	f.requests = append(f.requests, append([]int64{chatID}, logIDs...))
+	if f.fetchErr != nil {
+		return nil, f.fetchErr
 	}
-	if len(h.pages) == 0 {
-		return client.HistoryPage{}, nil
+	if len(f.results) == 0 {
+		return nil, nil
 	}
-	page := h.pages[0]
-	h.pages = h.pages[1:]
-	return page, nil
+	got := f.results[0]
+	f.results = f.results[1:]
+	return got, nil
 }
 
-// A catch-up edit feed carries no content; the edited message is read once
-// from KakaoTalk before the edit is queued. A failed read leaves the feed
-// uncommitted and queues nothing.
+// Regression (owned acceptance, 2026-10-10): an edit made while the bridge
+// was offline arrives in catch-up without content. Reading it with a SYNCMSG
+// range returned nothing and the edit was lost. Like the Mac client, the
+// edited message is now read by position with GETMSGS before the edit is
+// queued; a failed read leaves the feed uncommitted and queues nothing.
 func TestCatchUpEditFetchesTheEditedMessageBeforeQueueing(t *testing.T) {
-	feed := events.MessageEdited{ChatID: testChatID, LogID: 202, AuthorID: 2000, TargetLogID: 201, TargetRevision: 1}
+	feed := events.MessageEdited{ChatID: testChatID, LogID: 202, AuthorID: 2000, TargetLogID: 201, TargetRevision: 2}
 	kc, _ := newTestClient(t, nil)
-	source := &historyKakao{fakeKakao: &fakeKakao{}, readErr: errors.New("synthetic read failure")}
+	source := &fetchingKakao{fakeKakao: &fakeKakao{}, fetchErr: errors.New("synthetic read failure")}
 	queued := 0
-	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult { queued++; return bridgev2.EventHandlingResultSuccess }
+	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		queued++
+		return bridgev2.EventHandlingResultSuccess
+	}
 	if kc.handleEvent(source, feed) || queued != 0 || len(source.committed()) != 0 {
 		t.Fatal("edit with an unreadable target was queued or committed")
 	}
-	source.readErr = nil
-	source.pages = []client.HistoryPage{{Events: []events.Event{events.TextMessage{ChatID: testChatID, LogID: 201, AuthorID: 2000, Message: "synthetic edited text", Revision: 1}}}}
+	source.fetchErr = nil
+	source.results = [][]events.Event{{events.TextMessage{ChatID: testChatID, LogID: 201, AuthorID: 2000, Message: "synthetic second edit", Revision: 2}}}
 	var got *kakaoEdit
 	kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		got, _ = remote.(*kakaoEdit)
@@ -163,10 +169,34 @@ func TestCatchUpEditFetchesTheEditedMessageBeforeQueueing(t *testing.T) {
 	if !kc.handleEvent(source, feed) || got == nil || len(source.committed()) != 1 {
 		t.Fatal("completed edit was not queued and committed")
 	}
-	if last := source.reads[len(source.reads)-1]; last != [3]int64{testChatID, 200, 201} {
-		t.Fatalf("read range = %v", last)
+	if last := source.requests[len(source.requests)-1]; len(last) != 2 || last[0] != testChatID || last[1] != 201 {
+		t.Fatalf("GETMSGS request = %v", last)
 	}
-	if text, ok := editedText(got.edit.Modified, 201); !ok || text != "synthetic edited text" {
+	if text, ok := editedText(got.edit.Modified, 201); !ok || text != "synthetic second edit" {
 		t.Fatalf("modified = %#v", got.edit.Modified)
+	}
+}
+
+// The Mac client marks a deleted message in place. A delete feed whose target
+// was already bridged as the deleted placeholder (catch-up delivers both) is
+// committed without redacting the placeholder.
+func TestDeleteFeedForAnAlreadyDeletedPlaceholderIsCommittedWithoutRedaction(t *testing.T) {
+	kc, backend, _ := newGroupCreationFramework(t)
+	ctx := context.Background()
+	placeholder := newKakaoMessageMetadata(testChatID, 203, 2000, chat.TextType|messagetype.DeletedAllChatTypeFlag, "[deleted]", 0)
+	if err := kc.login.Bridge.DB.Message.Insert(ctx, &database.Message{
+		BridgeID: kc.login.Bridge.ID, ID: makeMessageID(testChatID, 203), MXID: "$placeholder",
+		Room: makePortalKey(testChatID, kc.login.ID), SenderID: makeUserID(2000), SenderMXID: "@kakao_2000:test",
+		Timestamp: time.Unix(1700000000, 0), Metadata: placeholder,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	queued := 0
+	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult { queued++; return bridgev2.EventHandlingResultSuccess }
+	if !kc.handleEvent(backend, events.MessageDeleted{ChatID: testChatID, LogID: 204, AuthorID: 2000, TargetLogID: 203}) {
+		t.Fatal("delete feed for a placeholder was not handled")
+	}
+	if queued != 0 || len(backend.committed()) != 1 {
+		t.Fatalf("queued=%d commits=%d", queued, len(backend.committed()))
 	}
 }

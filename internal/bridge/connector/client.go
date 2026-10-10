@@ -811,6 +811,16 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		}
 		evt = completed
 	}
+	if deletion, ok := evt.(events.MessageDeleted); ok && kc.targetAlreadyDeleted(deletion) {
+		if kc.checkSourceAccess(context.Background(), deletion.ChatID, nil) != nil {
+			return false
+		}
+		if err := c.CommitEvent(evt); err != nil {
+			kc.log().Err(err).Msg("Failed to commit Kakao delete feed")
+			return false
+		}
+		return true
+	}
 	remote := kc.remoteEventFor(evt)
 	if remote != nil && removedChat == 0 {
 		chatID, parseErr := parseChatID(remote.GetPortalKey().ID)

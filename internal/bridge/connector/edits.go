@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
@@ -79,28 +80,33 @@ func editedText(modified events.Event, target int64) (string, bool) {
 	}
 }
 
-// completeEdit fetches the edited message for an edit feed delivered without
-// it (catch-up). The fetch is a read; failure leaves the feed uncommitted.
+type messageFetcher interface {
+	GetMessages(ctx context.Context, chatID int64, logIDs []int64) ([]events.Event, error)
+}
+
+// completeEdit reads the edited message for an edit feed delivered without it
+// (catch-up), by position with GETMSGS like the Mac client. A failed read
+// leaves the feed uncommitted; a target the server does not return leaves
+// nothing to apply.
 func (kc *KakaoClient) completeEdit(ctx context.Context, c kakaoClient, edit events.MessageEdited) (events.MessageEdited, error) {
 	if edit.Modified != nil {
 		return edit, nil
 	}
-	source, ok := c.(groupHistorySource)
+	fetcher, ok := c.(messageFetcher)
 	if !ok {
 		return edit, fmt.Errorf("connector: edited message cannot be fetched")
 	}
-	page, err := source.ReadHistoryPage(ctx, edit.ChatID, edit.TargetLogID-1, edit.TargetLogID, 1)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	got, err := fetcher.GetMessages(ctx, edit.ChatID, []int64{edit.TargetLogID})
 	if err != nil {
 		return edit, err
 	}
-	for _, evt := range page.Events {
+	for _, evt := range got {
 		if chatID, logID, ok := events.MessagePosition(evt); ok && chatID == edit.ChatID && logID == edit.TargetLogID {
 			edit.Modified = evt
-			return edit, nil
 		}
 	}
-	// The target is gone (for example deleted); there is nothing to apply.
-	edit.Modified = events.DeletedMessage{ChatID: edit.ChatID, LogID: edit.TargetLogID}
 	return edit, nil
 }
 
@@ -116,4 +122,21 @@ func (kc *KakaoClient) deletedMessageEvent(deleted events.DeletedMessage) bridge
 	return newMessage(kc.messageMeta(deleted.ChatID, deleted.LogID, deleted.AuthorID, deleted.SentAt), makeMessageID(deleted.ChatID, deleted.LogID), noticeData{
 		Body: "This KakaoTalk message was deleted.", Metadata: metadata,
 	}, convertNoticeWithMetadata)
+}
+
+// targetAlreadyDeleted reports whether a delete feed's target was bridged as
+// the deleted placeholder; the Mac client marks deletions in place, so there
+// is nothing more to remove.
+func (kc *KakaoClient) targetAlreadyDeleted(deletion events.MessageDeleted) bool {
+	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	part, err := kc.login.Bridge.DB.Message.GetFirstPartByID(ctx, kc.login.ID, makeMessageID(deletion.ChatID, deletion.TargetLogID))
+	if err != nil || part == nil {
+		return false
+	}
+	meta, ok := part.Metadata.(*KakaoMessageMetadata)
+	return ok && meta != nil && meta.Type&messagetype.DeletedAllChatTypeFlag != 0
 }
