@@ -174,10 +174,7 @@ func (kc *KakaoClient) PreHandleMatrixReaction(ctx context.Context, msg *bridgev
 }
 
 func (kc *KakaoClient) HandleMatrixReaction(ctx context.Context, msg *bridgev2.MatrixReaction) (*database.Reaction, error) {
-	if kc != nil {
-		kc.groupGate.Lock()
-		defer kc.groupGate.Unlock()
-	}
+	// See HandleMatrixMessage: no connector gate under the portal event lock.
 	request, _, err := validateMatrixReaction(kc, msg)
 	if err != nil {
 		return nil, err
@@ -202,8 +199,7 @@ func (kc *KakaoClient) HandleMatrixReactionRemove(ctx context.Context, msg *brid
 	if ctx == nil {
 		return errReactionLookup
 	}
-	kc.groupGate.Lock()
-	defer kc.groupGate.Unlock()
+	// See HandleMatrixMessage: no connector gate under the portal event lock.
 	if msg.Event.Sender != kc.login.UserMXID {
 		return errReactionSender
 	}

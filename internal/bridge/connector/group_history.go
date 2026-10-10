@@ -251,7 +251,7 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 					return false, err
 				}
 			}
-			if !committable(result) {
+			if !committable(result) || (result.Ignored && !kc.ignoredMessageHasMapping(ctx, historical)) {
 				return false, errors.New("connector: history delivery not confirmed")
 			}
 			previous = logID

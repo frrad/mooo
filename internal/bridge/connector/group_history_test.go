@@ -140,6 +140,9 @@ func (i *groupCreationIntent) SendMessage(ctx context.Context, room id.RoomID, _
 	defer i.m.mu.Unlock()
 	body := content.Parsed.(*event.MessageEventContent).Body
 	if body == i.m.failMessage {
+		if i.m.failMessageError != nil {
+			return nil, i.m.failMessageError
+		}
 		return nil, errors.New("synthetic message send failure")
 	}
 	i.m.messageBodies = append(i.m.messageBodies, body)

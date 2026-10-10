@@ -297,11 +297,29 @@ func newMessage[T any](
 	data T,
 	convert func(context.Context, *bridgev2.Portal, bridgev2.MatrixAPI, T) (*bridgev2.ConvertedMessage, error),
 ) *simplevent.Message[T] {
+	originalMutation := meta.MutateContextFunc
+	meta.MutateContextFunc = func(ctx context.Context) context.Context {
+		if originalMutation != nil {
+			ctx = originalMutation(ctx)
+		}
+		return context.WithValue(ctx, historyDeliveryKey, &historySendState{})
+	}
 	return &simplevent.Message[T]{
-		EventMeta:          meta,
-		ID:                 id,
-		Data:               data,
-		ConvertMessageFunc: convert,
+		EventMeta: meta,
+		ID:        id,
+		Data:      data,
+		ConvertMessageFunc: func(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, value T) (*bridgev2.ConvertedMessage, error) {
+			converted, err := convert(ctx, portal, intent, value)
+			if err != nil || converted == nil {
+				return converted, err
+			}
+			if _, ok := ctx.Value(historyDeliveryKey).(*historySendState); ok {
+				if err := markMatrixTransactions(portal, intent, id, converted, false); err != nil {
+					return nil, err
+				}
+			}
+			return converted, nil
+		},
 	}
 }
 

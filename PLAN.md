@@ -51,12 +51,22 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
 - [x] Shared/personal group names and group avatar replacement/clearing (PR #273), with
       convergence and clear rejection of unsupported outbound changes.
 - [x] Member profile refresh with stable ghosts and isolated profile failures (PR #274).
-- [ ] Bounded opt-in historical backfill with durable progress, source visibility,
+- [x] Bounded opt-in historical backfill (PR #275) with durable progress, source visibility,
       ordering/deduplication, and observed read/unread policy.
-- [ ] Failure recovery and ambiguous sends: network/session/Matrix/media failures,
-      replay, commit boundaries, bounded shutdown, and actionable errors.
+- [x] Failure recovery and ambiguous sends (PR #276): delivery pause and bounded
+      replay, Matrix refusal and multipart commit checks, stable live/history
+      transaction IDs, first-delivery replay floor, catch-up retry during a
+      continuing outage, one Kakao send per Matrix event, explicit unconfirmed
+      outbound status, and the portal-lock deadlock fix. Owned acceptance and
+      recorded gaps: [failure recovery](research/bridge/GROUP-FAILURE-RECOVERY.md).
+- [ ] Failure-recovery follow-ups: owned kickout/change-server acceptance,
+      owned multipart partial success, a reproduced applied-but-unacknowledged
+      outbound send, linking a later source echo of an unconfirmed send to its
+      Matrix event, and the remaining Mac recovery trace gaps.
 - [ ] Group JPEG/PNG photos: exact bytes, captions, downloads/expiry, attribution,
-      offline catch-up and restart uniqueness.
+      offline catch-up and restart uniqueness. Includes the media faults moved
+      from failure recovery: interrupted download/upload and a cancellable,
+      bounded shutdown during an in-flight transfer.
 - [ ] Group text replies both directions and in history, with correct targets and
       documented missing-target fallback after encrypted restart.
 - [ ] Outbound image replies and inbound image/reply context; reject unsupported
@@ -79,18 +89,9 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       notifications, source roles and management permissions; prevent personal
       settings from changing shared state and reject unsupported actions.
 
-First active slice: bounded opt-in historical backfill. Discovery, creation,
-membership, group metadata and member profiles shipped in PRs #270–274.
-Trace the Mac history request/response, callers, retention/join visibility,
-persistence, consumers and failure branches before choosing the retrieval path.
-Resolve the controlled SYNCMSG held-count/read-side-effect differential; existing
-direct-room observations do not establish group history behavior. Define explicit
-operator opt-in, a bounded selected interval and durable progress independent
-from live commit/read watermarks. Reconcile overlap through existing message
-identity mappings, resume interrupted delivery without duplicates, and report
-unavailable history rather than inventing messages or advancing past gaps.
-Acceptance requires owned A/B/C encrypted content/identity/order/deduplication,
-source-visible limits, interruption/restart and observed unread effects.
+Next active slice: group JPEG/PNG photos, including the media faults carried
+from failure recovery. Discovery through failure recovery shipped in PRs
+#270–276.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.

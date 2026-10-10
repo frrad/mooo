@@ -11,14 +11,13 @@ import (
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
-	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
 
 var errMiniTransfer = errors.New("connector: Mini emoticon transfer failed")
 
-func (kc *KakaoClient) miniTextEvent(msg events.MiniTextMessage) *simplevent.Message[events.MiniTextMessage] {
+func (kc *KakaoClient) miniTextEvent(msg events.MiniTextMessage) *multipartMessage[events.MiniTextMessage] {
 	meta := kc.messageMeta(msg.ChatID, msg.LogID, msg.AuthorID, msg.SentAt)
 	meta.Type = bridgev2.RemoteEventMessageUpsert
 	var existing map[networkid.PartID]bool
@@ -38,7 +37,7 @@ func (kc *KakaoClient) miniTextEvent(msg events.MiniTextMessage) *simplevent.Mes
 		}
 		return bridgev2.UpsertResult{}, nil
 	}
-	return remote
+	return &multipartMessage[events.MiniTextMessage]{Message: remote, expectedParts: len(msg.Parts)}
 }
 
 func miniTextPartID(i int) networkid.PartID { return networkid.PartID(strconv.Itoa(i)) }

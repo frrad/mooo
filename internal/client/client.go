@@ -414,6 +414,15 @@ func decodeEventStreamWithTerminalStop(raw <-chan loco.Packet, output chan<- eve
 				if _, duplicate := seen[position]; duplicate {
 					continue
 				}
+				if checkpoint != nil {
+					if persistErr := checkpoint.RecordDeliveryStart(chatID, logID); persistErr != nil {
+						if terminal != nil {
+							terminal()
+						}
+						_ = emitEventResult(output, events.Result{Err: persistErr}, stop)
+						return
+					}
+				}
 				seen[position] = struct{}{}
 				order = append(order, position)
 				if len(order) > observedPositionLimit {

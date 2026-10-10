@@ -27,17 +27,18 @@ import (
 
 type groupCreationMatrix struct {
 	bridgev2.MatrixConnector
-	mu            sync.Mutex
-	members       map[id.UserID]*event.MemberEventContent
-	name          string
-	failName      bool
-	avatar        id.ContentURIString
-	failAvatar    bool
-	failUpload    bool
-	uploads       int
-	failMember    id.UserID
-	messageBodies []string
-	failMessage   string
+	mu               sync.Mutex
+	members          map[id.UserID]*event.MemberEventContent
+	name             string
+	failName         bool
+	avatar           id.ContentURIString
+	failAvatar       bool
+	failUpload       bool
+	uploads          int
+	failMember       id.UserID
+	messageBodies    []string
+	failMessage      string
+	failMessageError error
 }
 
 func (m *groupCreationMatrix) Init(*bridgev2.Bridge) {}

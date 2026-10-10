@@ -70,6 +70,7 @@ const (
 	stateConnectFailed         status.BridgeStateErrorCode = "kakao-connect-failed"
 	stateGroupCreateUnresolved status.BridgeStateErrorCode = "kakao-group-create-unresolved"
 	stateDisconnected          status.BridgeStateErrorCode = "kakao-disconnected"
+	stateDeliveryPaused        status.BridgeStateErrorCode = "kakao-delivery-paused"
 	stateUnidentifiableMsg     status.BridgeStateErrorCode = "kakao-unidentifiable-message"
 	stateKickedOut             status.BridgeStateErrorCode = "kakao-kicked-out"
 	stateChangeServer          status.BridgeStateErrorCode = "kakao-change-server"
@@ -110,6 +111,7 @@ func init() {
 		stateConnectFailed:         "Connecting to KakaoTalk failed.",
 		stateGroupCreateUnresolved: "A group creation outcome or room binding is unresolved. Reconcile the selected Matrix room with the source group; do not repeat creation.",
 		stateDisconnected:          "The KakaoTalk session ended. Restart the bridge to reconnect.",
+		stateDeliveryPaused:        "Inbound Kakao delivery was not confirmed. Progress was retained; bounded reconnect will attempt replay. Restore Matrix/source access and reconnect explicitly if recovery stops.",
 		stateUnidentifiableMsg:     "Kakao delivered a message whose identity could not be established safely. Review the bridge logs and repair continuity before reconnecting.",
 		stateKickedOut:             "KakaoTalk ended this device's session.",
 		stateChangeServer:          "KakaoTalk requested a server change. Restart the bridge to reconnect.",
@@ -134,6 +136,8 @@ type KakaoClient struct {
 	// replaced in tests.
 	queue     func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult
 	sendState func(status.BridgeState)
+	// reserveOutbound defaults to the bridge's durable store.
+	reserveOutbound func(context.Context, id.EventID) (bool, error)
 
 	groupGate      sync.Mutex
 	displayGate    sync.Mutex
@@ -188,6 +192,7 @@ func newKakaoClient(login *bridgev2.UserLogin, userID int64, open func() (kakaoC
 		reactionNotices:   make(map[string]time.Time),
 	}
 	kc.wait = waitForRecovery
+	kc.reserveOutbound = kc.reserveOutboundKV
 	kc.sendState = func(state status.BridgeState) { kc.stateQueue().Send(state) }
 	return kc
 }
@@ -295,6 +300,9 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 			return
 		}
 		if recovering && retryableRecoveryError(err) && kc.retryAfter(err, generation) {
+			if errors.Is(err, errDeliveryNotConfirmed) && kc.isCurrent(generation, ctx) {
+				kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDeliveryPaused})
+			}
 			return
 		}
 		if kc.isCurrent(generation, ctx) {
@@ -406,6 +414,10 @@ func recoveryDelay(err error, attempt int) time.Duration {
 	return delays[attempt]
 }
 
+// errDeliveryNotConfirmed marks a catch-up stopped because Matrix did not
+// confirm an event; its source progress is retained for replay.
+var errDeliveryNotConfirmed = errors.New("connector: delivery not confirmed")
+
 func retryableRecoveryError(err error) bool {
 	if err == nil || errors.Is(err, client.ErrLogin) || errors.Is(err, client.ErrCredentialRenewal) {
 		return false
@@ -413,7 +425,9 @@ func retryableRecoveryError(err error) bool {
 	var bootstrapErr bootstrapFailure
 	if errors.As(err, &bootstrapErr) {
 		if bootstrapErr.stage == "catch-up" {
-			return false
+			// Only Matrix-side delivery is retried here; source failures during
+			// catch-up stay terminal. Progress was retained, so replay is safe.
+			return errors.Is(bootstrapErr.err, errDeliveryNotConfirmed)
 		}
 		err = bootstrapErr.err
 	}
@@ -500,7 +514,7 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 		if errors.Is(err, client.ErrGapUnresolved) {
 			kc.log().Warn().Int64("kakao_chat_id", target.ChatID).Msg("Could not recover messages missed while disconnected")
 			if result := kc.queue(kc.gapNotice(target.ChatID, target.MaxLogID)); !committable(result) {
-				return errors.New("catch-up gap notice was not confirmed as bridged")
+				return fmt.Errorf("catch-up gap notice: %w", errDeliveryNotConfirmed)
 			}
 			continue
 		} else if err != nil {
@@ -511,7 +525,7 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 		}
 		for _, evt := range missed {
 			if !kc.handleEvent(c, evt) {
-				return errors.New("catch-up event was not committed")
+				return fmt.Errorf("catch-up event: %w", errDeliveryNotConfirmed)
 			}
 		}
 	}
@@ -524,6 +538,7 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan struct{}, generation uint64) {
 	kickedOut := false
 	changeServer := false
+	deliveryFailed := false
 	var terminalErr error
 	profileTicker := time.NewTicker(time.Minute)
 	defer profileTicker.Stop()
@@ -566,7 +581,14 @@ eventLoop:
 		if _, ok := result.Event.(events.ChangeServer); ok {
 			changeServer = true
 		}
-		kc.handleEvent(c, result.Event)
+		if !kc.handleEvent(c, result.Event) && !kickedOut && !changeServer {
+			// Continuing would strand the first uncommitted event while later
+			// deliveries could reach Matrix out of order. Release this session
+			// and let bounded connector recovery replay from durable progress.
+			// Outbound mutations are never replayed by this path.
+			deliveryFailed = true
+			break eventLoop
+		}
 	}
 	kc.mu.Lock()
 	stopping := kc.stopping
@@ -584,6 +606,8 @@ eventLoop:
 		kc.sendState(status.BridgeState{StateEvent: status.StateBadCredentials, Error: stateKickedOut})
 	case changeServer:
 		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateChangeServer})
+	case deliveryFailed:
+		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDeliveryPaused})
 	default:
 		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDisconnected})
 	}
@@ -834,6 +858,12 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 			Msg("Kakao message was not confirmed as bridged; leaving it uncommitted for replay")
 		return false
 	}
+	if result.Ignored {
+		if message, ok := remote.(bridgev2.RemoteMessage); ok && !kc.ignoredMessageHasMapping(context.Background(), message) {
+			kc.log().Warn().Msg("Ignored Kakao message has no confirmed mapping; retaining source progress")
+			return false
+		}
+	}
 	if removedChat > 0 && kc.verifySourceLeave(context.Background(), removedChat) != nil {
 		return false
 	}
@@ -851,8 +881,37 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 	return true
 }
 
+// The SDK suppresses some Matrix refusals into Ignored success. Only a
+// persisted message mapping can authorize source progress for such a result.
+func (kc *KakaoClient) ignoredMessageHasMapping(ctx context.Context, message bridgev2.RemoteMessage) bool {
+	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
+		return false
+	}
+	parts, err := kc.login.Bridge.DB.Message.GetAllPartsByID(ctx, kc.login.ID, message.GetID())
+	if err != nil || len(parts) == 0 {
+		return false
+	}
+	if multipart, ok := message.(interface{ ExpectedPartIDs() []networkid.PartID }); ok {
+		mapped := make(map[networkid.PartID]bool, len(parts))
+		for _, part := range parts {
+			mapped[part.PartID] = true
+		}
+		expected := multipart.ExpectedPartIDs()
+		if len(expected) == 0 {
+			return false
+		}
+		for _, partID := range expected {
+			if !mapped[partID] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // committable reports whether the bridge finished handling an event. Ignored
-// events (duplicates, filtered portals) count as handled. A queued result,
+// events count as handled at this boundary; source messages additionally need
+// persisted mapping verification in handleEvent. A queued result,
 // including one returned because handling was backgrounded after a timeout,
 // does not.
 func committable(result bridgev2.EventHandlingResult) bool {
@@ -1315,8 +1374,10 @@ var matrixImageDownloader = downloadMatrixImageBounded
 // HandleMatrixMessage sends one plain text message. A failed or ambiguous
 // send is reported to Matrix and never retried.
 func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.MatrixMessage) (*bridgev2.MatrixMessageResponse, error) {
-	kc.groupGate.Lock()
-	defer kc.groupGate.Unlock()
+	// No connector gate here: the SDK calls this while holding the portal's
+	// event lock, and the Kakao pump holds the gate while queueing into that
+	// portal. Source blocks are set in memory before they are persisted, so
+	// checkSourceAccess remains the authority.
 	if msg == nil || msg.Portal == nil || msg.Content == nil {
 		return nil, errSourceAccessRemoved
 	}
@@ -1355,6 +1416,9 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		if !ok {
 			return nil, bridgev2.ErrFailedToGetIntent
 		}
+		if err := kc.beginOutbound(ctx, msg); err != nil {
+			return nil, err
+		}
 		return kc.sendMatrixImage(ctx, c, intent, chatID, msg.Content.URL, msg.Content.File)
 	}
 	body := msg.Content.Body
@@ -1367,18 +1431,24 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		if err != nil {
 			return nil, err
 		}
-		response, err = c.SendReply(ctx, chat.ReplyRequest{ChatID: chatID, Message: body, Target: target})
-		if err != nil {
+		if err := kc.beginOutbound(ctx, msg); err != nil {
 			return nil, err
 		}
+		response, err = c.SendReply(ctx, chat.ReplyRequest{ChatID: chatID, Message: body, Target: target})
+		if err != nil {
+			return nil, outboundSendError(err)
+		}
 	} else {
+		if err := kc.beginOutbound(ctx, msg); err != nil {
+			return nil, err
+		}
 		response, err = c.SendText(ctx, chatID, body)
 		if err != nil {
-			return nil, err
+			return nil, outboundSendError(err)
 		}
 	}
 	if response.LogID <= 0 {
-		return nil, errors.New("KakaoTalk accepted the message without a log ID")
+		return nil, outboundAcceptedWithoutPosition(errors.New("KakaoTalk accepted the message without a log ID"))
 	}
 	sentType := chat.TextType
 	if msg.ReplyTo != nil {
@@ -1394,6 +1464,37 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	}, nil
 }
 
+// outboundSendError classifies a failed single Kakao send for Matrix. A
+// server status reply is a certain refusal. Any other failure may have been
+// delivered; it is never retried, and it must not be shown as retriable,
+// because a manual resend could duplicate a delivered message.
+func outboundSendError(err error) error {
+	var statusErr client.StatusError
+	if errors.As(err, &statusErr) {
+		return bridgev2.WrapErrorInStatus(err).
+			WithStatus(event.MessageStatusFail).
+			WithErrorReason(event.MessageStatusNetworkError).
+			WithIsCertain(true).
+			WithMessage("KakaoTalk refused this message.").
+			WithSendNotice(true)
+	}
+	return bridgev2.WrapErrorInStatus(err).
+		WithStatus(event.MessageStatusFail).
+		WithErrorReason(event.MessageStatusNetworkError).
+		WithIsCertain(false).
+		WithMessage("KakaoTalk did not confirm this message, and it may have been delivered. Check KakaoTalk before sending it again.").
+		WithSendNotice(true)
+}
+
+func outboundAcceptedWithoutPosition(err error) error {
+	return bridgev2.WrapErrorInStatus(err).
+		WithStatus(event.MessageStatusFail).
+		WithErrorReason(event.MessageStatusNetworkError).
+		WithIsCertain(false).
+		WithMessage("KakaoTalk accepted this message without identifying it, so it is probably delivered but cannot be linked. Check KakaoTalk before sending it again.").
+		WithSendNotice(true)
+}
+
 func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c kakaoClient, intent bridgev2.MatrixAPI, chatID int64, uri id.ContentURIString, fileInfo *event.EncryptedFileInfo) (*bridgev2.MatrixMessageResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)
 	defer cancel()
@@ -1403,11 +1504,11 @@ func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c kakaoClient, inten
 	}
 	response, err := c.SendImage(ctx, chatID, data)
 	if err != nil {
-		return nil, err
+		return nil, outboundSendError(err)
 	}
 	logID, sendAt, err := media.SendResultPosition(response)
 	if err != nil {
-		return nil, err
+		return nil, outboundAcceptedWithoutPosition(err)
 	}
 	return &bridgev2.MatrixMessageResponse{DB: &database.Message{ID: makeMessageID(chatID, logID), SenderID: makeUserID(kc.userID), Timestamp: kakaoTime(sendAt), Metadata: newKakaoMessageMetadata(chatID, logID, kc.userID, media.PhotoType, "[image]", 0)}}, nil
 }
