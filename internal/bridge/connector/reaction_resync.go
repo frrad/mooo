@@ -15,8 +15,8 @@ import (
 // backlog continues from the persisted cursor on the next connection.
 const reactionResyncPages = 10
 
-func reactionResyncKey(login string, chatID int64) database.Key {
-	return database.Key(fmt.Sprintf("kakao:reaction-sync:%s:%d", login, chatID))
+func reactionResyncKey(login string, chatID int64) string {
+	return fmt.Sprintf("kakao:reaction-sync:%s:%d", login, chatID)
 }
 
 // resyncReactions recovers reaction changes made while the bridge was away.
@@ -26,11 +26,7 @@ func reactionResyncKey(login string, chatID int64) database.Key {
 // path and its revision guards, so replay is idempotent. A failure leaves the
 // chat's cursor for the next connection and never blocks message delivery.
 func (kc *KakaoClient) resyncReactions(ctx context.Context, c kakaoClient) {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return
-	}
-	db := kc.login.Bridge.DB
-	portals, err := db.Portal.GetAllWithMXID(ctx)
+	portals, err := kc.store.portalsWithMXID(ctx)
 	if err != nil {
 		kc.log().Warn().Err(err).Msg("Could not list portals for reaction resync")
 		return
@@ -40,21 +36,22 @@ func (kc *KakaoClient) resyncReactions(ctx context.Context, c kakaoClient) {
 			continue
 		}
 		chatID, err := parseChatID(portal.ID)
-		if err != nil || chatID <= 0 || kc.checkSourceAccess(ctx, chatID, nil) != nil {
+		if err != nil || chatID <= 0 || kc.checkSourceAccess(ctx, chatID) != nil {
 			continue
 		}
-		if err := kc.resyncChatReactions(ctx, c, db, portal, chatID); err != nil {
+		if err := kc.resyncChatReactions(ctx, c, portal, chatID); err != nil {
 			kc.log().Warn().Err(err).Int64("kakao_chat_id", chatID).Msg("Reaction resync stopped; cursor retained")
 		}
 	}
 }
 
-func (kc *KakaoClient) resyncChatReactions(ctx context.Context, c kakaoClient, db *database.Database, portal *database.Portal, chatID int64) error {
+func (kc *KakaoClient) resyncChatReactions(ctx context.Context, c kakaoClient, portal *database.Portal, chatID int64) error {
 	key := reactionResyncKey(string(kc.login.ID), chatID)
-	cur, _ := strconv.ParseInt(db.KV.Get(ctx, key), 10, 64)
+	raw, _, _ := kc.store.get(ctx, key)
+	cur, _ := strconv.ParseInt(raw, 10, 64)
 	if cur <= 0 {
 		// The official client starts from its oldest stored message.
-		first, err := db.Message.GetFirstPortalMessage(ctx, portal.PortalKey)
+		first, err := kc.store.firstMessageInPortal(ctx, portal.PortalKey)
 		if err != nil {
 			return err
 		}
@@ -87,7 +84,7 @@ func (kc *KakaoClient) resyncChatReactions(ctx context.Context, c kakaoClient, d
 			if change.Revision > next {
 				next = change.Revision
 			}
-			target, err := db.Message.GetFirstPartByID(ctx, kc.login.ID, makeMessageID(chatID, change.LogID))
+			target, err := kc.store.firstMessagePart(ctx, kc.login.ID, makeMessageID(chatID, change.LogID))
 			if err != nil {
 				return err
 			}
@@ -101,7 +98,9 @@ func (kc *KakaoClient) resyncChatReactions(ctx context.Context, c kakaoClient, d
 			}
 		}
 		if next > cur {
-			db.KV.Set(ctx, key, strconv.FormatInt(next, 10))
+			if err := kc.store.put(ctx, key, strconv.FormatInt(next, 10)); err != nil {
+				kc.log().Warn().Err(err).Msg("Could not store a reaction resync cursor")
+			}
 		}
 		if page.Last || next <= cur {
 			return nil

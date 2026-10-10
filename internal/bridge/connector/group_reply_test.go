@@ -73,7 +73,7 @@ func newReplyFramework(t *testing.T) (*KakaoClient, *capturingIntent) {
 		t.Fatal(err)
 	}
 	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID), UserMXID: user.MXID}, Bridge: bridge, User: user}
-	kc := newKakaoClient(login, testSelfID, nil)
+	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
 	kc.sendState = func(status.BridgeState) {}
 	return kc, intent
 }

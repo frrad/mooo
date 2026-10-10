@@ -138,10 +138,7 @@ func (kc *KakaoClient) refreshGroupMembership(ctx context.Context, c kakaoClient
 }
 
 func (kc *KakaoClient) managedMembershipEvent(ctx context.Context, c kakaoClient, chatID int64, create bool) (bool, bool) {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return false, false
-	}
-	p, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, makePortalKey(chatID, kc.login.ID))
+	p, err := kc.store.portalByKey(ctx, makePortalKey(chatID, kc.login.ID))
 	if err != nil {
 		return true, false
 	}

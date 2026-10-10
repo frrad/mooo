@@ -72,15 +72,12 @@ func (kc *KakaoClient) checkpointGroupDisplay(ctx context.Context, p *bridgev2.P
 	if _, err := chatmeta.ProjectGroupDisplay(data); err != nil {
 		return chatmeta.ChatData{}, err
 	}
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return data, nil
-	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	kc.displayGate.Lock()
 	defer kc.displayGate.Unlock()
 	key := fmt.Sprintf("kakao:group-display:%s:%s", p.Receiver, p.ID)
-	kv := newKVStore(kc.login.Bridge.DB.KV)
+	kv := kc.store
 	raw, _, err := kv.get(ctx, key)
 	if err != nil {
 		return chatmeta.ChatData{}, err

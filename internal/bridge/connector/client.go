@@ -173,6 +173,7 @@ func init() {
 // changes the protocol client's own lifecycle or retries outbound mutations.
 type KakaoClient struct {
 	login  *bridgev2.UserLogin
+	store  store
 	userID int64
 	open   func() (kakaoClient, error)
 
@@ -222,8 +223,6 @@ type KakaoClient struct {
 	wait                 func(context.Context, time.Duration) error
 	profiles             map[int64]chatmeta.Member
 	profileRefreshAfter  string
-	reactionMu           sync.Mutex
-	reactionRevisions    map[string]int64
 	reactionNoticeMu     sync.Mutex
 	reactionNotices      map[string]time.Time
 }
@@ -233,15 +232,15 @@ var (
 	_ bridgev2.NetworkAPIWithUserID = (*KakaoClient)(nil)
 )
 
-func newKakaoClient(login *bridgev2.UserLogin, userID int64, open func() (kakaoClient, error)) *KakaoClient {
+func newKakaoClient(login *bridgev2.UserLogin, st store, userID int64, open func() (kakaoClient, error)) *KakaoClient {
 	kc := &KakaoClient{
-		login:             login,
-		userID:            userID,
-		open:              open,
-		queue:             login.QueueRemoteEvent,
-		profiles:          make(map[int64]chatmeta.Member),
-		reactionRevisions: make(map[string]int64),
-		reactionNotices:   make(map[string]time.Time),
+		login:           login,
+		store:           st,
+		userID:          userID,
+		open:            open,
+		queue:           login.QueueRemoteEvent,
+		profiles:        make(map[int64]chatmeta.Member),
+		reactionNotices: make(map[string]time.Time),
 	}
 	kc.wait = waitForRecovery
 	kc.reserveOutbound = kc.reserveOutboundKV
@@ -834,7 +833,7 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		}
 	}
 	if reaction, ok := evt.(events.ReactionChanged); ok {
-		if kc.checkSourceAccess(context.Background(), reaction.ChatID, nil) != nil {
+		if kc.checkSourceAccess(context.Background(), reaction.ChatID) != nil {
 			return false
 		}
 		handled, err := kc.applyReactionChange(c, reaction)
@@ -844,7 +843,7 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		return handled
 	}
 	if notice, ok := evt.(events.ReadStateChanged); ok {
-		if kc.checkSourceAccess(context.Background(), notice.ChatID, nil) != nil {
+		if kc.checkSourceAccess(context.Background(), notice.ChatID) != nil {
 			return false
 		}
 		return kc.handleReadState(notice)
@@ -858,7 +857,7 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		evt = completed
 	}
 	if deleted, ok := evt.(events.DeletedMessage); ok && kc.deletedFromMatrix(makeMessageID(deleted.ChatID, deleted.LogID)) {
-		if kc.checkSourceAccess(context.Background(), deleted.ChatID, nil) != nil {
+		if kc.checkSourceAccess(context.Background(), deleted.ChatID) != nil {
 			return false
 		}
 		if err := c.CommitEvent(evt); err != nil {
@@ -868,7 +867,7 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		return true
 	}
 	if deletion, ok := evt.(events.MessageDeleted); ok && kc.targetAlreadyDeleted(deletion) {
-		if kc.checkSourceAccess(context.Background(), deletion.ChatID, nil) != nil {
+		if kc.checkSourceAccess(context.Background(), deletion.ChatID) != nil {
 			return false
 		}
 		if err := c.CommitEvent(evt); err != nil {
@@ -880,7 +879,7 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 	remote := kc.remoteEventFor(evt)
 	if remote != nil && removedChat == 0 {
 		chatID, parseErr := parseChatID(remote.GetPortalKey().ID)
-		if parseErr != nil || kc.checkSourceAccess(context.Background(), chatID, nil) != nil {
+		if parseErr != nil || kc.checkSourceAccess(context.Background(), chatID) != nil {
 			return false
 		}
 	}
@@ -935,10 +934,7 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 // The SDK suppresses some Matrix refusals into Ignored success. Only a
 // persisted message mapping can authorize source progress for such a result.
 func (kc *KakaoClient) ignoredMessageHasMapping(ctx context.Context, message bridgev2.RemoteMessage) bool {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return false
-	}
-	parts, err := kc.login.Bridge.DB.Message.GetAllPartsByID(ctx, kc.login.ID, message.GetID())
+	parts, err := kc.store.messageParts(ctx, kc.login.ID, message.GetID())
 	if err != nil || len(parts) == 0 {
 		return false
 	}
@@ -1487,7 +1483,7 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	if err != nil {
 		return nil, err
 	}
-	if err = kc.checkSourceAccess(ctx, chatID, msg.Portal); err != nil {
+	if err = kc.checkSourceAccess(ctx, chatID); err != nil {
 		return nil, err
 	}
 	if msg.ReplyTo == nil && msg.Content.RelatesTo != nil && msg.Content.RelatesTo.GetReplyTo() != "" {

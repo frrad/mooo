@@ -361,22 +361,10 @@ func newTestClient(t *testing.T, open func() (kakaoClient, error)) (*KakaoClient
 		UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}},
 		Log:       zerolog.Nop(),
 	}
-	kc := newKakaoClient(login, testSelfID, open)
+	kc := newKakaoClient(login, newMemStore(), testSelfID, open)
 	harness := &testHarness{}
 	kc.queue = harness.queue
 	kc.sendState = harness.sendState
-	// This client has no bridge database; keep reservations in memory.
-	var reservedMu sync.Mutex
-	reserved := map[id.EventID]bool{}
-	kc.reserveOutbound = func(_ context.Context, eventID id.EventID) (bool, error) {
-		reservedMu.Lock()
-		defer reservedMu.Unlock()
-		if reserved[eventID] {
-			return false, nil
-		}
-		reserved[eventID] = true
-		return true, nil
-	}
 	return kc, harness
 }
 
@@ -731,6 +719,11 @@ func TestMetadataEventsAreNotQueuedOrCommitted(t *testing.T) {
 		t.Fatalf("unknown packet queued %d remote events", len(harness.queued))
 	}
 	// A read notice becomes a receipt, which carries no message position.
+	kc.store.(*memStore).putMessage(&database.Message{
+		ID:   makeMessageID(testChatID, 11),
+		MXID: "$read:test",
+		Room: makePortalKey(testChatID, kc.login.ID),
+	})
 	kc.handleEvent(fake, events.ReadStateChanged{ChatID: testChatID, UserID: testOtherID, Watermark: 11})
 	if len(harness.queued) != 1 || harness.queued[0].GetType() != bridgev2.RemoteEventReadReceipt || len(fake.committed()) != 0 {
 		t.Fatalf("queued %d, committed %d", len(harness.queued), len(fake.committed()))
@@ -738,15 +731,20 @@ func TestMetadataEventsAreNotQueuedOrCommitted(t *testing.T) {
 }
 
 func TestMetadataRemoteEventDoesNotAttemptMessageCommit(t *testing.T) {
-	kc, harness := newTestClient(t, nil)
-	fake := &fakeKakao{}
-	if !kc.handleEvent(fake, events.ChatLeft{ChatID: testChatID, LastTokenID: 12}) {
+	kc, backend, _ := newGroupCreationFramework(t)
+	queued := 0
+	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		queued++
+		return bridgev2.EventHandlingResultSuccess
+	}
+	if !kc.handleEvent(backend, events.ChatLeft{ChatID: 5000, LastTokenID: 12}) {
 		t.Fatal("accepted metadata event was reported unhandled")
 	}
-	if len(harness.queued) != 1 {
-		t.Fatalf("queued events = %d, want one membership update", len(harness.queued))
+	// A source departure is applied directly, never through the admission queue.
+	if queued != 0 {
+		t.Fatalf("queued events = %d, want none", queued)
 	}
-	if got := len(fake.committed()); got != 0 {
+	if got := len(backend.committed()); got != 0 {
 		t.Fatalf("metadata event attempted message commit: %d", got)
 	}
 }
@@ -1459,7 +1457,7 @@ func TestBridgeStateQueueIsResolvedAtSendTime(t *testing.T) {
 		UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}},
 		Log:       zerolog.Nop(),
 	}
-	kc := newKakaoClient(login, testSelfID, nil)
+	kc := newKakaoClient(login, newMemStore(), testSelfID, nil)
 
 	queue := &bridgev2.BridgeStateQueue{}
 	login.BridgeState = queue

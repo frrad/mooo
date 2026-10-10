@@ -73,7 +73,11 @@ func TestObservedMiniReactionAttribution(t *testing.T) {
 	if _, err := kc.reactionRemote(context.Background(), backend, change); err != nil {
 		t.Fatalf("observed empty legacy roster: %v", err)
 	}
-	kc.reactionRevisions[reactionRevisionCacheKey(events.ReactionChanged{ChatID: change.ChatID, LogID: change.LogID})] = 12
+	kc.store.(*memStore).putMessage(&database.Message{
+		ID:       makeMessageID(change.ChatID, change.LogID),
+		Room:     makePortalKey(change.ChatID, kc.login.ID),
+		Metadata: &KakaoMessageMetadata{ReactionRevision: 12},
+	})
 	if _, err := kc.reactionRemote(context.Background(), backend, change); err == nil {
 		t.Fatal("mini snapshot rolled back newer legacy state")
 	}
@@ -91,7 +95,7 @@ func TestMiniRevisionsAndRemovalScope(t *testing.T) {
 	if err := kc.persistReactionRevision(ctx, mini, 2); err != nil {
 		t.Fatal(err)
 	}
-	reopened := newKakaoClient(login, testSelfID, nil)
+	reopened := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
 	for _, tc := range []struct {
 		change events.ReactionChanged
 		want   int64
@@ -270,7 +274,7 @@ func TestReactionDeliveryEventsUsesIndividualOperationsAndPreservesUnknownRows(t
 		t.Fatal(err)
 	}
 	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: db}}
-	kc := newKakaoClient(login, testSelfID, nil)
+	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
 	sync := &kakaoReactionSync{ReactionSync: simplevent.ReactionSync{EventMeta: simplevent.EventMeta{PortalKey: message.Room}, TargetMessage: message.ID, Reactions: &bridgev2.ReactionSyncData{Users: map[networkid.UserID]*bridgev2.ReactionSyncUser{}, HasAllUsers: true}}}
 	events, err := kc.reactionDeliveryEvents(ctx, sync)
 	if err != nil || len(events) != 1 {
@@ -312,7 +316,7 @@ func newFrameworkReactionFixture(t *testing.T, intent *frameworkReactionIntent) 
 	}
 	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: key, MXID: "!room:test"}, Bridge: bridge}
 	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: key.Receiver}, Bridge: bridge}
-	kc := newKakaoClient(login, testSelfID, nil)
+	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
 	return kc, portal, login, old, raw
 }
 
@@ -541,6 +545,12 @@ func TestReactionEventFetchesMembersForEmptyAggregateAndPersistsRevision(t *test
 	}}
 	kc, harness := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
 	kc.client = backend
+	kc.store.(*memStore).putMessage(&database.Message{
+		ID:       makeMessageID(testChatID, 99),
+		MXID:     "$target:test",
+		Room:     makePortalKey(testChatID, kc.login.ID),
+		Metadata: &KakaoMessageMetadata{},
+	})
 	change := events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 4}
 	if !kc.handleEvent(backend, change) {
 		t.Fatal("reaction event was not handled")
@@ -548,11 +558,10 @@ func TestReactionEventFetchesMembersForEmptyAggregateAndPersistsRevision(t *test
 	if len(harness.queued) != 1 {
 		t.Fatalf("queued = %d, want 1", len(harness.queued))
 	}
-	syncEvent, ok := harness.queued[0].(*kakaoReactionSync)
-	if !ok || len(syncEvent.Reactions.Users) != 1 || !syncEvent.Reactions.HasAllUsers {
+	selfReaction, ok := harness.queued[0].(*simplevent.Reaction)
+	if !ok || selfReaction.Type != bridgev2.RemoteEventReaction || selfReaction.EmojiID != legacyReactions[reactions.Heart].emojiID {
 		t.Fatalf("queued event = %#v", harness.queued[0])
 	}
-	selfReaction := syncEvent.Reactions.Users[makeUserID(testSelfID)].Reactions[0]
 	if !selfReaction.Sender.IsFromMe || selfReaction.Sender.SenderLogin != kc.login.ID {
 		t.Fatalf("self reaction sender = %#v", selfReaction.Sender)
 	}
@@ -605,6 +614,12 @@ func TestReactionRevisionAdvancesOnlyAfterSuccessfulHandling(t *testing.T) {
 	}}
 	kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
 	kc.client = backend
+	kc.store.(*memStore).putMessage(&database.Message{
+		ID:       makeMessageID(testChatID, 99),
+		MXID:     "$target:test",
+		Room:     makePortalKey(testChatID, kc.login.ID),
+		Metadata: &KakaoMessageMetadata{},
+	})
 	queued := 0
 	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		queued++
@@ -633,15 +648,24 @@ func TestReactionEventPersistsAppliedMembersRevision(t *testing.T) {
 	}}
 	kc, harness := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
 	kc.client = backend
+	kc.store.(*memStore).putMessage(&database.Message{
+		ID:       makeMessageID(testChatID, 99),
+		MXID:     "$target:test",
+		Room:     makePortalKey(testChatID, kc.login.ID),
+		Metadata: &KakaoMessageMetadata{},
+	})
 	if !kc.handleEvent(backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 9}) {
 		t.Fatal("reaction event was not handled")
 	}
 	if len(harness.queued) != 1 {
 		t.Fatalf("queued = %d, want 1", len(harness.queued))
 	}
-	syncEvent := harness.queued[0].(*kakaoReactionSync)
-	if syncEvent.AppliedRevision != 12 {
-		t.Fatalf("applied revision = %d, want 12", syncEvent.AppliedRevision)
+	stored, err := kc.store.firstMessagePart(context.Background(), kc.login.ID, makeMessageID(testChatID, 99))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.Metadata.(*KakaoMessageMetadata).ReactionRevision; got != 12 {
+		t.Fatalf("persisted revision = %d, want the applied members revision 12", got)
 	}
 	if !kc.handleEvent(backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 10}) {
 		t.Fatal("stale event was not handled")
@@ -680,7 +704,7 @@ func TestReactionRevisionSuppressesStaleEventAfterSQLiteReopen(t *testing.T) {
 		Revision: 12, Members: map[reactions.Type][]int64{reactions.Heart: {42}}, Fields: map[string]json.RawMessage{"1": []byte(`[42]`)},
 	}}
 	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: db}}
-	kc := newKakaoClient(login, testSelfID, nil)
+	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
 	queued := 0
 	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		queued++
@@ -700,7 +724,7 @@ func TestReactionRevisionSuppressesStaleEventAfterSQLiteReopen(t *testing.T) {
 	defer func() { _ = reopened.RawDB.Close() }()
 	reopenedDB := database.New("test", (&KakaoConnector{}).GetDBMetaTypes(), reopened)
 	login2 := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID)}, Bridge: &bridgev2.Bridge{DB: reopenedDB}}
-	kc2 := newKakaoClient(login2, testSelfID, nil)
+	kc2 := newKakaoClient(login2, newBridgeStore(login2.Bridge.DB), testSelfID, nil)
 	kc2.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		queued++
 		return bridgev2.EventHandlingResultSuccess

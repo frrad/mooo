@@ -32,7 +32,7 @@ func TestMatrixTopicChangeIsRejectedOnceAndRestoresKakaoAnnouncement(t *testing.
 	portal.Topic = "Synthetic Kakao announcement"
 	portal.TopicSet = true
 	backend := &fakeKakao{}
-	kc := newKakaoClient(&bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}}, Bridge: br, Log: zerolog.Nop()}, testSelfID, nil)
+	kc := newKakaoClient(&bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}}, Bridge: br, Log: zerolog.Nop()}, newBridgeStore(br.DB), testSelfID, nil)
 	kc.client = backend
 
 	topics, ok := any(kc).(bridgev2.RoomTopicHandlingNetworkAPI)

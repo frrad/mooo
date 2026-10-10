@@ -23,7 +23,7 @@ func (kc *KakaoClient) savePortalMeta(ctx context.Context, p *bridgev2.Portal, m
 		p.Metadata = meta
 		return err
 	}
-	saved, err := kc.login.Bridge.DB.Portal.GetByKey(ctx, p.PortalKey)
+	saved, err := kc.store.portalByKey(ctx, p.PortalKey)
 	if err != nil {
 		return err
 	}

@@ -65,7 +65,7 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 	case events.TextMessage:
 		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, convertText)
 	case events.ReplyMessage:
-		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, convertReply)
+		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, kc.convertReply)
 	case events.StickerMessage:
 		return newMessage(kc.messageMeta(evt.ChatID, evt.LogID, evt.AuthorID, evt.SentAt), makeMessageID(evt.ChatID, evt.LogID), evt, convertSticker)
 	case events.ContactMessage:
@@ -403,7 +403,7 @@ func convertText(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.M
 	return messageWithMetadata(event.MsgText, msg.Message, metadata), nil
 }
 
-func convertReply(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.ReplyMessage) (*bridgev2.ConvertedMessage, error) {
+func (kc *KakaoClient) convertReply(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.ReplyMessage) (*bridgev2.ConvertedMessage, error) {
 	converted, err := replyContent(ctx, portal, intent, msg)
 	if err != nil {
 		return nil, err
@@ -412,7 +412,7 @@ func convertReply(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 		return converted, nil
 	}
 	target := networkid.MessageOptionalPartID{MessageID: makeMessageID(msg.ChatID, msg.Source.LogID)}
-	if replySourceMissing(ctx, portal, target) && msg.Source.Message != "" {
+	if kc.replySourceMissing(ctx, portal, target) && msg.Source.Message != "" {
 		// The framework drops a relation to an unbridged message. Keep the
 		// context Kakao embedded in the reply as a quote instead.
 		content := converted.Parts[0].Content
@@ -461,11 +461,11 @@ func replyContent(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 
 // replySourceMissing reports a reply source confirmed absent from this
 // portal's messages. Lookup failures leave the relation to the framework.
-func replySourceMissing(ctx context.Context, portal *bridgev2.Portal, target networkid.MessageOptionalPartID) bool {
-	if portal == nil || portal.Portal == nil || portal.Bridge == nil || portal.Bridge.DB == nil {
+func (kc *KakaoClient) replySourceMissing(ctx context.Context, portal *bridgev2.Portal, target networkid.MessageOptionalPartID) bool {
+	if portal == nil || portal.Portal == nil {
 		return false
 	}
-	row, err := portal.Bridge.DB.Message.GetFirstOrSpecificPartByID(ctx, portal.Receiver, target)
+	row, err := kc.store.firstOrSpecificMessagePart(ctx, portal.Receiver, target)
 	return err == nil && row == nil
 }
 
