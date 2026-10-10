@@ -114,33 +114,6 @@ func TestUpdateLoginCursorCapturesInventoryAndDeletion(t *testing.T) {
 	}
 }
 
-func TestBookingTargets(t *testing.T) {
-	body, err := bson.Marshal(bson.D{
-		{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"a.example", "b.example"}}}},
-		{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(995), int32(-1)}}}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	hosts, ports, err := bookingTargets(body)
-	if err != nil || len(hosts) != 2 || len(ports) != 1 || ports[0] != 995 {
-		t.Fatalf("hosts=%v ports=%v err=%v", hosts, ports, err)
-	}
-}
-
-func TestEndpointWidths(t *testing.T) {
-	for _, port := range []any{int32(995), int64(995)} {
-		body, err := bson.Marshal(bson.D{{Key: "host", Value: "c.example"}, {Key: "port", Value: port}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		host, gotPort, err := endpoint(body)
-		if err != nil || host != "c.example" || gotPort != 995 {
-			t.Fatalf("host=%q port=%d err=%v", host, gotPort, err)
-		}
-	}
-}
-
 func TestSessionClosed(t *testing.T) {
 	s := &Session{closed: true}
 	_, err := s.Request(t.Context(), "CREATE", []byte{5, 0, 0, 0, 0})

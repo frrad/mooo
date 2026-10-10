@@ -15,6 +15,7 @@ import (
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/continuity"
+	"github.com/frrad/mooo/internal/protocol/booking"
 	"github.com/frrad/mooo/internal/protocol/bsonfield"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/sessionlogin"
@@ -22,7 +23,6 @@ import (
 )
 
 const (
-	bookingHost  = "booking-loco.kakao.com"
 	requestLimit = 64
 	requestIDMin = 100000000
 	requestIDMax = 200000000
@@ -205,40 +205,31 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	if err != nil {
 		return nil, ErrBootstrap
 	}
-	bookingBody, err := bson.Marshal(bson.D{
-		{Key: "MCCMNC", Value: "99999"},
-		{Key: "model", Value: state.Identity.Metadata.DeviceModel},
-		{Key: "os", Value: "mac"},
-		{Key: "userId", Value: state.Credentials.UserID},
-	})
+	bookingBody, err := (booking.GetConfRequest{
+		MCCMNC: "99999", Model: state.Identity.Metadata.DeviceModel, OS: "mac", UserID: state.Credentials.UserID,
+	}).MarshalBSON()
 	if err != nil {
 		return nil, ErrBootstrap
 	}
-	booking, err := dialers.tls(ctx, bookingHost, 443)
+	bookingWire, err := dialers.tls(ctx, booking.Host, 443)
 	if err != nil {
 		return nil, ErrBootstrap
 	}
-	bookingReply, _, err := booking.request(1, "GETCONF", bookingBody)
-	_ = booking.close()
+	bookingReply, _, err := bookingWire.request(1, booking.GetConfCommand, bookingBody)
+	_ = bookingWire.close()
 	bookingStatus, statusErr := loco.Status(bookingReply)
 	if err != nil || statusErr != nil || bookingStatus != 0 {
 		return nil, ErrBootstrap
 	}
-	hosts, ports, err := bookingTargets(bookingReply.Body)
+	hosts, ports, err := booking.DecodeBookingTargets(bookingReply.Body)
 	if err != nil {
 		return nil, ErrBootstrap
 	}
 
-	checkinBody, err := bson.Marshal(bson.D{
-		{Key: "userId", Value: state.Credentials.UserID},
-		{Key: "os", Value: "mac"},
-		{Key: "ntype", Value: int32(0)},
-		{Key: "appVer", Value: state.Identity.Metadata.AppVersion},
-		{Key: "MCCMNC", Value: "99999"},
-		{Key: "lang", Value: "en"},
-		{Key: "countryISO", Value: "US"},
-		{Key: "useSub", Value: true},
-	})
+	checkinBody, err := (booking.CheckinRequest{
+		UserID: state.Credentials.UserID, OS: "mac", NType: 0, AppVer: state.Identity.Metadata.AppVersion,
+		MCCMNC: "99999", Lang: "en", CountryISO: "US", UseSub: true,
+	}).MarshalBSON()
 	if err != nil {
 		return nil, ErrBootstrap
 	}
@@ -246,7 +237,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	if err != nil {
 		return nil, ErrBootstrap
 	}
-	carriageHost, carriagePort, err := endpoint(checkinReply.Body)
+	carriageHost, carriagePort, err := booking.DecodeCheckinEndpoint(checkinReply.Body)
 	if err != nil {
 		return nil, ErrBootstrap
 	}

@@ -1,0 +1,107 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-10",
+    "method": "Expected outputs are mooo's existing GETCONF/CHECKIN behaviour, recorded when the encoders and decoders moved unchanged from internal/client to internal/protocol/booking; the official client has not run these inputs",
+    "doc": "research/protocol-bootstrap.md"
+  },
+  "getconfRequests": [
+    {
+      "name": "field order and widths",
+      "input": {"MCCMNC": "99999", "model": "synthetic-model", "os": "synthetic-os", "userId": 1000},
+      "body": {"MCCMNC": "99999", "model": "synthetic-model", "os": "synthetic-os", "userId": {"$numberLong": "1000"}}
+    }
+  ],
+  "checkinRequests": [
+    {
+      "name": "field order and widths",
+      "input": {"userId": 1000, "os": "synthetic-os", "ntype": 0, "appVer": "0.0.0-synthetic", "MCCMNC": "99999", "lang": "en", "countryISO": "US", "useSub": true},
+      "body": {"userId": {"$numberLong": "1000"}, "os": "synthetic-os", "ntype": {"$numberInt": "0"}, "appVer": "0.0.0-synthetic", "MCCMNC": "99999", "lang": "en", "countryISO": "US", "useSub": true}
+    }
+  ],
+  "bookingTargets": [
+    {
+      "name": "hosts kept in order, empty host and out-of-range port skipped",
+      "body": {"ticket": {"lsl": ["a.example", "", "b.example"]}, "wifi": {"ports": [{"$numberInt": "995"}, {"$numberInt": "-1"}, {"$numberInt": "65536"}, {"$numberInt": "5223"}]}},
+      "hosts": ["a.example", "b.example"],
+      "ports": [995, 5223]
+    },
+    {
+      "name": "int64 ports are skipped and no usable port defaults to 995",
+      "body": {"ticket": {"lsl": ["a.example"]}, "wifi": {"ports": [{"$numberLong": "443"}]}},
+      "hosts": ["a.example"],
+      "ports": [995]
+    },
+    {
+      "name": "non-string hosts are skipped",
+      "body": {"ticket": {"lsl": [{"$numberInt": "1"}, "a.example"]}, "wifi": {"ports": []}},
+      "hosts": ["a.example"],
+      "ports": [995]
+    },
+    {
+      "name": "no usable host is rejected",
+      "body": {"ticket": {"lsl": [""]}, "wifi": {"ports": [{"$numberInt": "995"}]}},
+      "error": true
+    },
+    {
+      "name": "missing ticket is rejected",
+      "body": {"wifi": {"ports": [{"$numberInt": "995"}]}},
+      "error": true
+    },
+    {
+      "name": "lsl that is not an array is rejected",
+      "body": {"ticket": {"lsl": "a.example"}, "wifi": {"ports": [{"$numberInt": "995"}]}},
+      "error": true
+    },
+    {
+      "name": "missing wifi is rejected",
+      "body": {"ticket": {"lsl": ["a.example"]}},
+      "error": true
+    },
+    {
+      "name": "ports that is not an array is rejected",
+      "body": {"ticket": {"lsl": ["a.example"]}, "wifi": {"ports": {"$numberInt": "995"}}},
+      "error": true
+    }
+  ],
+  "checkinEndpoints": [
+    {
+      "name": "int32 port",
+      "body": {"host": "c.example", "port": {"$numberInt": "995"}},
+      "host": "c.example",
+      "port": 995
+    },
+    {
+      "name": "int64 port",
+      "body": {"host": "c.example", "port": {"$numberLong": "995"}},
+      "host": "c.example",
+      "port": 995
+    },
+    {
+      "name": "empty host is rejected",
+      "body": {"host": "", "port": {"$numberInt": "995"}},
+      "error": true
+    },
+    {
+      "name": "missing port is rejected",
+      "body": {"host": "c.example"},
+      "error": true
+    },
+    {
+      "name": "double port is rejected",
+      "body": {"host": "c.example", "port": {"$numberDouble": "995"}},
+      "error": true
+    },
+    {
+      "name": "zero port is rejected",
+      "body": {"host": "c.example", "port": {"$numberInt": "0"}},
+      "error": true
+    },
+    {
+      "name": "port above 65535 is rejected",
+      "body": {"host": "c.example", "port": {"$numberLong": "65536"}},
+      "error": true
+    }
+  ]
+}

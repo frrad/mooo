@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/frrad/mooo/internal/continuity"
+	"github.com/frrad/mooo/internal/protocol/booking"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -28,7 +29,7 @@ func checkin(ctx context.Context, hosts []string, ports []int, body []byte, dial
 			if err != nil {
 				continue
 			}
-			reply, _, requestErr := wire.request(1, "CHECKIN", body)
+			reply, _, requestErr := wire.request(1, booking.CheckinCommand, body)
 			_ = wire.close()
 			status, statusErr := loco.Status(reply)
 			if requestErr == nil && statusErr == nil && status == 0 {
@@ -40,7 +41,7 @@ func checkin(ctx context.Context, hosts []string, ports []int, body []byte, dial
 			if err != nil {
 				continue
 			}
-			reply, _, requestErr := wire.request(1, "CHECKIN", body)
+			reply, _, requestErr := wire.request(1, booking.CheckinCommand, body)
 			_ = wire.close()
 			status, statusErr := loco.Status(reply)
 			if requestErr == nil && statusErr == nil && status == 0 {
@@ -49,81 +50,6 @@ func checkin(ctx context.Context, hosts []string, ports []int, body []byte, dial
 		}
 	}
 	return loco.Packet{}, nil, ErrBootstrap
-}
-
-func bookingTargets(body []byte) ([]string, []int, error) {
-	raw := bson.Raw(body)
-	ticket, err := raw.LookupErr("ticket")
-	if err != nil || ticket.Type != bson.TypeEmbeddedDocument {
-		return nil, nil, ErrProtocol
-	}
-	lsl, err := ticket.Document().LookupErr("lsl")
-	if err != nil || lsl.Type != bson.TypeArray {
-		return nil, nil, ErrProtocol
-	}
-	values, err := lsl.Array().Values()
-	if err != nil {
-		return nil, nil, ErrProtocol
-	}
-	var hosts []string
-	for _, value := range values {
-		if value.Type == bson.TypeString && value.StringValue() != "" {
-			hosts = append(hosts, value.StringValue())
-		}
-	}
-	wifi, err := raw.LookupErr("wifi")
-	if err != nil || wifi.Type != bson.TypeEmbeddedDocument {
-		return nil, nil, ErrProtocol
-	}
-	portValue, err := wifi.Document().LookupErr("ports")
-	if err != nil || portValue.Type != bson.TypeArray {
-		return nil, nil, ErrProtocol
-	}
-	values, err = portValue.Array().Values()
-	if err != nil {
-		return nil, nil, ErrProtocol
-	}
-	var ports []int
-	for _, value := range values {
-		if value.Type == bson.TypeInt32 {
-			port := int(value.Int32())
-			if port > 0 && port <= 65535 {
-				ports = append(ports, port)
-			}
-		}
-	}
-	if len(hosts) == 0 {
-		return nil, nil, ErrProtocol
-	}
-	if len(ports) == 0 {
-		ports = []int{995}
-	}
-	return hosts, ports, nil
-}
-
-func endpoint(body []byte) (string, int, error) {
-	raw := bson.Raw(body)
-	hostValue, err := raw.LookupErr("host")
-	if err != nil || hostValue.Type != bson.TypeString || hostValue.StringValue() == "" {
-		return "", 0, ErrProtocol
-	}
-	portValue, err := raw.LookupErr("port")
-	if err != nil {
-		return "", 0, ErrProtocol
-	}
-	var port int
-	switch portValue.Type {
-	case bson.TypeInt32:
-		port = int(portValue.Int32())
-	case bson.TypeInt64:
-		port = int(portValue.Int64())
-	default:
-		return "", 0, ErrProtocol
-	}
-	if port <= 0 || port > 65535 {
-		return "", 0, ErrProtocol
-	}
-	return hostValue.StringValue(), port, nil
 }
 
 func finishLoginSyncSession(ctx context.Context, session *Session, first []byte, firstStatus int32, beforeRequest func()) ([]bson.Raw, loginCursor, error) {

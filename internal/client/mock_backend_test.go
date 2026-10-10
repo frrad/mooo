@@ -19,6 +19,7 @@ import (
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/continuity"
+	"github.com/frrad/mooo/internal/protocol/booking"
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/loco"
@@ -223,7 +224,7 @@ func syntheticClientJPEG(t *testing.T) []byte {
 
 func scriptedLoginAttempt(t *testing.T, expectedToken string, loginReply bson.D) (sessionDialers, []*scriptedBackend) {
 	t.Helper()
-	booking := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
+	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
 		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
 		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
 	)))
@@ -248,8 +249,8 @@ func scriptedLoginAttempt(t *testing.T, expectedToken string, loginReply bson.D)
 	dialers := sessionDialers{
 		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			switch host {
-			case bookingHost:
-				return booking.client, nil
+			case booking.Host:
+				return bookingBackend.client, nil
 			case "checkin.invalid":
 				return checkin.client, nil
 			default:
@@ -263,12 +264,12 @@ func scriptedLoginAttempt(t *testing.T, expectedToken string, loginReply bson.D)
 			return carriage.client, nil
 		},
 	}
-	return dialers, []*scriptedBackend{booking, checkin, carriage}
+	return dialers, []*scriptedBackend{bookingBackend, checkin, carriage}
 }
 
 func TestScriptedBackendResumedLoginUsesDurableCursors(t *testing.T) {
 	state := reusableTestState()
-	booking := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
+	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
 		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
 		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
 	)))
@@ -306,8 +307,8 @@ func TestScriptedBackendResumedLoginUsesDurableCursors(t *testing.T) {
 	dialers := sessionDialers{
 		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			switch host {
-			case bookingHost:
-				return booking.client, nil
+			case booking.Host:
+				return bookingBackend.client, nil
 			case "checkin.invalid":
 				return checkin.client, nil
 			default:
@@ -334,14 +335,14 @@ func TestScriptedBackendResumedLoginUsesDurableCursors(t *testing.T) {
 		t.Fatalf("login cursor = %#v", session.loginCursor)
 	}
 	_ = session.Close()
-	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
+	for _, backend := range []*scriptedBackend{bookingBackend, checkin, carriage} {
 		backend.wait(t)
 	}
 }
 
 func TestScriptedBackendFullListPreservesDurableMessageCursors(t *testing.T) {
 	state := reusableTestState()
-	booking := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
+	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
 		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
 		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
 	)))
@@ -379,8 +380,8 @@ func TestScriptedBackendFullListPreservesDurableMessageCursors(t *testing.T) {
 	dialers := sessionDialers{
 		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			switch host {
-			case bookingHost:
-				return booking.client, nil
+			case booking.Host:
+				return bookingBackend.client, nil
 			case "checkin.invalid":
 				return checkin.client, nil
 			default:
@@ -414,14 +415,14 @@ func TestScriptedBackendFullListPreservesDurableMessageCursors(t *testing.T) {
 		t.Fatalf("completed empty full list: %v, %v", chats, err)
 	}
 	_ = session.Close()
-	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
+	for _, backend := range []*scriptedBackend{bookingBackend, checkin, carriage} {
 		backend.wait(t)
 	}
 }
 
 func TestScriptedBackendPartialLChatListKeepsDeltasWithoutAdvancingGlobalCursor(t *testing.T) {
 	state := reusableTestState()
-	booking := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
+	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
 		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
 		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
 	)))
@@ -452,8 +453,8 @@ func TestScriptedBackendPartialLChatListKeepsDeltasWithoutAdvancingGlobalCursor(
 	dialers := sessionDialers{
 		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			switch host {
-			case bookingHost:
-				return booking.client, nil
+			case booking.Host:
+				return bookingBackend.client, nil
 			case "checkin.invalid":
 				return checkin.client, nil
 			default:
@@ -486,14 +487,14 @@ func TestScriptedBackendPartialLChatListKeepsDeltasWithoutAdvancingGlobalCursor(
 	}
 
 	_ = session.Close()
-	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
+	for _, backend := range []*scriptedBackend{bookingBackend, checkin, carriage} {
 		backend.wait(t)
 	}
 }
 
 func TestScriptedBackendFullPagedListRemovesEarlierRoom(t *testing.T) {
 	state := reusableTestState()
-	booking := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
+	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
 		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
 		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
 	)))
@@ -524,8 +525,8 @@ func TestScriptedBackendFullPagedListRemovesEarlierRoom(t *testing.T) {
 	dialers := sessionDialers{
 		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			switch host {
-			case bookingHost:
-				return booking.client, nil
+			case booking.Host:
+				return bookingBackend.client, nil
 			case "checkin.invalid":
 				return checkin.client, nil
 			default:
@@ -556,7 +557,7 @@ func TestScriptedBackendFullPagedListRemovesEarlierRoom(t *testing.T) {
 	}
 
 	_ = session.Close()
-	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
+	for _, backend := range []*scriptedBackend{bookingBackend, checkin, carriage} {
 		backend.wait(t)
 	}
 }
@@ -595,7 +596,7 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	)
 	firstChat := mustBSON(bson.D{{Key: "c", Value: chatID}})
 	secondChat := mustBSON(bson.D{{Key: "c", Value: int64(43)}})
-	booking := newScriptedBackend(t, false, expectRequest("GETCONF", func(raw bson.Raw) error {
+	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", func(raw bson.Raw) error {
 		if err := requireInt64(raw, "userId", userID); err != nil {
 			return err
 		}
@@ -736,8 +737,8 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 			defer dialMu.Unlock()
 			tlsDials++
 			switch host {
-			case bookingHost:
-				return booking.client, nil
+			case booking.Host:
+				return bookingBackend.client, nil
 			case "checkin.invalid":
 				return checkin.client, nil
 			default:
@@ -818,7 +819,7 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 		t.Fatalf("photo result log=%v, err=%v", photo.ChatLog, err)
 	}
 
-	booking.wait(t)
+	bookingBackend.wait(t)
 	checkin.wait(t)
 	carriage.wait(t)
 	mediaBackend.wait(t)
