@@ -2,10 +2,11 @@ package client
 
 import (
 	"errors"
+	"testing"
+
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
-	"testing"
 )
 
 func TestMalformedPhotoCannotBeSilentlyCommittedPast(t *testing.T) {

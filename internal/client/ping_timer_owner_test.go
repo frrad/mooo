@@ -12,6 +12,11 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+// White-box tests: they drive a bare session or wireConn over a raw net.Pipe
+// so they can control framing, write blocking, pending-request state, or
+// read-loop timing directly. A scripted testloco peer cannot express those
+// conditions, so these tests do not go through connectSession.
+
 type queuedTimer struct {
 	fn      func()
 	stopped atomic.Bool

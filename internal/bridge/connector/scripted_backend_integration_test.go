@@ -2,7 +2,6 @@ package connector
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/continuity"
 	"github.com/frrad/mooo/internal/protocol/events"
-	protocol "github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/shadow"
 	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -281,19 +279,19 @@ func scriptedScenarioWithIDs(t *testing.T, maxLogID int64, trigger <-chan struct
 	t.Helper()
 	loginReply := bson.D{{Key: "status", Value: int32(0)}, {Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: testChatID}, {Key: "l", Value: bson.D{{Key: "chatId", Value: testChatID}, {Key: "logId", Value: maxLogID}}}}}}, {Key: "eof", Value: true}, {Key: "lastTokenId", Value: int64(10)}, {Key: "lbk", Value: int32(1)}}
 	syncReply := bson.D{{Key: "status", Value: int32(0)}, {Key: "chatLogs", Value: bson.A{bson.D{{Key: "logId", Value: replayLogID}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "replay"}}}}}
-	steps := []testloco.Step{requestStep("LOGINLIST", loginReply), requestStep("SYNCMSG", syncReply)}
+	steps := []testloco.Step{testloco.Expect("LOGINLIST", nil, loginReply), testloco.Expect("SYNCMSG", nil, syncReply)}
 	writes := new(int)
 	if trigger == nil {
-		steps = append(steps, holdStep())
+		steps = append(steps, testloco.HoldOpen())
 	} else if pushLive {
-		steps = append(steps, pushAfter(trigger, "MSG", bson.D{{Key: "chatId", Value: testChatID}, {Key: "chatLog", Value: bson.D{{Key: "logId", Value: liveLogID}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "live"}}}}))
+		steps = append(steps, testloco.PushAfter(trigger, "MSG", bson.D{{Key: "chatId", Value: testChatID}, {Key: "chatLog", Value: bson.D{{Key: "logId", Value: liveLogID}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "live"}}}}))
 		if withWrite {
-			steps = append(steps, writeDropStep(writes))
+			steps = append(steps, testloco.DropAfter("WRITE", writes))
 		}
-		steps = append(steps, holdStep())
+		steps = append(steps, testloco.HoldOpen())
 	} else if withWrite {
-		steps = append(steps, writeDropStep(writes))
-		steps = append(steps, holdStep())
+		steps = append(steps, testloco.DropAfter("WRITE", writes))
+		steps = append(steps, testloco.HoldOpen())
 	}
 	dialers, backends := scriptedDialers(t, steps...)
 	return dialers, backends, writes
@@ -303,11 +301,11 @@ func scriptedScenarioWithIDs(t *testing.T, maxLogID int64, trigger <-chan struct
 // carriage.
 func scriptedDialers(t *testing.T, steps ...testloco.Step) (client.TestDialers, []*testloco.Backend) {
 	t.Helper()
-	booking, err := testloco.NewBackend(false, requestStep("GETCONF", bson.D{{Key: "status", Value: int32(0)}, {Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}}, {Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}}}))
+	booking, err := testloco.NewBackend(false, testloco.Expect("GETCONF", nil, bson.D{{Key: "status", Value: int32(0)}, {Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}}, {Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}}}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkin, err := testloco.NewBackend(false, requestStep("CHECKIN", bson.D{{Key: "status", Value: int32(0)}, {Key: "host", Value: "carriage.invalid"}, {Key: "port", Value: int32(995)}}))
+	checkin, err := testloco.NewBackend(false, testloco.Expect("CHECKIN", nil, bson.D{{Key: "status", Value: int32(0)}, {Key: "host", Value: "carriage.invalid"}, {Key: "port", Value: int32(995)}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,76 +318,13 @@ func scriptedDialers(t *testing.T, steps ...testloco.Step) (client.TestDialers, 
 		_ = checkin.Endpoint.Client.Close()
 		_ = carriage.Endpoint.Client.Close()
 	})
-	dialers := client.TestDialers{TLS: func(_ context.Context, host string, _ int) (client.TestConnection, error) {
-		switch host {
-		case "booking-loco.kakao.com":
-			return client.TestConnection{Conn: booking.Endpoint.Client}, nil
-		case "checkin.invalid":
-			return client.TestConnection{Conn: checkin.Endpoint.Client}, nil
-		default:
-			return client.TestConnection{}, fmt.Errorf("unexpected TLS host %q", host)
-		}
-	}, Secure: func(_ context.Context, host string, _ int) (client.TestConnection, error) {
-		if host != "carriage.invalid" {
-			return client.TestConnection{}, fmt.Errorf("unexpected secure host %q", host)
-		}
-		return client.TestConnection{Conn: carriage.Endpoint.Client, Secure: carriage.Endpoint.ClientSecure}, nil
-	}}
+	dialers := client.TestDialers{
+		TLS:    testloco.Hosts{"booking-loco.kakao.com": booking, "checkin.invalid": checkin}.Dial,
+		Secure: testloco.Hosts{"carriage.invalid": carriage}.Dial,
+	}
 	return dialers, []*testloco.Backend{booking, checkin, carriage}
 }
 
-func requestStep(method string, reply bson.D) testloco.Step {
-	return func(peer *testloco.Peer) error {
-		request, err := peer.Read()
-		if err != nil {
-			return err
-		}
-		if request.Header.Method != method {
-			return fmt.Errorf("method = %q, want %q", request.Header.Method, method)
-		}
-		body, err := bson.Marshal(reply)
-		if err != nil {
-			return err
-		}
-		return peer.Write(protocol.Packet{Header: protocol.Header{PacketID: request.Header.PacketID, Method: method, BodyType: protocol.BodyTypeBSON}, Body: body})
-	}
-}
-func pushAfter(trigger <-chan struct{}, method string, body bson.D) testloco.Step {
-	return func(peer *testloco.Peer) error {
-		select {
-		case <-trigger:
-		case <-time.After(2 * time.Second):
-			return errors.New("push trigger timeout")
-		}
-		raw, err := bson.Marshal(body)
-		if err != nil {
-			return err
-		}
-		return peer.Write(protocol.Packet{Header: protocol.Header{Method: method, BodyType: protocol.BodyTypeBSON}, Body: raw})
-	}
-}
-func writeDropStep(count *int) testloco.Step {
-	return func(peer *testloco.Peer) error {
-		request, err := peer.Read()
-		if err != nil {
-			return err
-		}
-		if request.Header.Method != "WRITE" {
-			return fmt.Errorf("method = %q, want WRITE", request.Header.Method)
-		}
-		*count = *count + 1
-		return peer.Conn.Close()
-	}
-}
-func holdStep() testloco.Step {
-	return func(peer *testloco.Peer) error {
-		packet, err := peer.Read()
-		if err != nil {
-			return nil
-		}
-		return fmt.Errorf("unexpected packet %s", packet.Header.Method)
-	}
-}
 func waitBackends(t *testing.T, backends []*testloco.Backend) {
 	t.Helper()
 	for _, backend := range backends {

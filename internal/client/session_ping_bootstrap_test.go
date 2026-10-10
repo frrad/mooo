@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/frrad/mooo/internal/continuity"
-	"github.com/frrad/mooo/internal/protocol/booking"
 	"github.com/frrad/mooo/internal/protocol/loco"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -66,45 +66,20 @@ func TestSessionExplicitRequestIDRejectsPendingCollision(t *testing.T) {
 
 func TestConnectSessionArmsPingOnlyAfterLoginCompletion(t *testing.T) {
 	state := reusableTestState()
-	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
-		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
-		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
-	)))
-	checkin := newScriptedBackend(t, false, expectRequest("CHECKIN", nil, statusDocument(
-		bson.E{Key: "host", Value: "carriage.invalid"}, bson.E{Key: "port", Value: int32(995)},
-	)))
-	carriage := newScriptedBackend(t, true,
-		expectRequest("LOGINLIST", nil, statusDocument(
+	dialers, backends := scriptedLogin(t,
+		testloco.Expect("LOGINLIST", nil, statusDocument(
 			bson.E{Key: "chatDatas", Value: bson.A{}},
 			bson.E{Key: "eof", Value: true},
 			bson.E{Key: "lastTokenId", Value: int64(11)},
 			bson.E{Key: "lbk", Value: int32(2)},
 		)),
-		expectRequest("PING", func(raw bson.Raw) error {
+		testloco.Expect("PING", func(raw bson.Raw) error {
 			if err := requireExactKeys(raw); err != nil {
 				return fmt.Errorf("PING body: %w", err)
 			}
 			return nil
 		}, statusDocument(bson.E{Key: "status", Value: int32(0)})),
 	)
-	dialers := sessionDialers{
-		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
-			switch host {
-			case booking.Host:
-				return bookingBackend.client, nil
-			case "checkin.invalid":
-				return checkin.client, nil
-			default:
-				return nil, fmt.Errorf("unexpected TLS host %q", host)
-			}
-		},
-		secure: func(_ context.Context, host string, _ int) (*wireConn, error) {
-			if host != "carriage.invalid" {
-				return nil, fmt.Errorf("unexpected secure host %q", host)
-			}
-			return carriage.client, nil
-		},
-	}
 	clock := &queuedTimerClock{}
 	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: pingSessionOptions{clock: clock, interval: time.Second, timeout: time.Second}})
 	if err != nil {
@@ -112,30 +87,21 @@ func TestConnectSessionArmsPingOnlyAfterLoginCompletion(t *testing.T) {
 	}
 	defer func() { _ = session.Close() }()
 	clock.runLast()
-	for _, backend := range []*scriptedBackend{bookingBackend, checkin, carriage} {
-		backend.wait(t)
-	}
+	waitBackends(t, backends...)
 }
 
 func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
 	state := reusableTestState()
-	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
-		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
-		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
-	)))
-	checkin := newScriptedBackend(t, false, expectRequest("CHECKIN", nil, statusDocument(
-		bson.E{Key: "host", Value: "carriage.invalid"}, bson.E{Key: "port", Value: int32(995)},
-	)))
 	pingRead := make(chan struct{})
 	release := make(chan struct{})
-	carriage := newScriptedBackend(t, true,
-		expectRequest("LOGINLIST", nil, statusDocument(
+	dialers, backends := scriptedLogin(t,
+		testloco.Expect("LOGINLIST", nil, statusDocument(
 			bson.E{Key: "eof", Value: true},
 			bson.E{Key: "lastTokenId", Value: int64(11)},
 			bson.E{Key: "lbk", Value: int32(2)},
 		)),
-		func(server *wireConn) error {
-			request, err := server.readRequest()
+		func(server *testloco.Peer) error {
+			request, err := server.Read()
 			if err != nil {
 				return err
 			}
@@ -147,24 +113,6 @@ func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
 			return nil
 		},
 	)
-	dialers := sessionDialers{
-		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
-			switch host {
-			case booking.Host:
-				return bookingBackend.client, nil
-			case "checkin.invalid":
-				return checkin.client, nil
-			default:
-				return nil, fmt.Errorf("unexpected TLS host %q", host)
-			}
-		},
-		secure: func(_ context.Context, host string, _ int) (*wireConn, error) {
-			if host != "carriage.invalid" {
-				return nil, fmt.Errorf("unexpected secure host %q", host)
-			}
-			return carriage.client, nil
-		},
-	}
 	clock := &queuedTimerClock{}
 	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: pingSessionOptions{clock: clock, interval: time.Second, timeout: 20 * time.Millisecond}})
 	if err != nil {
@@ -207,37 +155,28 @@ func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
 		t.Fatalf("timer count after failed PING=%d, want unchanged at %d", timerCount, timersBefore)
 	}
 	close(release)
-	for _, backend := range []*scriptedBackend{bookingBackend, checkin, carriage} {
-		backend.wait(t)
-	}
+	waitBackends(t, backends...)
 }
 
 func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.T) {
 	state := reusableTestState()
-	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
-		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
-		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
-	)))
-	checkin := newScriptedBackend(t, false, expectRequest("CHECKIN", nil, statusDocument(
-		bson.E{Key: "host", Value: "carriage.invalid"}, bson.E{Key: "port", Value: int32(995)},
-	)))
 	gapReady := make(chan struct{})
 	allowLchat := make(chan struct{})
 	keepOpen := make(chan struct{})
 	pingSeen := make(chan struct{})
-	carriage := newScriptedBackend(t, true,
-		expectRequest("LOGINLIST", nil, statusDocument(
+	dialers, backends := scriptedLogin(t,
+		testloco.Expect("LOGINLIST", nil, statusDocument(
 			bson.E{Key: "eof", Value: false},
 			bson.E{Key: "lastTokenId", Value: int64(11)},
 			bson.E{Key: "lastChatId", Value: int64(7)},
 		)),
-		func(server *wireConn) error {
+		func(server *testloco.Peer) error {
 			for i := 0; i < 70; i++ {
-				if err := writeBackendPacket(server, uint32(1000+i), "PUSH", mustBSON(bson.D{{Key: "index", Value: int32(i)}})); err != nil {
+				if err := server.WriteBSON(uint32(1000+i), "PUSH", bson.D{{Key: "index", Value: int32(i)}}); err != nil {
 					return err
 				}
 			}
-			ping, err := server.readRequest()
+			ping, err := server.Read()
 			if err != nil {
 				return err
 			}
@@ -248,43 +187,25 @@ func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.
 				return fmt.Errorf("PING body: %w", err)
 			}
 			close(pingSeen)
-			if err := writeBackendPacket(server, ping.Header.PacketID, "PING", mustBSON(bson.D{{Key: "status", Value: int32(0)}})); err != nil {
+			if err := server.WriteBSON(ping.Header.PacketID, "PING", bson.D{{Key: "status", Value: int32(0)}}); err != nil {
 				return err
 			}
-			lchat, err := server.readRequest()
+			lchat, err := server.Read()
 			if err != nil {
 				return err
 			}
 			if lchat.Header.Method != "LCHATLIST" {
 				return fmt.Errorf("method = %q, want LCHATLIST", lchat.Header.Method)
 			}
-			if err := writeBackendPacket(server, lchat.Header.PacketID, "LCHATLIST", mustBSON(statusDocument(
+			if err := server.WriteBSON(lchat.Header.PacketID, "LCHATLIST", statusDocument(
 				bson.E{Key: "eof", Value: true},
-			))); err != nil {
+			)); err != nil {
 				return err
 			}
 			<-keepOpen
 			return nil
 		},
 	)
-	dialers := sessionDialers{
-		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
-			switch host {
-			case booking.Host:
-				return bookingBackend.client, nil
-			case "checkin.invalid":
-				return checkin.client, nil
-			default:
-				return nil, fmt.Errorf("unexpected TLS host %q", host)
-			}
-		},
-		secure: func(_ context.Context, host string, _ int) (*wireConn, error) {
-			if host != "carriage.invalid" {
-				return nil, fmt.Errorf("unexpected secure host %q", host)
-			}
-			return carriage.client, nil
-		},
-	}
 	clock := &queuedTimerClock{}
 	result := make(chan struct {
 		session *session
@@ -332,7 +253,5 @@ func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.
 	case <-time.After(time.Second):
 		t.Fatal("bootstrap did not complete after pagination heartbeat")
 	}
-	for _, backend := range []*scriptedBackend{bookingBackend, checkin, carriage} {
-		backend.wait(t)
-	}
+	waitBackends(t, backends...)
 }

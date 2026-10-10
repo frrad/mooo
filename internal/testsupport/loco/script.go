@@ -1,16 +1,21 @@
-// Package loco provides a small in-memory scripted LOCO peer for integration
-// tests. It deliberately knows only packet framing and the synthetic SecureV3
-// transport; client bootstrap policy remains in internal/client.
+// Package loco provides the in-memory scripted LOCO peer that client and
+// connector tests share. It knows only packet framing, BSON request/reply
+// steps and the synthetic SecureV3 transport; client bootstrap policy remains
+// in internal/client.
 package loco
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"time"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
 
 	protocol "github.com/frrad/mooo/internal/protocol/loco"
 )
@@ -117,6 +122,111 @@ func (p *Peer) Write(packet protocol.Packet) error {
 		}
 	}
 	return writeAll(p.Conn, raw)
+}
+
+// WriteBSON writes one BSON-bodied packet. id is the request's packet ID for
+// a reply and zero for a push. body is a raw []byte or anything bson.Marshal
+// accepts.
+func (p *Peer) WriteBSON(id uint32, method string, body any) error {
+	raw, ok := body.([]byte)
+	if !ok {
+		var err error
+		if raw, err = bson.Marshal(body); err != nil {
+			return err
+		}
+	}
+	return p.Write(protocol.Packet{Header: protocol.Header{PacketID: id, Method: method, BodyType: protocol.BodyTypeBSON}, Body: raw})
+}
+
+// ReadPayload reads one secure frame and returns its decrypted bytes without
+// parsing them as a packet, as a media peer reads an upload stream.
+func (p *Peer) ReadPayload() ([]byte, error) {
+	if p.Secure == nil {
+		return nil, errors.New("ReadPayload needs a secure peer")
+	}
+	raw, err := readFrame(p.Conn, true)
+	if err != nil {
+		return nil, err
+	}
+	return p.Secure.Decrypt(raw)
+}
+
+// Expect reads one request, requires its method, passes its BSON body to
+// check when check is not nil, and answers with reply under the request's
+// packet ID.
+func Expect(method string, check func(bson.Raw) error, reply bson.D) Step {
+	return func(peer *Peer) error {
+		request, err := peer.Read()
+		if err != nil {
+			return err
+		}
+		if request.Header.Method != method {
+			return fmt.Errorf("method = %q, want %q", request.Header.Method, method)
+		}
+		body := bson.Raw(request.Body)
+		if err := body.Validate(); err != nil {
+			return fmt.Errorf("invalid request BSON: %w", err)
+		}
+		if check != nil {
+			if err := check(body); err != nil {
+				return err
+			}
+		}
+		return peer.WriteBSON(request.Header.PacketID, method, reply)
+	}
+}
+
+// PushAfter writes an unsolicited packet once trigger is closed.
+func PushAfter(trigger <-chan struct{}, method string, body bson.D) Step {
+	return func(peer *Peer) error {
+		select {
+		case <-trigger:
+		case <-time.After(2 * time.Second):
+			return errors.New("push trigger timeout")
+		}
+		return peer.WriteBSON(0, method, body)
+	}
+}
+
+// DropAfter reads one request for method, counts it, and closes the
+// connection without answering.
+func DropAfter(method string, count *int) Step {
+	return func(peer *Peer) error {
+		request, err := peer.Read()
+		if err != nil {
+			return err
+		}
+		if request.Header.Method != method {
+			return fmt.Errorf("method = %q, want %q", request.Header.Method, method)
+		}
+		*count++
+		return peer.Conn.Close()
+	}
+}
+
+// HoldOpen keeps the connection open until the client closes it, and fails if
+// the client sends a packet first.
+func HoldOpen() Step {
+	return func(peer *Peer) error {
+		packet, err := peer.Read()
+		if err != nil {
+			return nil
+		}
+		return fmt.Errorf("unexpected packet %s while holding backend open", packet.Header.Method)
+	}
+}
+
+// Hosts routes dials to the scripted backend registered for each host.
+type Hosts map[string]*Backend
+
+// Dial returns the client end of host's backend. Its signature matches
+// client.TestDialer.
+func (h Hosts) Dial(_ context.Context, host string, _ int) (net.Conn, *protocol.SecureV3, error) {
+	backend, ok := h[host]
+	if !ok {
+		return nil, nil, fmt.Errorf("unexpected host %q", host)
+	}
+	return backend.Endpoint.Client, backend.Endpoint.ClientSecure, nil
 }
 
 func readFrame(conn net.Conn, secure bool) ([]byte, error) {
