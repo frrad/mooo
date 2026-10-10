@@ -16,7 +16,6 @@ import (
 	"maunium.net/go/mautrix/bridgev2/database"
 	bridgematrix "maunium.net/go/mautrix/bridgev2/matrix"
 	"maunium.net/go/mautrix/bridgev2/networkid"
-	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -1902,58 +1901,4 @@ func (kc *KakaoClient) selfSender() bridgev2.EventSender {
 		SenderLogin: kc.login.ID,
 		Sender:      makeUserID(kc.userID),
 	}
-}
-
-// applyReactionChange delivers one reaction change to Matrix and persists its
-// applied revision. A lookup error is returned for the caller's policy: a
-// live push reports it, a resync keeps its cursor.
-func (kc *KakaoClient) applyReactionChange(c kakaoClient, reaction events.ReactionChanged) (bool, error) {
-	remote, err := kc.reactionRemote(context.Background(), c, reaction)
-	if err != nil {
-		return false, err
-	}
-	if remote == nil {
-		return true, nil
-	}
-	remotes := []bridgev2.RemoteEvent{remote}
-	if syncEvent, ok := remote.(*kakaoReactionSync); ok && kc.login != nil && kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
-		remotes, err = kc.reactionDeliveryEvents(context.Background(), syncEvent)
-		if err != nil {
-			if errors.Is(err, errReactionTargetMissing) {
-				kc.log().Debug().Msg("Kakao reaction target is not bridged; leaving revision for replay")
-				return false, nil
-			}
-			kc.log().Warn().Err(err).Msg("Kakao reaction delivery plan could not be built")
-			return false, nil
-		}
-	}
-	allIgnored := true
-	for _, delivery := range remotes {
-		result := kc.queue(delivery)
-		if !committable(result) {
-			kc.log().Warn().Err(result.Error).Msg("Kakao reaction update was not confirmed as bridged")
-			return false, nil
-		}
-		if !result.Ignored {
-			allIgnored = false
-		}
-		if syncEvent, ok := delivery.(*simplevent.Reaction); ok && syncEvent.Type == bridgev2.RemoteEventReactionRemove && kc.login != nil && kc.login.Bridge != nil && kc.login.Bridge.DB != nil {
-			row, queryErr := kc.login.Bridge.DB.Reaction.GetByIDWithoutMessagePart(context.Background(), kc.login.ID, syncEvent.TargetMessage, syncEvent.Sender.Sender, syncEvent.EmojiID)
-			if queryErr != nil || row != nil {
-				kc.log().Warn().Err(queryErr).Msg("Kakao reaction removal was not confirmed in the database")
-				return false, nil
-			}
-		}
-	}
-	if len(remotes) == 0 || !allIgnored {
-		appliedRevision := reaction.Revision
-		if syncEvent, ok := remote.(*kakaoReactionSync); ok {
-			appliedRevision = syncEvent.AppliedRevision
-		}
-		if err := kc.persistReactionRevision(context.Background(), reaction, appliedRevision); err != nil {
-			kc.log().Warn().Msg("Kakao reaction revision could not be persisted")
-			return false, nil
-		}
-	}
-	return true, nil
 }
