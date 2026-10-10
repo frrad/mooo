@@ -70,6 +70,7 @@ const (
 	stateConnectFailed         status.BridgeStateErrorCode = "kakao-connect-failed"
 	stateGroupCreateUnresolved status.BridgeStateErrorCode = "kakao-group-create-unresolved"
 	stateDisconnected          status.BridgeStateErrorCode = "kakao-disconnected"
+	stateDeliveryPaused        status.BridgeStateErrorCode = "kakao-delivery-paused"
 	stateUnidentifiableMsg     status.BridgeStateErrorCode = "kakao-unidentifiable-message"
 	stateKickedOut             status.BridgeStateErrorCode = "kakao-kicked-out"
 	stateChangeServer          status.BridgeStateErrorCode = "kakao-change-server"
@@ -110,6 +111,7 @@ func init() {
 		stateConnectFailed:         "Connecting to KakaoTalk failed.",
 		stateGroupCreateUnresolved: "A group creation outcome or room binding is unresolved. Reconcile the selected Matrix room with the source group; do not repeat creation.",
 		stateDisconnected:          "The KakaoTalk session ended. Restart the bridge to reconnect.",
+		stateDeliveryPaused:        "Inbound Kakao delivery was not confirmed. Progress was retained; bounded reconnect will attempt replay. Restore Matrix/source access and reconnect explicitly if recovery stops.",
 		stateUnidentifiableMsg:     "Kakao delivered a message whose identity could not be established safely. Review the bridge logs and repair continuity before reconnecting.",
 		stateKickedOut:             "KakaoTalk ended this device's session.",
 		stateChangeServer:          "KakaoTalk requested a server change. Restart the bridge to reconnect.",
@@ -524,6 +526,7 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan struct{}, generation uint64) {
 	kickedOut := false
 	changeServer := false
+	deliveryFailed := false
 	var terminalErr error
 	profileTicker := time.NewTicker(time.Minute)
 	defer profileTicker.Stop()
@@ -566,7 +569,14 @@ eventLoop:
 		if _, ok := result.Event.(events.ChangeServer); ok {
 			changeServer = true
 		}
-		kc.handleEvent(c, result.Event)
+		if !kc.handleEvent(c, result.Event) && !kickedOut && !changeServer {
+			// Continuing would strand the first uncommitted event while later
+			// deliveries could reach Matrix out of order. Release this session
+			// and let bounded connector recovery replay from durable progress.
+			// Outbound mutations are never replayed by this path.
+			deliveryFailed = true
+			break eventLoop
+		}
 	}
 	kc.mu.Lock()
 	stopping := kc.stopping
@@ -584,6 +594,8 @@ eventLoop:
 		kc.sendState(status.BridgeState{StateEvent: status.StateBadCredentials, Error: stateKickedOut})
 	case changeServer:
 		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateChangeServer})
+	case deliveryFailed:
+		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDeliveryPaused})
 	default:
 		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDisconnected})
 	}
@@ -834,6 +846,12 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 			Msg("Kakao message was not confirmed as bridged; leaving it uncommitted for replay")
 		return false
 	}
+	if result.Ignored {
+		if message, ok := remote.(bridgev2.RemoteMessage); ok && !kc.ignoredMessageHasMapping(context.Background(), message) {
+			kc.log().Warn().Msg("Ignored Kakao message has no confirmed mapping; retaining source progress")
+			return false
+		}
+	}
 	if removedChat > 0 && kc.verifySourceLeave(context.Background(), removedChat) != nil {
 		return false
 	}
@@ -851,8 +869,37 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 	return true
 }
 
+// The SDK suppresses some Matrix refusals into Ignored success. Only a
+// persisted message mapping can authorize source progress for such a result.
+func (kc *KakaoClient) ignoredMessageHasMapping(ctx context.Context, message bridgev2.RemoteMessage) bool {
+	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
+		return false
+	}
+	parts, err := kc.login.Bridge.DB.Message.GetAllPartsByID(ctx, kc.login.ID, message.GetID())
+	if err != nil || len(parts) == 0 {
+		return false
+	}
+	if multipart, ok := message.(interface{ ExpectedPartIDs() []networkid.PartID }); ok {
+		mapped := make(map[networkid.PartID]bool, len(parts))
+		for _, part := range parts {
+			mapped[part.PartID] = true
+		}
+		expected := multipart.ExpectedPartIDs()
+		if len(expected) == 0 {
+			return false
+		}
+		for _, partID := range expected {
+			if !mapped[partID] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // committable reports whether the bridge finished handling an event. Ignored
-// events (duplicates, filtered portals) count as handled. A queued result,
+// events count as handled at this boundary; source messages additionally need
+// persisted mapping verification in handleEvent. A queued result,
 // including one returned because handling was backgrounded after a timeout,
 // does not.
 func committable(result bridgev2.EventHandlingResult) bool {

@@ -67,7 +67,7 @@ func TestStorePersistsSortedResumeBoundary(t *testing.T) {
 
 func TestStoreRejectsUnknownVersionAndUnsafeMode(t *testing.T) {
 	path := testPath(t)
-	if err := os.WriteFile(path, []byte(`{"version":6,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[]}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"version":7,"clean_shutdown":true,"last_token_id":0,"lbk":0,"chats":[],"known_chats":[],"history_gaps":[],"read_watermarks":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Open(path); !errors.Is(err, ErrVersionMismatch) {
@@ -101,7 +101,7 @@ func TestOpenMigratesVersionTwoCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(contents) == "" || !strings.Contains(string(contents), `"version":5`) || !strings.Contains(string(contents), `"history_gaps":[]`) || !strings.Contains(string(contents), `"read_watermarks":[]`) {
+	if string(contents) == "" || !strings.Contains(string(contents), `"version":6`) || !strings.Contains(string(contents), `"history_gaps":[]`) || !strings.Contains(string(contents), `"read_watermarks":[]`) {
 		t.Fatalf("migration was not persisted: %s", contents)
 	}
 }
@@ -123,7 +123,7 @@ func TestOpenMigratesVersionThreeCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(contents), `"version":5`) || !strings.Contains(string(contents), `"read_watermarks":[]`) {
+	if !strings.Contains(string(contents), `"version":6`) || !strings.Contains(string(contents), `"read_watermarks":[]`) {
 		t.Fatalf("v3 migration was not persisted: %s", contents)
 	}
 }
@@ -148,7 +148,7 @@ func TestOpenMigratesVersionFourCheckpointDiscardingUnprovenReadWatermarks(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(contents), `"version":5`) || !strings.Contains(string(contents), `"read_watermarks":[]`) {
+	if !strings.Contains(string(contents), `"version":6`) || !strings.Contains(string(contents), `"read_watermarks":[]`) {
 		t.Fatalf("v4 migration was not persisted: %s", contents)
 	}
 }

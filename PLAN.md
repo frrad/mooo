@@ -51,10 +51,18 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
 - [x] Shared/personal group names and group avatar replacement/clearing (PR #273), with
       convergence and clear rejection of unsupported outbound changes.
 - [x] Member profile refresh with stable ghosts and isolated profile failures (PR #274).
-- [ ] Bounded opt-in historical backfill with durable progress, source visibility,
+- [x] Bounded opt-in historical backfill (PR #275) with durable progress, source visibility,
       ordering/deduplication, and observed read/unread policy.
 - [ ] Failure recovery and ambiguous sends: network/session/Matrix/media failures,
       replay, commit boundaries, bounded shutdown, and actionable errors.
+      Active slice: trace the complete Mac carriage disconnect/recovery callback
+      chain against the existing session-login evidence; inventory connector
+      admission, commit-order and cleanup tests before changing behavior. Verify
+      a failed Matrix delivery cannot advance source progress, recover owned
+      encrypted inbound text after network/Matrix interruption, and prove
+      ambiguous outbound sends remain explicit and are never automatically
+      repeated. Keep destructive session termination and media acceptance scoped
+      to owned lab state with durable attempt receipts and bounded cleanup.
 - [ ] Group JPEG/PNG photos: exact bytes, captions, downloads/expiry, attribution,
       offline catch-up and restart uniqueness.
 - [ ] Group text replies both directions and in history, with correct targets and

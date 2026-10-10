@@ -11,11 +11,10 @@ import (
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
-	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/event"
 )
 
-func (kc *KakaoClient) albumEvent(msg events.MultiPhotoMessage) *simplevent.Message[events.MultiPhotoMessage] {
+func (kc *KakaoClient) albumEvent(msg events.MultiPhotoMessage) *multipartMessage[events.MultiPhotoMessage] {
 	a := msg.Message
 	meta := kc.messageMeta(a.ChatID, a.LogID, a.AuthorID, a.SentAt)
 	meta.Type = bridgev2.RemoteEventMessageUpsert
@@ -38,7 +37,7 @@ func (kc *KakaoClient) albumEvent(msg events.MultiPhotoMessage) *simplevent.Mess
 		}
 		return bridgev2.UpsertResult{}, nil
 	}
-	return remote
+	return &multipartMessage[events.MultiPhotoMessage]{Message: remote, expectedParts: len(a.Photos)}
 }
 
 func albumPartID(index int) networkid.PartID { return networkid.PartID(strconv.Itoa(index)) }

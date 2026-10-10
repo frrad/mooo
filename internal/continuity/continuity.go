@@ -13,7 +13,7 @@ import (
 	"sync"
 )
 
-const Version uint32 = 5
+const Version uint32 = 6
 
 const (
 	// Version 4 recorded read watermarks after every SYNCMSG, including
@@ -38,6 +38,13 @@ var (
 type ChatCursor struct {
 	ChatID   int64 `json:"chat_id"`
 	MaxLogID int64 `json:"max_log_id"`
+}
+
+// DeliveryStart is the first admitted live message in a never-committed chat.
+// It is a replay floor, never a login cursor or read acknowledgement.
+type DeliveryStart struct {
+	ChatID     int64 `json:"chat_id"`
+	FirstLogID int64 `json:"first_log_id"`
 }
 
 // ChatTarget is the latest server-observed last log for a synchronized chat.
@@ -78,6 +85,7 @@ type Checkpoint struct {
 	KnownChats     []ChatTarget    `json:"known_chats"`
 	HistoryGaps    []HistoryGap    `json:"history_gaps"`
 	ReadWatermarks []ReadWatermark `json:"read_watermarks"`
+	DeliveryStarts []DeliveryStart `json:"delivery_starts,omitempty"`
 }
 
 func (c Checkpoint) Clone() Checkpoint {
@@ -93,6 +101,7 @@ func (c Checkpoint) Clone() Checkpoint {
 	watermarks := make([]ReadWatermark, len(c.ReadWatermarks))
 	copy(watermarks, c.ReadWatermarks)
 	c.ReadWatermarks = watermarks
+	c.DeliveryStarts = append([]DeliveryStart(nil), c.DeliveryStarts...)
 	return c
 }
 
@@ -183,6 +192,7 @@ func (s *Store) InstallSession(lastTokenID *int64, lbk *int32, observed []ChatTa
 			removeCursor(&next.Chats, chatID)
 			removeGap(&next.HistoryGaps, chatID)
 			removeReadWatermark(&next.ReadWatermarks, chatID)
+			removeDeliveryStart(&next.DeliveryStarts, chatID)
 		}
 		for _, target := range observed {
 			if target.ChatID <= 0 || target.MaxLogID < 0 {
@@ -242,6 +252,39 @@ func (s *Store) ResolveGapThrough(chatID, logID int64) error {
 	})
 }
 
+// RecordDeliveryStart persists an admission boundary without committing it.
+func (s *Store) RecordDeliveryStart(chatID, logID int64) error {
+	if chatID <= 0 || logID <= 0 {
+		return ErrInvalidCursor
+	}
+	return s.update(func(next *Checkpoint) error {
+		for _, cursor := range next.Chats {
+			if cursor.ChatID == chatID {
+				return nil
+			}
+		}
+		raiseTarget(&next.KnownChats, ChatTarget{ChatID: chatID, MaxLogID: logID})
+		index := sort.Search(len(next.DeliveryStarts), func(i int) bool { return next.DeliveryStarts[i].ChatID >= chatID })
+		if index < len(next.DeliveryStarts) && next.DeliveryStarts[index].ChatID == chatID {
+			if logID < next.DeliveryStarts[index].FirstLogID {
+				next.DeliveryStarts[index].FirstLogID = logID
+			}
+			return nil
+		}
+		next.DeliveryStarts = append(next.DeliveryStarts, DeliveryStart{})
+		copy(next.DeliveryStarts[index+1:], next.DeliveryStarts[index:])
+		next.DeliveryStarts[index] = DeliveryStart{ChatID: chatID, FirstLogID: logID}
+		return nil
+	})
+}
+
+func removeDeliveryStart(starts *[]DeliveryStart, chatID int64) {
+	index := sort.Search(len(*starts), func(i int) bool { return (*starts)[i].ChatID >= chatID })
+	if index < len(*starts) && (*starts)[index].ChatID == chatID {
+		*starts = append((*starts)[:index], (*starts)[index+1:]...)
+	}
+}
+
 // CommitMessage advances one per-chat maximum only after the application has
 // durably handled that message. Recommitting an older/equal ID is an idempotent
 // no-op.
@@ -251,6 +294,7 @@ func (s *Store) CommitMessage(chatID, logID int64) (bool, error) {
 	}
 	advanced := false
 	err := s.update(func(next *Checkpoint) error {
+		removeDeliveryStart(&next.DeliveryStarts, chatID)
 		index := sort.Search(len(next.Chats), func(i int) bool { return next.Chats[i].ChatID >= chatID })
 		if index < len(next.Chats) && next.Chats[index].ChatID == chatID {
 			if logID <= next.Chats[index].MaxLogID {
@@ -359,6 +403,13 @@ func validate(data Checkpoint) error {
 		return ErrCorrupt
 	}
 	var previous int64
+	for i, start := range data.DeliveryStarts {
+		if start.ChatID <= 0 || start.FirstLogID <= 0 || (i > 0 && start.ChatID <= previous) {
+			return ErrCorrupt
+		}
+		previous = start.ChatID
+	}
+	previous = 0
 	for i, cursor := range data.Chats {
 		if cursor.ChatID <= 0 || cursor.MaxLogID <= 0 || (i > 0 && cursor.ChatID <= previous) {
 			return ErrCorrupt
@@ -463,6 +514,13 @@ func read(path string) (Checkpoint, bool, error) {
 		return Checkpoint{}, false, ErrCorrupt
 	}
 	migrated := false
+	if data.Version != Version && len(data.DeliveryStarts) != 0 {
+		return Checkpoint{}, false, ErrCorrupt
+	}
+	if data.Version == 5 {
+		data.Version = Version
+		migrated = true
+	}
 	if data.Version == unprovenReadVersion {
 		if data.ReadWatermarks == nil {
 			return Checkpoint{}, false, ErrCorrupt

@@ -101,9 +101,9 @@ func (c *Client) InitialSyncTargets(ctx context.Context) ([]syncmsg.Target, erro
 
 // ResumeTargets returns the chats that need catch-up after a resumed login:
 // those this profile has committed before whose server maximum is now ahead
-// of that commit. Chats never committed are omitted, because recovering them
-// would be an unbounded history backfill rather than resumption, and SYNCMSG
-// may mark everything it returns as read.
+// of that commit. A never-committed chat is eligible only after live admission
+// durably recorded its first message. Inventory alone does not authorize
+// historical backfill. SYNCMSG may affect the selected interval's read state.
 func (c *Client) ResumeTargets(ctx context.Context) ([]syncmsg.Target, error) {
 	targets, err := c.InitialSyncTargets(ctx)
 	if err != nil {
@@ -115,11 +115,13 @@ func (c *Client) ResumeTargets(ctx context.Context) ([]syncmsg.Target, error) {
 	if checkpoint == nil {
 		return nil, ErrProtocol
 	}
-	commits := checkpoint.Snapshot().Chats
+	state := checkpoint.Snapshot()
+	commits := state.Chats
 	result := make([]syncmsg.Target, 0)
 	for _, target := range targets {
 		committed := committedMax(commits, target.ChatID)
-		if committed > 0 && target.MaxLogID > committed {
+		start := firstDeliveryStart(state.DeliveryStarts, target.ChatID)
+		if (committed > 0 && target.MaxLogID > committed) || (committed == 0 && start > 0 && target.MaxLogID >= start) {
 			result = append(result, target)
 		}
 	}
@@ -127,7 +129,7 @@ func (c *Client) ResumeTargets(ctx context.Context) ([]syncmsg.Target, error) {
 }
 
 // CatchUp retrieves the missing interval after this profile's committed chat
-// maximum through targetMax. The result remains uncommitted so a crash before
+// maximum (or recorded first live admission) through targetMax. The result remains uncommitted so a crash before
 // the application persists it causes replay rather than loss. SYNCMSG may make
 // that interval appear read to other participants; Kakao's current Mac client
 // uses the same operation for explicit read-all. An empty or non-progressing
@@ -148,6 +150,11 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 	}
 	checkpointState := checkpoint.Snapshot()
 	current := committedMax(checkpointState.Chats, chatID)
+	if current == 0 {
+		if start := firstDeliveryStart(checkpointState.DeliveryStarts, chatID); start > 0 {
+			current = start - 1
+		}
+	}
 	if current >= targetMax {
 		if hasGapThrough(checkpointState.HistoryGaps, chatID, targetMax) {
 			if err := c.checkpointWrite(func(checkpoint *continuity.Store) error { return checkpoint.ResolveGapThrough(chatID, targetMax) }); err != nil {
@@ -234,6 +241,15 @@ func committedMax(cursors []continuity.ChatCursor, chatID int64) int64 {
 	index := sort.Search(len(cursors), func(i int) bool { return cursors[i].ChatID >= chatID })
 	if index < len(cursors) && cursors[index].ChatID == chatID {
 		return cursors[index].MaxLogID
+	}
+	return 0
+}
+
+func firstDeliveryStart(starts []continuity.DeliveryStart, chatID int64) int64 {
+	for _, start := range starts {
+		if start.ChatID == chatID {
+			return start.FirstLogID
+		}
 	}
 	return 0
 }

@@ -16,6 +16,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/matrix"
+	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
@@ -77,20 +78,45 @@ func (h *historyMessage) ConvertMessage(ctx context.Context, p *bridgev2.Portal,
 	if len(converted.Parts) != 1 {
 		return nil, errors.New("connector: historical conversion requires exactly one part; multipart history is unsupported")
 	}
+	if err := markMatrixTransactions(p, intent, h.GetID(), converted); err != nil {
+		return nil, err
+	}
+	return converted, nil
+}
+
+// Live and historical delivery share transaction identity so an acknowledgement
+// lost at either boundary cannot duplicate the same source part during replay.
+func markMatrixTransactions(p *bridgev2.Portal, intent bridgev2.MatrixAPI, messageID networkid.MessageID, converted *bridgev2.ConvertedMessage) error {
+	if p == nil || p.Bridge == nil || intent == nil || messageID == "" {
+		return errors.New("connector: Matrix conversion has no stable identity")
+	}
+	if as, ok := intent.(*matrix.ASIntent); ok {
+		if as.Matrix == nil || as.Matrix.Client == nil || as.Matrix.Client.Client == nil {
+			return errors.New("connector: Matrix client unavailable")
+		}
+		if _, ok := as.Matrix.Client.Client.Transport.(*historyTransport); !ok {
+			return errors.New("connector: external Matrix intent has no stable transaction adapter")
+		}
+	}
+	seen := make(map[networkid.PartID]bool, len(converted.Parts))
 	for _, part := range converted.Parts {
 		if part == nil {
-			return nil, errors.New("connector: historical conversion contains a nil part")
+			return errors.New("connector: Matrix conversion contains a nil part")
 		}
-		transaction, err := historyTransactionID(p.MXID, intent.GetMXID(), &database.Message{BridgeID: p.Bridge.ID, Room: p.PortalKey, ID: h.GetID(), PartID: part.ID}, part.Type)
+		if seen[part.ID] {
+			return errors.New("connector: Matrix conversion contains duplicate part IDs")
+		}
+		seen[part.ID] = true
+		transaction, err := historyTransactionID(p.MXID, intent.GetMXID(), &database.Message{BridgeID: p.Bridge.ID, Room: p.PortalKey, ID: messageID, PartID: part.ID}, part.Type)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if part.Extra == nil {
 			part.Extra = make(map[string]any)
 		}
 		part.Extra[historyPartMarker] = transaction
 	}
-	return converted, nil
+	return nil
 }
 func (h *historyMessage) GetTimestamp() time.Time {
 	if original, ok := h.RemoteMessage.(bridgev2.RemoteEventWithTimestamp); ok {

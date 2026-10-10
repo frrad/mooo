@@ -1,6 +1,6 @@
 # Bounded regular-group history
 
-Evidence date: 2026-10-10. Owned text-history, read-room and unavailable-interval acceptance is recorded below. CI and merge are pending.
+Evidence date: 2026-10-10. Owned text-history, read-room and unavailable-interval acceptance is recorded below. PR #275 passed all six required CI checks and was squash-merged.
 
 Existing reconnect catch-up retrieves only gaps after a previously committed
 room maximum. It intentionally excludes never-committed rooms, and its live

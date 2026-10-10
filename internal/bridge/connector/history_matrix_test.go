@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/frrad/mooo/internal/protocol/events"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -235,5 +236,70 @@ func TestHistoryPlaintextTransportRemovesMarkerAndPreservesRequest(t *testing.T)
 	_ = resp.Body.Close()
 	if state.get() != transaction {
 		t.Fatal("plaintext part identity not selected")
+	}
+}
+
+func TestLiveTextTransactionSurvivesLostAcknowledgementAndReplay(t *testing.T) {
+	var mu sync.Mutex
+	applied := map[string]bool{}
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests++
+		first := requests == 1
+		applied[r.URL.Path] = true
+		mu.Unlock()
+		if first {
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			_ = conn.Close()
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"event_id": "$one:test"})
+	}))
+	defer server.Close()
+	for attempt := range 2 {
+		kc, _ := newHistoryTest(t)
+		portal, err := kc.login.Bridge.GetPortalByMXID(t.Context(), "!selected:test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		remote := kc.remoteEventFor(events.TextMessage{ChatID: 5000, LogID: 103, AuthorID: 2000, Message: "synthetic live text"}).(bridgev2.RemoteMessage)
+		ctx := remote.(bridgev2.RemoteEventWithContextMutation).MutateContext(t.Context())
+		converted, err := remote.ConvertMessage(ctx, portal, kc.login.Bridge.Bot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		transaction, _ := converted.Parts[0].Extra[historyPartMarker].(string)
+		if transaction == "" {
+			t.Fatal("live conversion has no stable transaction identity")
+		}
+		state, _ := ctx.Value(historyDeliveryKey).(*historySendState)
+		if state == nil {
+			t.Fatal("live send context has no transaction state")
+		}
+		state.set(transaction)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, server.URL+"/_matrix/client/v3/rooms/!selected:test/send/m.room.encrypted/"+string(rune('a'+attempt)), strings.NewReader(`{"ciphertext":"synthetic"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := (&http.Client{Transport: newHistoryTransport(http.DefaultTransport)}).Do(req)
+		if attempt == 0 && err == nil {
+			t.Fatal("first acknowledgement was not lost")
+		}
+		if attempt == 1 && err != nil {
+			t.Fatal(err)
+		}
+		if response != nil {
+			_ = response.Body.Close()
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if requests != 2 || len(applied) != 1 {
+		t.Fatal("live replay duplicated the applied Matrix event")
 	}
 }
