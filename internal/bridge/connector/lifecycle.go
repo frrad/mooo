@@ -65,3 +65,51 @@ func join(ctx context.Context, done ...<-chan struct{}) bool {
 	}
 	return true
 }
+
+// ownerCleanup tracks the shutdown of the retained profile owner,
+// KakaoClient.cleanup. The lifecycle mutex guards every field.
+type ownerCleanup struct {
+	// pumpDone remains associated with the owner while a Disconnect timeout
+	// leaves its event pump running. It must not be discarded when the active
+	// client fields are cleared: a later cleanup attempt must join the same
+	// generation before releasing the profile owner.
+	pumpDone chan struct{}
+	// done closes when the in-flight Shutdown of the owner returns.
+	done chan struct{}
+	// busy marks a Shutdown of the owner in flight.
+	busy bool
+}
+
+// begin marks a Shutdown of the owner in flight.
+func (o *ownerCleanup) begin() {
+	o.busy = true
+	if o.done == nil {
+		o.done = make(chan struct{})
+	}
+}
+
+// retain makes c the profile owner that must be shut down before another
+// session can open, with no shutdown in flight. The caller holds mu.
+func (kc *KakaoClient) retain(c kakaoClient) {
+	kc.cleanup = c
+	kc.retained = ownerCleanup{}
+}
+
+// release ends a Shutdown attempt of c. If c is still the retained owner the
+// attempt is no longer in flight, and a successful one releases the owner.
+// A failed attempt keeps c retained so a later Disconnect or retry can finish
+// it. The caller holds mu.
+func (kc *KakaoClient) release(c kakaoClient, err error) {
+	if kc.cleanup != c {
+		return
+	}
+	kc.retained.busy = false
+	if kc.retained.done != nil {
+		close(kc.retained.done)
+		kc.retained.done = nil
+	}
+	if err == nil {
+		kc.cleanup = nil
+		kc.retained.pumpDone = nil
+	}
+}
