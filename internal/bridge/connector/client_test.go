@@ -70,6 +70,9 @@ type fakeKakao struct {
 	uploads           []media.Upload
 	uploadResp        media.SendResult
 	uploadErr         error
+	albums            []sentAlbum
+	albumResp         chat.WriteResponse
+	albumErr          error
 	closeCalls        int
 	shutdownCalls     int
 	shutdownFailures  int

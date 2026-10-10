@@ -2,9 +2,11 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/media"
 )
@@ -60,14 +62,93 @@ func (s *Session) trailerUpload(ctx context.Context, shipBody, data []byte, post
 	if err != nil {
 		return media.SendResult{}, err
 	}
+	postBody, err := post(ship.Key)
+	if err != nil {
+		return media.SendResult{}, err
+	}
+	complete, err := s.uploadToMediaServer(ctx, ship.Host, ship.Port, media.PostCommand, postBody, data)
+	if err != nil {
+		return media.SendResult{}, err
+	}
+	return decodeMediaComplete(complete)
+}
 
+// ErrAlbumNotCreated reports an album that failed before its WRITE. Photos may
+// have been uploaded, but no message was created in the chat.
+var ErrAlbumNotCreated = errors.New("client: album message was not created")
+
+// SendAlbum sends 2 to 30 JPEG or PNG photos as one album: one MSHIP, one
+// MPOST and stream per photo on its own media connection, then one type-27
+// WRITE. No stage is retried; a failure before the WRITE is ErrAlbumNotCreated.
+func (s *Session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, caption string) (chat.WriteResponse, error) {
+	images := make([]media.Image, 0, len(photos))
+	for _, data := range photos {
+		image, err := media.PrepareImage(data)
+		if err != nil {
+			return chat.WriteResponse{}, err
+		}
+		images = append(images, image)
+	}
+	shipBody, err := (media.AlbumShipRequest{ChatID: chatID, Images: images}).MarshalBSON()
+	if err != nil {
+		return chat.WriteResponse{}, err
+	}
+	if !media.ValidCaption(caption) {
+		return chat.WriteResponse{}, media.ErrInvalidCaption
+	}
+	if s == nil || ctx == nil {
+		return chat.WriteResponse{}, ErrProtocol
+	}
+	shipPacket, err := s.Request(ctx, media.AlbumShipCommand, shipBody)
+	if err != nil {
+		return chat.WriteResponse{}, fmt.Errorf("%w: MSHIP: %w", ErrAlbumNotCreated, err)
+	}
+	if status, err := responseStatus(shipPacket); err != nil || status != 0 {
+		return chat.WriteResponse{}, fmt.Errorf("%w: MSHIP status %d", ErrAlbumNotCreated, status)
+	}
+	ship, err := media.DecodeAlbumShipResponse(shipPacket.Body, len(images))
+	if err != nil {
+		return chat.WriteResponse{}, fmt.Errorf("%w: %w", ErrAlbumNotCreated, err)
+	}
+	for i, image := range images {
+		postBody, err := (media.AlbumPostRequest{UserID: s.userID, Key: ship.Keys[i], Image: image, AppVersion: s.appVersion}).MarshalBSON()
+		if err != nil {
+			return chat.WriteResponse{}, fmt.Errorf("%w: %w", ErrAlbumNotCreated, err)
+		}
+		complete, err := s.uploadToMediaServer(ctx, ship.Hosts[i], ship.Ports[i], media.AlbumPostCommand, postBody, image.Data)
+		if err != nil {
+			return chat.WriteResponse{}, fmt.Errorf("%w: photo %d: %w", ErrAlbumNotCreated, i+1, err)
+		}
+		if status, err := responseStatus(complete); err != nil || status != 0 {
+			return chat.WriteResponse{}, fmt.Errorf("%w: photo %d COMPLETE status %d", ErrAlbumNotCreated, i+1, status)
+		}
+	}
+	extra, err := media.AlbumWriteExtra(images, ship, caption)
+	if err != nil {
+		return chat.WriteResponse{}, fmt.Errorf("%w: %w", ErrAlbumNotCreated, err)
+	}
+	body, err := (chat.WriteRequest{ChatID: chatID, Type: media.MultiPhotoType, Extra: extra}).MarshalBSON()
+	if err != nil {
+		return chat.WriteResponse{}, fmt.Errorf("%w: %w", ErrAlbumNotCreated, err)
+	}
+	reply, err := s.Request(ctx, chat.WriteCommand, body)
+	if err != nil {
+		return chat.WriteResponse{}, err
+	}
+	return chat.DecodeWriteResponse(reply.Body)
+}
+
+// uploadToMediaServer sends one POST or MPOST on a new dedicated media
+// connection, streams the bytes from the server's offset and returns the
+// server's COMPLETE packet.
+func (s *Session) uploadToMediaServer(ctx context.Context, host string, port int, command string, postBody, data []byte) (loco.Packet, error) {
 	dial := s.mediaDial
 	if dial == nil {
 		dial = dialSecure
 	}
-	upload, err := dial(ctx, ship.Host, ship.Port)
+	upload, err := dial(ctx, host, port)
 	if err != nil {
-		return media.SendResult{}, fmt.Errorf("client: media connect: %w", err)
+		return loco.Packet{}, fmt.Errorf("client: media connect: %w", err)
 	}
 	defer func() { _ = upload.close() }()
 	// Cancellation closes the dedicated media connection, interrupting a
@@ -79,49 +160,45 @@ func (s *Session) trailerUpload(ctx context.Context, shipBody, data []byte, post
 	} else {
 		_ = upload.c.SetDeadline(time.Now().Add(60 * time.Second))
 	}
-	postBody, err := post(ship.Key)
+	postPacket, pending, err := upload.request(1, command, postBody)
 	if err != nil {
-		return media.SendResult{}, err
-	}
-	postPacket, pending, err := upload.request(1, media.PostCommand, postBody)
-	if err != nil {
-		return media.SendResult{}, fmt.Errorf("client: media POST: %w", err)
+		return loco.Packet{}, fmt.Errorf("client: media %s: %w", command, err)
 	}
 	status, err := responseStatus(postPacket)
 	if err != nil {
-		return media.SendResult{}, ErrProtocol
+		return loco.Packet{}, ErrProtocol
 	}
 	if status != 0 {
-		return media.SendResult{}, StatusError{Command: media.PostCommand, Status: status}
+		return loco.Packet{}, StatusError{Command: command, Status: status}
 	}
 	offset, err := media.DecodePostOffset(postPacket.Body, len(data))
 	if err != nil {
-		return media.SendResult{}, err
+		return loco.Packet{}, err
 	}
 	if offset < len(data) {
 		encrypted, err := upload.secure.Encrypt(data[offset:])
 		if err != nil {
-			return media.SendResult{}, fmt.Errorf("client: media encrypt: %w", err)
+			return loco.Packet{}, fmt.Errorf("client: media encrypt: %w", err)
 		}
 		if err := writeAll(upload.c, encrypted); err != nil {
-			return media.SendResult{}, fmt.Errorf("client: media stream: %w", err)
+			return loco.Packet{}, fmt.Errorf("client: media stream: %w", err)
 		}
 	}
 	for _, packet := range pending {
 		if packet.Header.Method == media.CompleteCommand {
-			return decodeMediaComplete(packet)
+			return packet, nil
 		}
 	}
 	for range requestLimit {
 		packet, err := upload.read()
 		if err != nil {
-			return media.SendResult{}, fmt.Errorf("client: media COMPLETE: %w", err)
+			return loco.Packet{}, fmt.Errorf("client: media COMPLETE: %w", err)
 		}
 		if packet.Header.Method == media.CompleteCommand {
-			return decodeMediaComplete(packet)
+			return packet, nil
 		}
 	}
-	return media.SendResult{}, ErrProtocol
+	return loco.Packet{}, ErrProtocol
 }
 
 func decodeMediaComplete(packet loco.Packet) (media.SendResult, error) {

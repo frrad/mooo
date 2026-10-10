@@ -75,3 +75,22 @@ func TestDecodeWriteResponse(t *testing.T) {
 		t.Fatalf("unexpected response: %#v", response)
 	}
 }
+
+// The Mac client creates an album with an empty msg; its content is the extra.
+func TestAlbumWriteAllowsEmptyMessageOnlyWithExtra(t *testing.T) {
+	album := WriteRequest{ChatID: 42, Type: 27, Extra: `{"kl":["k1","k2"]}`}
+	body, err := album.MarshalBSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := bson.Raw(body)
+	if raw.Lookup("msg").StringValue() != "" || raw.Lookup("type").Int32() != 27 || raw.Lookup("extra").StringValue() != `{"kl":["k1","k2"]}` {
+		t.Fatalf("album WRITE = %v", raw)
+	}
+	if err := (WriteRequest{ChatID: 42, Type: 27}).Validate(); !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("album without extra err = %v", err)
+	}
+	if err := (WriteRequest{ChatID: 42, Type: TextType, Extra: "{}"}).Validate(); !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("empty text err = %v", err)
+	}
+}
