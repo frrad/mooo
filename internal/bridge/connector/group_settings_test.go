@@ -167,9 +167,9 @@ func (i *membershipIntent) EnsureJoined(context.Context, id.RoomID, ...bridgev2.
 	return nil
 }
 
-// Regular groups have no kick and the bridge does not add members. A Matrix
-// kick, ban or invite of a KakaoTalk member is rejected once with a notice
-// and the member's Matrix membership is put back; the source is untouched.
+// Regular groups have no kick. A Matrix kick or ban of a KakaoTalk member is
+// rejected once with a notice and the member's Matrix membership is put back;
+// the source is untouched. Invites are covered in group_matrix_invite_test.go.
 // Matrix-only and self membership changes pass without a notice.
 func TestMatrixMembershipChangesForKakaoMembersAreRejectedAndRestored(t *testing.T) {
 	ctx := context.Background()
@@ -206,7 +206,7 @@ func TestMatrixMembershipChangesForKakaoMembersAreRejectedAndRestored(t *testing
 	}{
 		{bridgev2.Kick, nil, true},
 		{bridgev2.BanJoined, []string{"@kakao_2000:test:leave"}, true},
-		{bridgev2.Invite, []string{"@kakao_2000:test:leave"}, false},
+		{bridgev2.BanLeft, []string{"@kakao_2000:test:leave"}, false},
 	} {
 		bot.members, bot.invited, ghostIntent.joined = nil, nil, 0
 		_, err := kc.HandleMatrixMembership(ctx, change(tc.typ, ghost))

@@ -56,10 +56,10 @@ var _ bridgev2.MembershipHandlingNetworkAPI = (*KakaoClient)(nil)
 var errMembershipNotBridged = errors.New("connector: KakaoTalk membership cannot be changed from Matrix")
 
 // HandleMatrixMembership keeps KakaoTalk members' Matrix membership equal to
-// the source. Regular groups have no kick and the bridge does not add
-// members, so a kick, ban or invite of a KakaoTalk member is rejected and
-// undone in Matrix. Self and Matrix-only changes have no source meaning and
-// pass silently.
+// the source. An invite of a KakaoTalk user adds them to a regular group;
+// regular groups have no kick, so a kick or ban of a KakaoTalk member is
+// rejected and undone in Matrix. Self and Matrix-only changes have no source
+// meaning and pass silently.
 func (kc *KakaoClient) HandleMatrixMembership(ctx context.Context, msg *bridgev2.MatrixMembershipChange) (*bridgev2.MatrixMembershipResult, error) {
 	if msg == nil {
 		return nil, nil
@@ -75,7 +75,7 @@ func (kc *KakaoClient) HandleMatrixMembership(ctx context.Context, msg *bridgev2
 	case bridgev2.BanLeft, bridgev2.BanInvited:
 		message = "Banning KakaoTalk users is not supported; the ban was undone."
 	case bridgev2.Invite:
-		message = "Inviting KakaoTalk users from Matrix is not supported yet; invite them in KakaoTalk. The invite was revoked."
+		return nil, kc.handleMatrixInvite(ctx, msg, ghost)
 	default:
 		return nil, nil
 	}
@@ -90,11 +90,9 @@ func (kc *KakaoClient) HandleMatrixMembership(ctx context.Context, msg *bridgev2
 	}
 	bot, room, ghostMXID := msg.Portal.Bridge.Bot, msg.Portal.MXID, ghost.Intent.GetMXID()
 	log := zerolog.Ctx(ctx)
-	// A ban or a pending invite is cleared by setting the ghost to leave.
-	if msg.Type.To == event.MembershipBan || msg.Type == bridgev2.Invite {
-		content := &event.Content{Parsed: &event.MemberEventContent{Membership: event.MembershipLeave, Reason: "KakaoTalk membership is managed in KakaoTalk"}}
-		if _, err := bot.SendState(ctx, room, event.StateMember, string(ghostMXID), content, time.Time{}); err != nil {
-			log.Warn().Err(err).Msg("Failed to undo a rejected Matrix membership change")
+	// A ban is cleared by setting the ghost to leave.
+	if msg.Type.To == event.MembershipBan {
+		if !revokeGhostMembership(ctx, msg, ghost) {
 			return nil, status
 		}
 	}
@@ -118,4 +116,14 @@ var _ bridgev2.MuteHandlingNetworkAPI = (*KakaoClient)(nil)
 // is sent to KakaoTalk and no shared state changes.
 func (kc *KakaoClient) HandleMute(context.Context, *bridgev2.MatrixMute) error {
 	return nil
+}
+
+// refreshMembershipAsync must not run in the portal event loop: the roster
+// refresh queues a resync into that same portal and waits for it.
+func (kc *KakaoClient) refreshMembershipAsync(c kakaoClient, chatID int64) {
+	go func() {
+		kc.groupGate.Lock()
+		defer kc.groupGate.Unlock()
+		kc.managedMembershipEvent(context.Background(), c, chatID, false)
+	}()
 }

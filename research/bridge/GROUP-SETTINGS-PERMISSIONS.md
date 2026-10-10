@@ -1,8 +1,8 @@
 # Regular-group settings and permissions
 
 Evidence date: 2026-10-10. Scope: personal notification settings, other
-personal versus shared chat settings, and member roles and permissions in a
-bridged regular group.
+personal versus shared chat settings, member roles and permissions, and
+Matrix invites in a bridged regular group.
 
 ## Official-client contract (macOS 26.8.0, static)
 
@@ -33,8 +33,27 @@ unless marked.
 
 Recorded gaps: how the server sets the per-message notification flag, the
 mobile command that sets the server-side `p`, server refusal codes for
-`SETMETA`/`SETMCMETA`/`ADDMEM`, team-chat endpoints, and chat background and
-bubble settings.
+`SETMETA`/`SETMCMETA` (and `ADDMEM` beyond those below), team-chat
+endpoints, and chat background and bubble settings.
+
+### Invitation chain
+
+The request, coordinator, database and result chain of `ADDMEM` is traced in
+[Matrix group creation](MATRIX-GROUP-CREATION.md#invitation-chain-under-investigation).
+This slice closed its error branch:
+
+- The result handler turns a nonzero response status into an error through
+  the client's Loco error table. Statuses **−402** and **−405** become the
+  client's errors 53 and 54; the invitation delegate shows the same
+  blocked-friend alert for both (the invitee is on the inviter's blocked
+  friends list). A status missing from the table becomes a generic error.
+- Any other error with server-supplied error text shows that text; a
+  nonempty `warningMsg` shows a warning alert. The delegate retries nothing.
+- On success with a chat log, the client stores the invitation feed and
+  refreshes the invited members from the server.
+
+Gaps: the friend picker's eligibility rules, other server refusal statuses,
+and whether the server pushes `NEWMEM` to the inviting session itself.
 
 ## Owned observation
 
@@ -59,10 +78,24 @@ Each change was preceded by a failing production-path test.
   to a KakaoTalk member's level is rejected once with a notice and the
   previous levels are restored; Matrix-only users' levels are left to Matrix.
 - **Membership.** A Matrix kick or ban of a KakaoTalk member is rejected
-  (regular groups have no removal) and the member is restored in Matrix; a
-  Matrix invite of a KakaoTalk user is rejected (the bridge does not add
-  members yet) and revoked. Self changes and Matrix-only users pass silently.
-  Nothing reaches KakaoTalk.
+  (regular groups have no removal) and the member is restored in Matrix.
+  Self changes and Matrix-only users pass silently. Neither reaches
+  KakaoTalk.
+- **Invites.** A Matrix invite of a KakaoTalk user adds them to the group:
+  - Only a plain regular group qualifies, checked with a fresh `CHATINFO`
+    (`MultiChat`, no open-chat link, no team meta 15). A 1:1 chat, open chat
+    or team chat refuses the invite with a notice and revokes it.
+  - A user already in a fresh `MEMLIST` gets no request; the roster refresh
+    restores them in Matrix.
+  - Otherwise the Matrix event reserves its one send durably, and the bridge
+    sends one `ADDMEM` for that user, never retried, including after a
+    redelivery or restart.
+  - A refusal status revokes the invite with a notice (−402/−405 name the
+    blocked-friends list).
+  - Success, a lost reply or a warning leaves the invite; a lost reply or a
+    warning also sends a notice. A fresh source roster, read outside the
+    portal's event loop, then joins the invited ghost or revokes the invite.
+    So Matrix follows KakaoTalk, not the reply.
 - Unchanged from earlier slices: room name and avatar changes are rejected
   (the Mac only edits personal values), and topic changes are rejected and
   restored ([outbound announcements](GROUP-OUTBOUND-ANNOUNCEMENTS.md)).
@@ -71,8 +104,6 @@ Each change was preceded by a failing production-path test.
 
 - mooo maps the server-side `p` (set by mobile clients) to the Matrix mute
   at portal creation; the Mac ignores it.
-- Invites from Matrix are rejected although KakaoTalk allows any member to
-  invite; adding members is a follow-up.
 
 ## Owned encrypted acceptance
 
@@ -87,10 +118,19 @@ roster from native A.
 | Matrix kick of A's ghost | one notice; A's ghost re-joined; native A still shows 3 members |
 | Matrix power level 50 for A's ghost | one notice; level restored to the default |
 | Notifications off, then on, on B's phone; restarts | no push; shared room name unchanged; no Matrix events |
+| C leaves natively (not silently); Matrix invite of C's ghost | C's ghost left, then joined about 2 s after the invite; native A shows C left, then B invited C, with 3 members; C's chat list shows the invitation |
+| Bridge restart after the invite | C's ghost still joined; bridge connected; no further request |
 
 ### Acceptance gaps
 
 - The lab has no double puppet and its homeserver does not deliver room
   account data to the appservice, so the Matrix mute mapping in either
   direction was verified only by production-path tests.
-- A live Matrix invite and ban of a KakaoTalk member were not performed.
+- A live Matrix ban of a KakaoTalk member was not performed.
+- The invite was observed for a friend who had been in the group before;
+  a refused invite (blocked friend, non-friend) was covered only by
+  production-path tests.
+- Only one roster resync followed the invite. A `NEWMEM` push to the
+  inviting session would have caused a second one, so the inviter probably
+  receives none (hypothesis). Either way the bridge converges through its
+  own roster refresh.
