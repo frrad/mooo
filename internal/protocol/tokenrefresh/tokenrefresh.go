@@ -37,6 +37,9 @@ type Rotation struct {
 	TokenType    string
 }
 
+// String and GoString keep the tokens out of %v, %+v and %#v output, so a
+// Rotation that reaches a log or error message never prints its secrets.
+// deadcode reports them unreachable because only fmt calls them; keep them.
 func (Rotation) String() string     { return "[redacted token rotation]" }
 func (r Rotation) GoString() string { return r.String() }
 
