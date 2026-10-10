@@ -63,10 +63,12 @@ dispatch does not yet connect the unknown push packets to this reducer.
 
 ## Synthetic handoff
 
-`internal/protocol/sessionlogin/terminal_guard_test.go` encodes the narrow
+`internal/protocol/sessionlogin/terminal_guard_test.go` (deleted with the
+unbound recovery reducer by task A1 of `docs/code-structure-plan.md`; see
+git history, for example commit `be6fa7f`) encoded the narrow
 proven guard: a KICKOUT received outside an authenticated session must not
-change recovery state or emit logout/reset effects. Existing tests continue to
-cover reason 1/10 reset mapping, CHANGESVR route-clear/logout effects,
+change recovery state or emit logout/reset effects. The reducer's tests also
+covered reason 1/10 reset mapping, CHANGESVR route-clear/logout effects,
 generation staleness, and terminal duplicate rejection.
 
 ## Provenance and confidence

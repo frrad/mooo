@@ -10,19 +10,14 @@ import (
 	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
-// The observer is exercised through Session.readLoop, not a standalone map
+// Correlation is exercised through Session.readLoop, not a standalone map
 // lookup. The validated header method and packet ID form the unique-ID key.
-func TestSessionHeaderObserverCorrelatesPendingPacketBeforeBody(t *testing.T) {
+func TestSessionReadLoopCorrelatesPendingPacketSplitAtHeader(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 	wantID := uint32(100000123)
 	waiter := make(chan requestResult, 1)
-	type observation struct {
-		pendingPresent bool
-		waiterEmpty    bool
-	}
-	observed := make(chan observation, 1)
 	session := &Session{
 		wire:   &wireConn{c: clientConn},
 		pushes: make(chan loco.Packet, 1),
@@ -42,17 +37,6 @@ func TestSessionHeaderObserverCorrelatesPendingPacketBeforeBody(t *testing.T) {
 			t.Errorf("session read loop did not stop during cleanup")
 		}
 	})
-	session.headerObserver = func(header loco.Header) {
-		session.mu.Lock()
-		_, present := session.pending[header.PacketID]
-		session.mu.Unlock()
-		select {
-		case <-waiter:
-			observed <- observation{pendingPresent: present, waiterEmpty: false}
-		default:
-			observed <- observation{pendingPresent: present, waiterEmpty: true}
-		}
-	}
 	go func() {
 		session.readLoop()
 		close(readDone)
@@ -66,12 +50,9 @@ func TestSessionHeaderObserverCorrelatesPendingPacketBeforeBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	select {
-	case got := <-observed:
-		if !got.pendingPresent || !got.waiterEmpty {
-			t.Fatal("validated header did not correlate to pending packet ID")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("header observer did not run")
+	case result := <-waiter:
+		t.Fatalf("waiter completed before body arrived: %#v", result)
+	case <-time.After(20 * time.Millisecond):
 	}
 	if _, err := serverConn.Write(frame[loco.HeaderSize:]); err != nil {
 		t.Fatal(err)
@@ -86,11 +67,10 @@ func TestSessionHeaderObserverCorrelatesPendingPacketBeforeBody(t *testing.T) {
 	}
 }
 
-func TestSessionHeaderObserverBodyEOFFailsWaiterOnce(t *testing.T) {
+func TestSessionReadLoopBodyEOFFailsWaiterOnce(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	wantID := uint32(100000124)
 	waiter := make(chan requestResult, 1)
-	observed := make(chan struct{}, 1)
 	session := &Session{
 		wire:   &wireConn{c: clientConn},
 		pushes: make(chan loco.Packet, 1),
@@ -99,11 +79,6 @@ func TestSessionHeaderObserverBodyEOFFailsWaiterOnce(t *testing.T) {
 		},
 		pendingByUniqueID:   map[string]chan requestResult{"PUSH.100000124": waiter},
 		pendingUniqueIDByID: map[uint32]string{wantID: "PUSH.100000124"},
-		headerObserver: func(header loco.Header) {
-			if header.PacketID == wantID {
-				observed <- struct{}{}
-			}
-		},
 	}
 	readDone := make(chan struct{})
 	t.Cleanup(func() {
@@ -127,11 +102,6 @@ func TestSessionHeaderObserverBodyEOFFailsWaiterOnce(t *testing.T) {
 	if _, err := serverConn.Write(header); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-observed:
-	case <-time.After(time.Second):
-		t.Fatal("header observer did not run")
-	}
 	if _, err := serverConn.Write([]byte("x")); err != nil {
 		t.Fatal(err)
 	}
@@ -154,11 +124,6 @@ func TestSessionHeaderObserverBodyEOFFailsWaiterOnce(t *testing.T) {
 	select {
 	case result := <-waiter:
 		t.Fatalf("waiter received duplicate completion: %#v", result)
-	default:
-	}
-	select {
-	case <-observed:
-		t.Fatal("header observer ran more than once")
 	default:
 	}
 	session.mu.Lock()

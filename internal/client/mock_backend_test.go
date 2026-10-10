@@ -1045,5 +1045,5 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 // shadow compares bodies received from Kakao, so harness reads of mooo's own
 // requests bypass it.
 func (w *wireConn) readRequest() (loco.Packet, error) {
-	return w.readUnshadowed(nil, bodyProgressCallbacks{})
+	return w.readUnshadowed()
 }
