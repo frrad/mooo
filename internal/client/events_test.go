@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/continuity"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/loco"
@@ -264,57 +263,10 @@ func TestDecodeEventStreamSuppressesCommittedAndInProcessDuplicates(t *testing.T
 	}
 }
 
-func TestRawPushConsumerPreventsTypedConsumer(t *testing.T) {
-	state := reusableTestState()
-	api, err := newClient(state, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pushes := make(chan loco.Packet)
-	api.dial = func(context.Context, authstate.State) (*Session, error) {
-		return &Session{pushes: pushes}, nil
-	}
-	if _, err := api.Pushes(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := api.Events(t.Context()); !errors.Is(err, ErrPushConsumerSelected) {
-		t.Fatalf("Events after Pushes error = %v", err)
-	}
-}
-
 func TestEventsRejectsClosedAdmissionAfterSessionLookup(t *testing.T) {
 	api := &Client{session: &Session{pushes: make(chan loco.Packet)}}
 	api.closed = true
 	if _, err := api.Events(context.Background()); !errors.Is(err, ErrClientClosed) {
 		t.Fatalf("Events after closed admission error = %v, want %v", err, ErrClientClosed)
-	}
-}
-
-func TestRawPushConsumerLeavesTerminalShutdownToCaller(t *testing.T) {
-	raw := make(chan loco.Packet, 1)
-	session := &Session{pushes: raw}
-	api := &Client{session: session}
-	stream, err := api.Pushes(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	empty, err := bson.Marshal(bson.D{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw <- loco.Packet{Header: loco.Header{Method: "CHANGESVR"}, Body: empty}
-	select {
-	case packet := <-stream:
-		if packet.Header.Method != "CHANGESVR" {
-			t.Fatalf("raw terminal method = %q", packet.Header.Method)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("raw terminal packet was not delivered")
-	}
-	if session.closed {
-		t.Fatal("raw Pushes unexpectedly closed Session on terminal packet")
-	}
-	if err := api.Shutdown(t.Context()); err != nil {
-		t.Fatal(err)
 	}
 }

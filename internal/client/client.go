@@ -22,17 +22,7 @@ import (
 
 var ErrClientClosed = errors.New("client: client closed")
 
-var ErrPushConsumerSelected = errors.New("client: push consumer already selected")
-
 var ErrCommitOrder = errors.New("client: event commit is not the next delivered message for its chat")
-
-type pushConsumerMode uint8
-
-const (
-	pushConsumerNone pushConsumerMode = iota
-	pushConsumerRaw
-	pushConsumerTyped
-)
 
 // Client owns authenticated state and one long-lived LOCO session within the
 // process that holds the profile's global owner lease. Operations establish
@@ -57,7 +47,6 @@ type Client struct {
 	renewalAttempted bool
 	dial             func(context.Context, authstate.State) (*Session, error)
 	lease            *profileLease
-	pushConsumer     pushConsumerMode
 	eventStream      chan events.Result
 	eventDone        chan struct{}
 	eventStop        chan struct{}
@@ -273,7 +262,7 @@ func (c *Client) InitialChatData(ctx context.Context) ([]bson.Raw, error) {
 }
 
 // sessionPushes lazily establishes the session and returns its
-// unsolicited-packet stream for Pushes and Events.
+// unsolicited-packet stream for Events.
 func (c *Client) sessionPushes(ctx context.Context) (<-chan loco.Packet, error) {
 	return withSession(c, ctx, func(session *Session) (<-chan loco.Packet, error) {
 		raw := session.Pushes()
@@ -284,29 +273,9 @@ func (c *Client) sessionPushes(ctx context.Context) (<-chan loco.Packet, error) 
 	})
 }
 
-// Pushes returns the live unsolicited-packet stream, including MSG events,
-// after lazily establishing the one reusable session. The stream closes if the
-// session disconnects; Client never reconnects it implicitly. Raw consumers
-// receive terminal packets without typed terminal shutdown and must close the
-// client explicitly after applying their own terminal policy.
-func (c *Client) Pushes(ctx context.Context) (<-chan loco.Packet, error) {
-	raw, err := c.sessionPushes(ctx)
-	if err != nil {
-		return nil, err
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.pushConsumer == pushConsumerTyped {
-		return nil, ErrPushConsumerSelected
-	}
-	c.pushConsumer = pushConsumerRaw
-	return raw, nil
-}
-
 // Events returns one reusable typed event stream for this client. Packet decode
-// failures are emitted as Result errors without terminating the stream. Raw
-// Pushes and typed Events are mutually exclusive because each session has one
-// ordered unsolicited-packet consumer.
+// failures are emitted as Result errors without terminating the stream. Each
+// session has one ordered unsolicited-packet consumer: this stream.
 func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 	raw, err := c.sessionPushes(ctx)
 	if err != nil {
@@ -321,10 +290,6 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 		c.mu.Unlock()
 		return nil, ErrClientClosed
 	}
-	if c.pushConsumer == pushConsumerRaw {
-		c.mu.Unlock()
-		return nil, ErrPushConsumerSelected
-	}
 	if c.eventStream != nil {
 		stream := c.eventStream
 		c.mu.Unlock()
@@ -333,7 +298,6 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 	stream := make(chan events.Result, requestLimit)
 	done := make(chan struct{})
 	stop := make(chan struct{})
-	c.pushConsumer = pushConsumerTyped
 	c.eventStream = stream
 	c.eventDone = done
 	c.eventStop = stop

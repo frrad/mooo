@@ -784,9 +784,6 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	if err != nil || secondEventStream != eventStream {
 		t.Fatal("Events did not return the reusable typed stream")
 	}
-	if _, err := api.Pushes(ctx); !errors.Is(err, ErrPushConsumerSelected) {
-		t.Fatalf("Pushes after Events error = %v", err)
-	}
 	close(pushTrigger)
 	select {
 	case result := <-eventStream:
