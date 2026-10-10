@@ -16,9 +16,9 @@ import (
 	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/event"
 
-	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 var photoHTTPClient = http.DefaultClient
@@ -398,7 +398,7 @@ func (kc *KakaoClient) senderFor(authorID int64) bridgev2.EventSender {
 }
 
 func convertText(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.TextMessage) (*bridgev2.ConvertedMessage, error) {
-	metadata := newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, chat.TextType, msg.Message, 0)
+	metadata := newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, messagetype.Text, msg.Message, 0)
 	metadata.Revision = msg.Revision
 	return messageWithMetadata(event.MsgText, msg.Message, metadata), nil
 }
@@ -431,7 +431,7 @@ func convertReply(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 // replyContent converts what a reply carries: its text, a supported sticker,
 // or an explicit notice for an attachment the bridge cannot render.
 func replyContent(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.ReplyMessage) (*bridgev2.ConvertedMessage, error) {
-	metadata := newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, chat.ReplyType, msg.Message, 0)
+	metadata := newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, messagetype.Reply, msg.Message, 0)
 	switch {
 	case msg.Attachment.Type == 0:
 		return messageWithMetadata(event.MsgText, msg.Message, metadata), nil
@@ -442,7 +442,7 @@ func replyContent(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 		}
 		// Keep the reply's own type so a later Matrix reply quotes it correctly.
 		if partMetadata, ok := part.DBMetadata.(*KakaoMessageMetadata); ok {
-			partMetadata.Type = chat.ReplyType
+			partMetadata.Type = messagetype.Reply
 		}
 		return &bridgev2.ConvertedMessage{Parts: []*bridgev2.ConvertedMessagePart{part}}, nil
 	case msg.Attachment.Sticker != nil:
@@ -514,8 +514,8 @@ func convertPhoto(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 	ext, mimeType := matrixPhotoType(a.MediaType)
 	return convertAttachment(ctx, portal, intent, attachmentSpec{
 		kind: "photo", failedTo: "displayed", msgType: event.MsgImage, body: a.Comment,
-		metadata:    newKakaoMessageMetadata(p.ChatID, p.LogID, p.AuthorID, media.PhotoType, "[image]", 0),
-		gapMetadata: newKakaoMessageMetadata(p.ChatID, p.LogID, p.AuthorID, media.PhotoType, "[photo unavailable]", 0),
+		metadata:    newKakaoMessageMetadata(p.ChatID, p.LogID, p.AuthorID, messagetype.Photo, "[image]", 0),
+		gapMetadata: newKakaoMessageMetadata(p.ChatID, p.LogID, p.AuthorID, messagetype.Photo, "[photo unavailable]", 0),
 		transferErr: errPhotoTransfer,
 		download: func(ctx context.Context) (attachmentMedia, error) {
 			data, err := media.DownloadPhoto(ctx, photoHTTPClient, a)

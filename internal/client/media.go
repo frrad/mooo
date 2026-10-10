@@ -9,6 +9,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 // SendImage validates and uploads one JPEG or PNG through the current session.
@@ -127,7 +128,7 @@ func (s *Session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, 
 	if err != nil {
 		return chat.WriteResponse{}, fmt.Errorf("%w: %w", ErrAlbumNotCreated, err)
 	}
-	body, err := (chat.WriteRequest{ChatID: chatID, Type: media.MultiPhotoType, Extra: extra}).MarshalBSON()
+	body, err := (chat.WriteRequest{ChatID: chatID, Type: messagetype.MultiPhoto, Extra: extra}).MarshalBSON()
 	if err != nil {
 		return chat.WriteResponse{}, fmt.Errorf("%w: %w", ErrAlbumNotCreated, err)
 	}

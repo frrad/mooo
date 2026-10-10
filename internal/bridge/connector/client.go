@@ -25,6 +25,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"github.com/frrad/mooo/internal/protocol/reactions"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 )
@@ -1574,9 +1575,9 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	if response.LogID <= 0 {
 		return nil, outboundAcceptedWithoutPosition(errors.New("KakaoTalk accepted the message without a log ID"))
 	}
-	sentType := chat.TextType
+	sentType := messagetype.Text
 	if msg.ReplyTo != nil {
-		sentType = chat.ReplyType
+		sentType = messagetype.Reply
 	}
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
@@ -1684,7 +1685,7 @@ func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c outboundAPI, inten
 	if err != nil {
 		return nil, outboundAcceptedWithoutPosition(err)
 	}
-	return &bridgev2.MatrixMessageResponse{DB: &database.Message{ID: makeMessageID(chatID, logID), SenderID: makeUserID(kc.userID), Timestamp: kakaoTime(sendAt), Metadata: newKakaoMessageMetadata(chatID, logID, kc.userID, media.PhotoType, "[image]", 0)}}, nil
+	return &bridgev2.MatrixMessageResponse{DB: &database.Message{ID: makeMessageID(chatID, logID), SenderID: makeUserID(kc.userID), Timestamp: kakaoTime(sendAt), Metadata: newKakaoMessageMetadata(chatID, logID, kc.userID, messagetype.Photo, "[image]", 0)}}, nil
 }
 
 const matrixUploadTransferTimeout = 3 * time.Minute
@@ -1815,7 +1816,7 @@ func (kc *KakaoClient) sendMatrixAlbum(ctx context.Context, c outboundAPI, inten
 	if response.LogID <= 0 {
 		return nil, outboundAcceptedWithoutPosition(errors.New("KakaoTalk accepted the album without a log ID"))
 	}
-	return &bridgev2.MatrixMessageResponse{DB: &database.Message{ID: makeMessageID(chatID, response.LogID), SenderID: makeUserID(kc.userID), Timestamp: kakaoTime(response.SendAt), Metadata: newKakaoMessageMetadata(chatID, response.LogID, kc.userID, media.MultiPhotoType, "[album]", 0)}}, nil
+	return &bridgev2.MatrixMessageResponse{DB: &database.Message{ID: makeMessageID(chatID, response.LogID), SenderID: makeUserID(kc.userID), Timestamp: kakaoTime(response.SendAt), Metadata: newKakaoMessageMetadata(chatID, response.LogID, kc.userID, messagetype.MultiPhoto, "[album]", 0)}}, nil
 }
 
 func albumRejectedStatus(err error, message string) error {

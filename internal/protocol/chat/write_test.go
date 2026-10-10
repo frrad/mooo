@@ -5,11 +5,13 @@ import (
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 func TestWriteRequestMarshalText(t *testing.T) {
 	body, err := (WriteRequest{
-		ChatID: 42, Message: "hello", Type: TextType,
+		ChatID: 42, Message: "hello", Type: messagetype.Text,
 	}).MarshalBSON()
 	if err != nil {
 		t.Fatal(err)
@@ -34,7 +36,7 @@ func TestWriteRequestMarshalText(t *testing.T) {
 }
 
 func TestWriteRequestValidation(t *testing.T) {
-	base := WriteRequest{ChatID: 1, Message: "ok", Type: TextType}
+	base := WriteRequest{ChatID: 1, Message: "ok", Type: messagetype.Text}
 	for name, tc := range map[string]struct {
 		request WriteRequest
 		want    error
@@ -90,7 +92,7 @@ func TestAlbumWriteAllowsEmptyMessageOnlyWithExtra(t *testing.T) {
 	if err := (WriteRequest{ChatID: 42, Type: 27}).Validate(); !errors.Is(err, ErrInvalidMessage) {
 		t.Fatalf("album without extra err = %v", err)
 	}
-	if err := (WriteRequest{ChatID: 42, Type: TextType, Extra: "{}"}).Validate(); !errors.Is(err, ErrInvalidMessage) {
+	if err := (WriteRequest{ChatID: 42, Type: messagetype.Text, Extra: "{}"}).Validate(); !errors.Is(err, ErrInvalidMessage) {
 		t.Fatalf("empty text err = %v", err)
 	}
 }

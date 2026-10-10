@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/frrad/mooo/internal/protocol/chat"
+
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 // AddMembers sends one invitation without retrying an ambiguous result.
@@ -42,7 +44,7 @@ func (s *Session) CreateChat(ctx context.Context, request chat.CreateRequest) (c
 // WRITE shape.
 func (s *Session) SendText(ctx context.Context, chatID int64, message string) (chat.WriteResponse, error) {
 	request := chat.WriteRequest{
-		ChatID: chatID, Message: message, Type: chat.TextType,
+		ChatID: chatID, Message: message, Type: messagetype.Text,
 	}
 	if err := request.Validate(); err != nil {
 		return chat.WriteResponse{}, err

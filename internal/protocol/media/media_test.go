@@ -20,6 +20,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/frrad/mooo/internal/protocol/chatlog"
+
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
 // decodeEnvelope decodes a synthetic MSG body the way events.Decode does
@@ -108,7 +110,7 @@ func TestPostRequestAndResponseDecoders(t *testing.T) {
 }
 
 func TestDecodeComplete(t *testing.T) {
-	log, _ := bson.Marshal(bson.D{{Key: "type", Value: PhotoType}, {Key: "logId", Value: int64(99)}})
+	log, _ := bson.Marshal(bson.D{{Key: "type", Value: messagetype.Photo}, {Key: "logId", Value: int64(99)}})
 	body, _ := bson.Marshal(bson.D{{Key: "chatLog", Value: bson.Raw(log)}})
 	result, err := DecodeComplete(body)
 	if err != nil || result.ChatLog.Lookup("logId").Int64() != 99 {
@@ -122,7 +124,7 @@ func TestMediaDecodersRejectTopLevelOnlyLogID(t *testing.T) {
 	attachment := `{"k":"opaque","w":3,"h":2,"s":1,"cs":"0000000000000000000000000000000000000000","mt":"image/jpg","url":"https://talk.kakaocdn.net/p/file?token=synthetic","thumbnailUrl":"https://talk.kakaocdn.net/p/thumb?token=synthetic"}`
 	withInner, _ := bson.Marshal(bson.D{
 		{Key: "chatId", Value: int64(42)},
-		{Key: "chatLog", Value: bson.D{{Key: "type", Value: PhotoType}, {Key: "logId", Value: int64(99)}, {Key: "attachment", Value: attachment}}},
+		{Key: "chatLog", Value: bson.D{{Key: "type", Value: messagetype.Photo}, {Key: "logId", Value: int64(99)}, {Key: "attachment", Value: attachment}}},
 	})
 	if _, err := DecodePhotoMessage(decodeEnvelope(t, withInner)); err != nil {
 		t.Fatalf("photo with chatLog.logId: %v", err)
@@ -130,7 +132,7 @@ func TestMediaDecodersRejectTopLevelOnlyLogID(t *testing.T) {
 	outerOnly, _ := bson.Marshal(bson.D{
 		{Key: "chatId", Value: int64(42)},
 		{Key: "logId", Value: int64(99)},
-		{Key: "chatLog", Value: bson.D{{Key: "type", Value: PhotoType}, {Key: "attachment", Value: attachment}}},
+		{Key: "chatLog", Value: bson.D{{Key: "type", Value: messagetype.Photo}, {Key: "attachment", Value: attachment}}},
 	})
 	envelope := decodeEnvelope(t, outerOnly)
 	if _, err := DecodePhotoMessage(envelope); !errors.Is(err, ErrInvalidMessage) {
@@ -181,7 +183,7 @@ func TestDecodeAndDownloadPhotoMessage(t *testing.T) {
 	sum := sha1.Sum(data)
 	checksum := strings.ToUpper(hex.EncodeToString(sum[:]))
 	attachment := fmt.Sprintf(`{"k":"opaque","w":3,"h":2,"s":%d,"cs":"%s","mt":"image/jpg","url":"https://talk.kakaocdn.net/p/file?token=synthetic","thumbnailUrl":"https://talk.kakaocdn.net/p/thumb?token=synthetic","expire":4102444800000}`, len(data), checksum)
-	log, _ := bson.Marshal(bson.D{{Key: "type", Value: PhotoType}, {Key: "logId", Value: int64(99)}, {Key: "authorId", Value: int64(7)}, {Key: "sendAt", Value: int64(1234)}, {Key: "attachment", Value: attachment}})
+	log, _ := bson.Marshal(bson.D{{Key: "type", Value: messagetype.Photo}, {Key: "logId", Value: int64(99)}, {Key: "authorId", Value: int64(7)}, {Key: "sendAt", Value: int64(1234)}, {Key: "attachment", Value: attachment}})
 	body, _ := bson.Marshal(bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.Raw(log)}})
 	message, err := DecodePhotoMessage(decodeEnvelope(t, body))
 	if err != nil || message.ChatID != 42 || message.LogID != 99 || message.AuthorID != 7 || message.SentAt != 1234 || message.Attachment.Width != 3 {
@@ -278,7 +280,7 @@ func TestDecodePhotoMessageCaptionBounds(t *testing.T) {
 		fields := map[string]any{"k": "opaque", "w": 3, "h": 2, "s": 10, "cs": strings.Repeat("A", 40), "mt": "image/jpeg",
 			"url": "https://talk.kakaocdn.net/p/file", "thumbnailUrl": "https://talk.kakaocdn.net/p/thumb", "expire": 4102444800000, "cmt": comment}
 		attachment, _ := json.Marshal(fields)
-		log, _ := bson.Marshal(bson.D{{Key: "type", Value: PhotoType}, {Key: "logId", Value: int64(99)}, {Key: "attachment", Value: string(attachment)}})
+		log, _ := bson.Marshal(bson.D{{Key: "type", Value: messagetype.Photo}, {Key: "logId", Value: int64(99)}, {Key: "attachment", Value: string(attachment)}})
 		body, _ := bson.Marshal(bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.Raw(log)}})
 		return body
 	}

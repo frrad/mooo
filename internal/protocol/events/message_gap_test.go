@@ -3,10 +3,11 @@ package events
 import (
 	"errors"
 	"fmt"
-	"github.com/frrad/mooo/internal/protocol/chat"
-	"github.com/frrad/mooo/internal/protocol/loco"
-	"go.mongodb.org/mongo-driver/v2/bson"
 	"testing"
+
+	"github.com/frrad/mooo/internal/protocol/loco"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 func gapPacket(t *testing.T, outer bson.D, log bson.D) loco.Packet {
@@ -19,7 +20,7 @@ func gapPacket(t *testing.T, outer bson.D, log bson.D) loco.Packet {
 	return loco.Packet{Header: loco.Header{Method: "MSG"}, Body: body}
 }
 func TestDecodeForDeliveryRetainsMalformedContentIdentity(t *testing.T) {
-	for _, typ := range []int32{1, 2, chat.ReplyType} {
+	for _, typ := range []int32{1, 2, messagetype.Reply} {
 		p := gapPacket(t, bson.D{{Key: "chatId", Value: int64(42)}}, bson.D{{Key: "logId", Value: int64(100)}, {Key: "type", Value: typ}, {Key: "authorId", Value: int64(200)}, {Key: "sendAt", Value: int64(300)}, {Key: "attachment", Value: "{private malformed"}})
 		if _, e := Decode(p); !errors.Is(e, ErrMalformedEvent) {
 			t.Fatalf("strict parse=%v", e)

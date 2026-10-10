@@ -22,6 +22,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/loco"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -650,7 +651,7 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 				return err
 			}
 			typeValue, err := raw.LookupErr("type")
-			if err != nil || typeValue.Type != bson.TypeInt32 || typeValue.Int32() != chat.ReplyType {
+			if err != nil || typeValue.Type != bson.TypeInt32 || typeValue.Int32() != messagetype.Reply {
 				return errors.New("reply type is not int32(26)")
 			}
 			extra, err := raw.LookupErr("extra")
@@ -666,7 +667,7 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 			if err := json.Unmarshal([]byte(extra.StringValue()), &attachment); err != nil {
 				return err
 			}
-			if attachment.LogID != 100 || attachment.UserID != 8 || attachment.Type != chat.TextType || attachment.Message != "synthetic inbound" {
+			if attachment.LogID != 100 || attachment.UserID != 8 || attachment.Type != messagetype.Text || attachment.Message != "synthetic inbound" {
 				return fmt.Errorf("reply attachment = %#v", attachment)
 			}
 			return nil
@@ -801,7 +802,7 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	}
 	reply, err := api.SendReply(ctx, chat.ReplyRequest{
 		ChatID: chatID, Message: "synthetic reply",
-		Target: chat.ReplyTarget{LogID: 100, UserID: 8, Type: chat.TextType, Message: "synthetic inbound"},
+		Target: chat.ReplyTarget{LogID: 100, UserID: 8, Type: messagetype.Text, Message: "synthetic inbound"},
 	})
 	if err != nil || reply.ChatID != chatID || reply.LogID != 102 {
 		t.Fatalf("reply WRITE response = %#v, err=%v", reply, err)
