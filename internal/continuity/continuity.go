@@ -120,6 +120,31 @@ func (c Checkpoint) LoginCursors() (chatIDs, maxIDs []int64) {
 	return chatIDs, maxIDs
 }
 
+// CommittedMax returns the application-committed maximum for chatID, or zero
+// when the chat has never been committed.
+func (c Checkpoint) CommittedMax(chatID int64) int64 {
+	if index, found := searchChat(c.Chats, chatID); found {
+		return c.Chats[index].MaxLogID
+	}
+	return 0
+}
+
+// FirstDeliveryStart returns the recorded first live admission for chatID, or
+// zero when none is recorded.
+func (c Checkpoint) FirstDeliveryStart(chatID int64) int64 {
+	if index, found := searchChat(c.DeliveryStarts, chatID); found {
+		return c.DeliveryStarts[index].FirstLogID
+	}
+	return 0
+}
+
+// HasGapThrough reports whether chatID has an outstanding gap that starts at
+// or before logID.
+func (c Checkpoint) HasGapThrough(chatID, logID int64) bool {
+	index, found := searchChat(c.HistoryGaps, chatID)
+	return found && c.HistoryGaps[index].FromLogID <= logID
+}
+
 // Store serializes checkpoint updates and persists them with atomic replacement.
 type Store struct {
 	path string
