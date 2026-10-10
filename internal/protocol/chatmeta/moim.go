@@ -42,14 +42,11 @@ func DecodeMoimResponse(body []byte) (MoimResponse, error) {
 	var r MoimResponse
 	var err error
 	var ok bool
-	r.ChatID, ok, err = int64Field(raw, "c", "chatId")
+	r.ChatID, ok, err = fields.Int64(raw, "c", "chatId")
 	if err != nil || !ok || r.ChatID <= 0 {
 		return r, fmt.Errorf("%w: moim chat id", ErrInvalidResponse)
 	}
-	v, ok, err := lookup(raw, "ms", "metas")
-	if err != nil {
-		return r, err
-	}
+	v, ok := fields.Lookup(raw, "ms", "metas")
 	if !ok || v.Type != bson.TypeArray {
 		return r, fmt.Errorf("%w: moim metas", ErrInvalidResponse)
 	}
@@ -63,19 +60,19 @@ func DecodeMoimResponse(body []byte) (MoimResponse, error) {
 		}
 		d := v.Document()
 		var m MoimMeta
-		m.Type, ok, err = int32Field(d, "t", "type")
+		m.Type, ok, err = fields.Int32(d, "t", "type")
 		if err != nil || !ok {
 			return r, ErrInvalidResponse
 		}
-		m.UpdateRevision, ok, err = int64Field(d, "ur", "updateRevision")
+		m.UpdateRevision, ok, err = fields.Int64(d, "ur", "updateRevision")
 		if err != nil || !ok || m.UpdateRevision < 0 {
 			return r, ErrInvalidResponse
 		}
-		m.BadgeRevision, _, err = int64Field(d, "br", "badgeRevision")
+		m.BadgeRevision, _, err = fields.Int64(d, "br", "badgeRevision")
 		if err != nil || m.BadgeRevision < 0 {
 			return r, ErrInvalidResponse
 		}
-		m.Content, _, err = stringField(d, "ct", "content")
+		m.Content, _, err = fields.String(d, "ct", "content")
 		if err != nil || len(m.Content) > 1<<20 {
 			return r, ErrInvalidResponse
 		}

@@ -152,12 +152,12 @@ func finishLoginSyncSession(ctx context.Context, session *Session, first []byte,
 			cursor.complete = true
 			return chats, cursor, nil
 		}
-		lastTokenID, err := bsonInt64(page, "lastTokenId")
-		if err != nil {
+		lastTokenID, ok, err := fields.Int64(page, "lastTokenId")
+		if err != nil || !ok {
 			return nil, cursor, ErrProtocol
 		}
-		lastChatID, err := bsonInt64(page, "lastChatId")
-		if err != nil {
+		lastChatID, ok, err := fields.Int64(page, "lastChatId")
+		if err != nil || !ok {
 			return nil, cursor, ErrProtocol
 		}
 		body, err := bson.Marshal(bson.D{
@@ -183,11 +183,11 @@ func finishLoginSyncSession(ctx context.Context, session *Session, first []byte,
 
 func updateLoginCursor(page bson.Raw, cursor *loginCursor, updateGlobal bool) error {
 	if updateGlobal {
-		if value, err := bsonInt64(page, "lastTokenId"); err == nil && value >= 0 {
+		if value, ok, err := fields.Int64(page, "lastTokenId"); err == nil && ok && value >= 0 {
 			copy := value
 			cursor.lastTokenID = &copy
 		}
-		if value, err := bsonInt64(page, "lbk"); err == nil && value >= 0 && value <= 1<<31-1 {
+		if value, ok, err := fields.Int64(page, "lbk"); err == nil && ok && value >= 0 && value <= 1<<31-1 {
 			copy := int32(value)
 			cursor.lbk = &copy
 		}
@@ -252,8 +252,8 @@ func updateLoginCursor(page bson.Raw, cursor *loginCursor, updateGlobal bool) er
 }
 
 func loginChatTarget(raw bson.Raw) (continuity.ChatTarget, error) {
-	chatID, err := bsonInt64(raw, "c")
-	if err != nil || chatID <= 0 {
+	chatID, ok, err := fields.Int64(raw, "c")
+	if err != nil || !ok || chatID <= 0 {
 		return continuity.ChatTarget{}, ErrProtocol
 	}
 	target := continuity.ChatTarget{ChatID: chatID}
@@ -264,16 +264,17 @@ func loginChatTarget(raw bson.Raw) (continuity.ChatTarget, error) {
 	if last.Type != bson.TypeEmbeddedDocument {
 		return continuity.ChatTarget{}, ErrProtocol
 	}
-	logID, err := bsonInt64(last.Document(), "logId")
-	if err != nil || logID <= 0 {
+	logID, ok, err := fields.Int64(last.Document(), "logId")
+	if err != nil || !ok || logID <= 0 {
 		return continuity.ChatTarget{}, ErrProtocol
 	}
-	if nestedChatID, nestedErr := bsonInt64(last.Document(), "chatId"); nestedErr == nil && nestedChatID != chatID {
+	// A nested chatId of the wrong type is ignored, not rejected.
+	if nestedChatID, ok, nestedErr := fields.Int64(last.Document(), "chatId"); nestedErr == nil && ok && nestedChatID != chatID {
 		return continuity.ChatTarget{}, ErrProtocol
 	}
 	// l is the last displayable chat log; ll, the last log ID, also covers
 	// later feeds such as edits, which catch-up must reach.
-	if lastLogID, err := bsonInt64(raw, "ll"); err == nil && lastLogID > logID {
+	if lastLogID, ok, err := fields.Int64(raw, "ll"); err == nil && ok && lastLogID > logID {
 		logID = lastLogID
 	}
 	target.MaxLogID = logID

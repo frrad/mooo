@@ -43,23 +43,23 @@ func DecodeChatOnRoomResponse(body []byte) (ChatOnRoomResponse, error) {
 	var r ChatOnRoomResponse
 	var ok bool
 	var err error
-	if r.ChatID, ok, err = int64Field(raw, "c", "chatId"); err != nil || !ok || r.ChatID <= 0 {
+	if r.ChatID, ok, err = fields.Int64(raw, "c", "chatId"); err != nil || !ok || r.ChatID <= 0 {
 		return r, fmt.Errorf("%w: chat-on chat id", ErrInvalidResponse)
 	}
-	if r.Full, _, err = boolField(raw, "f"); err != nil {
+	if r.Full, _, err = fields.Bool(raw, "f"); err != nil {
 		return r, ErrInvalidResponse
 	}
-	if r.Token, _, err = int64Field(raw, "o"); err != nil || r.Token < 0 {
+	if r.Token, _, err = fields.Int64(raw, "o"); err != nil || r.Token < 0 {
 		return r, ErrInvalidResponse
 	}
-	if r.LastLogID, _, err = int64Field(raw, "l"); err != nil || r.LastLogID < 0 {
+	if r.LastLogID, _, err = fields.Int64(raw, "l"); err != nil || r.LastLogID < 0 {
 		return r, ErrInvalidResponse
 	}
-	members, _, err := int64Array(raw, "a")
+	members, _, err := fields.Int64s(raw, "a")
 	if err != nil {
 		return r, ErrInvalidResponse
 	}
-	watermarks, _, err := int64Array(raw, "w")
+	watermarks, _, err := fields.Int64s(raw, "w")
 	if err != nil || len(watermarks) != len(members) || len(members) > 10000 {
 		return r, fmt.Errorf("%w: chat-on watermarks", ErrInvalidResponse)
 	}
