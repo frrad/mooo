@@ -19,19 +19,16 @@ func (c *Client) renewCredentials(ctx context.Context) error {
 	if store == nil || state.Credentials == nil {
 		return ErrCredentialsAbsent
 	}
-	wireUUID, err := state.Identity.WireDeviceUUID()
+	profile, err := webProfile(state)
 	if err != nil {
-		return ErrBootstrap
+		return err
 	}
 	old := state.Credentials.Clone()
 	refreshToken, err := refreshTokenFromMaterial(old.AutoLoginMaterial)
 	if err != nil {
 		return err
 	}
-	rotation, err := tokenrefresh.Execute(ctx, doer, tokenrefresh.ClientProfile{
-		AppVersion: state.Identity.Metadata.AppVersion, OSVersion: state.Identity.Metadata.OSVersion,
-		Language: "en", AccessToken: old.AccessToken, DeviceUUID: wireUUID,
-	}, tokenrefresh.Request{RefreshToken: refreshToken})
+	rotation, err := tokenrefresh.Execute(ctx, doer, profile, tokenrefresh.Request{RefreshToken: refreshToken})
 	if err != nil {
 		return err
 	}

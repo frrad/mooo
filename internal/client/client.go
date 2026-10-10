@@ -14,6 +14,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/friends"
 	"github.com/frrad/mooo/internal/protocol/loco"
+	"github.com/frrad/mooo/internal/protocol/macweb"
 	"github.com/frrad/mooo/internal/protocol/media"
 	"github.com/frrad/mooo/internal/protocol/reactions"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -49,7 +50,7 @@ type Client struct {
 	state            authstate.State
 	store            *authstate.Store
 	checkpoint       *continuity.Store
-	http             friends.Doer
+	http             macweb.Doer
 	session          *Session
 	cleanupSession   *Session
 	closed           bool
@@ -69,7 +70,7 @@ type Client struct {
 
 // Open acquires the profile's process-wide owner lease and creates a reusable
 // authenticated client without opening a network connection.
-func Open(statePath string, doer friends.Doer) (*Client, error) {
+func Open(statePath string, doer macweb.Doer) (*Client, error) {
 	return OpenWithOptions(statePath, doer, OpenOptions{})
 }
 
@@ -82,7 +83,7 @@ type OpenOptions struct {
 
 // OpenWithOptions acquires the same exclusive profile lease as Open. It never
 // creates a parallel secondary session or changes committed message positions.
-func OpenWithOptions(statePath string, doer friends.Doer, options OpenOptions) (*Client, error) {
+func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*Client, error) {
 	statePath = filepath.Clean(statePath)
 	store, err := authstate.Open(statePath)
 	if err != nil {
@@ -117,7 +118,7 @@ func OpenWithOptions(statePath string, doer friends.Doer, options OpenOptions) (
 	return client, nil
 }
 
-func newClient(state authstate.State, doer friends.Doer) (*Client, error) {
+func newClient(state authstate.State, doer macweb.Doer) (*Client, error) {
 	if state.Credentials == nil {
 		return nil, ErrCredentialsAbsent
 	}
@@ -685,7 +686,7 @@ func (c *Client) ReactionMetaSync(ctx context.Context, chatID, cur int64) (react
 	}
 	state, doer := c.state, c.http
 	c.mu.Unlock()
-	profile, err := reactionProfile(state)
+	profile, err := webProfile(state)
 	if err != nil {
 		return reactions.SyncMetaPage{}, err
 	}

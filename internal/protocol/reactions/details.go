@@ -5,10 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+
+	"github.com/frrad/mooo/internal/protocol/macweb"
 )
 
 const detailsPath = "/emoticon/chat/rx/log-details"
@@ -42,8 +43,8 @@ type DetailsResponse struct {
 
 // NewDetailsHTTPRequest builds the separate mini/custom-reaction attribution
 // request used by the current Mac client. LinkID is sent only for open chats.
-func NewDetailsHTTPRequest(ctx context.Context, profile ClientProfile, chatID, linkID, logID int64) (*http.Request, error) {
-	if ctx == nil || profile.validate() != nil || profile.UserID <= 0 || chatID <= 0 || linkID < 0 || logID <= 0 {
+func NewDetailsHTTPRequest(ctx context.Context, profile macweb.Profile, chatID, linkID, logID int64) (*http.Request, error) {
+	if ctx == nil || profile.Validate(true) != nil || profile.UserID <= 0 || chatID <= 0 || linkID < 0 || logID <= 0 {
 		return nil, ErrInvalidRequest
 	}
 	payload := struct {
@@ -63,7 +64,7 @@ func NewDetailsHTTPRequest(ctx context.Context, profile ClientProfile, chatID, l
 	if err != nil {
 		return nil, ErrInvalidRequest
 	}
-	applyHeaders(req, profile)
+	macweb.ApplyHeaders(req, profile, true)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("talk-agent", "macos/"+profile.AppVersion)
@@ -74,8 +75,7 @@ func NewDetailsHTTPRequest(ctx context.Context, profile ClientProfile, chatID, l
 
 func DecodeDetailsResponse(body []byte) (DetailsResponse, error) {
 	var fields map[string]json.RawMessage
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	if err := decoder.Decode(&fields); err != nil || fields == nil || requireJSONEOF(decoder) != nil {
+	if err := macweb.DecodeJSONObject(body, &fields); err != nil {
 		return DetailsResponse{}, ErrInvalidResponse
 	}
 	response := DetailsResponse{Fields: make(map[string]json.RawMessage, len(fields))}
@@ -137,7 +137,7 @@ func DecodeDetailsResponse(body []byte) (DetailsResponse, error) {
 
 // FetchDetails resolves mini/custom-reaction attribution independently from
 // the legacy /members lookup.
-func FetchDetails(ctx context.Context, doer Doer, profile ClientProfile, chatID, linkID, logID int64) (DetailsResponse, error) {
+func FetchDetails(ctx context.Context, doer macweb.Doer, profile macweb.Profile, chatID, linkID, logID int64) (DetailsResponse, error) {
 	if doer == nil {
 		return DetailsResponse{}, ErrInvalidRequest
 	}
@@ -145,20 +145,9 @@ func FetchDetails(ctx context.Context, doer Doer, profile ClientProfile, chatID,
 	if err != nil {
 		return DetailsResponse{}, err
 	}
-	resp, err := doer.Do(req)
+	body, err := execute(doer, req)
 	if err != nil {
-		return DetailsResponse{}, fmt.Errorf("%w: %w", ErrTransport, err)
-	}
-	if resp == nil || resp.Body == nil {
-		return DetailsResponse{}, ErrInvalidResponse
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse+1))
-	if err != nil || len(body) > maxResponse {
-		return DetailsResponse{}, ErrInvalidResponse
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return DetailsResponse{}, fmt.Errorf("%w: http %d", ErrRejected, resp.StatusCode)
+		return DetailsResponse{}, err
 	}
 	return DecodeDetailsResponse(body)
 }

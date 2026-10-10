@@ -5,26 +5,18 @@ import (
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/protocol/friends"
+	"github.com/frrad/mooo/internal/protocol/macweb"
 )
 
 // addFriendByPhone resolves a phone number through Kakao's authenticated friend
 // mutation and returns the server-assigned user ID. The HTTP operation is sent
 // exactly once and is not retried when its outcome is ambiguous.
-func addFriendByPhone(ctx context.Context, doer friends.Doer, state authstate.State, request friends.AddByPhoneRequest) (friends.Friend, error) {
-	if state.Credentials == nil {
-		return friends.Friend{}, ErrCredentialsAbsent
-	}
-	wireUUID, err := state.Identity.WireDeviceUUID()
+func addFriendByPhone(ctx context.Context, doer macweb.Doer, state authstate.State, request friends.AddByPhoneRequest) (friends.Friend, error) {
+	profile, err := webProfile(state)
 	if err != nil {
-		return friends.Friend{}, ErrBootstrap
+		return friends.Friend{}, err
 	}
-	response, err := friends.AddByPhone(ctx, doer, friends.ClientProfile{
-		AppVersion:  state.Identity.Metadata.AppVersion,
-		OSVersion:   state.Identity.Metadata.OSVersion,
-		Language:    "en",
-		AccessToken: state.Credentials.AccessToken,
-		DeviceUUID:  wireUUID,
-	}, request)
+	response, err := friends.AddByPhone(ctx, doer, profile, request)
 	if err != nil {
 		// Preserve any structured friend data returned alongside a status error;
 		// callers may use it to reconcile an already-applied mutation.
