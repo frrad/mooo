@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/frrad/mooo/internal/protocol/loco"
+	"github.com/frrad/mooo/internal/protocol/sessionlogin"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -95,14 +96,18 @@ func TestUpdateLoginCursorCapturesInventoryAndDeletion(t *testing.T) {
 		}},
 		{Key: "delChatIds", Value: bson.A{int64(9)}},
 		{Key: "lastTokenId", Value: int64(12)},
+		{Key: "status", Value: int32(0)},
+		{Key: "eof", Value: true},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var cursor loginCursor
-	if err := updateLoginCursor(page, &cursor, true); err != nil {
+	decoded, err := sessionlogin.DecodeLoginListPage(page)
+	if err != nil {
 		t.Fatal(err)
 	}
+	var cursor loginCursor
+	cursor.apply(decoded)
 	if cursor.lastTokenID == nil || *cursor.lastTokenID != 12 {
 		t.Fatalf("last token = %v", cursor.lastTokenID)
 	}

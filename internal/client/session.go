@@ -16,7 +16,6 @@ import (
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/continuity"
 	"github.com/frrad/mooo/internal/protocol/booking"
-	"github.com/frrad/mooo/internal/protocol/bsonfield"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/sessionlogin"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -35,9 +34,6 @@ var (
 	ErrClosed            = errors.New("client: session closed")
 	ErrProtocol          = errors.New("client: protocol error")
 )
-
-// fields reads LOCO response fields; callers map every failure to ErrProtocol.
-var fields = bsonfield.Reader{Err: ErrProtocol}
 
 type StatusError struct {
 	Command string
@@ -300,7 +296,7 @@ func connectSessionWithResumeOptions(ctx context.Context, state authstate.State,
 	if !sessionlogin.ClassifyLoginStatus(status).Accepted() {
 		return nil, StatusError{Command: "LOGINLIST", Status: status}
 	}
-	chatData, cursor, err := finishLoginSyncSession(ctx, session, loginReply.Body, status, pingOptions.beforeBootstrapRequest)
+	chatData, cursor, err := finishLoginSyncSession(ctx, session, loginReply.Body, pingOptions.beforeBootstrapRequest)
 	if err != nil {
 		return nil, ErrLogin
 	}
