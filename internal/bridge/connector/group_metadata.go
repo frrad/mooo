@@ -10,14 +10,18 @@ import (
 	"time"
 
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
+	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/event"
 )
 
 var errOutboundRoomMetadata = errors.New("connector: outbound Matrix room name and avatar changes are not supported; change the connected Kakao profile's chat settings in the native client")
 
+var errOutboundAnnouncement = errors.New("connector: outbound Matrix topic changes are not supported; post or remove the announcement in the native client")
+
 var _ bridgev2.RoomNameHandlingNetworkAPI = (*KakaoClient)(nil)
 var _ bridgev2.RoomAvatarHandlingNetworkAPI = (*KakaoClient)(nil)
+var _ bridgev2.RoomTopicHandlingNetworkAPI = (*KakaoClient)(nil)
 
 // Room metadata is a read projection. Reject changes before any source write or
 // portal metadata update instead of presenting a local change as source success.
@@ -27,6 +31,29 @@ func (*KakaoClient) HandleMatrixRoomName(context.Context, *bridgev2.MatrixRoomNa
 
 func (*KakaoClient) HandleMatrixRoomAvatar(context.Context, *bridgev2.MatrixRoomAvatar) (bool, error) {
 	return false, unsupportedRoomMetadataStatus()
+}
+
+// The topic mirrors the group's Boards announcement. The Boards write contract
+// is untraced, so a Matrix topic change is rejected before any source request
+// and the bridge bot restores the announcement topic in Matrix, which would
+// otherwise keep the rejected text until the announcement next changes. The
+// rejection is certain and never retried.
+func (kc *KakaoClient) HandleMatrixRoomTopic(ctx context.Context, msg *bridgev2.MatrixRoomTopic) (bool, error) {
+	status := bridgev2.WrapErrorInStatus(errOutboundAnnouncement).
+		WithStatus(event.MessageStatusFail).
+		WithErrorReason(event.MessageStatusUnsupported).
+		WithIsCertain(true).
+		WithSendNotice(true).
+		WithMessage("Changing the topic does not change the KakaoTalk announcement; post or remove the announcement in KakaoTalk. The topic was restored.")
+	if msg == nil || msg.Portal == nil || msg.Portal.MXID == "" || msg.Portal.Bridge == nil || msg.Portal.Bridge.Bot == nil {
+		return false, status
+	}
+	content := &event.Content{Parsed: &event.TopicEventContent{Topic: msg.Portal.Topic}}
+	if _, err := msg.Portal.Bridge.Bot.SendState(ctx, msg.Portal.MXID, event.StateTopic, "", content, time.Time{}); err != nil {
+		zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to restore the announcement topic after a rejected Matrix topic change")
+		return false, status.WithMessage("Changing the topic does not change the KakaoTalk announcement; post or remove the announcement in KakaoTalk. The topic could not be restored.")
+	}
+	return false, status
 }
 
 func unsupportedRoomMetadataStatus() error {

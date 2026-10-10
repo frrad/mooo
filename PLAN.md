@@ -20,7 +20,7 @@ These are scoped capabilities, not full official-client parity.
 
 | Priority | Missing implementation or acceptance | Code/evidence boundary |
 |---|---|---|
-| 1 | Regular-group announcements; rename, join/leave and metadata lifecycle acceptance | Inbound text Boards announcements now project to the room topic (PR #269); rich and outbound announcements remain open. Initial shared title/roster works. Membership handlers exist, but live mutations remain unvalidated. See [chat metadata](research/chat-metadata.md) and [group evidence](research/bridge/GROUP-MESSAGING-VALIDATION.md). |
+| 1 | Regular-group announcements; rename, join/leave and metadata lifecycle acceptance | Inbound text and rich Boards announcements project to the room topic (PRs #269, #283); Matrix topic changes are explicitly rejected and restored because the Boards write contract is untraced. Initial shared title/roster works. Membership handlers exist, but live mutations remain unvalidated. See [chat metadata](research/chat-metadata.md) and [group evidence](research/bridge/GROUP-MESSAGING-VALIDATION.md). |
 | 2 | Remaining group media acceptance | Group photos (PR #277), text and image replies (PRs #278–279) and reactions (PR #280) are accepted. |
 | 3 | Live read-receipt and catch-up read-side-effect policy; operator malformed-message recovery; terminal/failure lifecycle acceptance | Routing, bounded recovery and ownership are implemented; `SYNCMSG cnt=0`, terminal events, Matrix failures and cleanup timeouts need controlled acceptance. Receive-header timeout and push receipts are not installed by default. |
 | 4 | Reproducible deployment acceptance and Matrix crypto recovery | Docker/configuration exist. Complete standard appservice installation and separate Beeper validation; test key rotation, missing keys/trust transitions and encrypted replies/reactions. |
@@ -116,8 +116,15 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       [group announcements](research/bridge/GROUP-ANNOUNCEMENTS.md).
 - [ ] Announcement follow-ups: mentions and SCHEDULE D-day text, live VIDEO/FILE/
       QUIZ/SCHEDULE announcements, multiple polls per post.
-- [ ] Explicit outbound announcements and supported Boards mutations with native
-      permissions and safe rejected/ambiguous outcomes.
+- [x] Explicit outbound announcements (this PR): the Boards write contract is
+      untraced, so Matrix topic set/replace/clear is rejected once before any
+      source request, with a notice, and the bot restores the announcement
+      topic; accepted live with restart:
+      [outbound announcements](research/bridge/GROUP-OUTBOUND-ANNOUNCEMENTS.md).
+- [ ] Boards write follow-ups: trace the Swift Boards write chain (request,
+      response, permissions, failures) before sending any announcement or post
+      mutation; restore Matrix name/avatar after their rejection; encrypt the
+      bot's status notices in encrypted rooms.
 - [ ] Supported outbound video/audio/files/albums with source limits and native
       usability, without automatic duplicate sends.
 - [ ] Source-supported message edits/deletions with permission/time limits,
@@ -126,8 +133,8 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       notifications, source roles and management permissions; prevent personal
       settings from changing shared state and reject unsupported actions.
 
-Next active slice: outbound announcements and Boards mutations. Discovery
-through rich announcements shipped in PRs #270–283.
+Next active slice: outbound video, audio, files and albums. Discovery
+through outbound announcements shipped in PRs #270–284.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.
