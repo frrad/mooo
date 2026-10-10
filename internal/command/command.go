@@ -13,6 +13,7 @@ import (
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/buildinfo"
+	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
 const usage = `usage:
@@ -23,8 +24,9 @@ const usage = `usage:
 `
 
 // Run executes one CLI invocation and returns a process-style exit code. It
-// never includes flag values or filesystem paths in its output.
-func Run(args []string, stdout, stderr io.Writer) int {
+// never includes flag values or filesystem paths in its output. A non-nil
+// packetObserver sees every LOCO packet the opened client reads.
+func Run(args []string, stdout, stderr io.Writer, packetObserver func(loco.Packet)) int {
 	if stdout == nil {
 		stdout = io.Discard
 	}
@@ -40,10 +42,14 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if len(args) >= 2 && args[0] == "contacts" && args[1] == "photo" {
-		return runContactPhoto(args[2:], stdout, stderr, openContactPhotoClient)
+		return runContactPhoto(args[2:], stdout, stderr, func(path string) (contactPhotoClient, error) {
+			return openContactPhotoClient(path, packetObserver)
+		})
 	}
 	if len(args) >= 2 && args[0] == "chats" && args[1] == "list" {
-		return runListChats(args[2:], stdout, stderr, openChatLister)
+		return runListChats(args[2:], stdout, stderr, func(path string) (chatLister, error) {
+			return openChatLister(path, packetObserver)
+		})
 	}
 	if args[0] != "auth" || len(args) < 2 {
 		return usageError(stderr)

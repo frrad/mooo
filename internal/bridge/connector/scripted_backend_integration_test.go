@@ -15,12 +15,23 @@ import (
 	"github.com/frrad/mooo/internal/continuity"
 	"github.com/frrad/mooo/internal/protocol/events"
 	protocol "github.com/frrad/mooo/internal/protocol/loco"
+	"github.com/frrad/mooo/internal/shadow"
 	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
 )
+
+// shadowCheckedOptions opens scripted clients with the bridge's login policy
+// and the BSON shadow in panic mode, so every synthetic body the backend sends
+// must decode identically under both decoders.
+func shadowCheckedOptions() client.OpenOptions {
+	return client.OpenOptions{
+		FullChatList:   true,
+		PacketObserver: shadow.NewObserver(shadow.Config{Mode: shadow.ModePanic}),
+	}
+}
 
 type observedClient struct {
 	kakaoClient
@@ -68,7 +79,7 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	}
 
 	firstDialers, firstBackends, _ := scriptedScenario(t, 2, nil, false)
-	firstRaw, err := client.OpenWithTestDialers(statePath, nil, firstDialers, client.OpenOptions{FullChatList: true})
+	firstRaw, err := client.OpenWithTestDialers(statePath, nil, firstDialers, shadowCheckedOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +108,7 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 
 	trigger := make(chan struct{})
 	secondDialers, secondBackends, writes := scriptedScenario(t, 2, trigger, true)
-	secondRaw, err := client.OpenWithTestDialers(statePath, nil, secondDialers, client.OpenOptions{FullChatList: true})
+	secondRaw, err := client.OpenWithTestDialers(statePath, nil, secondDialers, shadowCheckedOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +158,7 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	if !reloaded.IsCommitted(testChatID, 2) || !reloaded.IsCommitted(testChatID, 3) {
 		t.Fatal("replayed and live events were not committed")
 	}
-	reopenedClient, err := client.OpenWithTestDialers(statePath, nil, secondDialers, client.OpenOptions{FullChatList: true})
+	reopenedClient, err := client.OpenWithTestDialers(statePath, nil, secondDialers, shadowCheckedOptions())
 	if err != nil {
 		t.Fatal("profile lease was not released after shutdown")
 	}
@@ -167,7 +178,7 @@ func TestScriptedBackendAutomaticRecoveryReleasesLeaseBeforeReopen(t *testing.T)
 	}
 	outage := make(chan struct{})
 	firstDialers, firstBackends, firstWrites := scriptedScenarioWithIDs(t, 2, outage, true, 2, 3, false)
-	firstRaw, err := client.OpenWithTestDialers(statePath, nil, firstDialers, client.OpenOptions{FullChatList: true})
+	firstRaw, err := client.OpenWithTestDialers(statePath, nil, firstDialers, shadowCheckedOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +197,7 @@ func TestScriptedBackendAutomaticRecoveryReleasesLeaseBeforeReopen(t *testing.T)
 		case 1:
 			raw = firstRaw
 		case 2:
-			raw, openErr = client.OpenWithTestDialers(statePath, nil, secondDialers, client.OpenOptions{FullChatList: true})
+			raw, openErr = client.OpenWithTestDialers(statePath, nil, secondDialers, shadowCheckedOptions())
 		default:
 			return nil, fmt.Errorf("unexpected automatic recovery open %d", opened)
 		}

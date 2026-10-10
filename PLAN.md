@@ -577,6 +577,19 @@ preparation and follow
 or navigation encounters a new edge case. Add a sanitized regression and improve
 the shared helper before resuming the experiment.
 
+### BSON shadow is opt-in (2026-10-10)
+
+Deliberate behaviour change: the bridge no longer runs the BSON shadow
+comparison by default. `network.bson_shadow.mode` empty now means `off`
+(previously `log`), and the bridge ignores `MOOO_BSON_SHADOW`. Set
+`mode: log` to restore the second decode and its warnings. The shadow lives in
+`internal/shadow` and reaches the client only as an explicit
+`client.OpenOptions.PacketObserver`. `mooo-lab` keeps its defaults (`panic`
+for research commands, `log` for `chats list` and `contacts photo`, overridable
+with `MOOO_BSON_SHADOW`) and produces the same warnings. Test binaries no
+longer default to `panic`; the connector scripted-backend integration tests
+opt in. See [BSON shadow scope](research/reconnect/BOUNDED-BSON-VALIDATION-API.md).
+
 ### Encrypted direct-room acceptance (2026-10-07)
 
 Owned A/B text and photos passed both directions in an encrypted Matrix portal,
