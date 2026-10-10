@@ -810,7 +810,7 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	if err != nil || created.ChatID != 44 || created.ChatRoom.Lookup("type").StringValue() != "DirectChat" {
 		t.Fatalf("CREATE response = %#v, err=%v", created, err)
 	}
-	photo, err := api.SendImage(ctx, chatID, imageData)
+	photo, err := api.SendImage(ctx, chatID, imageData, "")
 	if err != nil || photo.ChatLog.Lookup("logId").Int64() != 103 {
 		t.Fatalf("photo result log=%v, err=%v", photo.ChatLog, err)
 	}
@@ -1011,7 +1011,7 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err := session.SendImage(ctx, 42, imageData)
+	_, err := session.SendImage(ctx, 42, imageData, "")
 	if err == nil {
 		t.Fatal("photo without COMPLETE unexpectedly succeeded")
 	}
@@ -1033,7 +1033,7 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("reader did not observe main disconnect")
 	}
-	if _, err := session.SendImage(ctx, 42, imageData); !errors.Is(err, ErrClosed) {
+	if _, err := session.SendImage(ctx, 42, imageData, ""); !errors.Is(err, ErrClosed) {
 		t.Fatalf("second photo error = %v, want ErrClosed", err)
 	}
 	if shipRequests != 1 || postRequests != 1 || mediaDials != 1 {

@@ -43,6 +43,15 @@ channel even while no request is active. The photo decoder accepts type `2`, and
 the downloader permits only evidenced Kakao HTTPS media hosts, bounds the body,
 and verifies the advertised size and SHA-1 checksum before releasing bytes.
 
+## Captions, expiry and failures (2026-10-10)
+
+An optional photo caption travels as attachment `cmt` inbound and as `cmt` in
+the POST `ex` JSON outbound; SHIP carries no caption. Photo `expire` is epoch
+milliseconds. JPEG photos are labelled `image/jpg`. A CDN 403, 404 or 410 is a
+final "unavailable" outcome; 429 and 5xx remain transient. Cancelling the
+sender's context closes the dedicated media connection. Evidence, Mac trace and
+gaps: [group photos](bridge/GROUP-PHOTOS.md).
+
 ## Evidence and confidence
 
 - Black-box owned-account experiment, Android 26.8.2 to clean-room Go client,

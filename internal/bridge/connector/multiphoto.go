@@ -62,15 +62,13 @@ func convertAlbum(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 			}
 			return nil, errPhotoTransfer
 		}
-		name := fmt.Sprintf("photo-%d.jpg", i+1)
-		if photo.MediaType == "image/png" {
-			name = fmt.Sprintf("photo-%d.png", i+1)
-		}
-		uri, file, err := intent.UploadMedia(ctx, portal.MXID, data, name, photo.MediaType)
+		ext, mimeType := matrixPhotoType(photo.MediaType)
+		name := fmt.Sprintf("photo-%d.%s", i+1, ext)
+		uri, file, err := intent.UploadMedia(ctx, portal.MXID, data, name, mimeType)
 		if err != nil {
 			return nil, errPhotoTransfer
 		}
-		content := &event.MessageEventContent{MsgType: event.MsgImage, Body: name, FileName: name, URL: uri, File: file, Info: &event.FileInfo{MimeType: photo.MediaType, Size: len(data), Width: int(photo.Width), Height: int(photo.Height)}}
+		content := &event.MessageEventContent{MsgType: event.MsgImage, Body: name, FileName: name, URL: uri, File: file, Info: &event.FileInfo{MimeType: mimeType, Size: len(data), Width: int(photo.Width), Height: int(photo.Height)}}
 		if i < len(a.Comments) && a.Comments[i] != "" {
 			content.Body = a.Comments[i]
 		}

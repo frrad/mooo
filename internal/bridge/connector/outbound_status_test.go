@@ -72,11 +72,11 @@ func TestAmbiguousOutboundImageIsReportedAsUnknownNotRetriable(t *testing.T) {
 	kc := connectedClient(t, fake)
 	oldDownloader := matrixImageDownloader
 	matrixImageDownloader = func(context.Context, bridgev2.MatrixAPI, id.ContentURIString, *event.EncryptedFileInfo) ([]byte, error) {
-		return []byte("image"), nil
+		return connectorPNG(t), nil
 	}
 	t.Cleanup(func() { matrixImageDownloader = oldDownloader })
 
-	_, err := kc.sendMatrixImage(context.Background(), fake, &photoMatrixAPI{}, 3000, "mxc://example/image", nil)
+	_, err := kc.sendMatrixImage(context.Background(), fake, &photoMatrixAPI{}, 3000, imageContent("mxc://example/image", nil), noReservation)
 
 	status := bridgev2.WrapErrorInStatus(err)
 	if status.Status != event.MessageStatusFail || status.IsCertain || !status.SendNotice {

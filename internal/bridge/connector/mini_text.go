@@ -15,7 +15,7 @@ import (
 	"maunium.net/go/mautrix/id"
 )
 
-var errMiniTransfer = errors.New("connector: Mini emoticon transfer failed")
+var errMiniTransfer = transientTransferError("connector: Mini emoticon transfer failed")
 
 func (kc *KakaoClient) miniTextEvent(msg events.MiniTextMessage) *multipartMessage[events.MiniTextMessage] {
 	meta := kc.messageMeta(msg.ChatID, msg.LogID, msg.AuthorID, msg.SentAt)

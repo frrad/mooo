@@ -595,12 +595,12 @@ func (c *Client) SendReply(ctx context.Context, request chat.ReplyRequest) (chat
 
 // SendImage lazily connects once, then sends one JPEG or PNG without retrying
 // any ambiguous mutation or upload stage.
-func (c *Client) SendImage(ctx context.Context, chatID int64, data []byte) (media.SendResult, error) {
+func (c *Client) SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error) {
 	session, err := c.ensureSession(ctx)
 	if err != nil {
 		return media.SendResult{}, err
 	}
-	return session.SendImage(ctx, chatID, data)
+	return session.SendImage(ctx, chatID, data, caption)
 }
 
 // AddFriendByPhone performs the authenticated HTTP mutation without changing

@@ -12,7 +12,8 @@ import (
 // SendImage validates and uploads one JPEG or PNG through the current session.
 // SHIP, POST, and the byte stream are each sent exactly once. Transport failure
 // is ambiguous and is never retried automatically.
-func (s *Session) SendImage(ctx context.Context, chatID int64, data []byte) (media.SendResult, error) {
+// SendImage uploads one photo with an optional caption.
+func (s *Session) SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error) {
 	if s == nil || ctx == nil {
 		return media.SendResult{}, ErrProtocol
 	}
@@ -42,13 +43,17 @@ func (s *Session) SendImage(ctx context.Context, chatID int64, data []byte) (med
 		return media.SendResult{}, fmt.Errorf("client: media connect: %w", err)
 	}
 	defer func() { _ = upload.close() }()
+	// Cancellation closes the dedicated media connection, interrupting a
+	// blocked write or a wait for COMPLETE. The outcome remains ambiguous.
+	stopCancel := context.AfterFunc(ctx, func() { _ = upload.close() })
+	defer stopCancel()
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = upload.c.SetDeadline(deadline)
 	} else {
 		_ = upload.c.SetDeadline(time.Now().Add(60 * time.Second))
 	}
 	postBody, err := (media.PostRequest{
-		UserID: s.userID, Key: ship.Key, ChatID: chatID, Image: image,
+		UserID: s.userID, Key: ship.Key, ChatID: chatID, Image: image, Comment: caption,
 		AppVersion: s.appVersion, MediaID: time.Now().UnixMilli(),
 	}).MarshalBSON()
 	if err != nil {

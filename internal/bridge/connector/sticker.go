@@ -13,7 +13,7 @@ import (
 )
 
 var stickerHTTPClient = http.DefaultClient
-var errStickerTransfer = errors.New("connector: Kakao sticker transfer failed")
+var errStickerTransfer = transientTransferError("connector: Kakao sticker transfer failed")
 
 func convertSticker(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.StickerMessage) (*bridgev2.ConvertedMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)

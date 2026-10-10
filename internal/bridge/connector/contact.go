@@ -2,7 +2,6 @@ package connector
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/frrad/mooo/internal/protocol/events"
@@ -12,7 +11,7 @@ import (
 	"maunium.net/go/mautrix/event"
 )
 
-var errContactTransfer = errors.New("connector: contact transfer failed")
+var errContactTransfer = transientTransferError("connector: contact transfer failed")
 
 func convertContact(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.ContactMessage) (*bridgev2.ConvertedMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)

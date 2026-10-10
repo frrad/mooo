@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -41,7 +42,27 @@ var (
 	ErrExpired           = errors.New("media: attachment expired")
 	ErrInvalidAttachment = errors.New("media: invalid attachment")
 	ErrChecksumMismatch  = errors.New("media: attachment checksum mismatch")
+	// ErrUnavailable reports a media server refusal (403, 404 or 410) for a
+	// resource that is no longer served. Retrying cannot recover it.
+	ErrUnavailable = errors.New("media: attachment unavailable")
+	// ErrInvalidCaption reports a photo caption outside the accepted bounds.
+	ErrInvalidCaption = errors.New("media: invalid photo caption")
 )
+
+// MaxCaptionBytes bounds a photo caption in either direction.
+const MaxCaptionBytes = 16 << 10
+
+// ValidCaption reports whether a photo caption is bounded valid UTF-8
+// without NUL characters. The empty caption is valid.
+func ValidCaption(caption string) bool {
+	return len(caption) <= MaxCaptionBytes && utf8.ValidString(caption) && !strings.ContainsRune(caption, 0)
+}
+
+// unavailableStatus reports media server statuses that mean the resource is
+// gone rather than temporarily unreachable.
+func unavailableStatus(code int) bool {
+	return code == http.StatusForbidden || code == http.StatusNotFound || code == http.StatusGone
+}
 
 // Image is a validated, bounded upload prepared from caller-owned bytes.
 type Image struct {
@@ -61,7 +82,9 @@ type PhotoAttachment struct {
 	MediaType    string `json:"mt"`
 	URL          string `json:"url"`
 	ThumbnailURL string `json:"thumbnailUrl"`
-	ExpiresAt    int64  `json:"expire"`
+	ExpiresAt    int64  `json:"expire"` // Epoch milliseconds (observed).
+	// Comment is the sender's optional photo caption.
+	Comment string `json:"cmt"`
 }
 
 type PhotoMessage struct {
@@ -110,6 +133,9 @@ func DecodePhotoMessage(body []byte) (PhotoMessage, error) {
 	if _, err := hex.DecodeString(attachment.Checksum); err != nil {
 		return PhotoMessage{}, ErrInvalidMessage
 	}
+	if !ValidCaption(attachment.Comment) {
+		return PhotoMessage{}, ErrInvalidMessage
+	}
 	return PhotoMessage{
 		ChatID: chatID, LogID: logID,
 		AuthorID: optionalInt64(log, "authorId"), SentAt: optionalInt64(log, "sendAt"),
@@ -130,7 +156,7 @@ func DownloadPhoto(ctx context.Context, client *http.Client, attachment PhotoAtt
 	if attachment.MediaType != "image/jpg" && attachment.MediaType != "image/jpeg" && attachment.MediaType != "image/png" {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidAttachment, ErrDownload)
 	}
-	if attachment.ExpiresAt > 0 && time.Now().Unix() >= attachment.ExpiresAt {
+	if attachment.ExpiresAt > 0 && time.Now().UnixMilli() >= attachment.ExpiresAt {
 		return nil, fmt.Errorf("%w: %w", ErrExpired, ErrDownload)
 	}
 	if validateDownloadURL(attachment.URL) != nil {
@@ -159,7 +185,13 @@ func DownloadPhoto(ctx context.Context, client *http.Client, attachment PhotoAtt
 		return nil, fmt.Errorf("%w: %v", ErrDownload, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK || (resp.Request != nil && validateDownloadURL(resp.Request.URL.String()) != nil) {
+	if resp.Request != nil && validateDownloadURL(resp.Request.URL.String()) != nil {
+		return nil, ErrDownload
+	}
+	if unavailableStatus(resp.StatusCode) {
+		return nil, fmt.Errorf("%w: %w", ErrUnavailable, ErrDownload)
+	}
+	if resp.StatusCode != http.StatusOK {
 		return nil, ErrDownload
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, attachment.Size+1))
@@ -268,18 +300,33 @@ type PostRequest struct {
 	Image      Image
 	AppVersion string
 	MediaID    int64
+	// Comment is the optional photo caption, sent as cmt in the extra JSON.
+	Comment string
 }
 
 func (r PostRequest) MarshalBSON() ([]byte, error) {
 	if r.UserID <= 0 || r.ChatID <= 0 || r.Key == "" || r.AppVersion == "" || r.MediaID <= 0 || len(r.Image.Data) == 0 {
 		return nil, ErrInvalidImage
 	}
+	if !ValidCaption(r.Comment) {
+		return nil, ErrInvalidCaption
+	}
+	extra := "{}"
+	if r.Comment != "" {
+		encoded, err := json.Marshal(struct {
+			Comment string `json:"cmt"`
+		}{r.Comment})
+		if err != nil {
+			return nil, ErrInvalidCaption
+		}
+		extra = string(encoded)
+	}
 	return bson.Marshal(bson.D{
 		{Key: "u", Value: r.UserID}, {Key: "k", Value: r.Key}, {Key: "t", Value: PhotoType},
 		{Key: "s", Value: int64(len(r.Image.Data))}, {Key: "c", Value: r.ChatID}, {Key: "mid", Value: r.MediaID},
 		{Key: "w", Value: r.Image.Width}, {Key: "h", Value: r.Image.Height},
 		{Key: "mm", Value: "99999"}, {Key: "nt", Value: int32(0)}, {Key: "os", Value: "mac"},
-		{Key: "av", Value: r.AppVersion}, {Key: "ex", Value: "{}"}, {Key: "ns", Value: false},
+		{Key: "av", Value: r.AppVersion}, {Key: "ex", Value: extra}, {Key: "ns", Value: false},
 		{Key: "dt", Value: int32(4)}, {Key: "scp", Value: int32(1)},
 	})
 }
