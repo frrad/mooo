@@ -32,6 +32,19 @@ Mac-first full-chain protocol research and production-fixture migration alongsid
 these slices. Cloud backup/restore remains out of scope; paid or unavailable
 emitters are evidence blockers, not reasons to relabel supported messages.
 
+## Code structure simplification (2026-10-10)
+
+A structural audit of the Go code at `3995d0c` found: about 1,350 production
+lines in `sessionlogin` and ~550 in `client/session.go` that no binary
+reaches (`deadcode -tags goolm ./cmd/...` reports 61 functions), the BSON
+shadow decoder running on every packet by default, four copies of the Mac
+HTTP client, six sets of BSON field helpers, eleven hand-rolled strict JSON
+loops, a 25-field hand-written connection lifecycle in the connector, and 29
+"no bridge DB" branches that exist only for the unit-test harness. The
+task-by-task refactor plan, with acceptance criteria and merge order, is in
+[`docs/code-structure-plan.md`](docs/code-structure-plan.md). Its task A1
+resolves the "Connect or delete the remaining test-only code" item below.
+
 ## Regular-group completion objective (2026-10-09)
 
 Complete each slice through a separate reviewable PR. Every slice requires the
