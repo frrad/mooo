@@ -127,7 +127,7 @@ func TestDecodeJSONObject(t *testing.T) {
 	if err := DecodeJSONObject([]byte(" {\"a\":1}\n"), &object); err != nil || object["a"] != 1 {
 		t.Fatalf("object=%v err=%v", object, err)
 	}
-	for _, body := range []string{``, `null`, `[]`, `1`, `{"a":1} {}`, `{"a":1}x`, `{"a":`} {
+	for _, body := range []string{``, `null`, `[]`, `1`, `{"a":1} {}`, `{"a":1}x`, `{"a":`, `{"a":1,"a":2}`} {
 		var target map[string]int
 		if err := DecodeJSONObject([]byte(body), &target); !errors.Is(err, ErrInvalidJSON) {
 			t.Fatalf("accepted %q: %v", body, err)
