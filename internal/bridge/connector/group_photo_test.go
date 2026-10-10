@@ -128,7 +128,7 @@ func runDisconnectDuringPhotoTransfer(t *testing.T, stage string) {
 	fake := &fakeKakao{stream: make(chan events.Result, 1)}
 	opens := 0
 	var openMu sync.Mutex
-	kc := newKakaoClient(login, testSelfID, func() (kakaoClient, error) {
+	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, func() (kakaoClient, error) {
 		openMu.Lock()
 		defer openMu.Unlock()
 		opens++
@@ -302,7 +302,7 @@ func TestTransientPhotoFailurePostsNoMatrixErrorNotice(t *testing.T) {
 		t.Fatal(err)
 	}
 	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID), UserMXID: user.MXID}, Bridge: bridge, User: user}
-	kc := newKakaoClient(login, testSelfID, nil)
+	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
 	kc.sendState = func(status.BridgeState) {}
 	fake := &fakeKakao{}
 	for attempt := 0; attempt < 2; attempt++ {

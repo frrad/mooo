@@ -16,9 +16,8 @@ import (
 // errors. database.KVQuery's Get and Set are not used for connector state that
 // must be durable: Set logs the value on failure and both suppress errors, and
 // values such as display checkpoints carry profile URLs that must never enter
-// logs. The read-receipt and reaction-resync watermarks still use KVQuery
-// directly: they are best-effort integers whose loss only repeats work, so a
-// logged and suppressed failure is acceptable there.
+// logs. bridgeStore embeds it, so every connector key-value access goes
+// through these methods.
 type kvStore struct {
 	db       *dbutil.Database
 	bridgeID networkid.BridgeID

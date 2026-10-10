@@ -121,7 +121,7 @@ func newReadReceiptFramework(t *testing.T) *readReceiptFramework {
 	}
 	login := &bridgev2.UserLogin{UserLogin: &database.UserLogin{Metadata: &UserLoginMetadata{}, ID: makeUserLoginID(testSelfID), UserMXID: user.MXID}, Bridge: bridge, User: user, Log: zerolog.Nop()}
 	f := &readReceiptFramework{bridge: bridge, login: login, matrix: matrix}
-	f.kc = newKakaoClient(login, testSelfID, nil)
+	f.kc = newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
 	f.kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		f.queued++
 		portal, err := bridge.GetExistingPortalByKey(ctx, remote.GetPortalKey())

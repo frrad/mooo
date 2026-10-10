@@ -200,7 +200,7 @@ func (kc *KakaoConnector) LoadUserLogin(ctx context.Context, login *bridgev2.Use
 	if err != nil {
 		return err
 	}
-	login.Client = newKakaoClient(login, userID, func() (kakaoClient, error) {
+	login.Client = newKakaoClient(login, newBridgeStore(login.Bridge.DB), userID, func() (kakaoClient, error) {
 		return openProfileClient(statePath, kc.packetObserver)
 	})
 	return nil

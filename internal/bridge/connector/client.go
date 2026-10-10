@@ -174,6 +174,7 @@ func init() {
 // changes the protocol client's own lifecycle or retries outbound mutations.
 type KakaoClient struct {
 	login  *bridgev2.UserLogin
+	store  store
 	userID int64
 	open   func() (kakaoClient, error)
 
@@ -223,8 +224,6 @@ type KakaoClient struct {
 	wait                 func(context.Context, time.Duration) error
 	profiles             map[int64]chatmeta.Member
 	profileRefreshAfter  string
-	reactionMu           sync.Mutex
-	reactionRevisions    map[string]int64
 	reactionNoticeMu     sync.Mutex
 	reactionNotices      map[string]time.Time
 }
@@ -234,15 +233,15 @@ var (
 	_ bridgev2.NetworkAPIWithUserID = (*KakaoClient)(nil)
 )
 
-func newKakaoClient(login *bridgev2.UserLogin, userID int64, open func() (kakaoClient, error)) *KakaoClient {
+func newKakaoClient(login *bridgev2.UserLogin, st store, userID int64, open func() (kakaoClient, error)) *KakaoClient {
 	kc := &KakaoClient{
-		login:             login,
-		userID:            userID,
-		open:              open,
-		queue:             login.QueueRemoteEvent,
-		profiles:          make(map[int64]chatmeta.Member),
-		reactionRevisions: make(map[string]int64),
-		reactionNotices:   make(map[string]time.Time),
+		login:           login,
+		store:           st,
+		userID:          userID,
+		open:            open,
+		queue:           login.QueueRemoteEvent,
+		profiles:        make(map[int64]chatmeta.Member),
+		reactionNotices: make(map[string]time.Time),
 	}
 	kc.wait = waitForRecovery
 	kc.reserveOutbound = kc.reserveOutboundKV
@@ -817,7 +816,7 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 	}
 	remote := kc.remoteEventFor(evt)
 	chatID, guarded, err := sourceChatOf(evt, remote)
-	if err != nil || (guarded && kc.checkSourceAccess(ctx, chatID, nil) != nil) {
+	if err != nil || (guarded && kc.checkSourceAccess(ctx, chatID) != nil) {
 		return false
 	}
 	switch evt := evt.(type) {
@@ -948,10 +947,7 @@ func (kc *KakaoClient) commitIfPositioned(c kakaoClient, evt events.Event, failu
 // The SDK suppresses some Matrix refusals into Ignored success. Only a
 // persisted message mapping can authorize source progress for such a result.
 func (kc *KakaoClient) ignoredMessageHasMapping(ctx context.Context, message bridgev2.RemoteMessage) bool {
-	if kc.login == nil || kc.login.Bridge == nil || kc.login.Bridge.DB == nil {
-		return false
-	}
-	parts, err := kc.login.Bridge.DB.Message.GetAllPartsByID(ctx, kc.login.ID, message.GetID())
+	parts, err := kc.store.messageParts(ctx, kc.login.ID, message.GetID())
 	if err != nil || len(parts) == 0 {
 		return false
 	}
@@ -1500,7 +1496,7 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	if err != nil {
 		return nil, err
 	}
-	if err = kc.checkSourceAccess(ctx, chatID, msg.Portal); err != nil {
+	if err = kc.checkSourceAccess(ctx, chatID); err != nil {
 		return nil, err
 	}
 	if msg.ReplyTo == nil && msg.Content.RelatesTo != nil && msg.Content.RelatesTo.GetReplyTo() != "" {

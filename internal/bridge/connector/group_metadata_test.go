@@ -149,7 +149,7 @@ func TestDisplayCheckpointFailureCannotPublishNewerMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A new client has no volatile display cache; only the database can retain 9.
-	reloaded := newKakaoClient(kc.login, kc.userID, nil)
+	reloaded := newKakaoClient(kc.login, kc.store, kc.userID, nil)
 	backend.chatInfo.ChatData.ChatMetas = []chatmeta.ChatMeta{{Type: chatmeta.SharedMetaTitle, Revision: 8, Content: "Older"}}
 	info, err := reloaded.chatInfoFromClient(ctx, p, backend, true)
 	if err != nil {
@@ -384,7 +384,7 @@ func TestDisplayCheckpointOversizedWriteCannotPoisonDurableState(t *testing.T) {
 	if _, err = kc.chatInfoFromClient(ctx, p, backend, true); err == nil {
 		t.Fatal("oversized display checkpoint was persisted")
 	}
-	reloaded := newKakaoClient(kc.login, kc.userID, nil)
+	reloaded := newKakaoClient(kc.login, kc.store, kc.userID, nil)
 	backend.chatInfo.ChatData.ChatMetas = []chatmeta.ChatMeta{{Type: chatmeta.SharedMetaTitle, Revision: 8, Content: "Older"}}
 	info, err := reloaded.chatInfoFromClient(ctx, p, backend, true)
 	if err != nil || info.Name == nil || *info.Name != "Durable" {

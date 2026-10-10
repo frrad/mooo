@@ -61,7 +61,7 @@ func TestNewLoginRejectsReuseWithoutReplacingActiveOwner(t *testing.T) {
 	first, err := user.NewLogin(ctx, &database.UserLogin{ID: loginID, RemoteName: "existing", Metadata: profile}, &bridgev2.NewLoginParams{
 		LoadUserLogin: func(_ context.Context, login *bridgev2.UserLogin) error {
 			loads++
-			active = newKakaoClient(login, 4242, func() (kakaoClient, error) { return &fakeKakao{}, nil })
+			active = newKakaoClient(login, newBridgeStore(login.Bridge.DB), 4242, func() (kakaoClient, error) { return &fakeKakao{}, nil })
 			login.Client = active
 			return nil
 		},
@@ -120,7 +120,7 @@ func TestImportFlowRejectsExistingOwnerWithoutReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	active := newKakaoClient(&bridgev2.UserLogin{}, 4242, func() (kakaoClient, error) { return &fakeKakao{}, nil })
+	active := newKakaoClient(&bridgev2.UserLogin{}, newMemStore(), 4242, func() (kakaoClient, error) { return &fakeKakao{}, nil })
 	loads := 0
 	loginID := makeUserLoginID(4242)
 	first, err := user.NewLogin(ctx, &database.UserLogin{ID: loginID, RemoteName: "existing", Metadata: &UserLoginMetadata{Profile: "existing-profile"}}, &bridgev2.NewLoginParams{
@@ -164,7 +164,7 @@ func TestQRFlowRejectsExistingOwnerAndRetainsCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	active := newKakaoClient(&bridgev2.UserLogin{}, 42, func() (kakaoClient, error) { return &fakeKakao{}, nil })
+	active := newKakaoClient(&bridgev2.UserLogin{}, newMemStore(), 42, func() (kakaoClient, error) { return &fakeKakao{}, nil })
 	first, err := user.NewLogin(ctx, &database.UserLogin{ID: makeUserLoginID(42), RemoteName: "existing", Metadata: &UserLoginMetadata{Profile: "old-profile"}}, &bridgev2.NewLoginParams{
 		LoadUserLogin: func(_ context.Context, login *bridgev2.UserLogin) error { login.Client = active; return nil },
 	})
