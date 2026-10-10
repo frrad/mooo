@@ -1424,7 +1424,13 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	}
 	if msg.Content.MsgType == event.MsgImage {
 		if msg.ReplyTo != nil || msg.Content.RelatesTo != nil && msg.Content.RelatesTo.GetReplyTo() != "" {
-			return nil, errUnsupportedImageReply
+			// KakaoTalk offers no photo attachment while replying.
+			return nil, bridgev2.WrapErrorInStatus(errUnsupportedImageReply).
+				WithStatus(event.MessageStatusFail).
+				WithErrorReason(event.MessageStatusUnsupported).
+				WithIsCertain(true).
+				WithMessage("KakaoTalk cannot send a photo as a reply; the photo was not sent. Send it without the reply.").
+				WithSendNotice(true)
 		}
 		if msg.Portal == nil || msg.Portal.Bridge == nil {
 			return nil, bridgev2.ErrFailedToGetIntent
