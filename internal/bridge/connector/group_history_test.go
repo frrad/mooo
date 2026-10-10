@@ -36,6 +36,17 @@ func (h *historyTestSource) ReadHistoryPage(_ context.Context, chatID, after, th
 	h.pages = h.pages[1:]
 	return page, nil
 }
+
+// Internal.HandleRemoteEvent bypasses the SDK queue's getEventCtxWithLog.
+// Invoke the production event hook, as the normal queue does, before entering
+// the internal handler used by this synchronous framework harness.
+func historyFrameworkContext(ctx context.Context, remote bridgev2.RemoteEvent) context.Context {
+	if mutation, ok := remote.(bridgev2.RemoteEventWithContextMutation); ok {
+		return mutation.MutateContext(ctx)
+	}
+	return ctx
+}
+
 func newHistoryTest(t *testing.T) (*KakaoClient, *historyTestSource) {
 	t.Helper()
 	kc, backend, _ := newGroupCreationFramework(t)
@@ -60,7 +71,7 @@ func TestGroupHistoryProgressSurvivesDeliveryFailureAndExplicitResume(t *testing
 	kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		if remote.GetType() != bridgev2.RemoteEventMessage {
 			//nolint:staticcheck // Exercise framework membership reconciliation.
-			return p.Internal().HandleRemoteEvent(t.Context(), kc.login, remote.GetType(), remote)
+			return p.Internal().HandleRemoteEvent(historyFrameworkContext(t.Context(), remote), kc.login, remote.GetType(), remote)
 		}
 		message := remote.(bridgev2.RemoteMessage)
 		if message.GetID() == makeMessageID(5000, 103) && fail {
@@ -109,7 +120,7 @@ func TestGroupHistoryRejectsInconsistentPageBeforeDelivery(t *testing.T) {
 			return bridgev2.EventHandlingResult{Success: true}
 		}
 		//nolint:staticcheck // Exercise actual membership consumer.
-		return p.Internal().HandleRemoteEvent(t.Context(), kc.login, remote.GetType(), remote)
+		return p.Internal().HandleRemoteEvent(historyFrameworkContext(t.Context(), remote), kc.login, remote.GetType(), remote)
 	}
 	if _, err = kc.BackfillGroup(t.Context(), "!selected:test", 100, 103, 10, false); err == nil {
 		t.Fatal("inconsistent cursor accepted")
@@ -143,7 +154,7 @@ func TestGroupHistoryRealFrameworkDeduplicatesLiveOverlap(t *testing.T) {
 	}
 	kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		//nolint:staticcheck // Use the actual consumer and durable message mapping.
-		return p.Internal().HandleRemoteEvent(t.Context(), kc.login, remote.GetType(), remote)
+		return p.Internal().HandleRemoteEvent(historyFrameworkContext(t.Context(), remote), kc.login, remote.GetType(), remote)
 	}
 	first := events.TextMessage{ChatID: 5000, LogID: 101, AuthorID: 2000, Message: "overlap", SentAt: 1700000000}
 	last := events.TextMessage{ChatID: 5000, LogID: 103, AuthorID: 4000, Message: "history", SentAt: 1700000001}
@@ -176,7 +187,7 @@ func TestGroupHistoryFormerSenderDoesNotRemainInCurrentRoster(t *testing.T) {
 	}
 	kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		//nolint:staticcheck // Exercise ghost sender and membership effects.
-		return p.Internal().HandleRemoteEvent(t.Context(), kc.login, remote.GetType(), remote)
+		return p.Internal().HandleRemoteEvent(historyFrameworkContext(t.Context(), remote), kc.login, remote.GetType(), remote)
 	}
 	source.pages = []client.HistoryPage{{Events: []events.Event{events.TextMessage{ChatID: 5000, LogID: 103, AuthorID: 3000, Message: "former member", SentAt: 1700000000}}, Next: 103, Complete: true}}
 	if done, err := kc.BackfillGroup(t.Context(), "!selected:test", 100, 103, 10, false); err != nil || !done {
@@ -202,7 +213,7 @@ func TestGroupHistoryFailedFormerSenderRestoresRosterWithoutAdvancing(t *testing
 	}
 	kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		//nolint:staticcheck // Exercise real failed send and its membership side effect.
-		return p.Internal().HandleRemoteEvent(t.Context(), kc.login, remote.GetType(), remote)
+		return p.Internal().HandleRemoteEvent(historyFrameworkContext(t.Context(), remote), kc.login, remote.GetType(), remote)
 	}
 	matrix := kc.login.Bridge.Matrix.(*groupCreationMatrix)
 	matrix.failMessage = "failed former text"

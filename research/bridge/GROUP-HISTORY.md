@@ -108,6 +108,32 @@ response, then retries through a new transport: the server applies one event.
 Auxiliary key requests retain their original paths. This verifies transaction
 identity and transport behavior with a synthetic server; encrypted homeserver
 acceptance, multipart history and double puppet restart remain unverified.
+The SDK's concrete Matrix connector and intent types remain unchanged: built-in
+commands and migration helpers assert those types. A regression reproduces the
+earlier wrapper's incompatibility and protects the concrete types. Historical
+conversion marks a part before serialization; a crypto-interface decorator
+removes that private marker before delegating encryption, and the HTTP adapter
+uses its stable transaction. Plaintext sends strip the marker before dispatch.
+Synthetic regressions verify both boundaries and preserve unrelated fields.
+
+Historical conversion requires exactly one part. The SDK treats any mapped part
+as a duplicate source message; allowing multiple parts could silently omit an
+unsent part after partial success and resume. Such conversions are rejected
+before any Matrix message is sent, leaving progress available for explicit
+resume. External-homeserver double-puppet intents with a separate HTTP transport
+are also rejected before sending. Historical multipart and external double
+puppet support require additional recovery work; neither is claimed here.
+The initial encrypted owned-account results below exercised the earlier
+adapter. A second fresh owned A/B/C group separately exercised the revised
+crypto/HTTP boundary: two pre-discovery A texts remained unmapped after normal
+portal discovery, then one explicit encrypted bounded command imported both.
+The retained Matrix SDK decrypted both to their exact expected text, with the
+same A ghost, source order, two mappings and a completed durable journal.
+Normal restart and an explicit bounded replay preserved both mappings exactly
+and retained exactly two encrypted source-author events. Both bridge processes
+completed graceful shutdown without a panic.
+The official B and C clients also showed both exact texts once in the same
+three-member native group.
 The scoped owned-account acceptance is recorded below. General retention,
 pre-join visibility and the unverified send variants remain explicit gaps.
 
