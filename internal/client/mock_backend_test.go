@@ -22,6 +22,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/loco"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -38,11 +39,12 @@ func newScriptedBackend(t *testing.T, secure bool, steps ...backendStep) *script
 	clientWire := &wireConn{c: clientConn}
 	serverWire := &wireConn{c: serverConn}
 	if secure {
-		clientSecure, err := loco.NewSecureV3(nil, 0)
+		key := bytes.Repeat([]byte{0x5a}, loco.V3KeySize)
+		clientSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		serverSecure, err := loco.NewSecureV3WithKey(clientSecure.KeyForTesting(), nil, 0)
+		serverSecure, err := testloco.NewKeyedSecureV3(key, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
