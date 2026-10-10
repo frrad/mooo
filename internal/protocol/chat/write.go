@@ -121,43 +121,23 @@ type WriteResponse struct {
 func DecodeWriteResponse(body []byte) (WriteResponse, error) {
 	raw := bson.Raw(body)
 	response := WriteResponse{}
+	var ok bool
 	var err error
-	if response.ChatID, err = int64Field(raw, "chatId"); err != nil || response.ChatID <= 0 {
+	if response.ChatID, ok, err = fields.Int64(raw, "chatId"); err != nil || !ok || response.ChatID <= 0 {
 		return WriteResponse{}, ErrInvalidWriteResp
 	}
-	if response.LogID, err = int64Field(raw, "logId"); err != nil || response.LogID <= 0 {
+	if response.LogID, ok, err = fields.Int64(raw, "logId"); err != nil || !ok || response.LogID <= 0 {
 		return WriteResponse{}, ErrInvalidWriteResp
 	}
 	for key, target := range map[string]*int64{
 		"msgId": &response.MessageID, "prevId": &response.PrevID, "sendAt": &response.SendAt,
 	} {
-		if value, lookupErr := raw.LookupErr(key); lookupErr == nil {
-			parsed, parseErr := int64Value(value)
-			if parseErr != nil {
-				return WriteResponse{}, ErrInvalidWriteResp
-			}
-			*target = parsed
+		if *target, _, err = fields.Int64(raw, key); err != nil {
+			return WriteResponse{}, ErrInvalidWriteResp
 		}
 	}
-	if value, lookupErr := raw.LookupErr("chatLog"); lookupErr == nil {
-		if value.Type != bson.TypeEmbeddedDocument {
-			return WriteResponse{}, ErrInvalidWriteResp
-		}
-		response.ChatLog = append(bson.Raw(nil), value.Document()...)
-		if err := response.ChatLog.Validate(); err != nil {
-			return WriteResponse{}, ErrInvalidWriteResp
-		}
+	if response.ChatLog, _, err = fields.Document(raw, "chatLog"); err != nil {
+		return WriteResponse{}, ErrInvalidWriteResp
 	}
 	return response, nil
-}
-
-func int64Value(value bson.RawValue) (int64, error) {
-	switch value.Type {
-	case bson.TypeInt64:
-		return value.Int64(), nil
-	case bson.TypeInt32:
-		return int64(value.Int32()), nil
-	default:
-		return 0, ErrInvalidWriteResp
-	}
 }
