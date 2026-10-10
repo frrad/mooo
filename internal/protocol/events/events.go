@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/frrad/mooo/internal/protocol/bsonfield"
-	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/loco"
@@ -667,84 +666,75 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 	if err != nil {
 		return nil, ErrMalformedEvent
 	}
-	chatID, logID, messageType, chatLog := env.ChatID, env.LogID, env.Type, env.Log
-	if messageType == messagetype.Feed {
-		return decodeFeed(chatID, logID, chatLog)
+	if env.Type == messagetype.Feed {
+		return decodeFeed(env.ChatID, env.LogID, env.Log)
 	}
-	if deletedFlagged(messageType) {
-		return DeletedMessage{ChatID: chatID, LogID: logID, AuthorID: env.AuthorID, SentAt: env.SentAt, BaseType: messageType &^ messagetype.DeletedAllChatTypeFlag}, nil
+	if deletedFlagged(env.Type) {
+		return DeletedMessage{ChatID: env.ChatID, LogID: env.LogID, AuthorID: env.AuthorID, SentAt: env.SentAt, BaseType: env.Type &^ messagetype.DeletedAllChatTypeFlag}, nil
 	}
-	switch messageType {
-	case messagetype.Post:
-		return decodePost(chatID, logID, chatLog)
-	case messagetype.Vote:
-		return decodeVote(chatID, logID, chatLog)
-	case messagetype.Location:
-		return decodeLocation(chatID, logID, chatLog)
-	case messagetype.Profile:
-		return decodeProfile(chatID, logID, chatLog)
-	case messagetype.Text:
-		// Accept the write-side field name msg for compatible synthetic backends.
-		message, ok, err := fields.String(chatLog, "message", "msg")
-		if err != nil || !ok || !utf8.ValidString(message) {
-			return nil, ErrMalformedEvent
-		}
-		return decodeMiniText(TextMessage{
-			ChatID: chatID, LogID: logID, Message: message,
-			AuthorID: env.AuthorID, SentAt: env.SentAt,
-			Revision: bsonfield.Int64OrZero(chatLog, "revision"),
-		}, chatLog)
-	case media.PhotoType:
-		photo, err := media.DecodePhotoMessage(env)
-		if err != nil {
-			return nil, ErrMalformedEvent
-		}
-		return PhotoMessage{Message: photo}, nil
-	case messagetype.Contact:
-		contact, err := media.DecodeContactMessage(env)
-		if err != nil {
-			return nil, ErrMalformedEvent
-		}
-		return ContactMessage{Message: contact}, nil
-	case messagetype.File:
-		file, err := media.DecodeFileMessage(env)
-		if err != nil {
-			return nil, ErrMalformedEvent
-		}
-		return FileMessage{Message: file}, nil
-	case messagetype.Audio:
-		audio, err := media.DecodeAudioMessage(env)
-		if err != nil {
-			return nil, ErrMalformedEvent
-		}
-		return AudioMessage{Message: audio}, nil
-	case messagetype.Video:
-		video, err := media.DecodeVideoMessage(env)
-		if err != nil {
-			return nil, ErrMalformedEvent
-		}
-		return VideoMessage{Message: video}, nil
-	case messagetype.MultiPhoto:
-		album, err := media.DecodeMultiPhotoMessage(env)
-		if err != nil {
-			return nil, ErrMalformedEvent
-		}
-		return MultiPhotoMessage{Message: album}, nil
-	case messagetype.Sticker, messagetype.AnimatedSticker:
-		value, err := requiredString(chatLog, "attachment")
-		if err != nil {
-			return nil, ErrMalformedEvent
-		}
-		attachment, err := media.DecodeStickerAttachment(value)
-		if err != nil {
-			return nil, ErrMalformedEvent
-		}
-		return StickerMessage{ChatID: chatID, LogID: logID, AuthorID: env.AuthorID, SentAt: env.SentAt, Type: messageType, Attachment: attachment}, nil
-	case chat.ReplyType:
-		return decodeReply(chatID, logID, chatLog)
-	default:
-		return UnsupportedMessage{ChatID: chatID, LogID: logID, Type: messageType}, nil
+	if decode, ok := messageDecoders[env.Type]; ok {
+		return decode(env)
 	}
+	return UnsupportedMessage{ChatID: env.ChatID, LogID: env.LogID, Type: env.Type}, nil
+}
+
+// messageDecoders maps each supported chatLog.type to its content decoder.
+var messageDecoders = map[int32]func(chatlog.Envelope) (Event, error){
+	messagetype.Text:            decodeText,
+	messagetype.Reply:           logDecoder(decodeReply),
+	messagetype.Post:            logDecoder(decodePost),
+	messagetype.Vote:            logDecoder(decodeVote),
+	messagetype.Location:        logDecoder(decodeLocation),
+	messagetype.Profile:         logDecoder(decodeProfile),
+	messagetype.Sticker:         decodeSticker,
+	messagetype.AnimatedSticker: decodeSticker,
+	messagetype.Photo:           mediaDecoder(media.DecodePhotoMessage, func(m media.PhotoMessage) Event { return PhotoMessage{Message: m} }),
+	messagetype.Contact:         mediaDecoder(media.DecodeContactMessage, func(m media.ContactMessage) Event { return ContactMessage{Message: m} }),
+	messagetype.File:            mediaDecoder(media.DecodeFileMessage, func(m media.FileMessage) Event { return FileMessage{Message: m} }),
+	messagetype.Audio:           mediaDecoder(media.DecodeAudioMessage, func(m media.AudioMessage) Event { return AudioMessage{Message: m} }),
+	messagetype.Video:           mediaDecoder(media.DecodeVideoMessage, func(m media.VideoMessage) Event { return VideoMessage{Message: m} }),
+	messagetype.MultiPhoto:      mediaDecoder(media.DecodeMultiPhotoMessage, func(m media.MultiPhotoMessage) Event { return MultiPhotoMessage{Message: m} }),
+}
+
+// logDecoder adapts a decoder that reads its content from the chatLog document.
+func logDecoder(decode func(chatID, logID int64, log bson.Raw) (Event, error)) func(chatlog.Envelope) (Event, error) {
+	return func(env chatlog.Envelope) (Event, error) { return decode(env.ChatID, env.LogID, env.Log) }
+}
+
+// mediaDecoder adapts a media package decoder. Every media error is malformed.
+func mediaDecoder[M any](decode func(chatlog.Envelope) (M, error), wrap func(M) Event) func(chatlog.Envelope) (Event, error) {
+	return func(env chatlog.Envelope) (Event, error) {
+		message, err := decode(env)
+		if err != nil {
+			return nil, ErrMalformedEvent
+		}
+		return wrap(message), nil
+	}
+}
+
+func decodeText(env chatlog.Envelope) (Event, error) {
+	// Accept the write-side field name msg for compatible synthetic backends.
+	message, ok, err := fields.String(env.Log, "message", "msg")
+	if err != nil || !ok || !utf8.ValidString(message) {
+		return nil, ErrMalformedEvent
+	}
+	return decodeMiniText(TextMessage{
+		ChatID: env.ChatID, LogID: env.LogID, Message: message,
+		AuthorID: env.AuthorID, SentAt: env.SentAt,
+		Revision: bsonfield.Int64OrZero(env.Log, "revision"),
+	}, env.Log)
+}
+
+func decodeSticker(env chatlog.Envelope) (Event, error) {
+	value, err := requiredString(env.Log, "attachment")
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	attachment, err := media.DecodeStickerAttachment(value)
+	if err != nil {
+		return nil, ErrMalformedEvent
+	}
+	return StickerMessage{ChatID: env.ChatID, LogID: env.LogID, AuthorID: env.AuthorID, SentAt: env.SentAt, Type: env.Type, Attachment: attachment}, nil
 }
 
 func decodeReply(chatID, logID int64, chatLog bson.Raw) (Event, error) {
