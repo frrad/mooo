@@ -9,10 +9,12 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/frrad/mooo/internal/protocol/macweb"
 )
 
-func testProfile() ClientProfile {
-	return ClientProfile{
+func testProfile() macweb.Profile {
+	return macweb.Profile{
 		AppVersion: "26.8.0", OSVersion: "26.6.2", Language: "en",
 		AccessToken: "synthetic-token", DeviceUUID: "synthetic-device",
 	}
