@@ -9,6 +9,7 @@ import (
 
 	"github.com/frrad/mooo/internal/continuity"
 	"github.com/frrad/mooo/internal/protocol/booking"
+	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -46,7 +47,7 @@ func TestConnectSessionGetConfDialFailureNamesStageWithoutExposingCause(t *testi
 }
 
 func TestConnectSessionCheckinFailureReportsLastAttempt(t *testing.T) {
-	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
+	bookingBackend := newScriptedBackend(t, false, testloco.Expect("GETCONF", nil, statusDocument(
 		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
 		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
 	)))
@@ -54,7 +55,7 @@ func TestConnectSessionCheckinFailureReportsLastAttempt(t *testing.T) {
 	dialers := sessionDialers{
 		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			if host == booking.Host {
-				return bookingBackend.client, nil
+				return clientWire(bookingBackend), nil
 			}
 			return nil, refused
 		},
