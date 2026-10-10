@@ -1223,6 +1223,15 @@ func (kc *KakaoClient) chatInfoFromClient(ctx context.Context, portal *bridgev2.
 		IsFull:    completeRoster,
 		MemberMap: members,
 	}}
+	// Notifications on/off is the account's personal setting for this chat.
+	// It maps only to the Matrix user's own mute, never to shared state.
+	if data.PushAlertSet {
+		mutedUntil := bridgev2.Unmuted
+		if !data.PushAlert {
+			mutedUntil = event.MutedForever
+		}
+		info.UserLocal = &bridgev2.UserLocalPortalInfo{MutedUntil: &mutedUntil}
+	}
 	if completeRoster {
 		info.Members.TotalMemberCount = len(members)
 	} else if data.ActiveMemberCount > 0 {

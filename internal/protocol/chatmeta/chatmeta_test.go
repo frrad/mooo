@@ -95,7 +95,7 @@ func TestDecodeChatInfoResponseReadsShortKeys(t *testing.T) {
 		LastServerLogID:   120,
 		DisplayUserIDs:    []int64{7, 8},
 		DisplayNicknames:  []string{"Seven", "Eight"},
-		PushAlert:         true,
+		PushAlert:         true, PushAlertSet: true,
 		Meta: &RoomMeta{
 			Name:         "Synthetic Room",
 			ImageURL:     "https://example.invalid/room.jpg",
@@ -516,5 +516,30 @@ func TestDecodeMemberListResponse(t *testing.T) {
 	}
 	if _, err := DecodeMemberListResponse(mustMarshal(t, bson.D{{Key: "memberIds", Value: bson.A{"7"}}})); !errors.Is(err, ErrInvalidResponse) {
 		t.Fatalf("wrong element error = %v, want ErrInvalidResponse", err)
+	}
+}
+
+// pushAlert is personal and optional; the decoder records whether it was sent
+// so an absent value is not read as "notifications off".
+func TestChatDataRecordsWhetherPushAlertWasSent(t *testing.T) {
+	for _, tc := range []struct {
+		doc       bson.D
+		set, push bool
+	}{
+		{bson.D{{Key: "c", Value: int64(42)}, {Key: "t", Value: "MultiChat"}, {Key: "p", Value: false}}, true, false},
+		{bson.D{{Key: "c", Value: int64(42)}, {Key: "t", Value: "MultiChat"}, {Key: "p", Value: true}}, true, true},
+		{bson.D{{Key: "c", Value: int64(42)}, {Key: "t", Value: "MultiChat"}}, false, false},
+	} {
+		raw, err := bson.Marshal(tc.doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := DecodeChatData(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if data.PushAlertSet != tc.set || data.PushAlert != tc.push {
+			t.Fatalf("doc %v: set=%v push=%v", tc.doc, data.PushAlertSet, data.PushAlert)
+		}
 	}
 }
