@@ -3,14 +3,12 @@
 package continuity
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
-	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"sync"
+
+	"github.com/frrad/mooo/internal/privatejson"
 )
 
 const Version uint32 = 6
@@ -136,19 +134,26 @@ func Open(path string) (*Store, error) {
 		return nil, ErrInvalidPath
 	}
 	path = filepath.Clean(path)
-	if err := validatePrivateDir(filepath.Dir(path)); err != nil {
+	if err := translate(privatejson.ValidatePrivateDir(filepath.Dir(path))); err != nil {
 		return nil, err
 	}
-	data, migrated, err := read(path)
-	if errors.Is(err, os.ErrNotExist) {
+	data, found, err := privatejson.Read[Checkpoint](path)
+	if err != nil {
+		return nil, translate(err)
+	}
+	if !found {
 		data = Checkpoint{Version: Version, CleanShutdown: true, Chats: []ChatCursor{}, KnownChats: []ChatTarget{}, HistoryGaps: []HistoryGap{}, ReadWatermarks: []ReadWatermark{}}
-		if err := writeInitial(path, data); err != nil {
+		if err := translate(privatejson.WriteInitial(path, data)); err != nil {
 			return nil, err
 		}
-	} else if err != nil {
+		return &Store{path: path, data: data}, nil
+	}
+	data, migrated, err := migrate(data)
+	if err != nil {
 		return nil, err
-	} else if migrated {
-		if err := writeAtomic(path, data); err != nil {
+	}
+	if migrated {
+		if err := translate(privatejson.WriteAtomic(path, data)); err != nil {
 			return nil, err
 		}
 	}
@@ -400,7 +405,7 @@ func (s *Store) update(change func(*Checkpoint) error) error {
 	if err := validate(next); err != nil {
 		return err
 	}
-	if err := writeAtomic(s.path, next); err != nil {
+	if err := translate(privatejson.WriteAtomic(s.path, next)); err != nil {
 		return err
 	}
 	s.data = next
@@ -504,29 +509,8 @@ func removeReadWatermark(watermarks *[]ReadWatermark, chatID int64) {
 	}
 }
 
-func read(path string) (Checkpoint, bool, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return Checkpoint{}, false, err
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
-		return Checkpoint{}, false, ErrUnsafePermissions
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return Checkpoint{}, false, ErrCorrupt
-	}
-	defer func() { _ = f.Close() }()
-	var data Checkpoint
-	decoder := json.NewDecoder(io.LimitReader(f, 2<<20))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&data); err != nil {
-		return Checkpoint{}, false, ErrCorrupt
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return Checkpoint{}, false, ErrCorrupt
-	}
+// migrate upgrades a decoded older checkpoint to Version and validates it.
+func migrate(data Checkpoint) (Checkpoint, bool, error) {
 	migrated := false
 	if data.Version != Version && len(data.DeliveryStarts) != 0 {
 		return Checkpoint{}, false, ErrCorrupt
@@ -560,80 +544,15 @@ func read(path string) (Checkpoint, bool, error) {
 	return data, migrated, nil
 }
 
-func validatePrivateDir(path string) error {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return ErrCorrupt
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() || info.Mode().Perm() != 0o700 {
-		return ErrUnsafePermissions
-	}
-	return nil
-}
-
-func writeInitial(path string, data Checkpoint) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return ErrCorrupt
-	}
-	ok := false
-	defer func() {
-		_ = f.Close()
-		if !ok {
-			_ = os.Remove(path)
-		}
-	}()
-	if err := json.NewEncoder(f).Encode(data); err != nil || f.Sync() != nil || f.Close() != nil {
-		return ErrCorrupt
-	}
-	ok = true
-	return syncDirectory(filepath.Dir(path))
-}
-
-func writeAtomic(path string, data Checkpoint) error {
-	dir := filepath.Dir(path)
-	if err := validatePrivateDir(dir); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, ".continuity-*")
-	if err != nil {
-		return ErrCorrupt
-	}
-	name := tmp.Name()
-	ok := false
-	defer func() {
-		_ = tmp.Close()
-		if !ok {
-			_ = os.Remove(name)
-		}
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		return ErrUnsafePermissions
-	}
-	if err := json.NewEncoder(tmp).Encode(data); err != nil || tmp.Sync() != nil || tmp.Close() != nil {
-		return ErrCorrupt
-	}
-	if err := os.Rename(name, path); err != nil {
-		return ErrCorrupt
-	}
-	ok = true
-	if err := os.Chmod(path, 0o600); err != nil {
-		return ErrUnsafePermissions
-	}
-	return syncDirectory(dir)
-}
-
-func syncDirectory(dir string) error {
-	if runtime.GOOS == "windows" {
+// translate maps privatejson sentinels onto this package's errors. A missing
+// directory or a lost O_EXCL race is reported as corruption.
+func translate(err error) error {
+	switch {
+	case err == nil:
 		return nil
-	}
-	f, err := os.Open(dir)
-	if err != nil {
+	case errors.Is(err, privatejson.ErrUnsafePermissions):
+		return ErrUnsafePermissions
+	default:
 		return ErrCorrupt
 	}
-	defer func() { _ = f.Close() }()
-	if err := f.Sync(); err != nil {
-		return ErrCorrupt
-	}
-	return nil
 }
