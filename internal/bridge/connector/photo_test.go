@@ -97,6 +97,84 @@ func TestConvertPhotoDownloadsAndUploadsExactBytes(t *testing.T) {
 	}
 }
 
+// encryptedPhotoMatrixAPI returns what bridgev2's ASIntent.UploadMedia returns
+// for an encrypted room: an empty plain URL and an EncryptedFileInfo carrying
+// the mxc URI (mautrix doUploadReq moves the URI into file.URL).
+type encryptedPhotoMatrixAPI struct {
+	bridgev2.MatrixAPI
+	plainURL id.ContentURIString
+}
+
+func (f *encryptedPhotoMatrixAPI) UploadMedia(_ context.Context, _ id.RoomID, _ []byte, _, _ string) (id.ContentURIString, *event.EncryptedFileInfo, error) {
+	return f.plainURL, &event.EncryptedFileInfo{URL: "mxc://synthetic/encrypted-photo"}, nil
+}
+
+func encryptedRoomPhotoFixture(t *testing.T) events.PhotoMessage {
+	t.Helper()
+	data := connectorPNG(t)
+	sum := sha1.Sum(data)
+	oldClient := photoHTTPClient
+	photoHTTPClient = &http.Client{Transport: photoRoundTripper(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(data)), Request: req}, nil
+	})}
+	t.Cleanup(func() { photoHTTPClient = oldClient })
+	return events.PhotoMessage{Message: media.PhotoMessage{
+		ChatID: testChatID, LogID: 81, AuthorID: testOtherID,
+		Attachment: media.PhotoAttachment{Width: 2, Height: 2, Size: int64(len(data)), Checksum: hex.EncodeToString(sum[:]), MediaType: "image/png", URL: "https://talk.kakaocdn.net/photo"},
+	}}
+}
+
+func assertEncryptedPhotoContent(t *testing.T, content *event.MessageEventContent) {
+	t.Helper()
+	if content.MsgType != event.MsgImage {
+		t.Fatalf("msgtype = %q, want m.image", content.MsgType)
+	}
+	if content.File == nil || content.File.URL != "mxc://synthetic/encrypted-photo" {
+		t.Fatalf("file = %+v, want encrypted file info", content.File)
+	}
+	if content.URL != "" {
+		t.Fatalf("url = %q, want empty in encrypted room", content.URL)
+	}
+	raw, err := json.Marshal(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fields["url"]; ok {
+		t.Fatalf("encrypted photo content serialized a url field: %s", raw)
+	}
+	if _, ok := fields["file"]; !ok {
+		t.Fatalf("encrypted photo content lacks a file field: %s", raw)
+	}
+}
+
+// In an encrypted room the m.image content carries only `file`: the Matrix
+// spec requires `url` for unencrypted media and `file` for encrypted media.
+func TestConvertPhotoEncryptedRoomSendsFileWithoutURL(t *testing.T) {
+	msg := encryptedRoomPhotoFixture(t)
+	portal := &bridgev2.Portal{Portal: &bridgev2database.Portal{MXID: "!encrypted:test"}}
+	converted, err := convertPhoto(context.Background(), portal, &encryptedPhotoMatrixAPI{plainURL: ""}, msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEncryptedPhotoContent(t, converted.Parts[0].Content)
+}
+
+// A MatrixAPI that returns both a plain URL and encrypted file info violates
+// the bridgev2 contract; photos drop the plain URL like every other attachment.
+func TestConvertPhotoEncryptedRoomDropsPlainURLFromIntent(t *testing.T) {
+	msg := encryptedRoomPhotoFixture(t)
+	portal := &bridgev2.Portal{Portal: &bridgev2database.Portal{MXID: "!encrypted:test"}}
+	converted, err := convertPhoto(context.Background(), portal, &encryptedPhotoMatrixAPI{plainURL: "mxc://synthetic/plain-photo"}, msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEncryptedPhotoContent(t, converted.Parts[0].Content)
+}
+
 func TestConvertPhotoDeterministicFailureBecomesPersistableNotice(t *testing.T) {
 	msg := events.PhotoMessage{Message: media.PhotoMessage{
 		ChatID: testChatID, LogID: 77, AuthorID: testOtherID,
