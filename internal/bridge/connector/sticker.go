@@ -16,6 +16,16 @@ var stickerHTTPClient = http.DefaultClient
 var errStickerTransfer = transientTransferError("connector: Kakao sticker transfer failed")
 
 func convertSticker(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.StickerMessage) (*bridgev2.ConvertedMessage, error) {
+	part, err := stickerPart(ctx, portal, intent, msg)
+	if err != nil {
+		return nil, err
+	}
+	return &bridgev2.ConvertedMessage{Parts: []*bridgev2.ConvertedMessagePart{part}}, nil
+}
+
+// stickerPart downloads one sticker resource and returns its Matrix part, or a
+// notice part for a deterministic resource failure.
+func stickerPart(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.StickerMessage) (*bridgev2.ConvertedMessagePart, error) {
 	ctx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)
 	defer cancel()
 	resource, err := media.DownloadSticker(ctx, stickerHTTPClient, msg.Attachment)
@@ -33,7 +43,7 @@ func convertSticker(ctx context.Context, portal *bridgev2.Portal, intent bridgev
 		}
 		metadata := newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, msg.Type, "[sticker unavailable]", 0)
 		metadata.ConversionGap = category
-		return convertNoticeWithMetadata(ctx, portal, intent, noticeData{Body: fmt.Sprintf("A KakaoTalk sticker could not be displayed (%s).", category), Metadata: metadata})
+		return messageWithMetadata(event.MsgNotice, fmt.Sprintf("A KakaoTalk sticker could not be displayed (%s).", category), metadata).Parts[0], nil
 	}
 	uri, file, err := intent.UploadMedia(ctx, portal.MXID, resource.Data, "sticker"+resource.Extension, resource.MIME)
 	if err != nil {
@@ -43,5 +53,5 @@ func convertSticker(ctx context.Context, portal *bridgev2.Portal, intent bridgev
 	if file != nil {
 		content.URL = ""
 	}
-	return &bridgev2.ConvertedMessage{Parts: []*bridgev2.ConvertedMessagePart{{Type: event.EventSticker, Content: content, DBMetadata: newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, msg.Type, "[sticker]", 0)}}}, nil
+	return &bridgev2.ConvertedMessagePart{Type: event.EventSticker, Content: content, DBMetadata: newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, msg.Type, "[sticker]", 0)}, nil
 }

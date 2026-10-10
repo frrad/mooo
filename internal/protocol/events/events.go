@@ -212,13 +212,23 @@ type ReplySource struct {
 	Message string
 }
 
+// ReplyAttachment is content a reply carries besides its text. Type is the
+// attach_type message type (zero for a plain text reply); Sticker is set only
+// when that content decodes as a supported sticker.
+type ReplyAttachment struct {
+	Type    int32
+	Only    bool
+	Sticker *media.StickerAttachment
+}
+
 type ReplyMessage struct {
-	ChatID   int64
-	LogID    int64
-	AuthorID int64
-	SentAt   int64
-	Message  string
-	Source   ReplySource
+	ChatID     int64
+	LogID      int64
+	AuthorID   int64
+	SentAt     int64
+	Message    string
+	Source     ReplySource
+	Attachment ReplyAttachment
 }
 
 func (ReplyMessage) Kind() Kind { return KindReplyMessage }
@@ -805,10 +815,27 @@ func decodeReply(chatID, logID int64, chatLog bson.Raw) (Event, error) {
 	if err := decodeSingleJSON(attachment, &source); err != nil || source.LogID <= 0 || source.UserID <= 0 || source.LinkID < 0 || source.Type <= 0 || !validEventString(source.Message) {
 		return nil, ErrMalformedEvent
 	}
+	var attached struct {
+		Only    bool            `json:"attach_only"`
+		Type    int32           `json:"attach_type"`
+		Content json.RawMessage `json:"attach_content"`
+	}
+	if err := decodeSingleJSON(attachment, &attached); err != nil || attached.Type < 0 {
+		return nil, ErrMalformedEvent
+	}
+	replyAttachment := ReplyAttachment{Type: attached.Type, Only: attached.Only}
+	if attached.Type == int32(messagetype.Sticker) || attached.Type == int32(messagetype.AnimatedSticker) {
+		// A sticker that does not decode stays an unsupported attachment
+		// marker; the reply itself remains deliverable.
+		if sticker, err := media.DecodeStickerAttachment(string(attached.Content)); err == nil {
+			replyAttachment.Sticker = &sticker
+		}
+	}
 	return ReplyMessage{
 		ChatID: chatID, LogID: logID, AuthorID: optionalInt64(chatLog, "authorId"),
 		SentAt: optionalInt64(chatLog, "sendAt"), Message: message,
-		Source: ReplySource{LogID: source.LogID, UserID: source.UserID, LinkID: source.LinkID, Type: source.Type, Message: source.Message},
+		Source:     ReplySource{LogID: source.LogID, UserID: source.UserID, LinkID: source.LinkID, Type: source.Type, Message: source.Message},
+		Attachment: replyAttachment,
 	}, nil
 }
 

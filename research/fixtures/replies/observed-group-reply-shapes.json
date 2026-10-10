@@ -1,0 +1,30 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-10",
+    "method": "Owned A sent, in the owned encrypted A/B/C regular group, one text reply to a photo, one sticker-only reply to a reply and one sticker-only reply to a photo; a scoped read-only B MSG push probe recorded key sets, value kinds, src_type, src_message, attach_type, attach_only and the attach_content key set. Identifiers, paths and URLs are synthetic.",
+    "doc": "research/bridge/GROUP-IMAGE-REPLIES.md"
+  },
+  "cases": [
+    {
+      "name": "text reply to photo",
+      "message": "synthetic reply to a photo",
+      "attachment": {"src_logId": 3000000000000000101, "src_userId": 2000, "src_type": 2, "src_message": "Photo", "src_spoilers": []}
+    },
+    {
+      "name": "sticker-only reply to photo",
+      "message": "(Emoticons)",
+      "attachment": {"src_logId": 3000000000000000101, "src_userId": 2000, "src_type": 2, "src_message": "Photo", "src_spoilers": [],
+        "attach_only": true, "attach_type": 12, "emoticonItemPath": "synthetic/emot_001.png",
+        "attach_content": {"name": "(Emoticons)", "path": "synthetic/emot_001.png", "type": "image/png"}}
+    },
+    {
+      "name": "sticker-only reply to reply",
+      "message": "(Emoticons)",
+      "attachment": {"src_logId": 3000000000000000102, "src_userId": 2000, "src_type": 26, "src_message": "synthetic earlier reply", "src_spoilers": [],
+        "attach_only": true, "attach_type": 12, "emoticonItemPath": "synthetic/emot_002.png",
+        "attach_content": {"name": "(Emoticons)", "path": "synthetic/emot_002.png", "type": "image/png"}}
+    }
+  ]
+}

@@ -396,7 +396,10 @@ func convertText(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.M
 }
 
 func convertReply(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.ReplyMessage) (*bridgev2.ConvertedMessage, error) {
-	converted := messageWithMetadata(event.MsgText, msg.Message, newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, chat.ReplyType, msg.Message, 0))
+	converted, err := replyContent(ctx, portal, intent, msg)
+	if err != nil {
+		return nil, err
+	}
 	if msg.Source.LogID <= 0 {
 		return converted, nil
 	}
@@ -405,13 +408,47 @@ func convertReply(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 		// The framework drops a relation to an unbridged message. Keep the
 		// context Kakao embedded in the reply as a quote instead.
 		content := converted.Parts[0].Content
-		content.Body = quotedReplyBody(msg.Source.Message) + "\n\n" + msg.Message
-		content.Format = event.FormatHTML
-		content.FormattedBody = "<blockquote>" + htmlLines(msg.Source.Message) + "</blockquote>" + htmlLines(msg.Message)
+		body := content.Body
+		content.Body = quotedReplyBody(msg.Source.Message) + "\n\n" + body
+		if converted.Parts[0].Type != event.EventSticker {
+			content.Format = event.FormatHTML
+			content.FormattedBody = "<blockquote>" + htmlLines(msg.Source.Message) + "</blockquote>" + htmlLines(body)
+		}
 		return converted, nil
 	}
 	converted.ReplyTo = &target
 	return converted, nil
+}
+
+// replyContent converts what a reply carries: its text, a supported sticker,
+// or an explicit notice for an attachment the bridge cannot render.
+func replyContent(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.ReplyMessage) (*bridgev2.ConvertedMessage, error) {
+	metadata := newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, chat.ReplyType, msg.Message, 0)
+	switch {
+	case msg.Attachment.Type == 0:
+		return messageWithMetadata(event.MsgText, msg.Message, metadata), nil
+	case msg.Attachment.Sticker != nil && msg.Attachment.Only:
+		part, err := stickerPart(ctx, portal, intent, events.StickerMessage{ChatID: msg.ChatID, LogID: msg.LogID, AuthorID: msg.AuthorID, SentAt: msg.SentAt, Type: msg.Attachment.Type, Attachment: *msg.Attachment.Sticker})
+		if err != nil {
+			return nil, err
+		}
+		// Keep the reply's own type so a later Matrix reply quotes it correctly.
+		if partMetadata, ok := part.DBMetadata.(*KakaoMessageMetadata); ok {
+			partMetadata.Type = chat.ReplyType
+		}
+		return &bridgev2.ConvertedMessage{Parts: []*bridgev2.ConvertedMessagePart{part}}, nil
+	case msg.Attachment.Sticker != nil:
+		// Not observed: a sticker with its own text. Keep the text visible and
+		// mark the sticker explicitly rather than dropping either.
+		return messageWithMetadata(event.MsgText, msg.Message+"\n\n(KakaoTalk sticker)", metadata), nil
+	default:
+		notice := fmt.Sprintf("A KakaoTalk reply contained an attachment that cannot be displayed (type %d).", msg.Attachment.Type)
+		if msg.Attachment.Only || msg.Message == "" {
+			metadata.ConversionGap = "unsupported_reply_attachment"
+			return messageWithMetadata(event.MsgNotice, notice, metadata), nil
+		}
+		return messageWithMetadata(event.MsgText, msg.Message+"\n\n("+notice+")", metadata), nil
+	}
 }
 
 // replySourceMissing reports a reply source confirmed absent from this

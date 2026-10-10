@@ -1,8 +1,11 @@
 package connector
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -19,22 +22,37 @@ import (
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/events"
+	"github.com/frrad/mooo/internal/protocol/media"
 )
 
 // capturingIntent records the Matrix message content the framework sends.
 type capturingIntent struct {
 	*frameworkPersistenceIntent
-	mu   sync.Mutex
-	sent []*event.MessageEventContent
+	mu      sync.Mutex
+	sent    []*event.MessageEventContent
+	sticker []*event.MessageEventContent
 }
 
 func (c *capturingIntent) SendMessage(ctx context.Context, room id.RoomID, typ event.Type, content *event.Content, extra *bridgev2.MatrixSendExtra) (*mautrix.RespSendEvent, error) {
 	c.mu.Lock()
 	if parsed, ok := content.Parsed.(*event.MessageEventContent); ok {
 		c.sent = append(c.sent, parsed)
+		if typ == event.EventSticker {
+			c.sticker = append(c.sticker, parsed)
+		}
 	}
 	c.mu.Unlock()
 	return c.frameworkPersistenceIntent.SendMessage(ctx, room, typ, content, extra)
+}
+
+func (c *capturingIntent) UploadMedia(_ context.Context, _ id.RoomID, _ []byte, _, _ string) (id.ContentURIString, *event.EncryptedFileInfo, error) {
+	return "mxc://example/sticker", nil, nil
+}
+
+func (c *capturingIntent) stickers() []*event.MessageEventContent {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]*event.MessageEventContent(nil), c.sticker...)
 }
 
 func newReplyFramework(t *testing.T) (*KakaoClient, *capturingIntent) {
@@ -169,5 +187,91 @@ func TestGroupHistoryRepliesMapInsideIntervalAndQuoteOlderSources(t *testing.T) 
 		if matrix.messageBodies[i] != want[i] {
 			t.Fatalf("history body %d = %q, want %q", i, matrix.messageBodies[i], want[i])
 		}
+	}
+}
+
+// A sticker-only Kakao reply becomes a Matrix sticker that relates to the
+// reply source, instead of the literal "(Emoticons)" placeholder text.
+func TestInboundStickerReplyBecomesStickerReply(t *testing.T) {
+	kc, intent := newReplyFramework(t)
+	fake := &fakeKakao{}
+	data := connectorPNG(t)
+	old := stickerHTTPClient
+	stickerHTTPClient = &http.Client{Transport: photoRoundTripper(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(data)), Request: r}, nil
+	})}
+	t.Cleanup(func() { stickerHTTPClient = old })
+	source := events.TextMessage{ChatID: testChatID, LogID: 220, AuthorID: testOtherID, SentAt: 1700000220, Message: "sticker reply source"}
+	reply := events.ReplyMessage{ChatID: testChatID, LogID: 221, AuthorID: testOtherID, SentAt: 1700000221, Message: "(Emoticons)",
+		Source:     events.ReplySource{LogID: 220, UserID: testOtherID, Type: chat.TextType, Message: "sticker reply source"},
+		Attachment: events.ReplyAttachment{Type: 12, Only: true, Sticker: &media.StickerAttachment{Path: "synthetic/emot_001.png"}}}
+	if !kc.handleEvent(fake, source) || !kc.handleEvent(fake, reply) {
+		t.Fatal("source or sticker reply was not committed")
+	}
+	stickers := intent.stickers()
+	if len(stickers) != 1 {
+		t.Fatalf("Matrix stickers = %d, want 1", len(stickers))
+	}
+	got := stickers[0]
+	if got.RelatesTo == nil || got.RelatesTo.GetReplyTo() == "" || got.Info == nil || got.Info.MimeType != "image/png" || strings.Contains(got.Body, "(Emoticons)") {
+		t.Fatalf("sticker reply content = %+v", got)
+	}
+}
+
+// A reply attachment the bridge cannot render is an explicit notice that
+// still relates to the source.
+func TestInboundUnsupportedReplyAttachmentBecomesNotice(t *testing.T) {
+	kc, intent := newReplyFramework(t)
+	fake := &fakeKakao{}
+	source := events.TextMessage{ChatID: testChatID, LogID: 230, AuthorID: testOtherID, SentAt: 1700000230, Message: "attachment source"}
+	reply := events.ReplyMessage{ChatID: testChatID, LogID: 231, AuthorID: testOtherID, SentAt: 1700000231, Message: "",
+		Source:     events.ReplySource{LogID: 230, UserID: testOtherID, Type: chat.TextType, Message: "attachment source"},
+		Attachment: events.ReplyAttachment{Type: 71, Only: true}}
+	if !kc.handleEvent(fake, source) || !kc.handleEvent(fake, reply) {
+		t.Fatal("source or reply was not committed")
+	}
+	got := intent.sent[1]
+	if got.MsgType != event.MsgNotice || !strings.Contains(got.Body, "type 71") || got.RelatesTo == nil || got.RelatesTo.GetReplyTo() == "" {
+		t.Fatalf("unsupported attachment reply = %+v", got)
+	}
+}
+
+// Android sends src_message "Photo" when replying to a photo. A Matrix
+// reply to a bridged photo uses the same preview, also for rows stored
+// with the older "[image]" preview.
+func TestOutboundReplyToPhotoUsesPhotoPreview(t *testing.T) {
+	for _, stored := range []string{"[image]", "Photo"} {
+		fake := &fakeKakao{sendResp: chat.WriteResponse{LogID: 240}}
+		kc := connectedClient(t, fake)
+		msg := matrixMessage(event.MsgText, "reply to a photo")
+		msg.ReplyTo = &database.Message{
+			ID: makeMessageID(testChatID, 239), Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID),
+			Metadata: newKakaoMessageMetadata(testChatID, 239, testOtherID, media.PhotoType, stored, 0),
+		}
+		if _, err := kc.HandleMatrixMessage(context.Background(), msg); err != nil {
+			t.Fatal(err)
+		}
+		if len(fake.replies) != 1 || fake.replies[0].request.Target.Type != media.PhotoType || fake.replies[0].request.Target.Message != "Photo" {
+			t.Fatalf("stored %q: reply target = %+v", stored, fake.replies)
+		}
+	}
+}
+
+// KakaoTalk offers no photo attachment while replying, so a Matrix image
+// sent as a reply is refused before any source mutation with a clear status.
+func TestOutboundImageReplyRefusedWithClearStatus(t *testing.T) {
+	fake := &fakeKakao{}
+	kc := connectedClient(t, fake)
+	msg := matrixMessage(event.MsgImage, "image.png")
+	msg.Content.URL = "mxc://example/image"
+	msg.ReplyTo = &database.Message{ID: makeMessageID(testChatID, 239), Room: makePortalKey(testChatID, makeUserLoginID(testSelfID)), SenderID: makeUserID(testOtherID),
+		Metadata: newKakaoMessageMetadata(testChatID, 239, testOtherID, chat.TextType, "source", 0)}
+	_, err := kc.HandleMatrixMessage(context.Background(), msg)
+	var statusErr bridgev2.MessageStatus
+	if !errors.Is(err, errUnsupportedImageReply) || !errors.As(err, &statusErr) || !statusErr.IsCertain || statusErr.ErrorReason != event.MessageStatusUnsupported || statusErr.Message == "" || !statusErr.SendNotice {
+		t.Fatalf("image reply status = %+v (%v)", statusErr, err)
+	}
+	if fake.imageCalls != 0 || len(fake.replies) != 0 || len(fake.sends) != 0 {
+		t.Fatal("image reply reached KakaoTalk")
 	}
 }
