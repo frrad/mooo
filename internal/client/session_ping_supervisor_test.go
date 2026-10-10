@@ -78,7 +78,7 @@ func TestSessionRejectsRequestsDuringLocalClose(t *testing.T) {
 	conn := &closeAdmissionConn{}
 	session := &Session{
 		wire:               &wireConn{c: conn},
-		pending:            make(map[uint32]chan requestResult),
+		pending:            make(map[uint32]pendingRequest),
 		lifecycleScheduler: scheduler,
 	}
 	closeDone := make(chan error, 1)
@@ -113,12 +113,10 @@ func TestSessionCloseWaitsForSelectedCompletionBeforeCancelling(t *testing.T) {
 	scheduler := &blockingPingScheduler{entered: make(chan struct{}), release: make(chan struct{})}
 	waiter := make(chan requestResult, 1)
 	session := &Session{
-		wire:                &wireConn{c: clientConn},
-		pushes:              make(chan loco.Packet, 1),
-		pending:             map[uint32]chan requestResult{100000000: waiter},
-		pendingByUniqueID:   map[string]chan requestResult{"PING.100000000": waiter},
-		pendingUniqueIDByID: map[uint32]string{100000000: "PING.100000000"},
-		lifecycleScheduler:  scheduler,
+		wire:               &wireConn{c: clientConn},
+		pushes:             make(chan loco.Packet, 1),
+		pending:            map[uint32]pendingRequest{100000000: {method: "PING", result: waiter}},
+		lifecycleScheduler: scheduler,
 	}
 	go session.readLoop()
 	defer func() { _ = clientConn.Close(); _ = serverConn.Close() }()
@@ -186,12 +184,10 @@ func TestSessionPingTransportCompletionSchedulesBeforePendingDelivery(t *testing
 	scheduler := &recordingPingScheduler{}
 	waiter := make(chan requestResult, 1)
 	session := &Session{
-		wire:                &wireConn{c: clientConn},
-		pushes:              make(chan loco.Packet, 1),
-		pending:             map[uint32]chan requestResult{100000000: waiter},
-		pendingByUniqueID:   map[string]chan requestResult{"PING.100000000": waiter},
-		pendingUniqueIDByID: map[uint32]string{100000000: "PING.100000000"},
-		lifecycleScheduler:  scheduler,
+		wire:               &wireConn{c: clientConn},
+		pushes:             make(chan loco.Packet, 1),
+		pending:            map[uint32]pendingRequest{100000000: {method: "PING", result: waiter}},
+		lifecycleScheduler: scheduler,
 	}
 	go session.readLoop()
 	defer func() { _ = clientConn.Close(); _ = serverConn.Close() }()
@@ -226,7 +222,7 @@ func TestSessionPingContextCancellationDoesNotScheduleRearm(t *testing.T) {
 	session := &Session{
 		wire:               &wireConn{c: clientConn},
 		pushes:             make(chan loco.Packet, 1),
-		pending:            make(map[uint32]chan requestResult),
+		pending:            make(map[uint32]pendingRequest),
 		lifecycleScheduler: scheduler,
 	}
 	go session.readLoop()
@@ -275,12 +271,10 @@ func TestSessionNonPingTransportCompletionSchedulesRearm(t *testing.T) {
 	scheduler := &recordingPingScheduler{}
 	waiter := make(chan requestResult, 1)
 	session := &Session{
-		wire:                &wireConn{c: clientConn},
-		pushes:              make(chan loco.Packet, 1),
-		pending:             map[uint32]chan requestResult{100000000: waiter},
-		pendingByUniqueID:   map[string]chan requestResult{"NOTIREAD.100000000": waiter},
-		pendingUniqueIDByID: map[uint32]string{100000000: "NOTIREAD.100000000"},
-		lifecycleScheduler:  scheduler,
+		wire:               &wireConn{c: clientConn},
+		pushes:             make(chan loco.Packet, 1),
+		pending:            map[uint32]pendingRequest{100000000: {method: "NOTIREAD", result: waiter}},
+		lifecycleScheduler: scheduler,
 	}
 	go session.readLoop()
 	defer func() { _ = clientConn.Close(); _ = serverConn.Close() }()
@@ -317,7 +311,7 @@ func TestSessionOrdinaryWriteFailureDoesNotScheduleRearm(t *testing.T) {
 	session := &Session{
 		wire:               &wireConn{c: clientConn},
 		pushes:             make(chan loco.Packet, 1),
-		pending:            make(map[uint32]chan requestResult),
+		pending:            make(map[uint32]pendingRequest),
 		lifecycleScheduler: scheduler,
 	}
 	defer func() { _ = clientConn.Close() }()
@@ -334,7 +328,7 @@ func TestSessionTransportDisconnectSchedulesBeforeTerminalFanout(t *testing.T) {
 	waiter := make(chan requestResult, 1)
 	session := &Session{
 		pushes:             make(chan loco.Packet, 1),
-		pending:            map[uint32]chan requestResult{100000000: waiter},
+		pending:            map[uint32]pendingRequest{100000000: {method: "PING", result: waiter}},
 		lifecycleScheduler: scheduler,
 	}
 	wantErr := errors.New("synthetic carriage disconnect")
@@ -363,7 +357,7 @@ func TestSessionCloseCancelsWithoutTerminalRearm(t *testing.T) {
 	session := &Session{
 		wire:               &wireConn{c: clientConn},
 		pushes:             make(chan loco.Packet, 1),
-		pending:            map[uint32]chan requestResult{100000000: waiter},
+		pending:            map[uint32]pendingRequest{100000000: {method: "PING", result: waiter}},
 		lifecycleScheduler: scheduler,
 	}
 	go session.readLoop()
