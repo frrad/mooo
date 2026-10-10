@@ -349,8 +349,28 @@ func (s *Session) Pushes() <-chan loco.Packet {
 	return s.pushes
 }
 
+// call marshals req, sends it once with Request and decodes the successful
+// reply body. A nil Session or Context is rejected by Request.
+func call[Req interface{ MarshalBSON() ([]byte, error) }, Resp any](s *Session, ctx context.Context, command string, req Req, decode func([]byte) (Resp, error)) (Resp, error) {
+	var zero Resp
+	body, err := req.MarshalBSON()
+	if err != nil {
+		return zero, err
+	}
+	reply, err := s.Request(ctx, command, body)
+	if err != nil {
+		return zero, err
+	}
+	return decode(reply.Body)
+}
+
+// ignoreReply is a call decoder for commands whose reply carries nothing
+// beyond its status.
+func ignoreReply([]byte) (struct{}, error) { return struct{}{}, nil }
+
 // Request sends exactly once. A timeout or disconnect is ambiguous and is
-// returned without retrying the command.
+// returned without retrying the command. It rejects a nil Session or Context,
+// so callers need no guard of their own unless they dereference s first.
 func (s *Session) Request(ctx context.Context, command string, body []byte) (loco.Packet, error) {
 	reply, err := s.requestRaw(ctx, 0, command, body)
 	if err != nil {
