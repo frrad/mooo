@@ -1,8 +1,13 @@
 package events
 
 import (
-	"github.com/frrad/mooo/internal/protocol/loco"
+	"math"
+
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
+	"github.com/frrad/mooo/internal/protocol/chatlog"
+	"github.com/frrad/mooo/internal/protocol/loco"
 )
 
 // MessageGap retains a validated message identity whose content cannot be
@@ -35,14 +40,14 @@ func DecodeForDelivery(packet loco.Packet) (Event, error) {
 	}
 	// A malformed inner ID must not be replaced by an outer fallback.
 	if _, lookupErr := log.LookupErr("logId"); lookupErr == nil {
-		inner, e := requiredInt64(log, "logId")
+		inner, _, e := fields.Int64(log, "logId")
 		if e != nil || inner != logID {
 			return nil, ErrUnidentifiableMessage
 		}
 	}
 	// If both locations carry an ID, disagreement is not a recoverable identity.
 	if _, lookupErr := raw.LookupErr("logId"); lookupErr == nil {
-		outer, e := requiredInt64(raw, "logId")
+		outer, _, e := fields.Int64(raw, "logId")
 		if e != nil || outer != logID {
 			return nil, ErrUnidentifiableMessage
 		}
@@ -66,32 +71,17 @@ func DecodeForDelivery(packet loco.Packet) (Event, error) {
 // content metadata: if it is missing, invalid, or ambiguous, delivery keeps a
 // Type=0 gap rather than stopping an otherwise identifiable chat.
 func messageDeliveryEnvelope(raw bson.Raw) (int64, int64, int32, bson.Raw, error) {
-	if err := raw.Validate(); err != nil {
+	envelope, err := chatlog.DecodeIdentity(raw)
+	if err != nil {
 		return 0, 0, 0, nil, err
 	}
-	chatID, err := requiredInt64(raw, "chatId")
-	if err != nil || chatID <= 0 {
-		return 0, 0, 0, nil, ErrMalformedEvent
-	}
-	value, err := raw.LookupErr("chatLog")
-	if err != nil || value.Type != bson.TypeEmbeddedDocument {
-		return 0, 0, 0, nil, ErrMalformedEvent
-	}
-	log := value.Document()
-	logID, innerErr := requiredInt64(log, "logId")
-	if innerErr != nil {
-		logID, innerErr = requiredInt64(raw, "logId")
-	}
-	if innerErr != nil || logID <= 0 {
-		return 0, 0, 0, nil, ErrMalformedEvent
-	}
 	typ := int32(0)
-	if !duplicateKey(log, "type") {
-		if value, typeErr := requiredInt64(log, "type"); typeErr == nil && value > 0 && value <= int64(^uint32(0)>>1) {
+	if !duplicateKey(envelope.Log, "type") {
+		if value, ok, typeErr := fields.Int64(envelope.Log, "type"); typeErr == nil && ok && value > 0 && value <= math.MaxInt32 {
 			typ = int32(value)
 		}
 	}
-	return chatID, logID, typ, log, nil
+	return envelope.ChatID, envelope.LogID, typ, envelope.Log, nil
 }
 
 func duplicateKey(raw bson.Raw, key string) bool {
@@ -135,5 +125,5 @@ func uniqueOptionalInt64(raw bson.Raw, key string) int64 {
 	if duplicateKey(raw, key) {
 		return 0
 	}
-	return optionalInt64(raw, key)
+	return bsonfield.Int64OrZero(raw, key)
 }

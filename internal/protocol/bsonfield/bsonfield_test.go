@@ -201,6 +201,21 @@ func TestFirstPresentKeyWins(t *testing.T) {
 	}
 }
 
+func TestInt64OrZeroIgnoresAbsenceAndWrongTypes(t *testing.T) {
+	raw := marshal(t, bson.D{
+		{Key: "int32", Value: int32(5)},
+		{Key: "int64", Value: int64(6)},
+		{Key: "string", Value: "7"},
+		{Key: "double", Value: 8.0},
+		{Key: "null", Value: nil},
+	})
+	for key, want := range map[string]int64{"int32": 5, "int64": 6, "string": 0, "double": 0, "null": 0, "missing": 0} {
+		if got := Int64OrZero(raw, key); got != want {
+			t.Fatalf("Int64OrZero(%s) = %d; want %d", key, got, want)
+		}
+	}
+}
+
 func TestZeroReaderWrapsErrType(t *testing.T) {
 	_, _, err := Reader{}.Int64(marshal(t, bson.D{{Key: "n", Value: "x"}}), "n")
 	if !errors.Is(err, ErrType) {

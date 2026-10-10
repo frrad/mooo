@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
@@ -54,6 +55,9 @@ const (
 )
 
 var ErrMalformedEvent = errors.New("events: malformed event")
+
+// fields reads event fields. A present null is a type error.
+var fields = bsonfield.Reader{Err: ErrMalformedEvent}
 
 // ErrUnidentifiableMembership requires delivery to stop: a rejected notice may
 // have revoked access, so later content cannot use the previous roster.
@@ -551,12 +555,12 @@ func decodeMemberRemoved(body []byte) (Event, error) {
 		return nil, ErrMalformedEvent
 	}
 	chatLog := chatLogValue.Document()
-	chatID, err := exactInt64(chatLog, "chatId")
-	if err != nil || chatID <= 0 {
+	chatID, ok, err := fields.Int64Exact(chatLog, "chatId")
+	if err != nil || !ok || chatID <= 0 {
 		return nil, ErrMalformedEvent
 	}
-	logID, err := exactInt64(chatLog, "logId")
-	if err != nil || logID <= 0 {
+	logID, ok, err := fields.Int64Exact(chatLog, "logId")
+	if err != nil || !ok || logID <= 0 {
 		return nil, ErrMalformedEvent
 	}
 	members, err := membershipMessageMembers(chatLog, false)
@@ -577,12 +581,12 @@ func decodeMemberAdded(body []byte) (Event, error) {
 		return nil, ErrMalformedEvent
 	}
 	chatLog := chatLogValue.Document()
-	chatID, err := exactInt64(chatLog, "chatId")
-	if err != nil || chatID <= 0 {
+	chatID, ok, err := fields.Int64Exact(chatLog, "chatId")
+	if err != nil || !ok || chatID <= 0 {
 		return nil, ErrMalformedEvent
 	}
-	logID, err := exactInt64(chatLog, "logId")
-	if err != nil || logID <= 0 {
+	logID, ok, err := fields.Int64Exact(chatLog, "logId")
+	if err != nil || !ok || logID <= 0 {
 		return nil, ErrMalformedEvent
 	}
 	members, err := membershipMessageMembers(chatLog, true)
@@ -597,16 +601,16 @@ func decodeChatStatusChanged(body []byte) (Event, error) {
 	if err := raw.Validate(); err != nil {
 		return nil, ErrMalformedEvent
 	}
-	chatID, err := exactInt64(raw, "chatId")
-	if err != nil {
+	chatID, ok, err := fields.Int64Exact(raw, "chatId")
+	if err != nil || !ok {
 		return nil, ErrMalformedEvent
 	}
-	plusUserID, err := exactInt64(raw, "plusUserId")
-	if err != nil {
+	plusUserID, ok, err := fields.Int64Exact(raw, "plusUserId")
+	if err != nil || !ok {
 		return nil, ErrMalformedEvent
 	}
-	revision, err := exactInt64(raw, "revision")
-	if err != nil {
+	revision, ok, err := fields.Int64Exact(raw, "revision")
+	if err != nil || !ok {
 		return nil, ErrMalformedEvent
 	}
 	statusValue, err := raw.LookupErr("chatStatus")
@@ -622,8 +626,8 @@ func decodeChatMetaChanged(body []byte) (Event, error) {
 	if err := raw.Validate(); err != nil {
 		return nil, ErrMalformedEvent
 	}
-	chatID, err := exactInt64(raw, "chatId")
-	if err != nil {
+	chatID, ok, err := fields.Int64Exact(raw, "chatId")
+	if err != nil || !ok {
 		return nil, ErrMalformedEvent
 	}
 	metaValue, err := raw.LookupErr("meta")
@@ -636,16 +640,16 @@ func decodeChatMetaChanged(body []byte) (Event, error) {
 		return nil, ErrMalformedEvent
 	}
 	result := ChatMetaChanged{ChatID: chatID, Type: typeValue.Int32()}
-	if result.Revision, err = optionalExactInt64(meta, "revision"); err != nil {
+	if result.Revision, _, err = fields.Int64Exact(meta, "revision"); err != nil {
 		return nil, ErrMalformedEvent
 	}
-	if result.AuthorID, err = optionalExactInt64(meta, "authorId"); err != nil {
+	if result.AuthorID, _, err = fields.Int64Exact(meta, "authorId"); err != nil {
 		return nil, ErrMalformedEvent
 	}
-	if result.UpdatedAt, err = optionalExactInt64(meta, "updatedAt"); err != nil {
+	if result.UpdatedAt, _, err = fields.Int64Exact(meta, "updatedAt"); err != nil {
 		return nil, ErrMalformedEvent
 	}
-	if content, present, err := optionalString(meta, "content"); err != nil {
+	if content, present, err := fields.String(meta, "content"); err != nil {
 		return nil, ErrMalformedEvent
 	} else if present {
 		result.Content = content
@@ -658,8 +662,8 @@ func decodeChatMCMetaChanged(body []byte) (Event, error) {
 	if err := raw.Validate(); err != nil {
 		return nil, ErrMalformedEvent
 	}
-	chatID, err := exactInt64(raw, "chatId")
-	if err != nil {
+	chatID, ok, err := fields.Int64Exact(raw, "chatId")
+	if err != nil || !ok {
 		return nil, ErrMalformedEvent
 	}
 	revisionValue, err := raw.LookupErr("revision")
@@ -674,11 +678,11 @@ func decodeChatMCMetaChanged(body []byte) (Event, error) {
 	if err != nil {
 		return nil, ErrMalformedEvent
 	}
-	imageURL, _, err := optionalString(raw, "imageUrl")
+	imageURL, _, err := fields.String(raw, "imageUrl")
 	if err != nil {
 		return nil, ErrMalformedEvent
 	}
-	fullImageURL, _, err := optionalString(raw, "fullImageUrl")
+	fullImageURL, _, err := fields.String(raw, "fullImageUrl")
 	if err != nil {
 		return nil, ErrMalformedEvent
 	}
@@ -697,12 +701,12 @@ func decodeChatLeft(body []byte) (Event, error) {
 	if err := raw.Validate(); err != nil {
 		return nil, ErrMalformedEvent
 	}
-	chatID, err := exactInt64(raw, "chatId")
-	if err != nil {
+	chatID, ok, err := fields.Int64Exact(raw, "chatId")
+	if err != nil || !ok {
 		return nil, ErrMalformedEvent
 	}
-	lastTokenID, err := exactInt64(raw, "lastTokenId")
-	if err != nil {
+	lastTokenID, ok, err := fields.Int64Exact(raw, "lastTokenId")
+	if err != nil || !ok {
 		return nil, ErrMalformedEvent
 	}
 	return ChatLeft{ChatID: chatID, LastTokenID: lastTokenID}, nil
@@ -713,16 +717,16 @@ func decodeReadState(body []byte) (Event, error) {
 	if err := raw.Validate(); err != nil {
 		return nil, ErrMalformedEvent
 	}
-	chatID, err := requiredInt64(raw, "chatId")
-	if err != nil || chatID <= 0 {
+	chatID, ok, err := fields.Int64(raw, "chatId")
+	if err != nil || !ok || chatID <= 0 {
 		return nil, ErrMalformedEvent
 	}
-	userID, err := requiredInt64(raw, "userId")
-	if err != nil || userID <= 0 {
+	userID, ok, err := fields.Int64(raw, "userId")
+	if err != nil || !ok || userID <= 0 {
 		return nil, ErrMalformedEvent
 	}
-	watermark, err := requiredInt64(raw, "watermark")
-	if err != nil || watermark <= 0 {
+	watermark, ok, err := fields.Int64(raw, "watermark")
+	if err != nil || !ok || watermark <= 0 {
 		return nil, ErrMalformedEvent
 	}
 	return ReadStateChanged{ChatID: chatID, UserID: userID, Watermark: watermark}, nil
@@ -738,7 +742,7 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 		return decodeFeed(chatID, logID, chatLog)
 	}
 	if deletedFlagged(messageType) {
-		return DeletedMessage{ChatID: chatID, LogID: logID, AuthorID: optionalInt64(chatLog, "authorId"), SentAt: optionalInt64(chatLog, "sendAt"), BaseType: messageType &^ messagetype.DeletedAllChatTypeFlag}, nil
+		return DeletedMessage{ChatID: chatID, LogID: logID, AuthorID: env.AuthorID, SentAt: env.SentAt, BaseType: messageType &^ messagetype.DeletedAllChatTypeFlag}, nil
 	}
 	switch messageType {
 	case messagetype.Post:
@@ -750,18 +754,15 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 	case messagetype.Profile:
 		return decodeProfile(chatID, logID, chatLog)
 	case messagetype.Text:
-		messageValue, err := chatLog.LookupErr("message")
-		if err != nil {
-			// Accept the write-side field name for compatible synthetic backends.
-			messageValue, err = chatLog.LookupErr("msg")
-		}
-		if err != nil || messageValue.Type != bson.TypeString || !utf8.ValidString(messageValue.StringValue()) {
+		// Accept the write-side field name msg for compatible synthetic backends.
+		message, ok, err := fields.String(chatLog, "message", "msg")
+		if err != nil || !ok || !utf8.ValidString(message) {
 			return nil, ErrMalformedEvent
 		}
 		return decodeMiniText(TextMessage{
-			ChatID: chatID, LogID: logID, Message: messageValue.StringValue(),
-			AuthorID: optionalInt64(chatLog, "authorId"), SentAt: optionalInt64(chatLog, "sendAt"),
-			Revision: optionalInt64(chatLog, "revision"),
+			ChatID: chatID, LogID: logID, Message: message,
+			AuthorID: env.AuthorID, SentAt: env.SentAt,
+			Revision: bsonfield.Int64OrZero(chatLog, "revision"),
 		}, chatLog)
 	case media.PhotoType:
 		photo, err := media.DecodePhotoMessage(env)
@@ -808,7 +809,7 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 		if err != nil {
 			return nil, ErrMalformedEvent
 		}
-		return StickerMessage{ChatID: chatID, LogID: logID, AuthorID: optionalInt64(chatLog, "authorId"), SentAt: optionalInt64(chatLog, "sendAt"), Type: messageType, Attachment: attachment}, nil
+		return StickerMessage{ChatID: chatID, LogID: logID, AuthorID: env.AuthorID, SentAt: env.SentAt, Type: messageType, Attachment: attachment}, nil
 	case chat.ReplyType:
 		return decodeReply(chatID, logID, chatLog)
 	default:
@@ -852,8 +853,8 @@ func decodeReply(chatID, logID int64, chatLog bson.Raw) (Event, error) {
 		}
 	}
 	return ReplyMessage{
-		ChatID: chatID, LogID: logID, AuthorID: optionalInt64(chatLog, "authorId"),
-		SentAt: optionalInt64(chatLog, "sendAt"), Message: message,
+		ChatID: chatID, LogID: logID, AuthorID: bsonfield.Int64OrZero(chatLog, "authorId"),
+		SentAt: bsonfield.Int64OrZero(chatLog, "sendAt"), Message: message,
 		Source:     ReplySource{LogID: source.LogID, UserID: source.UserID, LinkID: source.LinkID, Type: source.Type, Message: source.Message},
 		Attachment: replyAttachment,
 	}, nil
@@ -864,26 +865,26 @@ func decodeLogMeta(body []byte) (Event, error) {
 	if err := raw.Validate(); err != nil {
 		return nil, ErrMalformedEvent
 	}
-	chatID, err := requiredInt64(raw, "chatId")
-	if err != nil || chatID <= 0 {
+	chatID, ok, err := fields.Int64(raw, "chatId")
+	if err != nil || !ok || chatID <= 0 {
 		return nil, ErrMalformedEvent
 	}
-	logID, err := requiredInt64(raw, "logId")
-	if err != nil || logID <= 0 {
+	logID, ok, err := fields.Int64(raw, "logId")
+	if err != nil || !ok || logID <= 0 {
 		return nil, ErrMalformedEvent
 	}
-	metaType, err := requiredInt64(raw, "type")
-	if err != nil || metaType <= 0 || metaType > int64(^uint32(0)>>1) {
+	metaType, ok, err := fields.Int64(raw, "type")
+	if err != nil || !ok || metaType <= 0 || metaType > int64(^uint32(0)>>1) {
 		return nil, ErrMalformedEvent
 	}
 	if metaType != 1 && metaType != 2 {
 		return UnsupportedLogMeta{ChatID: chatID, LogID: logID, Type: int32(metaType)}, nil
 	}
-	revision, err := requiredInt64(raw, "revision")
-	if err != nil || revision <= 0 {
+	revision, ok, err := fields.Int64(raw, "revision")
+	if err != nil || !ok || revision <= 0 {
 		return nil, ErrMalformedEvent
 	}
-	linkID := optionalInt64(raw, "linkId")
+	linkID := bsonfield.Int64OrZero(raw, "linkId")
 	if linkID < 0 {
 		return nil, ErrMalformedEvent
 	}
@@ -978,66 +979,14 @@ func logMetaEvent(chatID, logID, revision, linkID, metaType int64, content strin
 	return ReactionChanged{MetadataType: 2, ChatID: chatID, LinkID: linkID, LogID: logID, Revision: revision, Items: items}, nil
 }
 
-
-func requiredInt64(raw bson.Raw, key string) (int64, error) {
-	value, err := raw.LookupErr(key)
-	if err != nil {
-		return 0, err
-	}
-	switch value.Type {
-	case bson.TypeInt64:
-		return value.Int64(), nil
-	case bson.TypeInt32:
-		return int64(value.Int32()), nil
-	default:
-		return 0, ErrMalformedEvent
-	}
-}
-
-func exactInt64(raw bson.Raw, key string) (int64, error) {
-	value, err := raw.LookupErr(key)
-	if err != nil || value.Type != bson.TypeInt64 {
-		return 0, ErrMalformedEvent
-	}
-	return value.Int64(), nil
-}
-
-func optionalExactInt64(raw bson.Raw, key string) (int64, error) {
-	value, err := raw.LookupErr(key)
-	if err != nil {
-		return 0, nil
-	}
-	if value.Type != bson.TypeInt64 {
-		return 0, ErrMalformedEvent
-	}
-	return value.Int64(), nil
-}
-
-func optionalString(raw bson.Raw, key string) (string, bool, error) {
-	value, err := raw.LookupErr(key)
-	if err != nil {
-		return "", false, nil
-	}
-	if value.Type != bson.TypeString {
-		return "", true, ErrMalformedEvent
-	}
-	return value.StringValue(), true, nil
-}
-
-func optionalInt64(raw bson.Raw, key string) int64 {
-	value, err := requiredInt64(raw, key)
-	if err != nil {
-		return 0
-	}
-	return value
-}
-
+// requiredString reads a present string field that is valid UTF-8 without
+// NUL characters.
 func requiredString(raw bson.Raw, key string) (string, error) {
-	value, err := raw.LookupErr(key)
-	if err != nil || value.Type != bson.TypeString || !validEventString(value.StringValue()) {
+	value, ok, err := fields.String(raw, key)
+	if err != nil || !ok || !validEventString(value) {
 		return "", ErrMalformedEvent
 	}
-	return value.StringValue(), nil
+	return value, nil
 }
 
 func decodeSingleJSON(value string, target any) error {

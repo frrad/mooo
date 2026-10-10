@@ -33,11 +33,26 @@ type Envelope struct {
 	LogIDInChatLog bool
 }
 
-// Decode validates body and reads its envelope. chatId must be a positive
-// integer, chatLog an embedded document, logId a positive integer (from
-// chatLog, else from the top level) and chatLog.type an integer in
-// [0, MaxInt32]. Integers may be BSON int32 or int64.
+// Decode validates body and reads its envelope. On top of DecodeIdentity it
+// requires chatLog.type to be an integer in [0, MaxInt32].
 func Decode(body []byte) (Envelope, error) {
+	envelope, err := DecodeIdentity(body)
+	if err != nil {
+		return Envelope{}, err
+	}
+	messageType, ok, err := fields.Int64(envelope.Log, "type")
+	if err != nil || !ok || messageType < 0 || messageType > math.MaxInt32 {
+		return Envelope{}, ErrMalformed
+	}
+	envelope.Type = int32(messageType)
+	return envelope, nil
+}
+
+// DecodeIdentity validates body and reads the message identity without
+// interpreting chatLog.type; Type is left zero. chatId must be a positive
+// integer, chatLog an embedded document, and logId a positive integer (from
+// chatLog, else from the top level). Integers may be BSON int32 or int64.
+func DecodeIdentity(body []byte) (Envelope, error) {
 	raw := bson.Raw(body)
 	if err := raw.Validate(); err != nil {
 		return Envelope{}, ErrMalformed
@@ -62,16 +77,11 @@ func Decode(body []byte) (Envelope, error) {
 	if logID <= 0 {
 		return Envelope{}, ErrMalformed
 	}
-	messageType, ok, err := fields.Int64(log, "type")
-	if err != nil || !ok || messageType < 0 || messageType > math.MaxInt32 {
-		return Envelope{}, ErrMalformed
-	}
 	return Envelope{
 		ChatID:         chatID,
 		LogID:          logID,
 		AuthorID:       bsonfield.Int64OrZero(log, "authorId"),
 		SentAt:         bsonfield.Int64OrZero(log, "sendAt"),
-		Type:           int32(messageType),
 		Log:            log,
 		LogIDInChatLog: inner,
 	}, nil
