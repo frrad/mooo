@@ -62,7 +62,7 @@ func TestSendUploadSendsFileTypeNameAndBytesOnce(t *testing.T) {
 	})
 	session := &Session{
 		wire: mainBackend.client, nextID: 1, pushes: make(chan loco.Packet, 4),
-		pending: make(map[uint32]chan requestResult), userID: 7, appVersion: "26.8.0",
+		pending: make(map[uint32]pendingRequest), userID: 7, appVersion: "26.8.0",
 		mediaDial: func(context.Context, string, int) (*wireConn, error) { return mediaBackend.client, nil },
 	}
 	go session.readLoop()

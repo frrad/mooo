@@ -19,13 +19,9 @@ func TestSessionReadLoopCorrelatesPendingPacketSplitAtHeader(t *testing.T) {
 	wantID := uint32(100000123)
 	waiter := make(chan requestResult, 1)
 	session := &Session{
-		wire:   &wireConn{c: clientConn},
-		pushes: make(chan loco.Packet, 1),
-		pending: map[uint32]chan requestResult{
-			wantID: waiter,
-		},
-		pendingByUniqueID:   map[string]chan requestResult{"PUSH.100000123": waiter},
-		pendingUniqueIDByID: map[uint32]string{wantID: "PUSH.100000123"},
+		wire:    &wireConn{c: clientConn},
+		pushes:  make(chan loco.Packet, 1),
+		pending: map[uint32]pendingRequest{wantID: {method: "PUSH", result: waiter}},
 	}
 	readDone := make(chan struct{})
 	t.Cleanup(func() {
@@ -72,13 +68,9 @@ func TestSessionReadLoopBodyEOFFailsWaiterOnce(t *testing.T) {
 	wantID := uint32(100000124)
 	waiter := make(chan requestResult, 1)
 	session := &Session{
-		wire:   &wireConn{c: clientConn},
-		pushes: make(chan loco.Packet, 1),
-		pending: map[uint32]chan requestResult{
-			wantID: waiter,
-		},
-		pendingByUniqueID:   map[string]chan requestResult{"PUSH.100000124": waiter},
-		pendingUniqueIDByID: map[uint32]string{wantID: "PUSH.100000124"},
+		wire:    &wireConn{c: clientConn},
+		pushes:  make(chan loco.Packet, 1),
+		pending: map[uint32]pendingRequest{wantID: {method: "PUSH", result: waiter}},
 	}
 	readDone := make(chan struct{})
 	t.Cleanup(func() {
