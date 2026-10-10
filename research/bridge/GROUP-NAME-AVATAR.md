@@ -174,7 +174,9 @@ keys. The SDK then sent one encrypted return message. All eleven pre-existing
 message mappings remained unchanged, with three new mappings in A/C/SDK order.
 All three native clients displayed each of those texts exactly once. A normal restart retained all fourteen mappings, the one binding, cleared avatar
 and A/C/SDK event order. The SDK decrypted both original events again using
-retained keys. A committed-build restart remains outstanding.
+retained keys. The exact committed-build restart also retained all fourteen mappings and the
+selected display state; both original events decrypted again with retained
+SDK keys.
 
 The owned Matrix name-edit check exposed an error-reporting defect: returning a
 plain error made the framework classify unsupported metadata as retryable and
