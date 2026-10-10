@@ -766,7 +766,7 @@ func TestScriptedBackendLoginTextPushAndPhoto(t *testing.T) {
 	api.dial = func(ctx context.Context, got authstate.State) (*Session, error) {
 		return connectSessionWithDialers(ctx, got, dialers)
 	}
-	defer func() { _ = api.Close() }()
+	defer func() { _ = api.Shutdown(t.Context()) }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -844,7 +844,7 @@ func TestScriptedBackendAmbiguousWriteIsNeverRetried(t *testing.T) {
 		dials++
 		return session, nil
 	}
-	defer func() { _ = api.Close() }()
+	defer func() { _ = api.Shutdown(t.Context()) }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -915,7 +915,7 @@ func TestScriptedBackendExpiredTokenRenewsThenLogsInOnce(t *testing.T) {
 			return nil, errors.New("unexpected third login attempt")
 		}
 	}
-	defer func() { _ = api.Close() }()
+	defer func() { _ = api.Shutdown(t.Context()) }()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := api.Connect(ctx); err != nil {
@@ -937,7 +937,7 @@ func TestScriptedBackendExpiredTokenRenewsThenLogsInOnce(t *testing.T) {
 	if renewals != 1 || loginAttempts != 2 {
 		t.Fatal("repeated Connect renewed or logged in again")
 	}
-	_ = api.Close()
+	_ = api.Shutdown(ctx)
 	for _, backend := range append(firstBackends, secondBackends...) {
 		backend.wait(t)
 	}
@@ -1041,9 +1041,9 @@ func TestScriptedBackendAmbiguousPhotoCompleteIsNeverRetried(t *testing.T) {
 	}
 }
 
-// readRequest reads a request the client sent to a test server. The BSON
-// shadow compares bodies received from Kakao, so harness reads of mooo's own
+// readRequest reads a request the client sent to a test server. The packet
+// observer watches bodies received from Kakao, so harness reads of mooo's own
 // requests bypass it.
 func (w *wireConn) readRequest() (loco.Packet, error) {
-	return w.readUnshadowed()
+	return w.readFrame()
 }

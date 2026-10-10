@@ -57,8 +57,8 @@ identifying summaries remain outside the repository. This observation establishe
 the tested account path, not all room kinds or server pagination branches.
 
 The initial operator run exposed a LOGINLIST binary-field shadow discrepancy.
-The new operator command defaults to diagnostic logging, like the bridge;
-research commands retain panic mode and explicit `MOOO_BSON_SHADOW` selection is
+The new operator command defaults to diagnostic logging (the bridge now
+defaults to off unless `network.bson_shadow.mode` is set); research commands retain panic mode and explicit `MOOO_BSON_SHADOW` selection is
 respected. The diagnostic remains visible. Alternate official BSON reader routing
 is still untraced; no general claim that the official client ignores the field is
 made. See [BSON shadow scope](reconnect/BOUNDED-BSON-VALIDATION-API.md).

@@ -27,7 +27,7 @@ type TestDialers struct {
 
 // OpenWithTestDialers opens a normal leased Client while replacing only its
 // network dial path. The constructor is intentionally narrow and internal:
-// production callers should use Open or OpenWithOptions. The optional options
+// production callers should use OpenWithOptions. The optional options
 // select the same production login policy while keeping synthetic dialers.
 func OpenWithTestDialers(statePath string, doer macweb.Doer, dialers TestDialers, options ...OpenOptions) (*Client, error) {
 	if dialers.TLS == nil || dialers.Secure == nil {
@@ -46,7 +46,7 @@ func OpenWithTestDialers(statePath string, doer macweb.Doer, dialers TestDialers
 	}
 	resume := option.loginResume(c.checkpoint.Snapshot())
 	c.dial = func(ctx context.Context, state authstate.State) (*Session, error) {
-		return connectSessionWithResume(ctx, state, resume, testSessionDialers(dialers))
+		return connectSessionWithResume(ctx, state, resume, testSessionDialers(dialers).observed(option.PacketObserver))
 	}
 	return c, nil
 }
