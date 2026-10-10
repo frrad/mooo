@@ -78,6 +78,8 @@ type fakeKakao struct {
 	catchupEnterOnce  sync.Once
 	chatInfo          chatmeta.ChatInfoResponse
 	chatInfoErr       error
+	personalMeta      *chatmeta.RoomMeta
+	personalMetaErr   error
 	members           []chatmeta.Member
 	membersErr        error
 	memberList        chatmeta.MemberListResponse
@@ -90,6 +92,10 @@ type fakeKakao struct {
 }
 
 func (f *fakeKakao) Connect(ctx context.Context) error { return f.connectErr }
+
+func (f *fakeKakao) PersonalMeta(context.Context, int64) (*chatmeta.RoomMeta, error) {
+	return f.personalMeta, f.personalMetaErr
+}
 
 func (f *fakeKakao) SendImage(ctx context.Context, chatID int64, data []byte) (media.SendResult, error) {
 	f.imageData = append([]byte(nil), data...)

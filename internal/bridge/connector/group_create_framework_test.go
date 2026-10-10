@@ -31,6 +31,10 @@ type groupCreationMatrix struct {
 	members    map[id.UserID]*event.MemberEventContent
 	name       string
 	failName   bool
+	avatar     id.ContentURIString
+	failAvatar bool
+	failUpload bool
+	uploads    int
 	failMember id.UserID
 }
 
@@ -114,6 +118,11 @@ func (i *groupCreationIntent) SendState(_ context.Context, _ id.RoomID, typ even
 			return nil, errors.New("synthetic name failure")
 		}
 		i.m.name = content.Parsed.(*event.RoomNameEventContent).Name
+	case event.StateRoomAvatar:
+		if i.m.failAvatar {
+			return nil, errors.New("synthetic avatar failure")
+		}
+		i.m.avatar = content.Parsed.(*event.RoomAvatarEventContent).URL
 	case event.StateMember:
 		// Matrix intents ensure their sender is joined before changing another user.
 		if id.UserID(key) != i.mxid {
@@ -127,6 +136,16 @@ func (i *groupCreationIntent) SendState(_ context.Context, _ id.RoomID, typ even
 	}
 	return &mautrix.RespSendEvent{EventID: "$state:test"}, nil
 }
+func (i *groupCreationIntent) UploadMedia(_ context.Context, _ id.RoomID, _ []byte, _, _ string) (id.ContentURIString, *event.EncryptedFileInfo, error) {
+	i.m.mu.Lock()
+	defer i.m.mu.Unlock()
+	i.m.uploads++
+	if i.m.failUpload {
+		return "", nil, errors.New("synthetic avatar upload failure")
+	}
+	return id.ContentURIString("mxc://test/uploaded-avatar"), nil, nil
+}
+
 func (i *groupCreationIntent) SetDisplayName(context.Context, string) error            { return nil }
 func (i *groupCreationIntent) SetAvatarURL(context.Context, id.ContentURIString) error { return nil }
 

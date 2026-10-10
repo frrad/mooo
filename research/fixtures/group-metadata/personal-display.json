@@ -1,0 +1,87 @@
+{
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk for Mac 26.8.0 arm64",
+    "date": "2026-10-09",
+    "method": "Isolated signed official-client harness applies canonical synthetic personal name/imagePath notices to NTChatRoom and executes its display getters. sourceSnapshot contains the resulting personal fields. Tests exercise the equivalent snapshot display boundary, not the notice handler or global revision gate. No account/network entitlement; official preference hashes unchanged.",
+    "doc": "research/bridge/GROUP-NAME-AVATAR.md"
+  },
+  "cases": [
+    {
+      "input": {
+        "name": "name",
+        "type": "name",
+        "content": "Personal",
+        "image": "",
+        "full": ""
+      },
+      "sourceSnapshot": {
+        "name": "Personal",
+        "imageUrl": "https://example.invalid/previous.png",
+        "fullImageUrl": "https://example.invalid/previous-full.png"
+      },
+      "expected": {
+        "name": "Personal",
+        "imageUrl": "https://example.invalid/previous.png",
+        "fullImageUrl": "https://example.invalid/previous-full.png"
+      }
+    },
+    {
+      "input": {
+        "name": "name-clear",
+        "type": "name",
+        "content": "",
+        "image": "",
+        "full": ""
+      },
+      "sourceSnapshot": {
+        "name": "",
+        "imageUrl": "https://example.invalid/previous.png",
+        "fullImageUrl": "https://example.invalid/previous-full.png"
+      },
+      "expected": {
+        "name": "",
+        "imageUrl": "https://example.invalid/previous.png",
+        "fullImageUrl": "https://example.invalid/previous-full.png"
+      }
+    },
+    {
+      "input": {
+        "name": "image",
+        "type": "imagePath",
+        "content": "synthetic-path",
+        "image": "https://example.invalid/small.png",
+        "full": "https://example.invalid/full.png"
+      },
+      "sourceSnapshot": {
+        "name": "Previous personal",
+        "imageUrl": "https://example.invalid/small.png",
+        "fullImageUrl": "https://example.invalid/full.png"
+      },
+      "expected": {
+        "name": "Previous personal",
+        "imageUrl": "https://example.invalid/small.png",
+        "fullImageUrl": "https://example.invalid/full.png"
+      }
+    },
+    {
+      "input": {
+        "name": "image-clear",
+        "type": "imagePath",
+        "content": "",
+        "image": "",
+        "full": ""
+      },
+      "sourceSnapshot": {
+        "name": "Previous personal",
+        "imageUrl": "",
+        "fullImageUrl": ""
+      },
+      "expected": {
+        "name": "Previous personal",
+        "imageUrl": "",
+        "fullImageUrl": ""
+      }
+    }
+  ]
+}

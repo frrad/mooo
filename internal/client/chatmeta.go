@@ -122,3 +122,39 @@ func (c *Client) MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimRespo
 	}
 	return s.MoimMeta(ctx, chatID)
 }
+
+// PersonalMeta reads the account-wide personal settings once and selects only
+// the caller's room. An omitted room returns nil, rather than a fabricated clear.
+func (s *Session) PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.RoomMeta, error) {
+	if chatID <= 0 {
+		return nil, chatmeta.ErrInvalidRequest
+	}
+	body, err := (chatmeta.PersonalMetaRequest{}).MarshalBSON()
+	if err != nil {
+		return nil, err
+	}
+	reply, err := s.Request(ctx, chatmeta.PersonalMetaCommand, body)
+	if err != nil {
+		return nil, err
+	}
+	response, err := chatmeta.DecodePersonalMetaResponse(reply.Body)
+	if err != nil {
+		return nil, err
+	}
+	meta, found := response.Rooms[chatID]
+	if !found {
+		return nil, nil
+	}
+	return &meta, nil
+}
+
+func (c *Client) PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.RoomMeta, error) {
+	if chatID <= 0 {
+		return nil, chatmeta.ErrInvalidRequest
+	}
+	session, err := c.ensureSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return session.PersonalMeta(ctx, chatID)
+}

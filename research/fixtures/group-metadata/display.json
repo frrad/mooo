@@ -1,0 +1,79 @@
+{
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk for Mac 26.8.0 arm64",
+    "date": "2026-10-09",
+    "method": "Isolated signed Mac lab harness replays these canonical synthetic inputs through NTChatRoom updateDisplayTitle/updateDisplayImageUrl/updateDisplayFullImageUrl on the main queue with synthetic NTChatMeta values; no account or network entitlement; official preference hashes unchanged.",
+    "doc": "research/bridge/GROUP-NAME-AVATAR.md"
+  },
+  "cases": [
+    {
+      "input": {
+        "name": "personal",
+        "personalName": "Personal",
+        "personalImage": "https://example.invalid/personal.png",
+        "r2": 9,
+        "r3": 10,
+        "r4": 10
+      },
+      "displayTitle": "Personal",
+      "displayImage": "https://example.invalid/personal.png",
+      "displayFullImage": "https://example.invalid/personal.png"
+    },
+    {
+      "input": {
+        "name": "shared-newer",
+        "personalName": "",
+        "personalImage": "",
+        "r2": 9,
+        "r3": 10,
+        "r4": 10
+      },
+      "displayTitle": "Shared",
+      "displayImage": "https://example.invalid/shared-small.png",
+      "displayFullImage": "https://example.invalid/shared-full.png"
+    },
+    {
+      "input": {
+        "name": "legacy-newer",
+        "personalName": "",
+        "personalImage": "",
+        "r2": 11,
+        "r3": 10,
+        "r4": 10
+      },
+      "displayTitle": "Legacy",
+      "displayImage": "https://example.invalid/legacy-small.png",
+      "displayFullImage": "https://example.invalid/legacy-full.png"
+    },
+    {
+      "input": {
+        "name": "tie",
+        "personalName": "",
+        "personalImage": "",
+        "r2": 10,
+        "r3": 10,
+        "r4": 10
+      },
+      "displayTitle": "Shared",
+      "displayImage": "https://example.invalid/shared-small.png",
+      "displayFullImage": "https://example.invalid/shared-full.png"
+    },
+    {
+      "input": {
+        "name": "newer-shared-clear",
+        "personalName": "",
+        "personalImage": "",
+        "r2": 9,
+        "r3": 10,
+        "r4": 10,
+        "title": "",
+        "image": "",
+        "full": ""
+      },
+      "displayTitle": "",
+      "displayImage": "",
+      "displayFullImage": ""
+    }
+  ]
+}
