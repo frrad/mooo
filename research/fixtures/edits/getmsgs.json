@@ -1,0 +1,48 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-10",
+    "method": "Expected outputs are mooo's existing GETMSGS request encoding and chatLogs reading, recorded when they moved unchanged from internal/client to internal/protocol/chat; the official client has not run these inputs",
+    "doc": "research/bridge/GROUP-EDITS-DELETIONS.md"
+  },
+  "requests": [
+    {
+      "name": "parallel chatIds and logIds",
+      "chatId": 42,
+      "logIds": [101, 105],
+      "body": {"chatIds": [{"$numberLong": "42"}, {"$numberLong": "42"}], "logIds": [{"$numberLong": "101"}, {"$numberLong": "105"}]}
+    },
+    {"name": "no log IDs is rejected", "chatId": 42, "logIds": [], "error": true},
+    {"name": "non-positive chat ID is rejected", "chatId": 0, "logIds": [101], "error": true},
+    {"name": "non-positive log ID is rejected", "chatId": 42, "logIds": [101, 0], "error": true}
+  ],
+  "responses": [
+    {
+      "name": "chat logs in wire order",
+      "body": {"status": {"$numberInt": "0"}, "chatLogs": [{"logId": {"$numberLong": "105"}}, {"logId": {"$numberLong": "101"}}]},
+      "logIds": [105, 101]
+    },
+    {
+      "name": "absent chatLogs returns no logs",
+      "body": {"status": {"$numberInt": "0"}},
+      "absent": true,
+      "logIds": []
+    },
+    {
+      "name": "empty chatLogs returns no logs",
+      "body": {"status": {"$numberInt": "0"}, "chatLogs": []},
+      "logIds": []
+    },
+    {
+      "name": "chatLogs that is not an array is rejected",
+      "body": {"status": {"$numberInt": "0"}, "chatLogs": {"logId": {"$numberLong": "101"}}},
+      "error": true
+    },
+    {
+      "name": "chatLogs entry that is not a document is rejected",
+      "body": {"status": {"$numberInt": "0"}, "chatLogs": [{"$numberLong": "101"}]},
+      "error": true
+    }
+  ]
+}

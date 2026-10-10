@@ -1,0 +1,115 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-10",
+    "method": "Expected outputs are mooo's existing LOGINLIST/LCHATLIST page handling, recorded when it moved unchanged from internal/client to sessionlogin.DecodeLoginListPage; the status and cursor-commit rules follow the static reading in the doc. The official client has not run these inputs",
+    "doc": "research/session-login/PROTOCOL.md"
+  },
+  "cases": [
+    {
+      "name": "status-zero EOF page commits the global cursors",
+      "body": {"status": {"$numberInt": "0"}, "eof": true, "lastTokenId": {"$numberLong": "12"}, "lbk": {"$numberInt": "3"}, "chatDatas": []},
+      "status": 0, "eof": true, "deleted": [], "chats": [],
+      "lastTokenId": 12, "lbk": 3, "next": null, "commitsCursor": true
+    },
+    {
+      "name": "status-zero page without EOF continues with LCHATLIST",
+      "body": {"status": {"$numberInt": "0"}, "eof": false, "lastTokenId": {"$numberLong": "11"}, "lastChatId": {"$numberLong": "42"}, "lbk": {"$numberInt": "2"}},
+      "status": 0, "eof": false, "deleted": [], "chats": [],
+      "lastTokenId": 11, "lbk": 2, "next": {"lastTokenId": 11, "lastChatId": 42}, "commitsCursor": false
+    },
+    {
+      "name": "continuation cursor accepts a negative token and int32 widths",
+      "body": {"status": {"$numberInt": "0"}, "eof": false, "lastTokenId": {"$numberInt": "-1"}, "lastChatId": {"$numberInt": "42"}},
+      "status": 0, "eof": false, "deleted": [], "chats": [],
+      "lastTokenId": null, "lbk": null, "next": {"lastTokenId": -1, "lastChatId": 42}, "commitsCursor": false
+    },
+    {
+      "name": "status-zero page without EOF and without lastChatId is rejected",
+      "body": {"status": {"$numberInt": "0"}, "eof": false, "lastTokenId": {"$numberLong": "11"}},
+      "error": true
+    },
+    {
+      "name": "LOGINLIST -305 applies its delta and ends the list without committing",
+      "body": {"status": {"$numberInt": "-305"}, "eof": false, "lastTokenId": {"$numberLong": "12"}, "chatDatas": [{"c": {"$numberLong": "42"}}]},
+      "status": -305, "eof": false, "deleted": [], "chats": [{"chatId": 42, "maxLogId": 0}],
+      "lastTokenId": 12, "lbk": null, "next": null, "commitsCursor": false
+    },
+    {
+      "name": "-310 EOF page ends the list without committing",
+      "body": {"status": {"$numberInt": "-310"}, "eof": true, "lastTokenId": {"$numberLong": "12"}, "delChatIds": [{"$numberLong": "9"}]},
+      "status": -310, "eof": true, "deleted": [9], "chats": [],
+      "lastTokenId": 12, "lbk": null, "next": null, "commitsCursor": false
+    },
+    {
+      "name": "other non-zero status is rejected",
+      "body": {"status": {"$numberInt": "-445"}, "eof": true},
+      "error": true
+    },
+    {
+      "name": "missing status is rejected",
+      "body": {"eof": true},
+      "error": true
+    },
+    {
+      "name": "missing eof is rejected",
+      "body": {"status": {"$numberInt": "0"}},
+      "error": true
+    },
+    {
+      "name": "non-boolean eof is rejected",
+      "body": {"status": {"$numberInt": "0"}, "eof": {"$numberInt": "1"}},
+      "error": true
+    },
+    {
+      "name": "out-of-range or wrongly typed global cursors are ignored",
+      "body": {"status": {"$numberInt": "0"}, "eof": true, "lastTokenId": "12", "lbk": {"$numberLong": "2147483648"}},
+      "status": 0, "eof": true, "deleted": [], "chats": [],
+      "lastTokenId": null, "lbk": null, "next": null, "commitsCursor": true
+    },
+    {
+      "name": "chat targets use l.logId, ll when larger, and zero without l",
+      "body": {"status": {"$numberInt": "0"}, "eof": true, "delChatIds": [{"$numberInt": "9"}, {"$numberLong": "10"}], "chatDatas": [
+        {"c": {"$numberLong": "42"}, "l": {"chatId": {"$numberLong": "42"}, "logId": {"$numberLong": "105"}}},
+        {"c": {"$numberLong": "7"}, "l": null},
+        {"c": {"$numberLong": "43"}, "ll": {"$numberLong": "102"}, "l": {"chatId": {"$numberLong": "43"}, "logId": {"$numberLong": "100"}}},
+        {"c": {"$numberLong": "44"}, "ll": {"$numberLong": "50"}, "l": {"logId": {"$numberLong": "100"}}},
+        {"c": {"$numberLong": "45"}, "l": {"chatId": "not an integer", "logId": {"$numberInt": "5"}}}
+      ]},
+      "status": 0, "eof": true, "deleted": [9, 10],
+      "chats": [{"chatId": 42, "maxLogId": 105}, {"chatId": 7, "maxLogId": 0}, {"chatId": 43, "maxLogId": 102}, {"chatId": 44, "maxLogId": 100}, {"chatId": 45, "maxLogId": 5}],
+      "lastTokenId": null, "lbk": null, "next": null, "commitsCursor": true
+    },
+    {
+      "name": "nested l.chatId naming another chat is rejected",
+      "body": {"status": {"$numberInt": "0"}, "eof": true, "chatDatas": [{"c": {"$numberLong": "42"}, "l": {"chatId": {"$numberLong": "43"}, "logId": {"$numberLong": "105"}}}]},
+      "error": true
+    },
+    {
+      "name": "l without a positive logId is rejected",
+      "body": {"status": {"$numberInt": "0"}, "eof": true, "chatDatas": [{"c": {"$numberLong": "42"}, "l": {"chatId": {"$numberLong": "42"}}}]},
+      "error": true
+    },
+    {
+      "name": "chat without a positive c is rejected",
+      "body": {"status": {"$numberInt": "0"}, "eof": true, "chatDatas": [{"c": {"$numberLong": "0"}}]},
+      "error": true
+    },
+    {
+      "name": "chatDatas entry that is not a document is rejected",
+      "body": {"status": {"$numberInt": "0"}, "eof": true, "chatDatas": [{"$numberLong": "42"}]},
+      "error": true
+    },
+    {
+      "name": "non-positive delChatIds entry is rejected",
+      "body": {"status": {"$numberInt": "0"}, "eof": true, "delChatIds": [{"$numberLong": "0"}]},
+      "error": true
+    },
+    {
+      "name": "delChatIds that is not an array is rejected",
+      "body": {"status": {"$numberInt": "0"}, "eof": true, "delChatIds": {"$numberLong": "9"}},
+      "error": true
+    }
+  ]
+}

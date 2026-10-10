@@ -1,7 +1,7 @@
 // Package sessionlogin contains the reviewed, transport-independent subset of
 // final session login behavior: the LOGINLIST request model and its BSON
-// encoding, login status classification, and packet identity formatting. It
-// does not send requests, open sockets, or store credentials.
+// encoding, login status classification, and the LOGINLIST/LCHATLIST reply
+// page decoder. It does not send requests, open sockets, or store credentials.
 package sessionlogin
 
 import (

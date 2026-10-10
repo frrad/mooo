@@ -95,9 +95,6 @@ func (s *Session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, 
 	if err != nil {
 		return chat.WriteResponse{}, fmt.Errorf("%w: MSHIP: %w", ErrAlbumNotCreated, err)
 	}
-	if status, err := responseStatus(shipPacket); err != nil || status != 0 {
-		return chat.WriteResponse{}, fmt.Errorf("%w: MSHIP status %d", ErrAlbumNotCreated, status)
-	}
 	ship, err := media.DecodeAlbumShipResponse(shipPacket.Body, len(images))
 	if err != nil {
 		return chat.WriteResponse{}, fmt.Errorf("%w: %w", ErrAlbumNotCreated, err)
@@ -111,7 +108,7 @@ func (s *Session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, 
 		if err != nil {
 			return chat.WriteResponse{}, fmt.Errorf("%w: photo %d: %w", ErrAlbumNotCreated, i+1, err)
 		}
-		if status, err := responseStatus(complete); err != nil || status != 0 {
+		if status, err := loco.Status(complete); err != nil || status != 0 {
 			return chat.WriteResponse{}, fmt.Errorf("%w: photo %d COMPLETE status %d", ErrAlbumNotCreated, i+1, status)
 		}
 	}
@@ -156,7 +153,7 @@ func (s *Session) uploadToMediaServer(ctx context.Context, host string, port int
 	if err != nil {
 		return loco.Packet{}, fmt.Errorf("client: media %s: %w", command, err)
 	}
-	status, err := responseStatus(postPacket)
+	status, err := loco.Status(postPacket)
 	if err != nil {
 		return loco.Packet{}, ErrProtocol
 	}
@@ -194,7 +191,7 @@ func (s *Session) uploadToMediaServer(ctx context.Context, host string, port int
 }
 
 func decodeMediaComplete(packet loco.Packet) (media.SendResult, error) {
-	status, err := responseStatus(packet)
+	status, err := loco.Status(packet)
 	if err != nil {
 		return media.SendResult{}, ErrProtocol
 	}
