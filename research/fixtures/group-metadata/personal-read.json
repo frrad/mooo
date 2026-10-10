@@ -1,0 +1,125 @@
+{
+  "method": "GETMCMETA",
+  "requestJSON": "{}",
+  "cases": [
+    {
+      "input": {
+        "name": "personal",
+        "json": {
+          "chatIds": [
+            5000
+          ],
+          "metas": [
+            {
+              "name": "Personal",
+              "imageUrl": "https://example.invalid/small.png",
+              "fullImageUrl": "https://example.invalid/full.png"
+            }
+          ]
+        }
+      },
+      "records": [
+        {
+          "chatId": 5000,
+          "name": "Personal",
+          "imageUrl": "https://example.invalid/small.png",
+          "fullImageUrl": "https://example.invalid/full.png"
+        }
+      ]
+    },
+    {
+      "input": {
+        "name": "clear",
+        "json": {
+          "chatIds": [
+            5000
+          ],
+          "metas": [
+            {
+              "name": "",
+              "imageUrl": "",
+              "fullImageUrl": ""
+            }
+          ]
+        }
+      },
+      "records": [
+        {
+          "chatId": 5000,
+          "name": "",
+          "imageUrl": "",
+          "fullImageUrl": ""
+        }
+      ]
+    },
+    {
+      "input": {
+        "name": "empty",
+        "json": {
+          "chatIds": [],
+          "metas": []
+        }
+      },
+      "records": []
+    },
+    {
+      "input": {
+        "name": "personal-string",
+        "json": {
+          "chatIds": [
+            5000
+          ],
+          "metas": [
+            "{\"name\":\"Personal\",\"imageUrl\":\"https://example.invalid/small.png\",\"fullImageUrl\":\"https://example.invalid/full.png\"}"
+          ]
+        }
+      },
+      "records": [
+        {
+          "chatId": 5000,
+          "name": "Personal",
+          "imageUrl": "https://example.invalid/small.png",
+          "fullImageUrl": "https://example.invalid/full.png"
+        }
+      ]
+    },
+    {
+      "input": {
+        "name": "clear-string",
+        "json": {
+          "chatIds": [
+            5000
+          ],
+          "metas": [
+            "{\"name\":\"\",\"imageUrl\":\"\",\"fullImageUrl\":\"\"}"
+          ]
+        }
+      },
+      "records": [
+        {
+          "chatId": 5000,
+          "name": "",
+          "imageUrl": "",
+          "fullImageUrl": ""
+        }
+      ]
+    },
+    {
+      "input": {
+        "name": "empty",
+        "json": {
+          "chatIds": [],
+          "metas": []
+        }
+      },
+      "records": []
+    }
+  ],
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk for Mac 26.8.0 arm64",
+    "date": "2026-10-09",
+    "method": "Isolated signed official-client harness executes GETMCMETA request command/JSON serialization and parses canonical synthetic chatIds/metas response arrays through LocoGetMCMetaResponse/LocoMCMeta. Preferences unchanged; no account/network entitlement. Tests verify corresponding BSON documents and selected-room results; carriage status, database callbacks and malformed inputs are outside this executed subset. Canonical JSON-string metadata entries are also executed; owned B observed this wire representation.",
+    "doc": "research/bridge/GROUP-NAME-AVATAR.md"
+  }
+}

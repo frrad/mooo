@@ -364,3 +364,35 @@ func TestSessionMoimMetaReadRequest(t *testing.T) {
 	}
 	backend.wait(t)
 }
+
+func TestSessionPersonalMetaSelectsRoomAndSendsOnce(t *testing.T) {
+	backend := newScriptedBackend(t, false, expectRequest("GETMCMETA", func(raw bson.Raw) error { return requireExactKeys(raw) }, statusDocument(
+		bson.E{Key: "chatIds", Value: bson.A{int64(42), int64(43)}},
+		bson.E{Key: "metas", Value: bson.A{`{"name":"Selected","imageUrl":""}`, `{"name":"Other"}`}},
+	)))
+	session := testMetadataSession(backend, 1)
+	meta, err := session.PersonalMeta(context.Background(), 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta == nil || meta.Name != "Selected" || meta.ImageURL != "" {
+		t.Fatal("personal room selection failed")
+	}
+	backend.wait(t)
+}
+
+func TestSessionPersonalMetaStatusFailureIsNotRetried(t *testing.T) {
+	backend := newScriptedBackend(t, false, expectRequest("GETMCMETA", nil, bson.D{{Key: "status", Value: int32(-310)}}))
+	session := testMetadataSession(backend, 1)
+	var status StatusError
+	if _, err := session.PersonalMeta(context.Background(), 42); !errors.As(err, &status) || status.Status != -310 {
+		t.Fatal("personal status failure was accepted")
+	}
+	backend.wait(t)
+}
+
+func TestSessionPersonalMetaRejectsInvalidSelectionBeforeTransport(t *testing.T) {
+	if _, err := (&Session{}).PersonalMeta(context.Background(), 0); !errors.Is(err, chatmeta.ErrInvalidRequest) {
+		t.Fatal("invalid personal room selection accepted")
+	}
+}

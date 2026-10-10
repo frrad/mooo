@@ -40,6 +40,7 @@ type kakaoClient interface {
 	ResumeTargets(ctx context.Context) ([]syncmsg.Target, error)
 	CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error)
 	ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error)
+	PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.RoomMeta, error)
 	MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error)
 	Members(ctx context.Context, chatID int64, userIDs []int64) ([]chatmeta.Member, error)
 	MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error)
@@ -135,6 +136,7 @@ type KakaoClient struct {
 	sendState func(status.BridgeState)
 
 	groupGate      sync.Mutex
+	displayGate    sync.Mutex
 	sourceBlocked  map[int64]error
 	mu             sync.Mutex
 	disconnectGate chan struct{}
@@ -1022,7 +1024,7 @@ func (kc *KakaoClient) getChatInfo(ctx context.Context, portal *bridgev2.Portal,
 	return kc.chatInfoFromClient(ctx, portal, c, regularGroupOnly)
 }
 
-func (kc *KakaoClient) chatInfoFromClient(ctx context.Context, portal *bridgev2.Portal, c kakaoClient, regularGroupOnly bool) (*bridgev2.ChatInfo, error) {
+func (kc *KakaoClient) chatInfoFromClient(ctx context.Context, portal *bridgev2.Portal, c kakaoClient, regularGroupOnly bool, requirePersonal ...bool) (*bridgev2.ChatInfo, error) {
 	chatID, err := parseChatID(portal.ID)
 	if err != nil {
 		return nil, err
@@ -1040,6 +1042,21 @@ func (kc *KakaoClient) chatInfoFromClient(ctx context.Context, portal *bridgev2.
 	}
 	if data.LinkID > 0 {
 		return nil, errUnsupportedOpenChatMetadata
+	}
+	if data.Type == "MultiChat" {
+		if data.Meta == nil {
+			data.Meta, err = c.PersonalMeta(ctx, chatID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if len(requirePersonal) > 0 && requirePersonal[0] && data.Meta == nil {
+			return nil, errors.New("connector: personal room metadata unavailable; refresh did not confirm a clear")
+		}
+		data, err = kc.checkpointGroupDisplay(ctx, portal, data)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// MEMLIST is a UI-originated API in the official client and its stored
@@ -1116,11 +1133,36 @@ func (kc *KakaoClient) chatInfoFromClient(ctx context.Context, portal *bridgev2.
 	} else if data.ActiveMemberCount > 0 {
 		info.Members.TotalMemberCount = int(data.ActiveMemberCount)
 	}
-	if name := chatName(data); name != "" {
-		info.Name = &name
-	}
-	if data.Meta != nil {
-		info.Avatar = avatarFromURL(data.Meta.ImageURL)
+	if data.Type == "MultiChat" {
+		display, displayErr := chatmeta.ProjectGroupDisplay(data)
+		if displayErr != nil {
+			return nil, displayErr
+		}
+		name := display.Name
+		if name == "" {
+			name = chatName(chatmeta.ChatData{DisplayNicknames: data.DisplayNicknames})
+		}
+		if name != "" {
+			info.Name = &name
+		}
+		if display.AvatarKnown {
+			avatarURL := display.ImageURL
+			if avatarURL == "" {
+				avatarURL = display.FullImageURL
+			}
+			if avatarURL == "" {
+				info.Avatar = &bridgev2.Avatar{Remove: true}
+			} else {
+				info.Avatar = avatarFromURL(avatarURL)
+			}
+		}
+	} else {
+		if name := chatName(data); name != "" {
+			info.Name = &name
+		}
+		if data.Meta != nil {
+			info.Avatar = avatarFromURL(data.Meta.ImageURL)
+		}
 	}
 	if data.Type == "DirectChat" && completeRoster {
 		otherUserID, count := networkid.UserID(""), 0

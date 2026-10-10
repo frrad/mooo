@@ -94,6 +94,29 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 		return kc.chatResync(evt.ChatID, 0, evt.PlusUserID)
 	case events.ChatMoimMetaChanged:
 		return kc.announcementResync(evt.ChatID)
+	case events.ChatMCMetaChanged:
+		if evt.Type == "name" || evt.Type == "imagePath" {
+			// Refresh the connected profile instead of applying potentially
+			// delayed personal notice values to current Matrix state.
+			resync := kc.chatResync(evt.ChatID, 0, kc.userID).(*simplevent.ChatResync)
+			resync.GetChatInfoFunc = func(ctx context.Context, portal *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
+				if ctx == nil {
+					return nil, bridgev2.ErrNotLoggedIn
+				}
+				if portal == nil || portal.PortalKey != makePortalKey(evt.ChatID, kc.login.ID) {
+					return nil, errChatInfoMismatch
+				}
+				ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				c, err := kc.metadataClient()
+				if err != nil {
+					return nil, err
+				}
+				return kc.chatInfoFromClient(ctx, portal, c, false, true)
+			}
+			return resync
+		}
+		return nil
 	case events.ChatMetaChanged:
 		return kc.chatResync(evt.ChatID, 0, evt.AuthorID)
 	case events.ChatLeft:

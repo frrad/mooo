@@ -46,7 +46,7 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       source requires a first message before a group exists.
 - [x] Explicit Matrix group creation (PR #271) with selected participants and safe handling
       of invalid participants and ambiguous creation/invitation failures.
-- [ ] Membership and access lifecycle, including offline changes and bridge-user
+- [x] Membership and access lifecycle (PR #272), including offline changes and bridge-user
       removal; prevent forwarding to removed members.
 - [ ] Shared/personal group names and group avatar replacement/clearing, with
       convergence and clear rejection of unsupported outbound changes.
@@ -79,14 +79,13 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       notifications, source roles and management permissions; prevent personal
       settings from changing shared state and reject unsupported actions.
 
-First active slice: membership changes and access lifecycle. Native discovery
-shipped in PR #270 and explicit Matrix creation in PR #271. Creation's owned
-A/B/C encrypted acceptance, once-only invitation completion and restart evidence
-are recorded in [creation evidence](research/bridge/MATRIX-GROUP-CREATION.md).
-Trace Mac invitation/join/leave/removal consumers, source-authoritative roster
-refresh and bridge-account removal before implementing access changes. Verify
-removed members stop receiving subsequent content, and offline changes/rejoining
-converge without duplicate ghosts or source mutations.
+First active slice: group name and avatar changes. Native discovery shipped
+in PR #270, explicit Matrix creation in PR #271, and membership/access lifecycle
+in PR #272. Membership's owned encrypted acceptance, permission failure and
+restart evidence are recorded in
+[membership evidence](research/bridge/GROUP-MEMBERSHIP.md). Trace shared and
+personal name/avatar precedence, revision handling, replacement and clearing,
+then verify live/offline convergence and explicit unsupported outbound rejection.
 
 Cloud backup/restore and Secret Chat remain excluded. Do not claim format,
 room-type or scale parity beyond supporting evidence.

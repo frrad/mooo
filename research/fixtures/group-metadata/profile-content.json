@@ -1,0 +1,41 @@
+{
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk for Mac 26.8.0 arm64",
+    "date": "2026-10-09",
+    "method": "Isolated signed official-client lab harness replays these canonical synthetic type-4 content strings through LocoChatMeta.groupProfileImageUrlInfo; official preference hashes unchanged, no account or network entitlement.",
+    "doc": "research/bridge/GROUP-NAME-AVATAR.md"
+  },
+  "cases": [
+    {
+      "content": "{\"imageUrl\":\"https://example.invalid/small.png\",\"fullImageUrl\":\"https://example.invalid/full.png\"}",
+      "present": true,
+      "image": "https://example.invalid/small.png",
+      "fullImage": "https://example.invalid/full.png"
+    },
+    {
+      "content": "{\"imageUrl\":\"\",\"fullImageUrl\":\"\"}",
+      "present": true,
+      "image": "",
+      "fullImage": ""
+    },
+    {
+      "content": "{\"fullImageUrl\":\"https://example.invalid/full-only.png\"}",
+      "present": true,
+      "image": null,
+      "fullImage": "https://example.invalid/full-only.png"
+    },
+    {
+      "content": "{}",
+      "present": true,
+      "image": null,
+      "fullImage": null
+    },
+    {
+      "content": "",
+      "present": false,
+      "image": null,
+      "fullImage": null
+    }
+  ]
+}
