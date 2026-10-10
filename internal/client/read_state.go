@@ -50,11 +50,9 @@ func (c *Client) MarkRead(ctx context.Context, chatID, watermark int64) (syncmsg
 		return syncmsg.Response{}, nil
 	}
 
-	session, err := c.ensureSession(ctx)
-	if err != nil {
-		return syncmsg.Response{}, err
-	}
-	response, err := session.MarkRead(ctx, chatID, watermark)
+	response, err := withSession(c, ctx, func(session *Session) (syncmsg.Response, error) {
+		return session.MarkRead(ctx, chatID, watermark)
+	})
 	if err != nil {
 		return syncmsg.Response{}, err
 	}
