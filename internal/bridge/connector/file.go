@@ -2,7 +2,6 @@ package connector
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -16,27 +15,19 @@ import (
 var errFileTransfer = transientTransferError("connector: file transfer failed")
 
 func convertFile(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.FileMessage) (*bridgev2.ConvertedMessage, error) {
-	ctx, cancel := context.WithTimeout(ctx, matrixImageTransferTimeout)
-	defer cancel()
 	f := msg.Message
 	a := f.Attachment
-	metadata := newKakaoMessageMetadata(f.ChatID, f.LogID, f.AuthorID, messagetype.File, "[file]", 0)
-	data, err := media.DownloadFile(ctx, photoHTTPClient, a)
-	if err != nil {
-		if category, ok := deterministicPhotoFailure(err); ok {
-			metadata.ConversionGap = category
-			return messageWithMetadata(event.MsgNotice, fmt.Sprintf("A KakaoTalk file could not be downloaded (%s).", category), metadata), nil
-		}
-		return nil, errFileTransfer
-	}
-	mimeType := strings.SplitN(http.DetectContentType(data), ";", 2)[0]
-	uri, file, err := intent.UploadMedia(ctx, portal.MXID, data, a.Name, mimeType)
-	if err != nil {
-		return nil, errFileTransfer
-	}
-	content := &event.MessageEventContent{MsgType: event.MsgFile, Body: a.Name, FileName: a.Name, URL: uri, File: file, Info: &event.FileInfo{MimeType: mimeType, Size: len(data)}}
-	if file != nil {
-		content.URL = ""
-	}
-	return &bridgev2.ConvertedMessage{Parts: []*bridgev2.ConvertedMessagePart{{Type: event.EventMessage, Content: content, DBMetadata: metadata}}}, nil
+	return convertAttachment(ctx, portal, intent, attachmentSpec{
+		kind: "file", failedTo: "downloaded", msgType: event.MsgFile,
+		metadata:    newKakaoMessageMetadata(f.ChatID, f.LogID, f.AuthorID, messagetype.File, "[file]", 0),
+		transferErr: errFileTransfer,
+		download: func(ctx context.Context) (attachmentMedia, error) {
+			data, err := media.DownloadFile(ctx, photoHTTPClient, a)
+			if err != nil {
+				return attachmentMedia{}, err
+			}
+			mimeType := strings.SplitN(http.DetectContentType(data), ";", 2)[0]
+			return attachmentMedia{data: data, name: a.Name, mime: mimeType}, nil
+		},
+	})
 }
