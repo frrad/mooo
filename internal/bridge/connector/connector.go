@@ -16,7 +16,8 @@ import (
 	"maunium.net/go/mautrix/bridgev2/database"
 
 	"github.com/frrad/mooo/internal/authstate"
-	"github.com/frrad/mooo/internal/client"
+	"github.com/frrad/mooo/internal/protocol/loco"
+	"github.com/frrad/mooo/internal/shadow"
 )
 
 //go:embed example-config.yaml
@@ -28,14 +29,14 @@ type Config struct {
 	// private auth-state file plus its lock and continuity siblings.
 	ProfileDir string `yaml:"profile_dir"`
 
-	// BSONShadow configures the shadow comparison of every incoming LOCO body
-	// against the source-compatible observed decoder.
+	// BSONShadow optionally enables the research comparison of every incoming
+	// LOCO body against the source-compatible observed decoder. Off by default.
 	BSONShadow BSONShadowConfig `yaml:"bson_shadow"`
 }
 
-// BSONShadowConfig is the bridge-facing form of client.BSONShadowConfig.
+// BSONShadowConfig is the bridge-facing form of shadow.Config.
 type BSONShadowConfig struct {
-	// Mode is "off", "log" or "panic"; empty means log. Panic lets any remote
+	// Mode is "off", "log" or "panic"; empty means off. Panic lets any remote
 	// sender who can cause a discrepancy crash the bridge.
 	Mode string `yaml:"mode"`
 	// DumpDir optionally receives private raw-body dumps (mode 0700 required).
@@ -64,6 +65,10 @@ type KakaoConnector struct {
 	// Production therefore fails closed until a reviewed backend is supplied;
 	// tests use a fake transport here.
 	qrBackendFactory func(context.Context, authstate.Identity) (qrBackend, error)
+
+	// packetObserver is the configured BSON shadow observer, built by Start.
+	// Nil, the default, adds no per-packet work.
+	packetObserver func(loco.Packet)
 }
 
 var (
@@ -95,11 +100,12 @@ func (kc *KakaoConnector) Start(ctx context.Context) error {
 	return kc.configureBSONShadow()
 }
 
-// configureBSONShadow validates the shadow settings and installs them
-// process-wide, reporting discrepancies through the bridge logger. Events are
-// log-safe; raw bodies only ever go to the private dump directory.
+// configureBSONShadow validates the shadow settings and, when a mode is set,
+// builds the packet observer every profile client is opened with. It reports
+// discrepancies through the bridge logger. Events are log-safe; raw bodies
+// only ever go to the private dump directory.
 func (kc *KakaoConnector) configureBSONShadow() error {
-	mode, err := client.ParseBSONShadowMode(kc.Config.BSONShadow.Mode)
+	mode, err := shadow.ParseMode(kc.Config.BSONShadow.Mode)
 	if err != nil {
 		return fmt.Errorf("connector: network.bson_shadow.mode: %w", err)
 	}
@@ -113,10 +119,10 @@ func (kc *KakaoConnector) configureBSONShadow() error {
 		}
 	}
 	log := kc.Bridge.Log.With().Str("component", "bson_shadow").Logger()
-	client.SetBSONShadow(client.BSONShadowConfig{
+	kc.packetObserver = shadow.NewObserver(shadow.Config{
 		Mode:    mode,
 		DumpDir: kc.Config.BSONShadow.DumpDir,
-		Report: func(event client.BSONShadowEvent) {
+		Report: func(event shadow.Event) {
 			entry := log.Warn().
 				Str("method", event.Method).
 				Uint32("packet_id", event.PacketID).
@@ -195,7 +201,7 @@ func (kc *KakaoConnector) LoadUserLogin(ctx context.Context, login *bridgev2.Use
 		return err
 	}
 	login.Client = newKakaoClient(login, newBridgeStore(login.Bridge.DB), userID, func() (kakaoClient, error) {
-		return openProfileClient(statePath)
+		return openProfileClient(statePath, kc.packetObserver)
 	})
 	return nil
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/chat"
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
+	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/media"
 	"github.com/frrad/mooo/internal/protocol/reactions"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
@@ -103,8 +104,8 @@ type bootstrapFailure struct {
 func (e bootstrapFailure) Error() string { return e.stage + ": " + e.err.Error() }
 func (e bootstrapFailure) Unwrap() error { return e.err }
 
-func openProfileClient(statePath string) (kakaoClient, error) {
-	return client.OpenWithOptions(statePath, nil, client.OpenOptions{FullChatList: true})
+func openProfileClient(statePath string, packetObserver func(loco.Packet)) (kakaoClient, error) {
+	return client.OpenWithOptions(statePath, nil, client.OpenOptions{FullChatList: true, PacketObserver: packetObserver})
 }
 
 // Bridge state error codes reported by this connector.
