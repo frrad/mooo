@@ -1,0 +1,137 @@
+{
+  "requests": [
+    {
+      "input": {
+        "chatIds": [
+          5000,
+          5000
+        ],
+        "logIds": [
+          100,
+          200
+        ]
+      },
+      "method": "GETMSGS",
+      "json": "{\"chatIds\":[5000,5000],\"logIds\":[100,200]}"
+    },
+    {
+      "input": {
+        "chatIds": [],
+        "logIds": []
+      },
+      "method": "GETMSGS",
+      "json": "{\"chatIds\":[],\"logIds\":[]}"
+    },
+    {
+      "input": {
+        "chatId": 5000,
+        "cur": 100,
+        "max": 200,
+        "cnt": 0
+      },
+      "method": "SYNCMSG",
+      "json": "{\"cur\":100,\"chatId\":5000,\"max\":200,\"cnt\":0}"
+    },
+    {
+      "input": {
+        "chatId": 5000,
+        "cur": 100,
+        "max": 200,
+        "cnt": 1
+      },
+      "method": "SYNCMSG",
+      "json": "{\"cur\":100,\"chatId\":5000,\"max\":200,\"cnt\":1}"
+    },
+    {
+      "input": {
+        "chatId": 5000,
+        "cur": 100,
+        "max": 200,
+        "cnt": 300
+      },
+      "method": "SYNCMSG",
+      "json": "{\"cur\":100,\"chatId\":5000,\"max\":200,\"cnt\":300}"
+    }
+  ],
+  "responses": [
+    {
+      "className": "LocoGetMessagesResponse",
+      "input": {
+        "status": 0,
+        "chatLogs": []
+      },
+      "logsNil": false,
+      "logsCount": 0
+    },
+    {
+      "className": "LocoGetMessagesResponse",
+      "input": {
+        "status": 0
+      },
+      "logsNil": true,
+      "logsCount": null,
+      "mooo_deviation": "Normalize native nil collection to an empty Go slice; this does not establish history availability.",
+      "mooo_expected": {
+        "logCount": 0
+      }
+    },
+    {
+      "className": "LocoGetMessagesResponse",
+      "input": {
+        "status": 0,
+        "chatLogs": null
+      },
+      "logsNil": true,
+      "logsCount": null,
+      "mooo_deviation": "Normalize native nil collection to an empty Go slice; this does not establish history availability.",
+      "mooo_expected": {
+        "logCount": 0
+      }
+    },
+    {
+      "className": "LocoSyncMsgResponse",
+      "input": {
+        "status": 0,
+        "chatLogs": []
+      },
+      "logsNil": false,
+      "logsCount": 0
+    },
+    {
+      "className": "LocoSyncMsgResponse",
+      "input": {
+        "status": 0
+      },
+      "logsNil": true,
+      "logsCount": null,
+      "mooo_deviation": "Normalize native nil collection to an empty Go slice; this does not establish history availability.",
+      "mooo_expected": {
+        "logCount": 0
+      }
+    },
+    {
+      "className": "LocoSyncMsgResponse",
+      "input": {
+        "status": 0,
+        "chatLogs": null
+      },
+      "logsNil": true,
+      "logsCount": null,
+      "mooo_deviation": "Normalize native nil collection to an empty Go slice; this does not establish history availability.",
+      "mooo_expected": {
+        "logCount": 0
+      }
+    }
+  ],
+  "provenance": {
+    "kind": "executed",
+    "client": "official macOS KakaoTalk 26.8.0 arm64",
+    "date": "2026-10-10",
+    "method": "group_history_model_mac.py isolated signed offline harness executes request JSON serialization and response JSON initialization; original preferences unchanged and process killed.",
+    "scope": "Request JSON construction and empty response model decoding only; excludes transport, status handling, persistence, visibility and read side effects.",
+    "doc": "research/bridge/GROUP-HISTORY.md"
+  },
+  "deliberate_deviations": [
+    "mooo normalizes nil/omitted chatLogs to an empty Go slice; unavailability is decided by the consuming bounded recovery path, not invented from this model fixture."
+  ]
+}
