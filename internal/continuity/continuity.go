@@ -193,11 +193,11 @@ func (s *Store) InstallSession(lastTokenID *int64, lbk *int32, observed []ChatTa
 			if chatID <= 0 {
 				return ErrInvalidCursor
 			}
-			removeTarget(&next.KnownChats, chatID)
-			removeCursor(&next.Chats, chatID)
-			removeGap(&next.HistoryGaps, chatID)
-			removeReadWatermark(&next.ReadWatermarks, chatID)
-			removeDeliveryStart(&next.DeliveryStarts, chatID)
+			removeByChat(&next.KnownChats, chatID)
+			removeByChat(&next.Chats, chatID)
+			removeByChat(&next.HistoryGaps, chatID)
+			removeByChat(&next.ReadWatermarks, chatID)
+			removeByChat(&next.DeliveryStarts, chatID)
 		}
 		for _, target := range observed {
 			if target.ChatID <= 0 || target.MaxLogID < 0 {
@@ -220,19 +220,11 @@ func (s *Store) RecordGap(chatID, fromLogID, toLogID int64) error {
 		return ErrInvalidCursor
 	}
 	return s.update(func(next *Checkpoint) error {
-		index := sort.Search(len(next.HistoryGaps), func(i int) bool { return next.HistoryGaps[i].ChatID >= chatID })
-		if index < len(next.HistoryGaps) && next.HistoryGaps[index].ChatID == chatID {
-			if fromLogID < next.HistoryGaps[index].FromLogID {
-				next.HistoryGaps[index].FromLogID = fromLogID
-			}
-			if toLogID > next.HistoryGaps[index].ToLogID {
-				next.HistoryGaps[index].ToLogID = toLogID
-			}
-			return nil
-		}
-		next.HistoryGaps = append(next.HistoryGaps, HistoryGap{})
-		copy(next.HistoryGaps[index+1:], next.HistoryGaps[index:])
-		next.HistoryGaps[index] = HistoryGap{ChatID: chatID, FromLogID: fromLogID, ToLogID: toLogID}
+		upsertByChat(&next.HistoryGaps, HistoryGap{ChatID: chatID, FromLogID: fromLogID, ToLogID: toLogID}, func(gap *HistoryGap) bool {
+			gap.FromLogID = min(gap.FromLogID, fromLogID)
+			gap.ToLogID = max(gap.ToLogID, toLogID)
+			return true
+		})
 		return nil
 	})
 }
@@ -244,12 +236,12 @@ func (s *Store) ResolveGapThrough(chatID, logID int64) error {
 		return ErrInvalidCursor
 	}
 	return s.update(func(next *Checkpoint) error {
-		index := sort.Search(len(next.HistoryGaps), func(i int) bool { return next.HistoryGaps[i].ChatID >= chatID })
-		if index >= len(next.HistoryGaps) || next.HistoryGaps[index].ChatID != chatID || logID < next.HistoryGaps[index].FromLogID {
+		index, found := searchChat(next.HistoryGaps, chatID)
+		if !found || logID < next.HistoryGaps[index].FromLogID {
 			return nil
 		}
 		if logID >= next.HistoryGaps[index].ToLogID {
-			removeGap(&next.HistoryGaps, chatID)
+			removeByChat(&next.HistoryGaps, chatID)
 			return nil
 		}
 		next.HistoryGaps[index].FromLogID = logID + 1
@@ -265,35 +257,22 @@ func (s *Store) RecordDeliveryStart(chatID, logID int64) error {
 		return ErrInvalidCursor
 	}
 	return s.update(func(next *Checkpoint) error {
-		for _, cursor := range next.Chats {
-			if cursor.ChatID == chatID {
-				return errUnchanged
-			}
+		if _, committed := searchChat(next.Chats, chatID); committed {
+			return errUnchanged
 		}
 		raised := raiseTarget(&next.KnownChats, ChatTarget{ChatID: chatID, MaxLogID: logID})
-		index := sort.Search(len(next.DeliveryStarts), func(i int) bool { return next.DeliveryStarts[i].ChatID >= chatID })
-		if index < len(next.DeliveryStarts) && next.DeliveryStarts[index].ChatID == chatID {
-			if logID < next.DeliveryStarts[index].FirstLogID {
-				next.DeliveryStarts[index].FirstLogID = logID
-				return nil
+		lowered := upsertByChat(&next.DeliveryStarts, DeliveryStart{ChatID: chatID, FirstLogID: logID}, func(start *DeliveryStart) bool {
+			if logID >= start.FirstLogID {
+				return false
 			}
-			if !raised {
-				return errUnchanged
-			}
-			return nil
+			start.FirstLogID = logID
+			return true
+		})
+		if !lowered && !raised {
+			return errUnchanged
 		}
-		next.DeliveryStarts = append(next.DeliveryStarts, DeliveryStart{})
-		copy(next.DeliveryStarts[index+1:], next.DeliveryStarts[index:])
-		next.DeliveryStarts[index] = DeliveryStart{ChatID: chatID, FirstLogID: logID}
 		return nil
 	})
-}
-
-func removeDeliveryStart(starts *[]DeliveryStart, chatID int64) {
-	index := sort.Search(len(*starts), func(i int) bool { return (*starts)[i].ChatID >= chatID })
-	if index < len(*starts) && (*starts)[index].ChatID == chatID {
-		*starts = append((*starts)[:index], (*starts)[index+1:]...)
-	}
 }
 
 // CommitMessage advances one per-chat maximum only after the application has
@@ -305,22 +284,17 @@ func (s *Store) CommitMessage(chatID, logID int64) (bool, error) {
 	}
 	advanced := false
 	err := s.update(func(next *Checkpoint) error {
-		removeDeliveryStart(&next.DeliveryStarts, chatID)
-		index := sort.Search(len(next.Chats), func(i int) bool { return next.Chats[i].ChatID >= chatID })
-		if index < len(next.Chats) && next.Chats[index].ChatID == chatID {
-			if logID <= next.Chats[index].MaxLogID {
-				return nil
+		removeByChat(&next.DeliveryStarts, chatID)
+		advanced = upsertByChat(&next.Chats, ChatCursor{ChatID: chatID, MaxLogID: logID}, func(cursor *ChatCursor) bool {
+			if logID <= cursor.MaxLogID {
+				return false
 			}
-			next.Chats[index].MaxLogID = logID
+			cursor.MaxLogID = logID
+			return true
+		})
+		if advanced {
 			raiseTarget(&next.KnownChats, ChatTarget{ChatID: chatID, MaxLogID: logID})
-			advanced = true
-			return nil
 		}
-		next.Chats = append(next.Chats, ChatCursor{})
-		copy(next.Chats[index+1:], next.Chats[index:])
-		next.Chats[index] = ChatCursor{ChatID: chatID, MaxLogID: logID}
-		advanced = true
-		raiseTarget(&next.KnownChats, ChatTarget{ChatID: chatID, MaxLogID: logID})
 		return nil
 	})
 	return advanced, err
@@ -334,8 +308,8 @@ func (s *Store) ReadWatermark(chatID int64) int64 {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	index := sort.Search(len(s.data.ReadWatermarks), func(i int) bool { return s.data.ReadWatermarks[i].ChatID >= chatID })
-	if index >= len(s.data.ReadWatermarks) || s.data.ReadWatermarks[index].ChatID != chatID {
+	index, found := searchChat(s.data.ReadWatermarks, chatID)
+	if !found {
 		return 0
 	}
 	return s.data.ReadWatermarks[index].Watermark
@@ -349,19 +323,13 @@ func (s *Store) CommitReadWatermark(chatID, watermark int64) (bool, error) {
 	}
 	advanced := false
 	err := s.update(func(next *Checkpoint) error {
-		index := sort.Search(len(next.ReadWatermarks), func(i int) bool { return next.ReadWatermarks[i].ChatID >= chatID })
-		if index < len(next.ReadWatermarks) && next.ReadWatermarks[index].ChatID == chatID {
-			if watermark <= next.ReadWatermarks[index].Watermark {
-				return nil
+		advanced = upsertByChat(&next.ReadWatermarks, ReadWatermark{ChatID: chatID, Watermark: watermark}, func(current *ReadWatermark) bool {
+			if watermark <= current.Watermark {
+				return false
 			}
-			next.ReadWatermarks[index].Watermark = watermark
-			advanced = true
-			return nil
-		}
-		next.ReadWatermarks = append(next.ReadWatermarks, ReadWatermark{})
-		copy(next.ReadWatermarks[index+1:], next.ReadWatermarks[index:])
-		next.ReadWatermarks[index] = ReadWatermark{ChatID: chatID, Watermark: watermark}
-		advanced = true
+			current.Watermark = watermark
+			return true
+		})
 		return nil
 	})
 	return advanced, err
@@ -375,8 +343,8 @@ func (s *Store) IsCommitted(chatID, logID int64) bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	index := sort.Search(len(s.data.Chats), func(i int) bool { return s.data.Chats[i].ChatID >= chatID })
-	return index < len(s.data.Chats) && s.data.Chats[index].ChatID == chatID && logID <= s.data.Chats[index].MaxLogID
+	index, found := searchChat(s.data.Chats, chatID)
+	return found && logID <= s.data.Chats[index].MaxLogID
 }
 
 func (s *Store) MarkClean() error {
@@ -419,94 +387,82 @@ func validate(data Checkpoint) error {
 	if data.LastTokenID < 0 || data.LBK < 0 || data.Chats == nil || data.KnownChats == nil || data.HistoryGaps == nil || data.ReadWatermarks == nil {
 		return ErrCorrupt
 	}
-	var previous int64
-	for i, start := range data.DeliveryStarts {
-		if start.ChatID <= 0 || start.FirstLogID <= 0 || (i > 0 && start.ChatID <= previous) {
-			return ErrCorrupt
-		}
-		previous = start.ChatID
-	}
-	previous = 0
-	for i, cursor := range data.Chats {
-		if cursor.ChatID <= 0 || cursor.MaxLogID <= 0 || (i > 0 && cursor.ChatID <= previous) {
-			return ErrCorrupt
-		}
-		previous = cursor.ChatID
-	}
-	previous = 0
-	for i, target := range data.KnownChats {
-		if target.ChatID <= 0 || target.MaxLogID < 0 || (i > 0 && target.ChatID <= previous) {
-			return ErrCorrupt
-		}
-		previous = target.ChatID
-	}
-	previous = 0
-	for i, gap := range data.HistoryGaps {
-		if gap.ChatID <= 0 || gap.FromLogID <= 0 || gap.ToLogID < gap.FromLogID || (i > 0 && gap.ChatID <= previous) {
-			return ErrCorrupt
-		}
-		previous = gap.ChatID
-	}
-	previous = 0
-	for i, watermark := range data.ReadWatermarks {
-		if watermark.ChatID <= 0 || watermark.Watermark <= 0 || (i > 0 && watermark.ChatID <= previous) {
-			return ErrCorrupt
-		}
-		previous = watermark.ChatID
+	if !sortedByChat(data.DeliveryStarts, func(s DeliveryStart) bool { return s.FirstLogID > 0 }) ||
+		!sortedByChat(data.Chats, func(c ChatCursor) bool { return c.MaxLogID > 0 }) ||
+		!sortedByChat(data.KnownChats, func(t ChatTarget) bool { return t.MaxLogID >= 0 }) ||
+		!sortedByChat(data.HistoryGaps, func(g HistoryGap) bool { return g.FromLogID > 0 && g.ToLogID >= g.FromLogID }) ||
+		!sortedByChat(data.ReadWatermarks, func(w ReadWatermark) bool { return w.Watermark > 0 }) {
+		return ErrCorrupt
 	}
 	return nil
 }
 
-func setTarget(targets *[]ChatTarget, target ChatTarget) {
-	index := sort.Search(len(*targets), func(i int) bool { return (*targets)[i].ChatID >= target.ChatID })
-	if index < len(*targets) && (*targets)[index].ChatID == target.ChatID {
-		(*targets)[index] = target
-		return
-	}
-	*targets = append(*targets, ChatTarget{})
-	copy((*targets)[index+1:], (*targets)[index:])
-	(*targets)[index] = target
-}
-
-func raiseTarget(targets *[]ChatTarget, target ChatTarget) bool {
-	index := sort.Search(len(*targets), func(i int) bool { return (*targets)[i].ChatID >= target.ChatID })
-	if index < len(*targets) && (*targets)[index].ChatID == target.ChatID {
-		if (*targets)[index].MaxLogID < target.MaxLogID {
-			(*targets)[index].MaxLogID = target.MaxLogID
-			return true
+// sortedByChat reports whether every entry has a positive chat ID strictly
+// greater than its predecessor's and satisfies valid.
+func sortedByChat[T chatKeyed](items []T, valid func(T) bool) bool {
+	var previous int64
+	for _, item := range items {
+		if item.chatID() <= previous || !valid(item) {
+			return false
 		}
-		return false
+		previous = item.chatID()
 	}
-	setTarget(targets, target)
 	return true
 }
 
-func removeTarget(targets *[]ChatTarget, chatID int64) {
-	index := sort.Search(len(*targets), func(i int) bool { return (*targets)[i].ChatID >= chatID })
-	if index < len(*targets) && (*targets)[index].ChatID == chatID {
-		*targets = append((*targets)[:index], (*targets)[index+1:]...)
+// chatKeyed is implemented by every per-chat checkpoint entry. Each slice of
+// such entries is kept strictly sorted by chat ID; validate enforces it.
+type chatKeyed interface{ chatID() int64 }
+
+func (c ChatCursor) chatID() int64    { return c.ChatID }
+func (s DeliveryStart) chatID() int64 { return s.ChatID }
+func (t ChatTarget) chatID() int64    { return t.ChatID }
+func (g HistoryGap) chatID() int64    { return g.ChatID }
+func (w ReadWatermark) chatID() int64 { return w.ChatID }
+
+// searchChat returns the position of chatID in a sorted slice and whether an
+// entry for it is present there.
+func searchChat[T chatKeyed](items []T, chatID int64) (int, bool) {
+	index := sort.Search(len(items), func(i int) bool { return items[i].chatID() >= chatID })
+	return index, index < len(items) && items[index].chatID() == chatID
+}
+
+// upsertByChat inserts value in sorted position when its chat has no entry and
+// reports true. Otherwise it applies merge to the existing entry and reports
+// merge's result.
+func upsertByChat[T chatKeyed](items *[]T, value T, merge func(*T) bool) bool {
+	index, found := searchChat(*items, value.chatID())
+	if found {
+		return merge(&(*items)[index])
+	}
+	*items = append(*items, value)
+	copy((*items)[index+1:], (*items)[index:])
+	(*items)[index] = value
+	return true
+}
+
+// removeByChat deletes chatID's entry from a sorted slice, if present.
+func removeByChat[T chatKeyed](items *[]T, chatID int64) {
+	if index, found := searchChat(*items, chatID); found {
+		*items = append((*items)[:index], (*items)[index+1:]...)
 	}
 }
 
-func removeCursor(cursors *[]ChatCursor, chatID int64) {
-	index := sort.Search(len(*cursors), func(i int) bool { return (*cursors)[i].ChatID >= chatID })
-	if index < len(*cursors) && (*cursors)[index].ChatID == chatID {
-		*cursors = append((*cursors)[:index], (*cursors)[index+1:]...)
-	}
+func setTarget(targets *[]ChatTarget, target ChatTarget) {
+	upsertByChat(targets, target, func(current *ChatTarget) bool {
+		*current = target
+		return true
+	})
 }
 
-func removeGap(gaps *[]HistoryGap, chatID int64) {
-	index := sort.Search(len(*gaps), func(i int) bool { return (*gaps)[i].ChatID >= chatID })
-	if index < len(*gaps) && (*gaps)[index].ChatID == chatID {
-		*gaps = append((*gaps)[:index], (*gaps)[index+1:]...)
-	}
-}
-
-func removeReadWatermark(watermarks *[]ReadWatermark, chatID int64) {
-	index := sort.Search(len(*watermarks), func(i int) bool { return (*watermarks)[i].ChatID >= chatID })
-	if index < len(*watermarks) && (*watermarks)[index].ChatID == chatID {
-		*watermarks = append((*watermarks)[:index], (*watermarks)[index+1:]...)
-	}
+func raiseTarget(targets *[]ChatTarget, target ChatTarget) bool {
+	return upsertByChat(targets, target, func(current *ChatTarget) bool {
+		if current.MaxLogID >= target.MaxLogID {
+			return false
+		}
+		current.MaxLogID = target.MaxLogID
+		return true
+	})
 }
 
 // migrate upgrades a decoded older checkpoint to Version and validates it.
