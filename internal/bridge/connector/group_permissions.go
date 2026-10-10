@@ -50,3 +50,72 @@ func (kc *KakaoClient) HandleMatrixPowerLevels(ctx context.Context, msg *bridgev
 	}
 	return false, status
 }
+
+var _ bridgev2.MembershipHandlingNetworkAPI = (*KakaoClient)(nil)
+
+var errMembershipNotBridged = errors.New("connector: KakaoTalk membership cannot be changed from Matrix")
+
+// HandleMatrixMembership keeps KakaoTalk members' Matrix membership equal to
+// the source. Regular groups have no kick and the bridge does not add
+// members, so a kick, ban or invite of a KakaoTalk member is rejected and
+// undone in Matrix. Self and Matrix-only changes have no source meaning and
+// pass silently.
+func (kc *KakaoClient) HandleMatrixMembership(ctx context.Context, msg *bridgev2.MatrixMembershipChange) (*bridgev2.MatrixMembershipResult, error) {
+	if msg == nil {
+		return nil, nil
+	}
+	ghost, ok := msg.Target.(*bridgev2.Ghost)
+	if !ok || ghost == nil || msg.Type.IsSelf {
+		return nil, nil
+	}
+	var message string
+	switch msg.Type {
+	case bridgev2.Kick, bridgev2.BanJoined:
+		message = "KakaoTalk regular groups have no way to remove a member; the member stays in KakaoTalk and was restored in Matrix."
+	case bridgev2.BanLeft, bridgev2.BanInvited:
+		message = "Banning KakaoTalk users is not supported; the ban was undone."
+	case bridgev2.Invite:
+		message = "Inviting KakaoTalk users from Matrix is not supported yet; invite them in KakaoTalk. The invite was revoked."
+	default:
+		return nil, nil
+	}
+	status := bridgev2.WrapErrorInStatus(errMembershipNotBridged).
+		WithStatus(event.MessageStatusFail).
+		WithErrorReason(event.MessageStatusUnsupported).
+		WithIsCertain(true).
+		WithSendNotice(true).
+		WithMessage(message)
+	if msg.Portal == nil || msg.Portal.MXID == "" || msg.Portal.Bridge == nil || msg.Portal.Bridge.Bot == nil || ghost.Intent == nil {
+		return nil, status
+	}
+	bot, room, ghostMXID := msg.Portal.Bridge.Bot, msg.Portal.MXID, ghost.Intent.GetMXID()
+	log := zerolog.Ctx(ctx)
+	// A ban or a pending invite is cleared by setting the ghost to leave.
+	if msg.Type.To == event.MembershipBan || msg.Type == bridgev2.Invite {
+		content := &event.Content{Parsed: &event.MemberEventContent{Membership: event.MembershipLeave, Reason: "KakaoTalk membership is managed in KakaoTalk"}}
+		if _, err := bot.SendState(ctx, room, event.StateMember, string(ghostMXID), content, time.Time{}); err != nil {
+			log.Warn().Err(err).Msg("Failed to undo a rejected Matrix membership change")
+			return nil, status
+		}
+	}
+	// A member removed in Matrix is still in the KakaoTalk group.
+	if msg.Type.From == event.MembershipJoin {
+		if err := bot.EnsureInvited(ctx, room, ghostMXID); err != nil {
+			log.Warn().Err(err).Msg("Failed to re-invite a KakaoTalk member after a rejected removal")
+			return nil, status
+		}
+		if err := ghost.Intent.EnsureJoined(ctx, room); err != nil {
+			log.Warn().Err(err).Msg("Failed to restore a KakaoTalk member after a rejected removal")
+		}
+	}
+	return nil, status
+}
+
+var _ bridgev2.MuteHandlingNetworkAPI = (*KakaoClient)(nil)
+
+// HandleMute accepts a Matrix mute as the Matrix user's own setting. The Mac
+// client keeps per-chat notifications local and sends no request, so nothing
+// is sent to KakaoTalk and no shared state changes.
+func (kc *KakaoClient) HandleMute(context.Context, *bridgev2.MatrixMute) error {
+	return nil
+}

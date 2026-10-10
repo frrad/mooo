@@ -138,3 +138,114 @@ func TestPowerLevelChangesForKakaoMembersAreRejectedAndRestored(t *testing.T) {
 		t.Fatalf("Matrix-only change: changed=%v err=%v restores=%d", changed, err, len(bot.powers))
 	}
 }
+
+type membershipIntent struct {
+	powerIntent
+	mxid    id.UserID
+	members []string
+	invited []id.UserID
+	joined  int
+}
+
+func (i *membershipIntent) GetMXID() id.UserID { return i.mxid }
+
+func (i *membershipIntent) SendState(ctx context.Context, room id.RoomID, typ event.Type, key string, content *event.Content, ts time.Time) (*mautrix.RespSendEvent, error) {
+	if typ == event.StateMember {
+		i.members = append(i.members, key+":"+string(content.Parsed.(*event.MemberEventContent).Membership))
+		return &mautrix.RespSendEvent{EventID: "$member:test"}, nil
+	}
+	return i.powerIntent.SendState(ctx, room, typ, key, content, ts)
+}
+
+func (i *membershipIntent) EnsureInvited(_ context.Context, _ id.RoomID, user id.UserID) error {
+	i.invited = append(i.invited, user)
+	return nil
+}
+
+func (i *membershipIntent) EnsureJoined(context.Context, id.RoomID, ...bridgev2.EnsureJoinedParams) error {
+	i.joined++
+	return nil
+}
+
+// Regular groups have no kick and the bridge does not add members. A Matrix
+// kick, ban or invite of a KakaoTalk member is rejected once with a notice
+// and the member's Matrix membership is put back; the source is untouched.
+// Matrix-only and self membership changes pass without a notice.
+func TestMatrixMembershipChangesForKakaoMembersAreRejectedAndRestored(t *testing.T) {
+	ctx := context.Background()
+	raw, err := dbutil.NewWithDialect(filepath.Join(t.TempDir(), "bridge.db"), "sqlite3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = raw.RawDB.Close() }()
+	bot := &membershipIntent{mxid: "@bot:test"}
+	br, err := newFrameworkConversionBridge(ctx, raw, bot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portal, err := br.GetPortalByKey(ctx, makePortalKey(testChatID, makeUserLoginID(testSelfID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeKakao{}
+	kc := newKakaoClient(&bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{}}, Bridge: br, Log: zerolog.Nop()}, testSelfID, nil)
+	kc.client = fake
+	ghostIntent := &membershipIntent{mxid: "@kakao_2000:test"}
+	ghost := &bridgev2.Ghost{Ghost: &database.Ghost{ID: makeUserID(2000)}, Intent: ghostIntent}
+	change := func(typ bridgev2.MembershipChangeType, target bridgev2.GhostOrUserLogin) *bridgev2.MatrixMembershipChange {
+		msg := &bridgev2.MatrixMembershipChange{Target: target, Type: typ}
+		msg.Event = &event.Event{Type: event.StateMember}
+		msg.Content = &event.MemberEventContent{Membership: typ.To}
+		msg.Portal = portal
+		return msg
+	}
+	for _, tc := range []struct {
+		typ         bridgev2.MembershipChangeType
+		wantMembers []string
+		wantRejoin  bool
+	}{
+		{bridgev2.Kick, nil, true},
+		{bridgev2.BanJoined, []string{"@kakao_2000:test:leave"}, true},
+		{bridgev2.Invite, []string{"@kakao_2000:test:leave"}, false},
+	} {
+		bot.members, bot.invited, ghostIntent.joined = nil, nil, 0
+		_, err := kc.HandleMatrixMembership(ctx, change(tc.typ, ghost))
+		var status bridgev2.MessageStatus
+		if !errors.As(err, &status) || status.Status != event.MessageStatusFail || !status.IsCertain || !status.SendNotice {
+			t.Fatalf("%v: err = %v", tc.typ, err)
+		}
+		if len(bot.members) != len(tc.wantMembers) || (len(tc.wantMembers) > 0 && bot.members[0] != tc.wantMembers[0]) {
+			t.Fatalf("%v: member state = %q", tc.typ, bot.members)
+		}
+		rejoined := len(bot.invited) == 1 && bot.invited[0] == "@kakao_2000:test" && ghostIntent.joined == 1
+		if rejoined != tc.wantRejoin {
+			t.Fatalf("%v: rejoined = %v (invited %q, joined %d)", tc.typ, rejoined, bot.invited, ghostIntent.joined)
+		}
+	}
+	for _, typ := range []bridgev2.MembershipChangeType{bridgev2.Leave, bridgev2.Join, bridgev2.ProfileChange} {
+		if _, err := kc.HandleMatrixMembership(ctx, change(typ, &bridgev2.UserLogin{UserLogin: &database.UserLogin{ID: makeUserLoginID(testSelfID)}})); err != nil {
+			t.Fatalf("self %v rejected: %v", typ, err)
+		}
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("membership changes reached KakaoTalk: %q", fake.calls)
+	}
+}
+
+// The Mac client keeps per-chat notifications local and sends no request; a
+// Matrix mute is likewise the Matrix user's own setting and never reaches
+// KakaoTalk or shared room state.
+func TestMatrixMuteStaysLocal(t *testing.T) {
+	fake := &fakeKakao{}
+	kc := connectedClient(t, fake)
+	msg := &bridgev2.MatrixMute{}
+	msg.Content = &event.BeeperMuteEventContent{MutedUntil: -1}
+	msg.Portal = &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, "1000")}}
+	before := len(fake.calls)
+	if err := kc.HandleMute(context.Background(), msg); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.calls) != before || len(fake.sends) != 0 {
+		t.Fatalf("mute reached KakaoTalk: %q", fake.calls[before:])
+	}
+}
