@@ -159,7 +159,8 @@ of order.
 
 `Client.CatchUp(chatId, targetMax)` starts from the committed boundary, requests
 `SYNCMSG` pages declaring zero held messages (`cnt=0`), validates increasing log IDs within the requested
-range, and returns typed but uncommitted events. It tolerates one inclusive repeat
+range, rejects a chat log whose nested `chatId` names another chat, and returns
+typed but uncommitted events. It tolerates one inclusive repeat
 of `cur`. An empty/non-progressing page before `targetMax`, an invalid ordering, or
 more than 100 pages fails closed. A bounded no-progress/page-limit failure first
 persists the complete unresolved interval from the committed boundary through the

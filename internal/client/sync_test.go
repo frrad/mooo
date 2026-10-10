@@ -133,6 +133,31 @@ func TestCatchUpRejectsConflictingValidMessageIdentity(t *testing.T) {
 	backend.wait(t)
 }
 
+// Regression (C5 review): ReadHistoryPage and GetMessages rejected a chat log
+// whose nested chatId names another chat, but CatchUp delivered it into the
+// requested chat. Catch-up reads the same SYNCMSG chat logs as history.
+func TestCatchUpRejectsALogFromAnotherChat(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitMessage(42, 100); err != nil {
+		t.Fatal(err)
+	}
+	backend := newScriptedBackend(t, false,
+		expectRequest("SYNCMSG", checkSyncRequest(42, 100, 101), statusDocument(
+			bson.E{Key: "chatLogs", Value: bson.A{
+				bson.D{{Key: "chatId", Value: int64(43)}, {Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "foreign"}},
+			}},
+		)),
+	)
+	api := testContinuityClient(t, checkpoint, backend)
+	if got, err := api.CatchUp(t.Context(), 42, 101); !errors.Is(err, events.ErrChatLogMisdirected) || got != nil {
+		t.Fatalf("CatchUp = %#v, %v; want ErrChatLogMisdirected", got, err)
+	}
+	if !checkpoint.IsCommitted(42, 100) || checkpoint.IsCommitted(42, 101) {
+		t.Fatal("foreign chat log changed the durable checkpoint")
+	}
+	backend.wait(t)
+}
+
 func TestCatchUpFailsOnNoProgress(t *testing.T) {
 	checkpoint := testCheckpoint(t)
 	if _, err := checkpoint.CommitMessage(42, 100); err != nil {

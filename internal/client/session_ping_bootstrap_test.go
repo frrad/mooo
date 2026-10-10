@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/frrad/mooo/internal/continuity"
+	"github.com/frrad/mooo/internal/protocol/booking"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -64,7 +65,7 @@ func TestSessionExplicitRequestIDRejectsPendingCollision(t *testing.T) {
 
 func TestConnectSessionArmsPingOnlyAfterLoginCompletion(t *testing.T) {
 	state := reusableTestState()
-	booking := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
+	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
 		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
 		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
 	)))
@@ -88,8 +89,8 @@ func TestConnectSessionArmsPingOnlyAfterLoginCompletion(t *testing.T) {
 	dialers := sessionDialers{
 		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			switch host {
-			case bookingHost:
-				return booking.client, nil
+			case booking.Host:
+				return bookingBackend.client, nil
 			case "checkin.invalid":
 				return checkin.client, nil
 			default:
@@ -110,14 +111,14 @@ func TestConnectSessionArmsPingOnlyAfterLoginCompletion(t *testing.T) {
 	}
 	defer func() { _ = session.Close() }()
 	clock.runLast()
-	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
+	for _, backend := range []*scriptedBackend{bookingBackend, checkin, carriage} {
 		backend.wait(t)
 	}
 }
 
 func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
 	state := reusableTestState()
-	booking := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
+	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
 		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
 		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
 	)))
@@ -148,8 +149,8 @@ func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
 	dialers := sessionDialers{
 		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			switch host {
-			case bookingHost:
-				return booking.client, nil
+			case booking.Host:
+				return bookingBackend.client, nil
 			case "checkin.invalid":
 				return checkin.client, nil
 			default:
@@ -205,14 +206,14 @@ func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
 		t.Fatalf("timer count after failed PING=%d, want unchanged at %d", timerCount, timersBefore)
 	}
 	close(release)
-	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
+	for _, backend := range []*scriptedBackend{bookingBackend, checkin, carriage} {
 		backend.wait(t)
 	}
 }
 
 func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.T) {
 	state := reusableTestState()
-	booking := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
+	bookingBackend := newScriptedBackend(t, false, expectRequest("GETCONF", nil, statusDocument(
 		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
 		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
 	)))
@@ -268,8 +269,8 @@ func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.
 	dialers := sessionDialers{
 		tls: func(_ context.Context, host string, _ int) (*wireConn, error) {
 			switch host {
-			case bookingHost:
-				return booking.client, nil
+			case booking.Host:
+				return bookingBackend.client, nil
 			case "checkin.invalid":
 				return checkin.client, nil
 			default:
@@ -330,7 +331,7 @@ func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.
 	case <-time.After(time.Second):
 		t.Fatal("bootstrap did not complete after pagination heartbeat")
 	}
-	for _, backend := range []*scriptedBackend{booking, checkin, carriage} {
+	for _, backend := range []*scriptedBackend{bookingBackend, checkin, carriage} {
 		backend.wait(t)
 	}
 }
