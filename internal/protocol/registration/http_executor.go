@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+
+	"github.com/frrad/mooo/internal/protocol/macweb"
 )
 
 var (
@@ -22,12 +24,7 @@ var (
 // Doer is the only execution dependency. A caller may supply a custom test
 // executor, transport wrapper, or deliberately configured client; this package
 // never creates a default client or changes redirects/cookies/retries.
-type Doer interface {
-	Do(*http.Request) (*http.Response, error)
-}
-
-// HTTPDoer is an explanatory alias for callers that prefer the longer name.
-type HTTPDoer = Doer
+type Doer = macweb.Doer
 
 // HTTPExecutor performs one injected HTTP attempt. It has no retry loop,
 // redirect policy, cookie store, auth behavior, or response-header output.

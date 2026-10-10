@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
+
+	"github.com/frrad/mooo/internal/protocol/macweb"
 )
 
 const (
@@ -36,8 +36,9 @@ var (
 	ErrInvalidRequest  = errors.New("reactions: invalid request")
 	ErrInvalidResponse = errors.New("reactions: invalid response")
 	ErrRejected        = errors.New("reactions: request rejected")
-	ErrTransport       = errors.New("reactions: transport failure")
-	ErrLookupFailed    = errors.New("reactions: lookup failed")
+	// ErrTransport is macweb.ErrTransport; the outcome of a mutation is unknown.
+	ErrTransport    = macweb.ErrTransport
+	ErrLookupFailed = errors.New("reactions: lookup failed")
 	// ErrOutcomeUnconfirmed means the server returned a response, but the
 	// response does not establish whether the requested state was applied.
 	ErrOutcomeUnconfirmed = errors.New("reactions: outcome unconfirmed")
@@ -46,23 +47,7 @@ var (
 	ErrOutcomeUnknown = errors.New("reactions: outcome unknown")
 )
 
-type ClientProfile struct {
-	AppVersion  string
-	OSVersion   string
-	Language    string
-	UserID      int64
-	AccessToken string
-	DeviceUUID  string
-}
-
-func (p ClientProfile) validate() error {
-	for _, value := range []string{p.AppVersion, p.OSVersion, p.Language, p.AccessToken, p.DeviceUUID} {
-		if strings.TrimSpace(value) == "" || strings.IndexByte(value, 0) >= 0 {
-			return ErrInvalidRequest
-		}
-	}
-	return nil
-}
+type ClientProfile = macweb.Profile
 
 // Request applies one reaction to one chat log. Type Cancel removes the
 // caller's current reaction. LinkID is included only for open-chat messages.
@@ -92,7 +77,7 @@ func membersPath(chatID, logID int64) string {
 // NewHTTPRequest builds the exact JSON mutation shape recovered from the
 // current Mac client. Authorization values are sensitive and must not be logged.
 func NewHTTPRequest(ctx context.Context, profile ClientProfile, reaction Request) (*http.Request, error) {
-	if ctx == nil || profile.validate() != nil || reaction.validate() != nil {
+	if ctx == nil || profile.Validate(true) != nil || reaction.validate() != nil {
 		return nil, ErrInvalidRequest
 	}
 	payload := struct {
@@ -113,14 +98,14 @@ func NewHTTPRequest(ctx context.Context, profile ClientProfile, reaction Request
 	if err != nil {
 		return nil, ErrInvalidRequest
 	}
-	applyHeaders(req, profile)
+	macweb.ApplyHeaders(req, profile, true)
 	req.Header.Set("Content-Type", "application/json")
 	return req, nil
 }
 
 // NewMembersHTTPRequest builds the current Mac reaction-attribution lookup.
 func NewMembersHTTPRequest(ctx context.Context, profile ClientProfile, chatID, logID int64) (*http.Request, error) {
-	if ctx == nil || profile.validate() != nil || chatID <= 0 || logID <= 0 {
+	if ctx == nil || profile.Validate(true) != nil || chatID <= 0 || logID <= 0 {
 		return nil, ErrInvalidRequest
 	}
 	requestURL, err := url.JoinPath(BaseURL, membersPath(chatID, logID))
@@ -131,15 +116,8 @@ func NewMembersHTTPRequest(ctx context.Context, profile ClientProfile, chatID, l
 	if err != nil {
 		return nil, ErrInvalidRequest
 	}
-	applyHeaders(req, profile)
+	macweb.ApplyHeaders(req, profile, true)
 	return req, nil
-}
-
-func applyHeaders(req *http.Request, profile ClientProfile) {
-	req.Header.Set("Accept-Language", profile.Language)
-	req.Header.Set("User-Agent", fmt.Sprintf("KT/%s Mc/%s %s", profile.AppVersion, profile.OSVersion, profile.Language))
-	req.Header.Set("A", fmt.Sprintf("mac/%s/%s", profile.AppVersion, profile.Language))
-	req.Header.Set("Authorization", profile.AccessToken+"-"+profile.DeviceUUID)
 }
 
 type Response struct {
@@ -151,11 +129,7 @@ func DecodeResponse(body []byte) (Response, error) {
 		Status *int32 `json:"status"`
 		Result *bool  `json:"result"`
 	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	if err := decoder.Decode(&wire); err != nil {
-		return Response{}, ErrInvalidResponse
-	}
-	if err := requireJSONEOF(decoder); err != nil {
+	if err := macweb.DecodeJSONObject(body, &wire); err != nil {
 		return Response{}, ErrInvalidResponse
 	}
 	if wire.Status == nil && wire.Result == nil {
@@ -174,8 +148,21 @@ func DecodeResponse(body []byte) (Response, error) {
 	return response, nil
 }
 
-type Doer interface {
-	Do(*http.Request) (*http.Response, error)
+type Doer = macweb.Doer
+
+// execute performs one request. A non-2xx status is ErrRejected, a Doer
+// failure is ErrTransport, and a missing, unreadable or oversized body is
+// ErrInvalidResponse.
+func execute(doer Doer, req *http.Request) ([]byte, error) {
+	body, err := macweb.Do(doer, req, maxResponse)
+	switch {
+	case err == nil || errors.Is(err, ErrTransport):
+		return body, err
+	case errors.Is(err, macweb.ErrStatus):
+		return nil, fmt.Errorf("%w: %w", ErrRejected, err)
+	default:
+		return nil, fmt.Errorf("%w: %w", ErrInvalidResponse, err)
+	}
 }
 
 // Send performs one reaction mutation and never retries an ambiguous outcome.
@@ -187,20 +174,9 @@ func Send(ctx context.Context, doer Doer, profile ClientProfile, reaction Reques
 	if err != nil {
 		return Response{}, err
 	}
-	resp, err := doer.Do(req)
+	body, err := execute(doer, req)
 	if err != nil {
-		return Response{}, fmt.Errorf("%w: %w", ErrTransport, err)
-	}
-	if resp == nil || resp.Body == nil {
-		return Response{}, ErrInvalidResponse
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse+1))
-	if err != nil || len(body) > maxResponse {
-		return Response{}, ErrInvalidResponse
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return Response{}, fmt.Errorf("%w: http %d", ErrRejected, resp.StatusCode)
+		return Response{}, err
 	}
 	return DecodeResponse(body)
 }
@@ -216,8 +192,7 @@ type MembersResponse struct {
 
 func DecodeMembersResponse(body []byte) (MembersResponse, error) {
 	var fields map[string]json.RawMessage
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	if err := decoder.Decode(&fields); err != nil || fields == nil || requireJSONEOF(decoder) != nil {
+	if err := macweb.DecodeJSONObject(body, &fields); err != nil {
 		return MembersResponse{}, ErrInvalidResponse
 	}
 	response := MembersResponse{
@@ -260,28 +235,9 @@ func FetchMembers(ctx context.Context, doer Doer, profile ClientProfile, chatID,
 	if err != nil {
 		return MembersResponse{}, err
 	}
-	resp, err := doer.Do(req)
+	body, err := execute(doer, req)
 	if err != nil {
-		return MembersResponse{}, fmt.Errorf("%w: %w", ErrTransport, err)
-	}
-	if resp == nil || resp.Body == nil {
-		return MembersResponse{}, ErrInvalidResponse
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse+1))
-	if err != nil || len(body) > maxResponse {
-		return MembersResponse{}, ErrInvalidResponse
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return MembersResponse{}, fmt.Errorf("%w: http %d", ErrRejected, resp.StatusCode)
+		return MembersResponse{}, err
 	}
 	return DecodeMembersResponse(body)
-}
-
-func requireJSONEOF(decoder *json.Decoder) error {
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		return ErrInvalidResponse
-	}
-	return nil
 }

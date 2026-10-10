@@ -7,10 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/frrad/mooo/internal/protocol/macweb"
 )
 
 const (
@@ -25,13 +26,7 @@ var (
 	ErrRejected        = errors.New("friends: add-by-phone rejected")
 )
 
-type ClientProfile struct {
-	AppVersion  string
-	OSVersion   string
-	Language    string
-	AccessToken string
-	DeviceUUID  string
-}
+type ClientProfile = macweb.Profile
 
 type AddByPhoneRequest struct {
 	PhoneNumber string
@@ -64,19 +59,10 @@ func (r AddByPhoneRequest) values() (url.Values, error) {
 	return v, nil
 }
 
-func (p ClientProfile) validate() error {
-	for _, value := range []string{p.AppVersion, p.OSVersion, p.Language, p.AccessToken, p.DeviceUUID} {
-		if strings.TrimSpace(value) == "" || strings.IndexByte(value, 0) >= 0 {
-			return ErrInvalidRequest
-		}
-	}
-	return nil
-}
-
 // NewAddByPhoneHTTPRequest reproduces the current Mac authenticated WAS request.
 // Authorization is accessToken-hashedDeviceUUID; neither value is safe to log.
 func NewAddByPhoneHTTPRequest(ctx context.Context, profile ClientProfile, add AddByPhoneRequest) (*http.Request, error) {
-	if ctx == nil || profile.validate() != nil {
+	if ctx == nil || profile.Validate(true) != nil {
 		return nil, ErrInvalidRequest
 	}
 	values, err := add.values()
@@ -88,10 +74,7 @@ func NewAddByPhoneHTTPRequest(ctx context.Context, profile ClientProfile, add Ad
 		return nil, ErrInvalidRequest
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
-	req.Header.Set("Accept-Language", profile.Language)
-	req.Header.Set("User-Agent", fmt.Sprintf("KT/%s Mc/%s %s", profile.AppVersion, profile.OSVersion, profile.Language))
-	req.Header.Set("A", fmt.Sprintf("mac/%s/%s", profile.AppVersion, profile.Language))
-	req.Header.Set("Authorization", profile.AccessToken+"-"+profile.DeviceUUID)
+	macweb.ApplyHeaders(req, profile, true)
 	return req, nil
 }
 
@@ -119,9 +102,7 @@ func DecodeAddByPhoneResponse(body []byte) (AddByPhoneResponse, error) {
 	return response, nil
 }
 
-type Doer interface {
-	Do(*http.Request) (*http.Response, error)
-}
+type Doer = macweb.Doer
 
 // AddByPhone performs one request and never retries an ambiguous mutation.
 func AddByPhone(ctx context.Context, doer Doer, profile ClientProfile, add AddByPhoneRequest) (AddByPhoneResponse, error) {
@@ -132,17 +113,14 @@ func AddByPhone(ctx context.Context, doer Doer, profile ClientProfile, add AddBy
 	if err != nil {
 		return AddByPhoneResponse{}, err
 	}
-	resp, err := doer.Do(req)
-	if err != nil {
-		return AddByPhoneResponse{}, fmt.Errorf("friends: add-by-phone transport: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse+1))
-	if err != nil || len(body) > maxResponse {
-		return AddByPhoneResponse{}, ErrInvalidResponse
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return AddByPhoneResponse{}, fmt.Errorf("%w: http %d", ErrRejected, resp.StatusCode)
+	body, err := macweb.Do(doer, req, maxResponse)
+	switch {
+	case errors.Is(err, macweb.ErrTransport):
+		return AddByPhoneResponse{}, err
+	case errors.Is(err, macweb.ErrStatus):
+		return AddByPhoneResponse{}, fmt.Errorf("%w: %w", ErrRejected, err)
+	case err != nil:
+		return AddByPhoneResponse{}, fmt.Errorf("%w: %w", ErrInvalidResponse, err)
 	}
 	return DecodeAddByPhoneResponse(body)
 }
