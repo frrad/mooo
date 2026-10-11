@@ -22,7 +22,7 @@ revision.
 
 ## Build and configure
 
-To build locally instead, the build uses Go 1.27.1, the pure-Go Olm backend, and cgo SQLite. The runtime
+To build locally instead, the build uses the Go toolchain pinned in the Dockerfile, the pure-Go Olm backend, and cgo SQLite. The runtime
 runs as UID/GID 10001. Build from a clean source checkout:
 
 ```sh
