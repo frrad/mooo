@@ -90,6 +90,39 @@ func TestConnectSessionArmsPingOnlyAfterLoginCompletion(t *testing.T) {
 	waitBackends(t, backends...)
 }
 
+func TestConnectSessionUsesGetConfForegroundPingInterval(t *testing.T) {
+	state := reusableTestState()
+	dialers, backends := scriptedLoginWithWifi(t,
+		bson.D{{Key: "ports", Value: bson.A{int32(443)}}, {Key: "fgPingItv", Value: int32(90)}},
+		testloco.Expect("LOGINLIST", nil, statusDocument(
+			bson.E{Key: "chatDatas", Value: bson.A{}},
+			bson.E{Key: "eof", Value: true},
+			bson.E{Key: "lastTokenId", Value: int64(11)},
+			bson.E{Key: "lbk", Value: int32(2)},
+		)),
+		testloco.HoldOpen(),
+	)
+	clock := &queuedTimerClock{}
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: pingSessionOptions{clock: clock, interval: time.Second, timeout: time.Second, serverInterval: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.mu.Lock()
+	delays := append([]time.Duration(nil), clock.delays...)
+	clock.mu.Unlock()
+	if len(delays) == 0 || delays[len(delays)-1] != 90*time.Second {
+		t.Fatalf("ping delays = %v, want the GETCONF interval 1m30s", delays)
+	}
+	_ = session.Close()
+	waitBackends(t, backends...)
+}
+
+func TestRealtimePingOptionsFollowServerInterval(t *testing.T) {
+	if !realtimePingOptions().serverInterval {
+		t.Fatal("production keepalive ignores the GETCONF interval")
+	}
+}
+
 func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
 	state := reusableTestState()
 	pingRead := make(chan struct{})
