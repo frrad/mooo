@@ -34,6 +34,9 @@ Edit the generated `data/config.yaml`:
 - Set `database.type` to `sqlite3-fk-wal` and `database.uri` to
   `file:/data/mooo-bridge.db?_txlock=immediate`.
 - Set `network.profile_dir` to `/data/profiles`.
+- Optionally set `network.network_icon` to the `mxc://` URI of an image you
+  uploaded to your homeserver. Clients show it as the KakaoTalk network icon;
+  without it the bridge publishes no icon.
 - Grant your Matrix user `admin` in `bridge.permissions`; remove any wildcard
   grants if this installation is intended for one user.
 - Keep database, logging output, and any other writable paths under `/data`.
