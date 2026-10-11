@@ -14,6 +14,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/commands"
 	"maunium.net/go/mautrix/bridgev2/database"
+	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
 	"github.com/frrad/mooo/internal/authstate"
@@ -78,7 +79,8 @@ type KakaoConnector struct {
 }
 
 var (
-	_ bridgev2.NetworkConnector = (*KakaoConnector)(nil)
+	_ bridgev2.NetworkConnector               = (*KakaoConnector)(nil)
+	_ bridgev2.PortalBridgeInfoFillingNetwork = (*KakaoConnector)(nil)
 )
 
 func (kc *KakaoConnector) Init(bridge *bridgev2.Bridge) {
@@ -170,6 +172,23 @@ func (kc *KakaoConnector) GetName() bridgev2.BridgeName {
 		BeeperBridgeType:     "kakaotalk",
 		DefaultPort:          29340,
 		DefaultCommandPrefix: "!kakao",
+	}
+}
+
+// FillPortalBridgeInfo adds an m.bridge network section carrying the
+// configured icon. Beeper Desktop ignores the protocol avatar but shows the
+// network avatar as the account's sidebar icon. Every portal shares one
+// network ID, so the account stays a single sidebar entry. Without an icon
+// the section is omitted and the bridge info is unchanged.
+func (kc *KakaoConnector) FillPortalBridgeInfo(_ *bridgev2.Portal, content *event.BridgeEventContent) {
+	if kc.Config.NetworkIcon == "" {
+		return
+	}
+	name := kc.GetName()
+	content.Network = &event.BridgeInfoSection{
+		ID:          name.NetworkID,
+		DisplayName: name.DisplayName,
+		AvatarURL:   name.NetworkIcon,
 	}
 }
 
