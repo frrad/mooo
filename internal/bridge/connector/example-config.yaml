@@ -18,9 +18,9 @@ bson_shadow:
     dump_dir: ""
 
 # Optional mxc:// URI of an image to publish as the KakaoTalk network icon.
-# Clients use it in the m.bridge room state and as the avatar of the bridge
-# space and bot; Beeper falls back to it for networks it has no built-in icon
-# for. Upload an image you are entitled to use to your homeserver and paste
-# its mxc:// URI here. Existing rooms keep their old icon until the bridge
+# It is published as the m.bridge protocol avatar_url and used as the avatar
+# of the bridge space and bot. Beeper Desktop (4.3) ignores it for chat-list
+# badges, which come from its own built-in icon set. Upload an image you are
+# entitled to use to your homeserver and paste its mxc:// URI here. Existing rooms keep their old icon until the bridge
 # runs once with bridge.resend_bridge_info: true.
 network_icon: ""
