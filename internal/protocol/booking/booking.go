@@ -6,6 +6,7 @@ package booking
 
 import (
 	"errors"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -117,6 +118,26 @@ func DecodeBookingTargets(body []byte) ([]string, []int, error) {
 		ports = []int{DefaultPort}
 	}
 	return hosts, ports, nil
+}
+
+// DefaultPingInterval is the foreground keepalive interval the Mac client
+// uses when GETCONF supplies none or a value below one second.
+const DefaultPingInterval = 180 * time.Second
+
+// DecodeForegroundPingInterval reads wifi.fgPingItv, int32 seconds, from a
+// GETCONF reply. Like the Mac client, it falls back to DefaultPingInterval
+// for a value below 1. An absent or non-int32 value also falls back, matching
+// the Mac model's zero default for a missing scalar.
+func DecodeForegroundPingInterval(body []byte) time.Duration {
+	wifi, err := bson.Raw(body).LookupErr("wifi")
+	if err != nil || wifi.Type != bson.TypeEmbeddedDocument {
+		return DefaultPingInterval
+	}
+	value, err := wifi.Document().LookupErr("fgPingItv")
+	if err != nil || value.Type != bson.TypeInt32 || value.Int32() < 1 {
+		return DefaultPingInterval
+	}
+	return time.Duration(value.Int32()) * time.Second
 }
 
 // DecodeCheckinEndpoint reads the secure carriage host and port from a CHECKIN

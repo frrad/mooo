@@ -221,7 +221,10 @@ func TestSessionPingTransportCompletionSchedulesBeforePendingDelivery(t *testing
 	}
 }
 
-func TestSessionPingContextCancellationDoesNotScheduleRearm(t *testing.T) {
+// An abandoned request must re-arm the keepalive. Before 2026-10-11 it left
+// the timer cancelled, so one timed-out request on a quiet session stopped
+// keepalive until some other request completed.
+func TestSessionAbandonedRequestSchedulesRearm(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	scheduler := &recordingPingScheduler{}
 	session := &session{
@@ -249,14 +252,14 @@ func TestSessionPingContextCancellationDoesNotScheduleRearm(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	requestDone := make(chan error, 1)
 	go func() {
-		_, err := session.request(ctx, "PING", []byte{5, 0, 0, 0, 0})
+		_, err := session.request(ctx, "WRITE", []byte{5, 0, 0, 0, 0})
 		requestDone <- err
 	}()
 	select {
 	case <-requestRead:
 		cancel()
 	case <-time.After(time.Second):
-		t.Fatal("server did not receive PING")
+		t.Fatal("server did not receive the request")
 	}
 	select {
 	case err := <-requestDone:
@@ -264,9 +267,9 @@ func TestSessionPingContextCancellationDoesNotScheduleRearm(t *testing.T) {
 			t.Fatalf("request error=%v want context cancellation", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("cancelled PING did not return")
+		t.Fatal("cancelled request did not return")
 	}
-	if got, want := scheduler.snapshot(), []string{"cancel"}; !reflect.DeepEqual(got, want) {
+	if got, want := scheduler.snapshot(), []string{"cancel", "schedule"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("scheduler events=%v want=%v", got, want)
 	}
 }
