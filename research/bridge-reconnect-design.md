@@ -42,8 +42,9 @@ login's metadata. It reports `BAD_CREDENTIALS` `kakao-kicked-out` with the
 reason, and refuses to reconnect, including after a restart, until the login
 is removed and a new one is created. Without this, a restart would log in
 again with the same credentials and could displace whichever device caused
-the kick. The notice's optional message and URL are not decoded because their
-wire keys are untraced.
+the kick. The state message follows the official logout alert, including the
+server's explanation text and help link when present
+([KICKOUT notification](reconnect/KICKOUT-NOTIFICATION.md#logout-alert)).
 
 CHANGESVR performs old-session cleanup and books a fresh session. It does not
 replay outbound mutations.
