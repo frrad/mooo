@@ -153,3 +153,52 @@ func TestProfileUserIDReadsCredentialsWithoutLease(t *testing.T) {
 		t.Fatalf("reading the user ID touched the profile lease: %v", err)
 	}
 }
+
+func TestGetNamePublishesConfiguredNetworkIcon(t *testing.T) {
+	unset := (&KakaoConnector{}).GetName()
+	if unset.NetworkIcon != "" {
+		t.Fatalf("unconfigured network icon = %q, want empty", unset.NetworkIcon)
+	}
+
+	kc := &KakaoConnector{Config: Config{NetworkIcon: "mxc://example.org/syntheticKakaoIcon"}}
+	name := kc.GetName()
+	if name.NetworkIcon != "mxc://example.org/syntheticKakaoIcon" {
+		t.Fatalf("network icon = %q", name.NetworkIcon)
+	}
+	section := name.AsBridgeInfoSection()
+	if section.AvatarURL != "mxc://example.org/syntheticKakaoIcon" {
+		t.Fatalf("m.bridge protocol avatar_url = %q", section.AvatarURL)
+	}
+	if section.ID != "kakaotalk" {
+		t.Fatalf("m.bridge protocol id = %q", section.ID)
+	}
+}
+
+func TestStartValidatesNetworkIcon(t *testing.T) {
+	profiles := t.TempDir()
+	if err := os.Chmod(profiles, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	newConnector := func(icon string) *KakaoConnector {
+		return &KakaoConnector{
+			Bridge: &bridgev2.Bridge{Config: &bridgeconfig.BridgeConfig{PortalEventBuffer: 0}},
+			Config: Config{ProfileDir: profiles, NetworkIcon: icon},
+		}
+	}
+
+	for _, icon := range []string{"", "mxc://example.org/syntheticKakaoIcon"} {
+		if err := newConnector(icon).Start(context.Background()); err != nil {
+			t.Fatalf("network icon %q rejected: %v", icon, err)
+		}
+	}
+	for _, icon := range []string{
+		"https://example.org/kakao.png",
+		"mxc://example.org",
+		"mxc:///syntheticKakaoIcon",
+		"kakao.png",
+	} {
+		if err := newConnector(icon).Start(context.Background()); err == nil {
+			t.Fatalf("network icon %q accepted; it must be an mxc:// content URI", icon)
+		}
+	}
+}
