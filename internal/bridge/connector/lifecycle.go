@@ -81,12 +81,12 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 		kc.mu.Unlock()
 		return
 	}
-	if reason, kicked := kc.kickedOut(); kicked {
+	if record, kicked := kc.kickedOut(); kicked {
 		kc.mu.Unlock()
 		// The source signed this device out. Reconnecting with the same
 		// credentials after a restart could displace whichever device caused
 		// the kick, so a new login is required.
-		kc.sendState(kickedOutState(reason))
+		kc.sendState(kickedOutState(record))
 		return
 	}
 	kc.connecting = true
@@ -340,7 +340,7 @@ func shutdownKakaoClient(c kakaoClient) error {
 // client's per-chat commit order.
 func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan struct{}, generation uint64) {
 	kickedOut := false
-	var kickReason int32
+	var kick events.Kickout
 	changeServer := false
 	deliveryFailed := false
 	var terminalErr error
@@ -379,9 +379,9 @@ eventLoop:
 			kc.log().Warn().Err(result.Err).Msg("Dropped undecodable Kakao event")
 			continue
 		}
-		if kick, ok := result.Event.(events.Kickout); ok {
+		if notice, ok := result.Event.(events.Kickout); ok {
 			kickedOut = true
-			kickReason = kick.Reason
+			kick = notice
 		}
 		if _, ok := result.Event.(events.ChangeServer); ok {
 			changeServer = true
@@ -408,8 +408,9 @@ eventLoop:
 		kc.log().Error().Str("classification", string(classification)).Msg("Kakao event admission stopped; operator recovery is required")
 		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: classification})
 	case kickedOut:
-		kc.recordKickout(kickReason)
-		kc.sendState(kickedOutState(kickReason))
+		record := newKickoutRecord(kick, kc.now())
+		kc.recordKickout(record)
+		kc.sendState(kickedOutState(record))
 	case changeServer:
 		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateChangeServer})
 	case deliveryFailed:
