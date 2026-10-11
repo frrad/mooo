@@ -35,8 +35,8 @@ Edit the generated `data/config.yaml`:
   `file:/data/mooo-bridge.db?_txlock=immediate`.
 - Set `network.profile_dir` to `/data/profiles`.
 - Optionally set `network.network_icon` to the `mxc://` URI of an image you
-  uploaded to your homeserver. Clients show it as the KakaoTalk network icon;
-  without it the bridge publishes no icon.
+  uploaded to your homeserver. It becomes the bridge space and bot avatar and
+  the room's bridge-info icon; Beeper's chat-list badge does not use it.
 - Grant your Matrix user `admin` in `bridge.permissions`; remove any wildcard
   grants if this installation is intended for one user.
 - Keep database, logging output, and any other writable paths under `/data`.
