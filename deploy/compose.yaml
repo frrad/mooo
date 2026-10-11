@@ -2,7 +2,7 @@ services:
   mooo-bridge:
     build:
       context: ..
-    image: mooo-bridge:local
+    image: ${MOOO_IMAGE:-mooo-bridge:local}
     user: "${MOOO_UID:-10001}:${MOOO_GID:-10001}"
     volumes:
       - ./data:/data
