@@ -86,9 +86,12 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	t.Cleanup(kakao1.Disconnect)
 	harness1.results = []bridgev2.EventHandlingResult{bridgev2.EventHandlingResultFailed}
 	kakao1.Connect(context.Background())
-	if got := harness1.lastState(); got.StateEvent != status.StateTransientDisconnect || got.Error != stateConnectFailed {
+	// A Matrix delivery failure during the first catch-up schedules a retry.
+	if got := harness1.lastState(); got.StateEvent != status.StateTransientDisconnect || got.Error != stateDeliveryPaused {
 		t.Fatalf("failed catch-up state = %+v", got)
 	}
+	// Stop the scheduled retry; the second client below stands in for it.
+	kakao1.Disconnect()
 	if got := firstClient.subscriptions(); got != 0 {
 		t.Fatalf("Events calls after failed catch-up = %d, want 0", got)
 	}

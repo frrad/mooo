@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"testing"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -149,4 +150,47 @@ func TestDecodeCheckinEndpointMatchesFixture(t *testing.T) {
 			t.Errorf("%s: host=%q port=%d err=%v, want host=%q port=%d", tc.Name, host, port, err, tc.Host, tc.Port)
 		}
 	}
+}
+
+func TestDecodeForegroundPingInterval(t *testing.T) {
+	getconf := func(wifi bson.D) []byte {
+		body, err := bson.Marshal(bson.D{
+			{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"ticket.example.test"}}}},
+			{Key: "wifi", Value: wifi},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return body
+	}
+	ports := bson.E{Key: "ports", Value: bson.A{int32(443)}}
+	for _, tc := range []struct {
+		name string
+		body []byte
+		want time.Duration
+	}{
+		// The observed 2026-10-11 GETCONF carries wifi.fgPingItv as int32 seconds.
+		{name: "observed shape", body: getconf(bson.D{ports, {Key: "fgPingItv", Value: int32(180)}, {Key: "bgPingItv", Value: int32(600)}}), want: 180 * time.Second},
+		{name: "server value", body: getconf(bson.D{ports, {Key: "fgPingItv", Value: int32(90)}}), want: 90 * time.Second},
+		// The Mac client substitutes 180 seconds for values below 1.
+		{name: "zero", body: getconf(bson.D{ports, {Key: "fgPingItv", Value: int32(0)}}), want: DefaultPingInterval},
+		{name: "negative", body: getconf(bson.D{ports, {Key: "fgPingItv", Value: int32(-1)}}), want: DefaultPingInterval},
+		// A missing scalar decodes to zero in the Mac model, which also falls back.
+		{name: "absent", body: getconf(bson.D{ports}), want: DefaultPingInterval},
+		{name: "not int32", body: getconf(bson.D{ports, {Key: "fgPingItv", Value: "180"}}), want: DefaultPingInterval},
+		{name: "no wifi", body: mustMarshal(t, bson.D{{Key: "status", Value: int32(0)}}), want: DefaultPingInterval},
+	} {
+		if got := DecodeForegroundPingInterval(tc.body); got != tc.want {
+			t.Errorf("%s: interval = %s, want %s", tc.name, got, tc.want)
+		}
+	}
+}
+
+func mustMarshal(t *testing.T, doc bson.D) []byte {
+	t.Helper()
+	body, err := bson.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
 }

@@ -156,12 +156,15 @@ type requestResult struct {
 
 type wireDialer func(context.Context, string, int) (*wireConn, error)
 
-const defaultPingInterval = 180 * time.Second
+const defaultPingInterval = booking.DefaultPingInterval
 const defaultPingRequestTimeout = 15 * time.Second
 
 type pingSessionOptions struct {
-	clock                  relativeTimer
-	interval               time.Duration
+	clock    relativeTimer
+	interval time.Duration
+	// serverInterval replaces interval with GETCONF's wifi.fgPingItv, as
+	// the Mac client does.
+	serverInterval         bool
 	timeout                time.Duration
 	beforeBootstrapRequest func()
 }
@@ -203,7 +206,7 @@ type sessionConfig struct {
 
 // realtimePingOptions is the production keepalive policy.
 func realtimePingOptions() pingSessionOptions {
-	return pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout}
+	return pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout, serverInterval: true}
 }
 
 // connectSession performs GETCONF, CHECKIN, secure carriage setup, and
@@ -239,6 +242,9 @@ func connectSession(ctx context.Context, state authstate.State, config sessionCo
 	hosts, ports, err := booking.DecodeBookingTargets(bookingReply.Body)
 	if err != nil {
 		return nil, stageErr(errBootstrap, "getconf", err)
+	}
+	if pingOptions.serverInterval {
+		pingOptions.interval = booking.DecodeForegroundPingInterval(bookingReply.Body)
 	}
 
 	checkinBody, err := (booking.CheckinRequest{
@@ -425,6 +431,7 @@ func (s *session) requestRaw(ctx context.Context, id uint32, command string, bod
 	s.queueCancelRequest()
 	if err := s.writeRequest(ctx, wire, id, command, body); err != nil {
 		s.removePending(id, result)
+		s.rearmAfterAbandon(ctx, command)
 		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, err)
 	}
 	select {
@@ -435,7 +442,22 @@ func (s *session) requestRaw(ctx context.Context, id uint32, command string, bod
 		return outcome.packet, nil
 	case <-ctx.Done():
 		s.removePending(id, result)
+		s.rearmAfterAbandon(ctx, command)
 		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, ctx.Err())
+	}
+}
+
+// rearmAfterAbandon re-arms the keepalive after the caller's context ended a
+// request without a reply, during the write or while waiting. requestRaw
+// cancelled the timer before writing, so without this a quiet session would
+// have no keepalive until another request completed. The Mac client never
+// reaches that state because its receive-header timeout closes the carriage;
+// this client has no such timeout, so the next PING detects a dead carriage
+// instead. An abandoned PING closes the session itself, and a transport write
+// failure is left to the read loop.
+func (s *session) rearmAfterAbandon(ctx context.Context, command string) {
+	if ctx.Err() != nil && command != "PING" {
+		s.queueSchedule()
 	}
 }
 

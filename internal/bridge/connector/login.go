@@ -31,6 +31,9 @@ type UserLoginMetadata struct {
 	// directory. It is never a path.
 	Profile      string                        `json:"profile"`
 	GroupCreates map[string]groupCreateAttempt `json:"group_creates,omitempty"`
+	// KickedOut is set when the source signed this device out. It blocks
+	// reconnecting until the login is removed and a new one is created.
+	KickedOut *kickoutRecord `json:"kicked_out,omitempty"`
 }
 
 const (

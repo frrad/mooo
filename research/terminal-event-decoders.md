@@ -1,6 +1,7 @@
 # Terminal push-notice wire/model boundary
 
-Status: first-party static evidence and synthetic decoder contracts, 2026-09-30.
+Status: first-party static evidence and synthetic decoder contracts, 2026-09-30;
+KICKOUT text fields added 2026-10-11.
 This note covers model construction only. It does not authorize or describe
 automatic logout, database reset, reconnect, or server-address changes.
 
@@ -10,6 +11,11 @@ The official unsolicited-packet dispatcher recognizes `CHANGESVR` and
 `KICKOUT`, constructs their typed push-notice models from the packet body, and
 then calls the manager delegate. The decoder boundary is therefore earlier
 than the lifecycle callbacks.
+
+Every push-notice model inherits three optional string properties from the
+common push-notice base: `errMsg`, `errUrl` and `errUrlLabel`. Neither the base
+nor the KICKOUT and CHANGESVR models override the key mapping, so these
+arrive as top-level body keys with those exact names (traced 2026-10-11).
 
 `CHANGESVR` has no model-owned fields beyond the common push-notice base. No
 meaningful payload is consumed by the traced manager callback. A valid empty
@@ -22,7 +28,10 @@ signed 32-bit integer. The model's zero-initialized value is the observable
 default when the body omits that field. A synthetic reason value of `10` is
 used in tests; it is not a claim that every reason has the same lifecycle
 meaning. The decoder exposes the integer to downstream code without deciding
-what it means.
+what it means. It also exposes the base's `errMsg`, `errUrl` and `errUrlLabel`
+as `Message`, `URL` and `URLLabel`. A missing or non-string value becomes an
+empty string, because malformed optional text must never stop a terminal
+notice from ending the session.
 
 The body is a BSON document. Invalid BSON for either recognized method is a
 malformed event. A method outside the recognized set remains an
@@ -42,7 +51,8 @@ so this contract deliberately does not publish one.
 - Chain observation: both models are passed to manager delegate callbacks;
   lifecycle consumers are downstream of that callback boundary.
 - Transfer: `internal/protocol/events/terminal_test.go` uses only synthetic
-  BSON and checks typed shape, absent-field default, malformed input, and
+  BSON and checks typed shape, absent-field default, the three optional
+  text fields, non-string text being ignored, malformed input, and
   unknown-method preservation.
 
 Private binary names, addresses, decompiler output, and account-specific

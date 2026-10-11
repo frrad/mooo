@@ -17,11 +17,23 @@ import (
 
 var terminalDisconnectTimeout = 5 * time.Second
 
-const maxRecoveryAttempts = 5
 const recoveryCleanupTimeout = 5 * time.Second
 
-var ordinaryRecoveryDelays = [...]time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 60 * time.Second}
-var rateLimitedRecoveryDelays = [...]time.Duration{60 * time.Second, 120 * time.Second, 240 * time.Second, 480 * time.Second, 900 * time.Second}
+// Recovery from a retryable failure is never abandoned. The first
+// fastRecoveryAttempts follow the fast schedule; after that the bridge reports
+// a stalled state and keeps retrying every slowRecoveryDelay, so an outage
+// longer than the fast schedule does not leave it silently down.
+const fastRecoveryAttempts = 5
+const slowRecoveryDelay = 15 * time.Minute
+
+var ordinaryRecoveryDelays = [fastRecoveryAttempts]time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 60 * time.Second}
+var rateLimitedRecoveryDelays = [fastRecoveryAttempts]time.Duration{60 * time.Second, 120 * time.Second, 240 * time.Second, 480 * time.Second, 900 * time.Second}
+
+// stableSessionDuration is how long a session must stay connected before its
+// end restarts the recovery schedule. A session that the server ends sooner,
+// for example by repeated CHANGESVR right after login, keeps advancing the
+// schedule instead of reconnecting every few seconds forever.
+const stableSessionDuration = 5 * time.Minute
 
 // connLifecycle is a KakaoClient's connection lifecycle state: the active
 // session, the retained profile owner, and the background workers that
@@ -48,21 +60,33 @@ type connLifecycle struct {
 	lifecycle       context.Context
 	lifecycleCancel context.CancelFunc
 	// retry waits out a recovery backoff and then reconnects; recoveryTry
-	// counts the attempts against maxRecoveryAttempts.
+	// counts the attempts since the last stable session.
 	retry       worker
 	recoveryTry int
+	// connectedAt is when the current session connected.
+	connectedAt time.Time
 	// cleanupRetry is the single delayed retry of a timed-out owner cleanup;
 	// cleanupRetryAttempts bounds it per connected session.
 	cleanupRetry         worker
 	cleanupRetryAttempts int
-	// wait sleeps for a recovery or cleanup delay; tests replace it.
+	// wait sleeps for a recovery or cleanup delay and now reads the clock;
+	// tests replace both.
 	wait func(context.Context, time.Duration) error
+	now  func() time.Time
 }
 
 func (kc *KakaoClient) Connect(ctx context.Context) {
 	kc.mu.Lock()
 	if kc.client != nil || kc.cleanup != nil || kc.connecting {
 		kc.mu.Unlock()
+		return
+	}
+	if record, kicked := kc.kickedOut(); kicked {
+		kc.mu.Unlock()
+		// The source signed this device out. Reconnecting with the same
+		// credentials after a restart could displace whichever device caused
+		// the kick, so a new login is required.
+		kc.sendState(kickedOutState(record))
 		return
 	}
 	kc.connecting = true
@@ -136,8 +160,10 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 			report(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupCreateUnresolved})
 		case isUnidentifiableMessageError(err):
 			report(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateUnidentifiableMsg})
-		case recovering && retryableRecoveryError(err) && kc.retryAfter(err, generation):
-			if errors.Is(err, errDeliveryNotConfirmed) {
+		case retryableRecoveryError(err) && kc.retryAfter(err, generation):
+			// The first connect retries too: a network outage at startup must
+			// not leave the bridge down until a restart.
+			if errors.Is(err, errDeliveryNotConfirmed) && !kc.recoveryStalled() {
 				report(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDeliveryPaused})
 			}
 		default:
@@ -154,7 +180,7 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	}
 	kc.client = c
 	kc.done = done
-	kc.recoveryTry = 0
+	kc.connectedAt = kc.now()
 	kc.cleanupRetryAttempts = 0
 	kc.mu.Unlock()
 	kc.sendReadyState()
@@ -190,15 +216,23 @@ func (kc *KakaoClient) retryAfter(err error, generation uint64) bool {
 	if !retryableRecoveryError(err) {
 		return false
 	}
+	// The stalled state is published after the lifecycle mutex is released.
+	stalled := false
+	defer func() {
+		if stalled {
+			kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateRecoveryStalled, Message: "Reconnecting to KakaoTalk keeps failing; still retrying every 15 minutes"})
+		}
+	}()
 	kc.mu.Lock()
 	defer kc.mu.Unlock()
-	if kc.stopping || kc.generation != generation || kc.recoveryTry >= maxRecoveryAttempts {
+	if kc.stopping || kc.generation != generation {
 		return false
 	}
 	attempt := kc.recoveryTry
 	kc.recoveryTry++
 	wait := kc.wait
 	delay := recoveryDelay(err, attempt)
+	stalled = attempt == fastRecoveryAttempts
 	kc.retry.start(&kc.mu, func(ctx context.Context, retryID uint64) {
 		if err := wait(ctx, delay); err != nil {
 			return
@@ -226,12 +260,19 @@ func (kc *KakaoClient) retryAfter(err error, generation uint64) bool {
 	return true
 }
 
+// recoveryStalled reports whether recovery has left the fast schedule.
+func (kc *KakaoClient) recoveryStalled() bool {
+	kc.mu.Lock()
+	defer kc.mu.Unlock()
+	return kc.recoveryTry > fastRecoveryAttempts
+}
+
 func recoveryDelay(err error, attempt int) time.Duration {
 	if attempt < 0 {
 		attempt = 0
 	}
-	if attempt >= maxRecoveryAttempts {
-		attempt = maxRecoveryAttempts - 1
+	if attempt >= fastRecoveryAttempts {
+		return slowRecoveryDelay
 	}
 	var delays = ordinaryRecoveryDelays[:]
 	var statusErr client.StatusError
@@ -299,6 +340,7 @@ func shutdownKakaoClient(c kakaoClient) error {
 // client's per-chat commit order.
 func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan struct{}, generation uint64) {
 	kickedOut := false
+	var kick events.Kickout
 	changeServer := false
 	deliveryFailed := false
 	var terminalErr error
@@ -337,8 +379,9 @@ eventLoop:
 			kc.log().Warn().Err(result.Err).Msg("Dropped undecodable Kakao event")
 			continue
 		}
-		if _, ok := result.Event.(events.Kickout); ok {
+		if notice, ok := result.Event.(events.Kickout); ok {
 			kickedOut = true
+			kick = notice
 		}
 		if _, ok := result.Event.(events.ChangeServer); ok {
 			changeServer = true
@@ -365,7 +408,9 @@ eventLoop:
 		kc.log().Error().Str("classification", string(classification)).Msg("Kakao event admission stopped; operator recovery is required")
 		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: classification})
 	case kickedOut:
-		kc.sendState(status.BridgeState{StateEvent: status.StateBadCredentials, Error: stateKickedOut})
+		record := newKickoutRecord(kick, kc.now())
+		kc.recordKickout(record)
+		kc.sendState(kickedOutState(record))
 	case changeServer:
 		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateChangeServer})
 	case deliveryFailed:
@@ -398,6 +443,9 @@ func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generatio
 	kc.mu.Lock()
 	kc.release(c, shutdownErr)
 	canRecover := shutdownErr == nil && !kc.stopping && kc.generation == generation
+	if kc.now().Sub(kc.connectedAt) >= stableSessionDuration {
+		kc.recoveryTry = 0
+	}
 	kc.mu.Unlock()
 	if shutdownErr != nil {
 		kc.log().Err(shutdownErr).Msg("Failed to close Kakao client before recovery")

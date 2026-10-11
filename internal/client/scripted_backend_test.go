@@ -52,9 +52,15 @@ func hostDialer(hosts testloco.Hosts) wireDialer {
 // carriage connection that checkin names.
 func scriptedLogin(t *testing.T, carriage ...testloco.Step) (sessionDialers, []*testloco.Backend) {
 	t.Helper()
+	return scriptedLoginWithWifi(t, bson.D{{Key: "ports", Value: bson.A{int32(443)}}}, carriage...)
+}
+
+// scriptedLoginWithWifi is scriptedLogin with a chosen GETCONF wifi document.
+func scriptedLoginWithWifi(t *testing.T, wifi bson.D, carriage ...testloco.Step) (sessionDialers, []*testloco.Backend) {
+	t.Helper()
 	bookingBackend := newScriptedBackend(t, false, testloco.Expect("GETCONF", nil, statusDocument(
 		bson.E{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"checkin.invalid"}}}},
-		bson.E{Key: "wifi", Value: bson.D{{Key: "ports", Value: bson.A{int32(443)}}}},
+		bson.E{Key: "wifi", Value: wifi},
 	)))
 	checkin := newScriptedBackend(t, false, testloco.Expect("CHECKIN", nil, statusDocument(
 		bson.E{Key: "host", Value: "carriage.invalid"}, bson.E{Key: "port", Value: int32(995)},
