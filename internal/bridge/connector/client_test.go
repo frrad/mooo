@@ -366,6 +366,7 @@ func newTestClient(t *testing.T, open func() (kakaoClient, error)) (*KakaoClient
 	harness := &testHarness{}
 	kc.queue = harness.queue
 	kc.sendState = harness.sendState
+	kc.saveLogin = func(context.Context) error { return nil }
 	return kc, harness
 }
 

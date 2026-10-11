@@ -117,6 +117,7 @@ const (
 	stateKickedOut             status.BridgeStateErrorCode = "kakao-kicked-out"
 	stateChangeServer          status.BridgeStateErrorCode = "kakao-change-server"
 	stateRecoveryStalled       status.BridgeStateErrorCode = "kakao-recovery-stalled"
+	stateReconnectScheduled    status.BridgeStateErrorCode = "kakao-reconnect-scheduled"
 )
 
 var errUnsupportedOpenChatMetadata = errors.New("connector: OpenChat metadata is not supported")
@@ -149,6 +150,7 @@ func init() {
 		stateUnidentifiableMsg:     "Kakao delivered a message whose identity could not be established safely. Review the bridge logs, then send the reconnect command once the cause is dealt with.",
 		stateKickedOut:             "KakaoTalk ended this device's session.",
 		stateChangeServer:          "KakaoTalk requested a server change. The bridge is reconnecting.",
+		stateReconnectScheduled:    "The bridge restarted during a reconnect backoff and will reconnect when it ends.",
 	})
 }
 
@@ -171,6 +173,9 @@ type KakaoClient struct {
 	// replaced in tests.
 	queue     func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult
 	sendState func(status.BridgeState)
+	// saveLogin defaults to the login's Save and is replaced in tests whose
+	// login has no framework bridge.
+	saveLogin func(context.Context) error
 	// reserveOutbound defaults to the bridge's durable store.
 	reserveOutbound func(context.Context, id.EventID) (bool, error)
 	// refreshMembership re-reads a group's source roster outside the portal
@@ -195,6 +200,13 @@ type KakaoClient struct {
 	// disconnectGate admits one Disconnect at a time; mu guards its lazy
 	// creation.
 	disconnectGate chan struct{}
+
+	// metaMu serializes changes to the login's metadata with their saves.
+	// It may be taken while mu is held, never the other way around.
+	metaMu sync.Mutex
+	// scheduleRestored is set once the first Connect has read the persisted
+	// reconnect schedule; metaMu guards it.
+	scheduleRestored bool
 	connLifecycle
 }
 
@@ -218,6 +230,7 @@ func newKakaoClient(login *bridgev2.UserLogin, st store, userID int64, open func
 	kc.reserveOutbound = kc.reserveOutboundKV
 	kc.refreshMembership = kc.refreshMembershipAsync
 	kc.sendState = func(state status.BridgeState) { kc.stateQueue().Send(state) }
+	kc.saveLogin = login.Save
 	return kc
 }
 
