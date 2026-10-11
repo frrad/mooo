@@ -25,6 +25,19 @@ minutes. A session that ends sooner, for example by repeated `CHANGESVR` or a
 close right after login, keeps advancing it, so the bridge cannot log in every
 few seconds forever.
 
+The schedule survives a process restart (2026-10-11). The login's metadata
+records when each login attempt began, its attempt number, and the time a
+scheduled retry may log in. On its first `Connect`, a freshly loaded login
+waits out a pending retry. If the previous process logged in less than five
+minutes before it ended, the restart counts as a short session: the attempt
+number advances and the bridge waits for that attempt's delay, measured
+from the previous login. It reports `TRANSIENT_DISCONNECT`
+`kakao-reconnect-scheduled` while it waits. A supervisor that restarts a
+crashing bridge therefore follows the same 5 s to 15 minute schedule
+instead of logging in on every restart. A restart more than five minutes
+after the last login connects at once. Later `Connect` calls in the same
+process keep the in-memory schedule.
+
 These do not retry: profile-open or lease failures, `ErrLogin`, credential
 renewal failures, unknown `LOGINLIST` status errors, a second `-950`, and
 source-side catch-up failures. Outbound Matrix sends fail while disconnected

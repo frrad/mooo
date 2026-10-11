@@ -1,9 +1,7 @@
 package connector
 
 import (
-	"context"
 	"fmt"
-	"time"
 
 	"maunium.net/go/mautrix/bridgev2/status"
 )
@@ -15,8 +13,6 @@ type kickoutRecord struct {
 	At int64 `json:"at"`
 }
 
-const kickoutSaveTimeout = 5 * time.Second
-
 func kickedOutState(reason int32) status.BridgeState {
 	return status.BridgeState{
 		StateEvent: status.StateBadCredentials,
@@ -27,6 +23,8 @@ func kickedOutState(reason int32) status.BridgeState {
 
 // kickedOut reports a persisted KICKOUT notice for this login.
 func (kc *KakaoClient) kickedOut() (int32, bool) {
+	kc.metaMu.Lock()
+	defer kc.metaMu.Unlock()
 	meta, ok := kc.login.Metadata.(*UserLoginMetadata)
 	if !ok || meta.KickedOut == nil {
 		return 0, false
@@ -38,15 +36,8 @@ func (kc *KakaoClient) kickedOut() (int32, bool) {
 // again with the same credentials. The official client logs out on KICKOUT.
 // A failed save is logged; this process still stops recovery.
 func (kc *KakaoClient) recordKickout(reason int32) {
-	meta, ok := kc.login.Metadata.(*UserLoginMetadata)
-	if !ok {
-		kc.log().Error().Msg("Cannot record KakaoTalk kickout: login has no Kakao metadata")
-		return
-	}
-	meta.KickedOut = &kickoutRecord{Reason: reason, At: kc.now().UnixMilli()}
-	ctx, cancel := context.WithTimeout(context.Background(), kickoutSaveTimeout)
-	defer cancel()
-	if err := kc.login.Save(ctx); err != nil {
-		kc.log().Err(err).Msg("Failed to record KakaoTalk kickout; a restart would reconnect")
-	}
+	at := kc.now().UnixMilli()
+	kc.saveLoginMetadata("kickout", func(meta *UserLoginMetadata) {
+		meta.KickedOut = &kickoutRecord{Reason: reason, At: at}
+	})
 }
