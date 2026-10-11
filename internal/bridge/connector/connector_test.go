@@ -9,6 +9,7 @@ import (
 
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/bridgeconfig"
+	"maunium.net/go/mautrix/event"
 
 	"github.com/frrad/mooo/internal/authstate"
 )
@@ -200,5 +201,31 @@ func TestStartValidatesNetworkIcon(t *testing.T) {
 		if err := newConnector(icon).Start(context.Background()); err == nil {
 			t.Fatalf("network icon %q accepted; it must be an mxc:// content URI", icon)
 		}
+	}
+}
+
+func TestFillPortalBridgeInfoPublishesNetworkIcon(t *testing.T) {
+	portal := &bridgev2.Portal{}
+
+	unset := event.BridgeEventContent{}
+	(&KakaoConnector{}).FillPortalBridgeInfo(portal, &unset)
+	if unset.Network != nil {
+		t.Fatalf("network section without a configured icon = %+v, want none", unset.Network)
+	}
+
+	kc := &KakaoConnector{Config: Config{NetworkIcon: "mxc://example.org/syntheticKakaoIcon"}}
+	content := event.BridgeEventContent{}
+	kc.FillPortalBridgeInfo(portal, &content)
+	if content.Network == nil {
+		t.Fatal("configured icon published no network section")
+	}
+	if content.Network.ID != "kakaotalk" {
+		t.Fatalf("network id = %q", content.Network.ID)
+	}
+	if content.Network.DisplayName != "KakaoTalk" {
+		t.Fatalf("network displayname = %q", content.Network.DisplayName)
+	}
+	if content.Network.AvatarURL != "mxc://example.org/syntheticKakaoIcon" {
+		t.Fatalf("network avatar_url = %q", content.Network.AvatarURL)
 	}
 }
