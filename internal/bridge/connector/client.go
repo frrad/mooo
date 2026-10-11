@@ -142,13 +142,13 @@ func isUnidentifiableMessageError(err error) bool {
 func init() {
 	status.BridgeStateHumanErrors.Update(status.BridgeStateErrorMap{
 		stateProfileUnavailable:    "The Kakao profile could not be opened; it may be in use by another process.",
-		stateConnectFailed:         "Connecting to KakaoTalk failed.",
+		stateConnectFailed:         "Connecting to KakaoTalk failed. If no retry is scheduled, fix the cause and send the reconnect command.",
 		stateGroupCreateUnresolved: "A group creation outcome or room binding is unresolved. Reconcile the selected Matrix room with the source group; do not repeat creation.",
-		stateDisconnected:          "The KakaoTalk session ended. Restart the bridge to reconnect.",
-		stateDeliveryPaused:        "Inbound Kakao delivery was not confirmed. Progress was retained; bounded reconnect will attempt replay. Restore Matrix/source access and reconnect explicitly if recovery stops.",
-		stateUnidentifiableMsg:     "Kakao delivered a message whose identity could not be established safely. Review the bridge logs and repair continuity before reconnecting.",
+		stateDisconnected:          "The KakaoTalk session ended. The bridge is reconnecting.",
+		stateDeliveryPaused:        "Inbound Kakao delivery was not confirmed. Progress was retained, and the bridge will reconnect and replay it.",
+		stateUnidentifiableMsg:     "Kakao delivered a message whose identity could not be established safely. Review the bridge logs, then send the reconnect command once the cause is dealt with.",
 		stateKickedOut:             "KakaoTalk ended this device's session.",
-		stateChangeServer:          "KakaoTalk requested a server change. Restart the bridge to reconnect.",
+		stateChangeServer:          "KakaoTalk requested a server change. The bridge is reconnecting.",
 	})
 }
 

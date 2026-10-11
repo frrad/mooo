@@ -44,7 +44,7 @@ var commandReconcileGroup = &commands.FullHandler{
 			ce.Reply("Group reconciliation failed: %v", err)
 			return
 		}
-		ce.Reply("Confirmed source group bound to this room. Reconnect the Kakao login if it was stopped.")
+		ce.Reply("Confirmed source group bound to this room. If the Kakao login stopped, send the reconnect command.")
 	},
 }
 
@@ -185,6 +185,6 @@ var commandCompleteGroupInvitations = &commands.FullHandler{
 			ce.Reply("Invitation completion failed: %v", err)
 			return
 		}
-		ce.Reply("Confirmed source group with the complete selected roster bound to this room. Reconnect the Kakao login if it was stopped.")
+		ce.Reply("Confirmed source group with the complete selected roster bound to this room. If the Kakao login stopped, send the reconnect command.")
 	},
 }
