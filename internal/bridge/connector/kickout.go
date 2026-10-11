@@ -1,7 +1,6 @@
 package connector
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -24,8 +23,6 @@ type kickoutRecord struct {
 func newKickoutRecord(notice events.Kickout, at time.Time) kickoutRecord {
 	return kickoutRecord{Reason: notice.Reason, Message: notice.Message, URL: notice.URL, URLLabel: notice.URLLabel, At: at.UnixMilli()}
 }
-
-const kickoutSaveTimeout = 5 * time.Second
 
 // Bridge wording for the Mac alert's two localized defaults.
 const (
@@ -58,6 +55,8 @@ func kickedOutState(record kickoutRecord) status.BridgeState {
 
 // kickedOut returns the persisted KICKOUT notice for this login, if any.
 func (kc *KakaoClient) kickedOut() (kickoutRecord, bool) {
+	kc.metaMu.Lock()
+	defer kc.metaMu.Unlock()
 	meta, ok := kc.login.Metadata.(*UserLoginMetadata)
 	if !ok || meta.KickedOut == nil {
 		return kickoutRecord{}, false
@@ -69,15 +68,7 @@ func (kc *KakaoClient) kickedOut() (kickoutRecord, bool) {
 // again with the same credentials. The official client logs out on KICKOUT.
 // A failed save is logged; this process still stops recovery.
 func (kc *KakaoClient) recordKickout(record kickoutRecord) {
-	meta, ok := kc.login.Metadata.(*UserLoginMetadata)
-	if !ok {
-		kc.log().Error().Msg("Cannot record KakaoTalk kickout: login has no Kakao metadata")
-		return
-	}
-	meta.KickedOut = &record
-	ctx, cancel := context.WithTimeout(context.Background(), kickoutSaveTimeout)
-	defer cancel()
-	if err := kc.login.Save(ctx); err != nil {
-		kc.log().Err(err).Msg("Failed to record KakaoTalk kickout; a restart would reconnect")
-	}
+	kc.saveLoginMetadata("kickout", func(meta *UserLoginMetadata) {
+		meta.KickedOut = &record
+	})
 }

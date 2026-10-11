@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -76,6 +77,7 @@ type connLifecycle struct {
 }
 
 func (kc *KakaoClient) Connect(ctx context.Context) {
+	restartWait, restartAttempt, restored := kc.restoredSchedule()
 	kc.mu.Lock()
 	if kc.client != nil || kc.cleanup != nil || kc.connecting {
 		kc.mu.Unlock()
@@ -89,13 +91,25 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 		kc.sendState(kickedOutState(record))
 		return
 	}
-	kc.connecting = true
 	kc.stopping = false
 	if kc.lifecycle == nil {
 		kc.lifecycle, kc.lifecycleCancel = context.WithCancel(context.Background())
 	}
 	kc.generation++
 	generation := kc.generation
+	if restored {
+		kc.recoveryTry = restartAttempt
+	}
+	if restartWait > 0 {
+		// The previous process left a backoff pending, or ended soon after
+		// logging in. Logging in at once would let a restarting supervisor
+		// bypass the recovery schedule.
+		kc.startRetryLocked(generation, restartWait)
+		kc.mu.Unlock()
+		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateReconnectScheduled, Message: fmt.Sprintf("Reconnecting to KakaoTalk in %s after a restart", restartWait.Round(time.Second))})
+		return
+	}
+	kc.connecting = true
 	kc.connectingGeneration = generation
 	connectCtx, cancel := context.WithCancel(ctx)
 	kc.connectCancel = cancel
@@ -146,7 +160,9 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	// client whose subscription has not returned yet.
 	kc.mu.Lock()
 	kc.retain(c)
+	attempt := kc.recoveryTry
 	kc.mu.Unlock()
+	kc.recordLoginAttempt(attempt, kc.now())
 	stream, err := kc.connectAndSubscribe(ctx, c)
 	if err != nil {
 		kc.shutdownBootstrap(c, "after connect failure", false)
@@ -224,15 +240,25 @@ func (kc *KakaoClient) retryAfter(err error, generation uint64) bool {
 		}
 	}()
 	kc.mu.Lock()
-	defer kc.mu.Unlock()
 	if kc.stopping || kc.generation != generation {
+		kc.mu.Unlock()
 		return false
 	}
 	attempt := kc.recoveryTry
 	kc.recoveryTry++
-	wait := kc.wait
 	delay := recoveryDelay(err, attempt)
 	stalled = attempt == fastRecoveryAttempts
+	nextAttempt, notBefore := kc.recoveryTry, kc.now().Add(delay)
+	kc.startRetryLocked(generation, delay)
+	kc.mu.Unlock()
+	kc.recordScheduledRetry(nextAttempt, notBefore)
+	return true
+}
+
+// startRetryLocked waits out delay and then reconnects for generation. The
+// caller holds mu.
+func (kc *KakaoClient) startRetryLocked(generation uint64, delay time.Duration) {
+	wait := kc.wait
 	kc.retry.start(&kc.mu, func(ctx context.Context, retryID uint64) {
 		if err := wait(ctx, delay); err != nil {
 			return
@@ -257,7 +283,6 @@ func (kc *KakaoClient) retryAfter(err error, generation uint64) bool {
 		}
 		kc.mu.Unlock()
 	})
-	return true
 }
 
 // recoveryStalled reports whether recovery has left the fast schedule.
