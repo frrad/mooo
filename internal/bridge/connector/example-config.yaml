@@ -21,7 +21,8 @@ bson_shadow:
 # It is published as the m.bridge protocol and network avatar_url and used as
 # the avatar of the bridge space and bot. Beeper Desktop (4.3) shows the
 # network avatar as the account's sidebar icon; its chat-list badges come
-# from its own built-in icon set and ignore this. Upload an image you are entitled to use to your homeserver and paste
-# its mxc:// URI here. Existing rooms keep their old icon until the bridge
-# runs once with bridge.resend_bridge_info: true.
+# from its own built-in icon set and ignore this. Upload an image you are
+# entitled to use to your homeserver and paste its mxc:// URI here. Existing
+# rooms keep their old icon until the bridge runs once with
+# bridge.resend_bridge_info: true.
 network_icon: ""
