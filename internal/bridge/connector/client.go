@@ -116,6 +116,7 @@ const (
 	stateUnidentifiableMsg     status.BridgeStateErrorCode = "kakao-unidentifiable-message"
 	stateKickedOut             status.BridgeStateErrorCode = "kakao-kicked-out"
 	stateChangeServer          status.BridgeStateErrorCode = "kakao-change-server"
+	stateRecoveryStalled       status.BridgeStateErrorCode = "kakao-recovery-stalled"
 )
 
 var errUnsupportedOpenChatMetadata = errors.New("connector: OpenChat metadata is not supported")
@@ -213,6 +214,7 @@ func newKakaoClient(login *bridgev2.UserLogin, st store, userID int64, open func
 		reactionNotices: make(map[string]time.Time),
 	}
 	kc.wait = waitForRecovery
+	kc.now = time.Now
 	kc.reserveOutbound = kc.reserveOutboundKV
 	kc.refreshMembership = kc.refreshMembershipAsync
 	kc.sendState = func(state status.BridgeState) { kc.stateQueue().Send(state) }
