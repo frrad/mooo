@@ -5,9 +5,24 @@ validation remain tracked in [the bridge plan](../research/bridge/PLAN.md).
 Build and configuration smoke tests do not establish Kakao enrollment or
 long-running recovery validation.
 
+## Get the image
+
+CI publishes a multi-arch (`linux/amd64`, `linux/arm64`) image to
+`ghcr.io/frrad/mooo-bridge` on every merge to `main`, tagged `main`, the full
+commit SHA, and `sha-<short>`. To use it instead of building locally, export
+the image name before every compose command below:
+
+```sh
+export MOOO_IMAGE=ghcr.io/frrad/mooo-bridge:main
+docker compose pull
+```
+
+Pin a commit tag instead of `main` when you want an exact, rollback-able
+revision.
+
 ## Build and configure
 
-The build uses Go 1.27.1, the pure-Go Olm backend, and cgo SQLite. The runtime
+To build locally instead, the build uses the Go toolchain pinned in the Dockerfile, the pure-Go Olm backend, and cgo SQLite. The runtime
 runs as UID/GID 10001. Build from a clean source checkout:
 
 ```sh
@@ -70,7 +85,8 @@ permissions and treat the copy as sensitive authentication material.
 
 Before upgrading, stop the bridge, make an offline copy of `data`, and record
 the current image identifier. Build the new image from the intended source
-revision and start it with the same mounted data. Database migrations run during
+revision, or `docker compose pull` the published tag, and start it with the
+same mounted data. Database migrations run during
 startup; rollback may require restoring the offline database/profile snapshot
 with the old image. Never start old and new bridge containers against the same
 profile concurrently.
