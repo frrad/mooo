@@ -104,6 +104,9 @@ func (kc *KakaoClient) saveGroupAttempt(ctx context.Context, room id.RoomID, att
 	if err != nil {
 		return err
 	}
+	// The reconnect schedule saves the same metadata from the lifecycle.
+	kc.metaMu.Lock()
+	defer kc.metaMu.Unlock()
 	// Replace the map instead of modifying a shared serialized value in place.
 	next := make(map[string]groupCreateAttempt, len(meta.GroupCreates)+1)
 	for key, value := range meta.GroupCreates {
