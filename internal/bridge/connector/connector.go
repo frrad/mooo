@@ -14,6 +14,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/commands"
 	"maunium.net/go/mautrix/bridgev2/database"
+	"maunium.net/go/mautrix/id"
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/protocol/loco"
@@ -32,6 +33,10 @@ type Config struct {
 	// BSONShadow optionally enables the research comparison of every incoming
 	// LOCO body against the source-compatible observed decoder. Off by default.
 	BSONShadow BSONShadowConfig `yaml:"bson_shadow"`
+
+	// NetworkIcon optionally names an operator-uploaded mxc:// image that
+	// Matrix clients show as the KakaoTalk network icon. Empty publishes none.
+	NetworkIcon string `yaml:"network_icon"`
 }
 
 // BSONShadowConfig is the bridge-facing form of shadow.Config.
@@ -47,6 +52,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "profile_dir")
 	helper.Copy(up.Str, "bson_shadow", "mode")
 	helper.Copy(up.Str, "bson_shadow", "dump_dir")
+	helper.Copy(up.Str, "network_icon")
 }
 
 // ErrUnsafeEventDelivery reports a bridge configuration under which
@@ -96,6 +102,11 @@ func (kc *KakaoConnector) Start(ctx context.Context) error {
 	}
 	if !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
 		return errors.New("connector: profile_dir must be a directory accessible only by its owner")
+	}
+	if icon := kc.Config.NetworkIcon; icon != "" {
+		if uri, err := id.ParseContentURI(icon); err != nil || !uri.IsValid() {
+			return errors.New("connector: network.network_icon must be an mxc:// content URI")
+		}
 	}
 	return kc.configureBSONShadow()
 }
@@ -154,6 +165,7 @@ func (kc *KakaoConnector) GetName() bridgev2.BridgeName {
 	return bridgev2.BridgeName{
 		DisplayName:          "KakaoTalk",
 		NetworkURL:           "https://www.kakaocorp.com/page/service/service/KakaoTalk",
+		NetworkIcon:          id.ContentURIString(kc.Config.NetworkIcon),
 		NetworkID:            "kakaotalk",
 		BeeperBridgeType:     "kakaotalk",
 		DefaultPort:          29340,
