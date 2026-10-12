@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -95,9 +96,9 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 			Body: malformedPayloadNotice(evt.Reason), Metadata: metadata,
 		}, convertNoticeWithMetadata)
 	case events.UnsupportedMessage:
-		notice := fmt.Sprintf("A KakaoTalk message of unsupported type %d was sent.", evt.Type)
-		return messageEvent(kc, evt.Position(), 0, 0, noticeData{
-			Body: notice, Metadata: newKakaoMessageMetadata(evt.ChatID, evt.LogID, 0, evt.Type, "", 0),
+		notice := unsupportedMessageText(evt)
+		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, noticeData{
+			Body: notice, Metadata: newKakaoMessageMetadata(evt.ChatID, evt.LogID, evt.AuthorID, evt.Type, "", 0),
 		}, convertNoticeWithMetadata)
 	case events.MemberAdded:
 		return kc.memberChange(evt.ChatID, evt.LogID, 0, evt.Members, true)
@@ -604,4 +605,56 @@ func (kc *KakaoClient) logMessageGap(evt events.MessageGap) {
 	}
 	kc.login.Bridge.Log.Warn().Int32("kakao_type", evt.Type).Str("gap_reason", evt.Reason).
 		Msg("Kakao message content failed decoding; bridged as a malformed_payload notice")
+}
+
+// unsupportedMessageText renders types without a full converter as text: call
+// records (51), feed/link cards (71) and anything else that carries its own text.
+func unsupportedMessageText(evt events.UnsupportedMessage) string {
+	switch evt.Type {
+	case 51:
+		var call struct {
+			Type     string `json:"type"`
+			Duration int64  `json:"duration"`
+		}
+		_ = json.Unmarshal([]byte(evt.Attachment), &call)
+		kind := "📞 Call"
+		if strings.HasPrefix(call.Type, "v_") {
+			kind = "🎥 Video call"
+		}
+		switch strings.TrimPrefix(call.Type, "v_") {
+		case "invite":
+			return kind + " started"
+		case "bye":
+			return fmt.Sprintf("%s ended (%s)", kind, time.Duration(call.Duration)*time.Second)
+		case "canceled":
+			return kind + " canceled"
+		case "noanswer":
+			return kind + " missed"
+		case "deny":
+			return kind + " declined"
+		}
+		return kind
+	case 71:
+		var card struct {
+			P struct {
+				ME  string `json:"ME"`
+				SNM string `json:"SNM"`
+			} `json:"P"`
+		}
+		_ = json.Unmarshal([]byte(evt.Attachment), &card)
+		text := card.P.ME
+		if text == "" {
+			text = evt.Message
+		}
+		if text != "" {
+			if card.P.SNM != "" {
+				return fmt.Sprintf("[%s] %s", card.P.SNM, text)
+			}
+			return text
+		}
+	}
+	if evt.Message != "" {
+		return evt.Message
+	}
+	return fmt.Sprintf("A KakaoTalk message of unsupported type %d was sent.", evt.Type)
 }
