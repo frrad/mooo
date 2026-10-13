@@ -38,13 +38,18 @@ func protocolErr(command, field string) error {
 }
 
 // stageErr wraps a bootstrap or login failure with the stage that failed
-// and the cause's text. The cause is formatted with %v, not %w, so callers
-// classify the failure only by sentinel (errBootstrap or ErrLogin), exactly
-// as before the cause was attached: a network cause must not make a
-// rejected bootstrap look like a retryable transport error. Causes come
-// from net, tls, bson, loco framing and the booking/sessionlogin decoders,
-// none of which include request bodies or credentials.
+// and the cause. A bootstrap cause stays reachable through errors.Is and
+// errors.As: bootstrap runs before LOGINLIST and sends no credentials, so the
+// connector may retry a network failure there. A login cause is formatted
+// with %v, not %w, so a login failure is classified only as ErrLogin: a
+// transport error during a request that carried credentials must not look
+// retryable. Causes come from net, tls, bson, loco framing and the
+// booking/sessionlogin decoders, none of which include request bodies or
+// credentials.
 func stageErr(sentinel error, stage string, cause error) error {
+	if sentinel == errBootstrap {
+		return fmt.Errorf("%w: %s: %w", sentinel, stage, cause)
+	}
 	return fmt.Errorf("%w: %s: %v", sentinel, stage, cause)
 }
 
