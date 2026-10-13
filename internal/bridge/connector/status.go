@@ -7,6 +7,7 @@ import (
 	"maunium.net/go/mautrix/event"
 
 	"github.com/frrad/mooo/internal/client"
+	"github.com/frrad/mooo/internal/protocol/media"
 )
 
 // noticeStatus is a failed Matrix event status that is also posted to the
@@ -53,10 +54,13 @@ func replyTargetStatus(err error) error {
 }
 
 // outboundSendError classifies a failed single Kakao send for Matrix. A
-// server status reply is a certain refusal. Any other failure may have been
-// delivered; it is never retried, and it must not be shown as retriable,
+// server status reply or unsupported upload redirect is a certain refusal.
+// Any other failure may have been delivered; it is never retried or shown as retriable,
 // because a manual resend could duplicate a delivered message.
 func outboundSendError(err error) error {
+	if errors.Is(err, media.ErrUploadRedirect) {
+		return certainRefusal(err, "KakaoTalk requested an upload method this bridge does not support yet; the attachment was not sent.")
+	}
 	var statusErr client.StatusError
 	if errors.As(err, &statusErr) {
 		return certainSendFailure(err, "KakaoTalk refused this message.")

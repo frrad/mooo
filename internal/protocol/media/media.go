@@ -34,9 +34,12 @@ const (
 )
 
 var (
-	ErrInvalidImage      = errors.New("media: invalid image")
-	ErrUnsupportedImage  = errors.New("media: unsupported image format")
-	ErrInvalidResponse   = errors.New("media: invalid response")
+	ErrInvalidImage     = errors.New("media: invalid image")
+	ErrUnsupportedImage = errors.New("media: unsupported image format")
+	ErrInvalidResponse  = errors.New("media: invalid response")
+	// ErrUploadRedirect means SHIP selected an upload strategy not implemented
+	// by this client. No trailer upload or chat message was attempted.
+	ErrUploadRedirect    = errors.New("media: alternate upload required")
 	ErrInvalidOffset     = errors.New("media: invalid upload offset")
 	ErrInvalidMessage    = errors.New("media: invalid photo message")
 	ErrUnsafeURL         = errors.New("media: unsafe download URL")
@@ -364,15 +367,23 @@ func (r ShipRequest) MarshalBSON() ([]byte, error) {
 }
 
 type ShipResponse struct {
-	Key  string
-	Host string
-	Port int
+	Redirect bool
+	Key      string
+	Host     string
+	Port     int
 }
 
 func DecodeShipResponse(body []byte) (ShipResponse, error) {
 	raw := bson.Raw(body)
 	if raw.Validate() != nil {
 		return ShipResponse{}, invalidResponse(ShipCommand, "bson", body)
+	}
+	redirect, _, err := fields.Bool(raw, "rd")
+	if err != nil {
+		return ShipResponse{}, invalidResponse(ShipCommand, "rd_type", body)
+	}
+	if redirect {
+		return ShipResponse{Redirect: true}, nil
 	}
 	key, ok, err := fields.String(raw, "k")
 	if err != nil || !ok || key == "" {

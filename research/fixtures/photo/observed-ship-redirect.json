@@ -1,0 +1,24 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "mooo 0f87cd6d, mac-class secondary profile; Kakao server reply",
+    "date": "2026-10-13",
+    "method": "One fresh synthetic PNG passed to the production Client.SendImage path in an existing owned disposable direct chat after inventory and exact two-member roster verification. PacketObserver retained the private SHIP BSON. No upload retry or profile clone. Independent operator observation on #342 agrees. This is server evidence, not official-client fallback parity.",
+    "doc": "research/bridge/SHIP-REDIRECT.md"
+  },
+  "response": {
+    "k": "",
+    "vh": "",
+    "p": 0,
+    "rd": true,
+    "status": 0
+  },
+  "bson_types": {
+    "k": "string",
+    "vh": "string",
+    "p": "int32",
+    "rd": "bool",
+    "status": "int32"
+  },
+  "expected": "A successful SHIP response selecting the alternate upload strategy, not malformed BSON. No trailer endpoint is provided."
+}
