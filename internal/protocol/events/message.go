@@ -220,12 +220,13 @@ func logDecoder(decode func(chatID, logID int64, log bson.Raw) (Event, error)) f
 	return func(env chatlog.Envelope) (Event, error) { return decode(env.ChatID, env.LogID, env.Log) }
 }
 
-// mediaDecoder adapts a media package decoder. Every media error is malformed.
+// mediaDecoder adapts a media package decoder. Every media error is malformed;
+// the media error stays in the chain so a gap can report its reason.
 func mediaDecoder[M any](decode func(chatlog.Envelope) (M, error), wrap func(M) Event) func(chatlog.Envelope) (Event, error) {
 	return func(env chatlog.Envelope) (Event, error) {
 		message, err := decode(env)
 		if err != nil {
-			return nil, ErrMalformedEvent
+			return nil, fmt.Errorf("%w: %w", ErrMalformedEvent, err)
 		}
 		return wrap(message), nil
 	}

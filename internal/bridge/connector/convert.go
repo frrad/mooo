@@ -87,10 +87,12 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 	case events.DeletedMessage:
 		return kc.deletedMessageEvent(evt)
 	case events.MessageGap:
+		kc.logMessageGap(evt)
 		metadata := newKakaoMessageMetadata(evt.ChatID, evt.LogID, evt.AuthorID, evt.Type, "[message unavailable]", 0)
 		metadata.ConversionGap = "malformed_payload"
+		metadata.GapReason = evt.Reason
 		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, noticeData{
-			Body: "A KakaoTalk message could not be displayed (malformed_payload).", Metadata: metadata,
+			Body: malformedPayloadNotice(evt.Reason), Metadata: metadata,
 		}, convertNoticeWithMetadata)
 	case events.UnsupportedMessage:
 		notice := fmt.Sprintf("A KakaoTalk message of unsupported type %d was sent.", evt.Type)
@@ -559,4 +561,23 @@ func (evt *chatInfoChangeEvent) GetChatInfo(ctx context.Context, portal *bridgev
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	return evt.getCreationInfo(ctx, portal)
+}
+
+func malformedPayloadNotice(reason string) string {
+	if reason == "" {
+		return "A KakaoTalk message could not be displayed (malformed_payload)."
+	}
+	return "A KakaoTalk message could not be displayed (malformed_payload: " + reason + ")."
+}
+
+// logMessageGap records why a message became a gap. It uses the bridge logger
+// rather than the login logger, and logs only the message type and the
+// decoder's fixed reason code, so the line identifies no account, chat or
+// message and can be quoted in evidence as is.
+func (kc *KakaoClient) logMessageGap(evt events.MessageGap) {
+	if kc.login == nil || kc.login.Bridge == nil {
+		return
+	}
+	kc.login.Bridge.Log.Warn().Int32("kakao_type", evt.Type).Str("gap_reason", evt.Reason).
+		Msg("Kakao message content failed decoding; bridged as a malformed_payload notice")
 }

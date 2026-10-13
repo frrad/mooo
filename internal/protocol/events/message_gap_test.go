@@ -20,6 +20,7 @@ func gapPacket(t *testing.T, outer bson.D, log bson.D) loco.Packet {
 	return loco.Packet{Header: loco.Header{Method: "MSG"}, Body: body}
 }
 func TestDecodeForDeliveryRetainsMalformedContentIdentity(t *testing.T) {
+	reasons := map[int32]string{1: GapReasonUndiagnosed, 2: "attachment_json", messagetype.Reply: GapReasonUndiagnosed}
 	for _, typ := range []int32{1, 2, messagetype.Reply} {
 		p := gapPacket(t, bson.D{{Key: "chatId", Value: int64(42)}}, bson.D{{Key: "logId", Value: int64(100)}, {Key: "type", Value: typ}, {Key: "authorId", Value: int64(200)}, {Key: "sendAt", Value: int64(300)}, {Key: "attachment", Value: "{private malformed"}})
 		if _, e := Decode(p); !errors.Is(e, ErrMalformedEvent) {
@@ -29,7 +30,7 @@ func TestDecodeForDeliveryRetainsMalformedContentIdentity(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		want := MessageGap{ChatID: 42, LogID: 100, AuthorID: 200, SentAt: 300, Type: typ}
+		want := MessageGap{ChatID: 42, LogID: 100, AuthorID: 200, SentAt: 300, Type: typ, Reason: reasons[typ]}
 		if got != want {
 			t.Fatalf("event=%#v", got)
 		}
@@ -100,5 +101,42 @@ func TestDecodeForDeliveryValidContentStillValidatesEnvelope(t *testing.T) {
 				t.Fatalf("decoded=%#v err=%v, want fail-closed identity", got, err)
 			}
 		})
+	}
+}
+
+// A photo gap names the failed check without retaining any attachment value.
+func TestDecodeForDeliveryPhotoGapReportsReason(t *testing.T) {
+	attachment := func(thumbnail string) string {
+		return `{"k":"synthetic-key","w":640,"h":480,"s":1024,"cs":"0123456789abcdef0123456789abcdef01234567","mt":"image/jpeg",` +
+			`"url":"https://talk.kakaocdn.net/synthetic/image.jpg","thumbnailUrl":` + thumbnail + `}`
+	}
+	cases := []struct {
+		thumbnail, reason string
+	}{
+		{`"https://elsewhere.example/synthetic/thumb.jpg"`, "thumbnail_url_host"},
+		{`"http://talk.kakaocdn.net/synthetic/thumb.jpg"`, "thumbnail_url_scheme"},
+		{`null`, "thumbnail_url_missing"},
+	}
+	for _, c := range cases {
+		p := gapPacket(t, bson.D{{Key: "chatId", Value: int64(42)}}, bson.D{{Key: "logId", Value: int64(100)}, {Key: "type", Value: int32(2)}, {Key: "attachment", Value: attachment(c.thumbnail)}})
+		got, e := DecodeForDelivery(p)
+		if e != nil {
+			t.Fatal(e)
+		}
+		gap, ok := got.(MessageGap)
+		if !ok || gap.Reason != c.reason {
+			t.Fatalf("thumbnail %s: event=%#v, want reason %q", c.thumbnail, got, c.reason)
+		}
+	}
+}
+
+func TestDecodeForDeliveryDuplicateKeyGapReportsReason(t *testing.T) {
+	p := gapPacket(t, bson.D{{Key: "chatId", Value: int64(42)}}, bson.D{{Key: "logId", Value: int64(100)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "a"}, {Key: "message", Value: "b"}})
+	got, e := DecodeForDelivery(p)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if gap, ok := got.(MessageGap); !ok || gap.Reason != GapReasonDuplicateKey {
+		t.Fatalf("event=%#v", got)
 	}
 }

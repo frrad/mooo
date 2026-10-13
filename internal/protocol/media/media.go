@@ -50,6 +50,18 @@ var (
 	ErrInvalidCaption = errors.New("media: invalid photo caption")
 )
 
+// InvalidMessageError names the check that a media message failed. Reason is
+// a fixed code chosen by the decoder, never a value from the message, so it is
+// safe to log.
+type InvalidMessageError struct {
+	Reason string
+}
+
+func (e *InvalidMessageError) Error() string { return ErrInvalidMessage.Error() + ": " + e.Reason }
+func (e *InvalidMessageError) Unwrap() error { return ErrInvalidMessage }
+
+func invalidMessage(reason string) error { return &InvalidMessageError{Reason: reason} }
+
 // fields reads response fields; callers map every failure to their own
 // response error.
 var fields = bsonfield.Reader{Err: ErrInvalidResponse}
@@ -104,28 +116,49 @@ type PhotoMessage struct {
 // media key. Unknown attachment fields are retained by neither this decoder nor
 // its callers, allowing the wire schema to grow safely.
 func DecodePhotoMessage(env chatlog.Envelope) (PhotoMessage, error) {
-	if env.Type != messagetype.Photo || !env.LogIDInChatLog {
-		return PhotoMessage{}, ErrInvalidMessage
+	if env.Type != messagetype.Photo {
+		return PhotoMessage{}, invalidMessage("type")
+	}
+	if !env.LogIDInChatLog {
+		return PhotoMessage{}, invalidMessage("log_id_location")
 	}
 	log := env.Log
 	attachmentValue, err := log.LookupErr("attachment")
-	if err != nil || attachmentValue.Type != bson.TypeString || len(attachmentValue.StringValue()) > 64*1024 {
-		return PhotoMessage{}, ErrInvalidMessage
+	switch {
+	case err != nil:
+		return PhotoMessage{}, invalidMessage("attachment_missing")
+	case attachmentValue.Type != bson.TypeString:
+		return PhotoMessage{}, invalidMessage("attachment_type")
+	case len(attachmentValue.StringValue()) > 64*1024:
+		return PhotoMessage{}, invalidMessage("attachment_size")
 	}
 	var attachment PhotoAttachment
 	if err := json.Unmarshal([]byte(attachmentValue.StringValue()), &attachment); err != nil {
-		return PhotoMessage{}, ErrInvalidMessage
+		return PhotoMessage{}, invalidMessage("attachment_json")
 	}
-	if attachment.Key == "" || attachment.Width <= 0 || attachment.Height <= 0 || attachment.Size <= 0 || attachment.Size > MaxImageBytes ||
-		len(attachment.Checksum) != 40 || (attachment.MediaType != "image/jpg" && attachment.MediaType != "image/jpeg" && attachment.MediaType != "image/png") ||
-		validateDownloadURL(attachment.URL) != nil || validateDownloadURL(attachment.ThumbnailURL) != nil {
-		return PhotoMessage{}, ErrInvalidMessage
+	switch {
+	case attachment.Key == "":
+		return PhotoMessage{}, invalidMessage("key")
+	case attachment.Width <= 0 || attachment.Height <= 0:
+		return PhotoMessage{}, invalidMessage("dimensions")
+	case attachment.Size <= 0 || attachment.Size > MaxImageBytes:
+		return PhotoMessage{}, invalidMessage("size")
+	case len(attachment.Checksum) != 40:
+		return PhotoMessage{}, invalidMessage("checksum")
+	case attachment.MediaType != "image/jpg" && attachment.MediaType != "image/jpeg" && attachment.MediaType != "image/png":
+		return PhotoMessage{}, invalidMessage("media_type")
+	}
+	if problem := downloadURLProblem(attachment.URL); problem != "" {
+		return PhotoMessage{}, invalidMessage("url_" + problem)
+	}
+	if problem := downloadURLProblem(attachment.ThumbnailURL); problem != "" {
+		return PhotoMessage{}, invalidMessage("thumbnail_url_" + problem)
 	}
 	if _, err := hex.DecodeString(attachment.Checksum); err != nil {
-		return PhotoMessage{}, ErrInvalidMessage
+		return PhotoMessage{}, invalidMessage("checksum")
 	}
 	if !ValidCaption(attachment.Comment) {
-		return PhotoMessage{}, ErrInvalidMessage
+		return PhotoMessage{}, invalidMessage("caption")
 	}
 	return PhotoMessage{
 		ChatID: env.ChatID, LogID: env.LogID,
@@ -207,15 +240,34 @@ func DownloadPhoto(ctx context.Context, client *http.Client, attachment PhotoAtt
 }
 
 func validateDownloadURL(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" || u.Path == "" {
-		return ErrUnsafeURL
-	}
-	host := strings.ToLower(u.Hostname())
-	if host != "talk.kakaocdn.net" && !strings.HasSuffix(host, ".talk.kakao.com") {
+	if downloadURLProblem(raw) != "" {
 		return ErrUnsafeURL
 	}
 	return nil
+}
+
+// downloadURLProblem names the first rule raw breaks, or returns "" for an
+// acceptable media download URL. The name never includes part of the URL.
+func downloadURLProblem(raw string) string {
+	if raw == "" {
+		return "missing"
+	}
+	u, err := url.Parse(raw)
+	switch {
+	case err != nil:
+		return "parse"
+	case u.Scheme != "https":
+		return "scheme"
+	case u.User != nil || u.Port() != "":
+		return "authority"
+	case u.Path == "":
+		return "path"
+	}
+	host := strings.ToLower(u.Hostname())
+	if host != "talk.kakaocdn.net" && !strings.HasSuffix(host, ".talk.kakao.com") {
+		return "host"
+	}
+	return ""
 }
 
 // PrepareImage accepts JPEG and PNG data, derives dimensions, and computes the
