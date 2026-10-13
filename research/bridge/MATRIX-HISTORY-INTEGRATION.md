@@ -12,8 +12,9 @@ Source audit of mooo on main after PR #346 and the exact dependency
 specification and Beeper bridge-manager source at
 `d04569b64f21d495e75eae08b784ded325a33839`. One unauthenticated read of the owned
 local Synapse `/_matrix/client/versions` endpoint checked advertised capabilities.
-No bridge process, source-network client, account login, appservice registration
-or user-message write was started. No Beeper UI observation was performed.
+No live bridge process, source-network client, real account login, appservice
+registration or user-message write was started. A subsequent local HTTP harness
+initializes framework objects with a synthetic login and disposable SQLite state. No Beeper UI observation was performed.
 
 Source-derived framework behavior is high-confidence for this pinned version.
 Actual current Beeper Desktop/mobile behavior and custom-bridge routing remain
@@ -25,7 +26,7 @@ unobserved. Interface availability is not proof that a deployed client calls it.
 |---|---|---|
 | Does opening a standard Matrix room notify the bridge? | No standard room-open signal; the appservice connector does not call the viewing interface. | Explicit framework contract and no invocation in the pinned module. |
 | Does ordinary backward scrolling call the bridge? | `/rooms/{roomId}/messages` retrieves homeserver history. It is not the framework provisioning backfill endpoint. | Matrix client-server contract; custom client/server integrations may add another call. |
-| Can Beeper request source backfill? | The framework exposes authenticated `POST /v3/backfill/{roomID}` under the configured provisioning prefix. | Requires batch capability, manual backfill enabled, a logged-in source and an existing task. Actual UI invocation is unobserved. |
+| Can Beeper request source backfill? | The framework exposes authenticated `POST /v3/backfill/{roomID}` under `/_matrix/provision`. | Requires batch capability, manual backfill enabled, a logged-in source and an existing task. Actual UI invocation is unobserved. |
 | Can the ordinary appservice connector insert older history on Beeper? | It has a Beeper batch-send path, selected by advertised capability. | Source-derived support; encrypted insertion and resulting UI order need owned deployment acceptance. |
 | Does standard Synapse support that insertion path? | The owned local server does not advertise `com.beeper.batch_sending`; the framework selects its legacy path. | Observed capability response, not an attempted insertion or UI test. |
 | Are mooo's automatic history interfaces wired? | No `FetchMessages` or `HandleMatrixViewingChat` implementation exists in the audited shipped connector. | Existing explicit group importer is a separate path. |
@@ -127,6 +128,43 @@ Matrix marking nor fetching establishes what a source server considers read.
 
 These are integration constraints, not evidence that the current mooo importer
 has generated a request storm. Automatic framework backfill is not wired today.
+
+## Executed local HTTP hook (2026-10-13 follow-up)
+
+The maintainer requested calling the hook directly without real Beeper.
+`tools/history-hooks/hooks_test.go` now sends in-memory HTTP requests through the
+real appservice router, provisioning authentication, pagination handler, manual
+backfill executor and SQLite task queries. The source is a counting fake; it has
+no Kakao implementation or credentials. It returns empty synthetic batches to
+avoid any Matrix message-send path. No live server is needed.
+
+Run with `GOFLAGS='-tags=goolm' go test -race -v ./tools/history-hooks`.
+
+Executed results:
+
+- Missing authentication gives 401, no source callback.
+- Missing batch capability or disabled manual pagination gives 404, no callback.
+- An eligible login/portal with no task gives 204, no callback.
+- A task scheduled an hour into the future is excluded by background selection,
+  but the authenticated pagination POST immediately calls the source and gives 200.
+- A second immediate POST calls it again despite a one-hour batch delay.
+- A third response with `HasMore=false` ends the task; the next POST gives 204
+  without a fourth callback.
+- Callback parameters preserve the selected portal, backward direction, configured
+  count, slow-fetch permission and stored continuation cursor.
+
+This executes the actual framework entry point, not a reimplementation of its
+handler. It verifies the pacing constraint directly. It does not execute actual
+Beeper UI routing, historical insertion, encryption or source-network behavior.
+Calling a synthetic viewing implementation directly would only prove that our fake
+method can run: the production viewing dispatcher remains absent.
+
+Useful docs: the [Go API documentation](https://pkg.go.dev/maunium.net/go/mautrix/bridgev2#ChatViewingNetworkAPI)
+covers viewing and fetching interfaces; the pinned provisioning source documents
+the concrete HTTP route. No standalone public OpenAPI specification for this
+pagination route was found in the documentation searched. For this dependency,
+the verified full route is `POST /_matrix/provision/v3/backfill/{roomID}` with
+provisioning authentication and a selected/default source login.
 
 ## Implications to discuss before implementation
 
