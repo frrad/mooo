@@ -111,7 +111,7 @@ func (kc *KakaoClient) refreshGroupMembership(ctx context.Context, c kakaoClient
 		if ghostErr != nil {
 			return ghostErr
 		}
-		if !kc.joinedAs(members, user, ghost.Intent.GetMXID()) {
+		if !kc.joinedAs(ctx, members, user, ghost.Intent.GetMXID()) {
 			return errMembershipPending
 		}
 	}
@@ -160,13 +160,14 @@ func (kc *KakaoClient) handleMembershipEvent(ctx context.Context, c kakaoClient,
 	return false, false
 }
 
-// joinedAs reports whether user is joined. With double puppeting (e.g. Beeper)
-// the own account is the real Matrix user, not its ghost.
-func (kc *KakaoClient) joinedAs(members map[id.UserID]*event.MemberEventContent, user networkid.UserID, ghostMXID id.UserID) bool {
+// joinedAs reports whether the expected member is joined. bridgev2 represents
+// the logged-in user by their double puppet when one is available, and by
+// their ghost otherwise.
+func (kc *KakaoClient) joinedAs(ctx context.Context, members map[id.UserID]*event.MemberEventContent, user networkid.UserID, ghostMXID id.UserID) bool {
 	if m := members[ghostMXID]; m != nil && m.Membership == event.MembershipJoin {
 		return true
 	}
-	if user != makeUserID(kc.userID) {
+	if !kc.IsThisUser(ctx, user) || kc.login.User.DoublePuppet(ctx) == nil {
 		return false
 	}
 	m := members[kc.login.UserMXID]

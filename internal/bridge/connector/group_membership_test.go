@@ -46,6 +46,63 @@ func TestMembershipCheckpointKeepsForwardingPausedUntilDepartedGhostLeaves(t *te
 	}
 }
 
+func TestMembershipAcceptsDoublePuppetForSelfGhost(t *testing.T) {
+	ctx := context.Background()
+	kc, backend, matrix := newGroupCreationFramework(t)
+	matrix.doublePuppet = true
+	p, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(5000, kc.login.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.MXID = "!selected:test"
+	if err = p.Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	backend.chatInfo.ChatData.ActiveMemberCount = 2
+	backend.memberList.MemberIDs = []int64{1000, 2000}
+	// With double puppeting, bridgev2 joins the owner's real account instead
+	// of the self ghost, so @kakao_1000 is never in the room.
+	matrix.members["@owner:test"] = &event.MemberEventContent{Membership: event.MembershipJoin}
+	matrix.members["@kakao_2000:test"] = &event.MemberEventContent{Membership: event.MembershipJoin}
+	matrix.members["@kakao_4000:test"] = &event.MemberEventContent{Membership: event.MembershipLeave}
+	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		return bridgev2.EventHandlingResult{Success: true}
+	}
+	if err = kc.refreshGroupMembership(ctx, backend, 5000, false); err != nil {
+		t.Fatalf("double-puppeted owner should satisfy the self member: %v", err)
+	}
+}
+
+func TestMembershipWithoutDoublePuppetStillNeedsSelfGhost(t *testing.T) {
+	ctx := context.Background()
+	kc, backend, matrix := newGroupCreationFramework(t)
+	p, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(5000, kc.login.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.MXID = "!selected:test"
+	if err = p.Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	backend.chatInfo.ChatData.ActiveMemberCount = 2
+	backend.memberList.MemberIDs = []int64{1000, 2000}
+	// Without double puppeting, bridgev2 sends as the self ghost. The owner's
+	// real account being joined does not put that ghost in the room.
+	matrix.members["@owner:test"] = &event.MemberEventContent{Membership: event.MembershipJoin}
+	matrix.members["@kakao_2000:test"] = &event.MemberEventContent{Membership: event.MembershipJoin}
+	matrix.members["@kakao_4000:test"] = &event.MemberEventContent{Membership: event.MembershipLeave}
+	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		return bridgev2.EventHandlingResult{Success: true}
+	}
+	if err = kc.refreshGroupMembership(ctx, backend, 5000, false); !errors.Is(err, errMembershipPending) {
+		t.Fatalf("self ghost absent: %v", err)
+	}
+	matrix.members["@kakao_1000:test"] = &event.MemberEventContent{Membership: event.MembershipJoin}
+	if err = kc.refreshGroupMembership(ctx, backend, 5000, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSourceRejoinClearsRemovalOnlyWithFreshRosterAndMatrixConvergence(t *testing.T) {
 	ctx := context.Background()
 	kc, backend, matrix := newGroupCreationFramework(t)
