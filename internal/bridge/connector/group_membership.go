@@ -12,6 +12,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 
 	"github.com/frrad/mooo/internal/protocol/events"
 )
@@ -110,8 +111,7 @@ func (kc *KakaoClient) refreshGroupMembership(ctx context.Context, c kakaoClient
 		if ghostErr != nil {
 			return ghostErr
 		}
-		member := members[ghost.Intent.GetMXID()]
-		if member == nil || member.Membership != event.MembershipJoin {
+		if !kc.joinedAs(ctx, members, user, ghost.Intent.GetMXID()) {
 			return errMembershipPending
 		}
 	}
@@ -158,4 +158,18 @@ func (kc *KakaoClient) handleMembershipEvent(ctx context.Context, c kakaoClient,
 		return kc.managedMembershipEvent(ctx, c, notice.ChatID, false)
 	}
 	return false, false
+}
+
+// joinedAs reports whether the expected member is joined. bridgev2 represents
+// the logged-in user by their double puppet when one is available, and by
+// their ghost otherwise.
+func (kc *KakaoClient) joinedAs(ctx context.Context, members map[id.UserID]*event.MemberEventContent, user networkid.UserID, ghostMXID id.UserID) bool {
+	if m := members[ghostMXID]; m != nil && m.Membership == event.MembershipJoin {
+		return true
+	}
+	if !kc.IsThisUser(ctx, user) || kc.login.User.DoublePuppet(ctx) == nil {
+		return false
+	}
+	m := members[kc.login.UserMXID]
+	return m != nil && m.Membership == event.MembershipJoin
 }

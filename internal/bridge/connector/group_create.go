@@ -443,8 +443,7 @@ func (kc *KakaoClient) verifyGroupBinding(ctx context.Context, portal *bridgev2.
 		if err != nil {
 			return err
 		}
-		member := members[ghost.Intent.GetMXID()]
-		if member == nil || member.Membership != event.MembershipJoin {
+		if !kc.joinedAs(ctx, members, userID, ghost.Intent.GetMXID()) {
 			return errors.New("connector: created group roster has not converged in Matrix")
 		}
 	}
