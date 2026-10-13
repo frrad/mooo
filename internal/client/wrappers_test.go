@@ -18,7 +18,7 @@ func decodeEventStreamWithContinuity(raw <-chan loco.Packet, output chan<- event
 }
 
 func decodeEventStreamWithTerminal(raw <-chan loco.Packet, output chan<- events.Result, checkpoint *continuity.Store, delivered func(int64, int64), terminal func()) {
-	decodeEventStreamWithTerminalStop(raw, output, checkpoint, delivered, terminal, nil)
+	decodeEventStreamWithTerminalStop(raw, output, checkpoint, delivered, terminal, nil, nil)
 }
 
 func connectSessionWithDialers(ctx context.Context, state authstate.State, dialers sessionDialers) (*session, error) {

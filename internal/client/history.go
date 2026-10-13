@@ -32,10 +32,10 @@ func (c *Client) ReadHistoryPage(ctx context.Context, chatID, after, through int
 	if err != nil {
 		return HistoryPage{}, err
 	}
-	return decodeHistoryPage(request, response, limit)
+	return decodeHistoryPage(request, response, limit, c.gaps)
 }
 
-func decodeHistoryPage(request syncmsg.Request, response syncmsg.Response, limit int) (HistoryPage, error) {
+func decodeHistoryPage(request syncmsg.Request, response syncmsg.Response, limit int, gaps gapFunc) (HistoryPage, error) {
 	result := HistoryPage{Next: request.Cur}
 	for _, raw := range response.ChatLogs {
 		logID, err := syncmsg.LogID(raw)
@@ -50,6 +50,7 @@ func decodeHistoryPage(request syncmsg.Request, response syncmsg.Response, limit
 		if err != nil {
 			return HistoryPage{}, err
 		}
+		gaps.observe("SYNCMSG", event, raw)
 		chatID, position, ok := events.MessagePosition(event)
 		if !ok || chatID != request.ChatID || position != logID {
 			return HistoryPage{}, protocolErr("SYNCMSG", "chatLogs.chatId")

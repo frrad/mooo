@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	up "go.mau.fi/util/configupgrade"
 	"maunium.net/go/mautrix/bridgev2"
@@ -18,6 +19,7 @@ import (
 	"maunium.net/go/mautrix/id"
 
 	"github.com/frrad/mooo/internal/authstate"
+	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/shadow"
 )
@@ -38,6 +40,11 @@ type Config struct {
 	// NetworkIcon optionally names an operator-uploaded mxc:// image that
 	// Matrix clients show as the KakaoTalk network icon. Empty publishes none.
 	NetworkIcon string `yaml:"network_icon"`
+
+	// GapDumpDir optionally receives a private raw dump of every message whose
+	// content failed decoding. Off by default; the dumps contain message
+	// content.
+	GapDumpDir string `yaml:"gap_dump_dir"`
 }
 
 // BSONShadowConfig is the bridge-facing form of shadow.Config.
@@ -54,6 +61,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "bson_shadow", "mode")
 	helper.Copy(up.Str, "bson_shadow", "dump_dir")
 	helper.Copy(up.Str, "network_icon")
+	helper.Copy(up.Str, "gap_dump_dir")
 }
 
 // ErrUnsafeEventDelivery reports a bridge configuration under which
@@ -76,6 +84,9 @@ type KakaoConnector struct {
 	// packetObserver is the configured BSON shadow observer, built by Start.
 	// Nil, the default, adds no per-packet work.
 	packetObserver func(loco.Packet)
+	// gapObserver is the configured gap dump, built by Start. Nil, the
+	// default, writes nothing.
+	gapObserver func(client.GapObservation)
 }
 
 var (
@@ -109,6 +120,12 @@ func (kc *KakaoConnector) Start(ctx context.Context) error {
 		if uri, err := id.ParseContentURI(icon); err != nil || !uri.IsValid() {
 			return errors.New("connector: network.network_icon must be an mxc:// content URI")
 		}
+	}
+	if dir := kc.Config.GapDumpDir; dir != "" {
+		if err := prepareGapDumpDir(dir); err != nil {
+			return err
+		}
+		kc.gapObserver = newGapDumper(dir, kc.Bridge.Log.With().Str("component", "gap_dump").Logger(), time.Now)
 	}
 	return kc.configureBSONShadow()
 }
@@ -232,7 +249,7 @@ func (kc *KakaoConnector) LoadUserLogin(ctx context.Context, login *bridgev2.Use
 		return err
 	}
 	login.Client = newKakaoClient(login, newBridgeStore(login.Bridge.DB), userID, func() (kakaoClient, error) {
-		return openProfileClient(statePath, kc.packetObserver)
+		return openProfileClient(statePath, client.OpenOptions{PacketObserver: kc.packetObserver, GapObserver: kc.gapObserver})
 	})
 	return nil
 }

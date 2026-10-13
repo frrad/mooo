@@ -39,7 +39,7 @@ func TestGetMessagesReadsEditedMessagesByLogID(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	got, err := session.GetMessages(ctx, 42, []int64{101})
+	got, err := session.GetMessages(ctx, 42, []int64{101}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestGetMessagesRejectsALogFromAnotherChat(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if _, err := session.GetMessages(ctx, 42, []int64{101}); !errors.Is(err, events.ErrChatLogMisdirected) {
+	if _, err := session.GetMessages(ctx, 42, []int64{101}, nil); !errors.Is(err, events.ErrChatLogMisdirected) {
 		t.Fatalf("err = %v", err)
 	}
 	waitBackends(t, backend)
