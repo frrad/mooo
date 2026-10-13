@@ -1022,7 +1022,7 @@ images, cache lifecycle and full official-chain parity remain open.
 - [x] Trace Mac 26.8.0 request/response, rd branch, Kage photo upload route, completion, persistence and failure consumers.
 - [x] Publish implementation-neutral contract and sanitized observed/executed fixtures.
 - [x] Show a failing production-path regression, implement the evidenced Kage photo fallback, and verify owned recipient delivery.
-- [ ] Run make check and secret scanning, open PR, and squash merge after required CI passes.
+- [x] Run make check and staged/branch secret scanning; publish the fix in [PR #348](https://github.com/frrad/mooo/pull/348). Required CI and GitHub mergeability gate its authorized squash merge.
 
 Use local lab profiles only; rhino remains read-only and is excluded from this work.
 
@@ -1032,5 +1032,6 @@ resource key. Correcting that detail enabled the full SHIP redirect → prepare 
 chunk upload → WRITEMEDIA path. Fresh JPEG, small PNG and two-chunk PNG production
 sends preserve exact bytes and captions; native owned-recipient photo viewers
 confirm delivery. Unsupported Tenth/readiness/legacy tickets still fail closed.
-See [SHIP redirect evidence](research/bridge/SHIP-REDIRECT.md). Final checks,
-secret scanning and the required-CI PR merge remain pending.
+See [SHIP redirect evidence](research/bridge/SHIP-REDIRECT.md). Local checks and
+secret scans passed. The PR must pass required CI and report mergeable before
+the authorized squash merge.
