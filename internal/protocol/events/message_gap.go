@@ -1,6 +1,7 @@
 package events
 
 import (
+	"errors"
 	"math"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -8,6 +9,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/bsonfield"
 	"github.com/frrad/mooo/internal/protocol/chatlog"
 	"github.com/frrad/mooo/internal/protocol/loco"
+	"github.com/frrad/mooo/internal/protocol/media"
 )
 
 // MessageGap retains a validated message identity whose content cannot be
@@ -16,7 +18,16 @@ import (
 type MessageGap struct {
 	ChatID, LogID, AuthorID, SentAt int64
 	Type                            int32
+	// Reason is a fixed code naming the check that failed, safe to log. It is
+	// GapReasonUndiagnosed when the decoder does not report one.
+	Reason string
 }
+
+// Gap reasons that do not come from a content decoder.
+const (
+	GapReasonDuplicateKey = "duplicate_key"
+	GapReasonUndiagnosed  = "undiagnosed"
+)
 
 func (MessageGap) Kind() Kind           { return KindMessageGap }
 func (m MessageGap) Position() Position { return Position{m.ChatID, m.LogID} }
@@ -58,14 +69,25 @@ func DecodeForDelivery(packet loco.Packet) (Event, error) {
 	// Do not retain optional attribution when its wire value is duplicated.
 	if hasAnyDuplicateExcept(raw, "chatId", "chatLog") || hasAnyDuplicateExcept(log, "logId") {
 		return MessageGap{ChatID: chatID, LogID: logID, Type: typ,
-			AuthorID: uniqueOptionalInt64(log, "authorId"), SentAt: uniqueOptionalInt64(log, "sendAt")}, nil
+			AuthorID: uniqueOptionalInt64(log, "authorId"), SentAt: uniqueOptionalInt64(log, "sendAt"),
+			Reason: GapReasonDuplicateKey}, nil
 	}
 	result, err := Decode(packet)
 	if err == nil {
 		return result, nil
 	}
 	return MessageGap{ChatID: chatID, LogID: logID, Type: typ,
-		AuthorID: uniqueOptionalInt64(log, "authorId"), SentAt: uniqueOptionalInt64(log, "sendAt")}, nil
+		AuthorID: uniqueOptionalInt64(log, "authorId"), SentAt: uniqueOptionalInt64(log, "sendAt"),
+		Reason: gapReason(err)}, nil
+}
+
+// gapReason extracts a content decoder's reason code from err.
+func gapReason(err error) string {
+	var invalid *media.InvalidMessageError
+	if errors.As(err, &invalid) {
+		return invalid.Reason
+	}
+	return GapReasonUndiagnosed
 }
 
 // messageDeliveryEnvelope extracts only the cursor identity. Message type is

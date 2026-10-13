@@ -229,6 +229,7 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 			if err != nil {
 				return nil, err
 			}
+			c.gaps.observe("SYNCMSG", event, raw)
 			result = append(result, event)
 			current = logID
 			progressed = true

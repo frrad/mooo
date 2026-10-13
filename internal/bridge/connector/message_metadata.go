@@ -31,6 +31,8 @@ type KakaoMessageMetadata struct {
 	Preview       string `json:"preview"`
 	LinkID        int64  `json:"link_id,omitempty"`
 	ConversionGap string `json:"conversion_gap,omitempty"`
+	// GapReason is the decoder's fixed reason code for a malformed_payload gap.
+	GapReason string `json:"gap_reason,omitempty"`
 	// ReactionRevision is the latest positive members revision successfully
 	// applied to this message. It is persisted to prevent stale replay after a
 	// restart from destructively replacing newer reaction state.

@@ -121,7 +121,7 @@ func TestAdmissionPersistenceFailureStopsBeforeApplicationDelivery(t *testing.T)
 	close(raw)
 	output := make(chan events.Result, 2)
 	delivered, terminated := 0, 0
-	decodeEventStreamWithTerminalStop(raw, output, checkpoint, func(int64, int64) { delivered++ }, func() { terminated++ }, nil)
+	decodeEventStreamWithTerminalStop(raw, output, checkpoint, func(int64, int64) { delivered++ }, func() { terminated++ }, nil, nil)
 	result := <-output
 	if result.Err == nil || result.Event != nil || delivered != 0 || terminated != 1 {
 		t.Fatal("failed durable admission reached application delivery")

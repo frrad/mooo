@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -55,6 +56,7 @@ type Client struct {
 	commitDone       chan struct{}
 	pendingCommits   map[int64][]int64
 	readMu           sync.Mutex
+	gaps             gapFunc
 }
 
 // OpenOptions selects explicit bootstrap behavior for an operator-owned profile.
@@ -67,6 +69,42 @@ type OpenOptions struct {
 	// default, adds no per-packet work. Research tooling such as the BSON
 	// shadow comparison is wired in only through this field.
 	PacketObserver func(loco.Packet)
+	// GapObserver, when set, receives each message that decoded to an
+	// events.MessageGap with the raw BSON it came from. Nil, the default, adds
+	// no work. Debug tooling such as the bridge's gap dump is wired in only
+	// through this field.
+	GapObserver func(GapObservation)
+}
+
+// GapObservation is one message whose content failed decoding. Body is the
+// LOCO body of a push, or the bare chat log of a SYNCMSG or GETMSGS read, and
+// therefore contains private message content.
+type GapObservation struct {
+	// Source is the LOCO method the body arrived in.
+	Source string
+	Gap    events.MessageGap
+	Body   []byte
+}
+
+// gapFunc reports an event to the GapObserver when it is a gap. A nil gapFunc
+// is valid and does nothing.
+type gapFunc func(source string, event events.Event, body []byte)
+
+func (f gapFunc) observe(source string, event events.Event, body []byte) {
+	if f != nil {
+		f(source, event, body)
+	}
+}
+
+func newGapFunc(observer func(GapObservation)) gapFunc {
+	if observer == nil {
+		return nil
+	}
+	return func(source string, event events.Event, body []byte) {
+		if gap, ok := event.(events.MessageGap); ok {
+			observer(GapObservation{Source: source, Gap: gap, Body: bytes.Clone(body)})
+		}
+	}
 }
 
 // OpenWithOptions acquires the profile's process-wide owner lease and creates
@@ -101,6 +139,7 @@ func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*
 		return nil, err
 	}
 	client.checkpoint = checkpoint
+	client.gaps = newGapFunc(options.GapObserver)
 	resume := options.loginResume(checkpoint.Snapshot())
 	client.dial = func(ctx context.Context, state authstate.State) (*session, error) {
 		return connectSession(ctx, state, sessionConfig{resume: resume, dialers: productionSessionDialers().observed(options.PacketObserver), ping: realtimePingOptions()})
@@ -308,7 +347,7 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 	c.mu.Unlock()
 	go func() {
 		defer close(done)
-		decodeEventStreamWithTerminalStop(raw, stream, checkpoint, c.queueCommit, c.interruptTerminal, stop)
+		decodeEventStreamWithTerminalStop(raw, stream, checkpoint, c.queueCommit, c.interruptTerminal, stop, c.gaps)
 	}()
 	return stream, nil
 }
@@ -336,7 +375,7 @@ type messagePosition struct {
 
 const observedPositionLimit = 4096
 
-func decodeEventStreamWithTerminalStop(raw <-chan loco.Packet, output chan<- events.Result, checkpoint *continuity.Store, delivered func(int64, int64), terminal func(), stop <-chan struct{}) {
+func decodeEventStreamWithTerminalStop(raw <-chan loco.Packet, output chan<- events.Result, checkpoint *continuity.Store, delivered func(int64, int64), terminal func(), stop <-chan struct{}, gaps gapFunc) {
 	defer close(output)
 	seen := make(map[messagePosition]struct{})
 	order := make([]messagePosition, 0, observedPositionLimit)
@@ -356,6 +395,9 @@ func decodeEventStreamWithTerminalStop(raw <-chan loco.Packet, output chan<- eve
 			return
 		}
 		event, err := events.DecodeForDelivery(packet)
+		if err == nil {
+			gaps.observe(packet.Header.Method, event, packet.Body)
+		}
 		if err != nil && (packet.Header.Method == "MSG" || errors.Is(err, events.ErrUnidentifiableMembership)) {
 			// Without a trustworthy position no later commit can prove that
 			// it did not cross this message. Stop admission and retain cursors.

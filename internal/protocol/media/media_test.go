@@ -342,3 +342,41 @@ func TestPhotoExpiryUsesMilliseconds(t *testing.T) {
 		t.Fatalf("expired-by-milliseconds photo err=%v requested=%v", err, requested)
 	}
 }
+
+// Each rejected photo names its failed check, so a delivery gap can say why
+// without retaining the attachment.
+func TestDecodePhotoMessageReportsReason(t *testing.T) {
+	encode := func(change func(map[string]any)) []byte {
+		fields := map[string]any{"k": "opaque", "w": 3, "h": 2, "s": 10, "cs": strings.Repeat("A", 40), "mt": "image/jpeg",
+			"url": "https://talk.kakaocdn.net/p/file", "thumbnailUrl": "https://talk.kakaocdn.net/p/thumb"}
+		change(fields)
+		attachment, _ := json.Marshal(fields)
+		log, _ := bson.Marshal(bson.D{{Key: "type", Value: messagetype.Photo}, {Key: "logId", Value: int64(99)}, {Key: "attachment", Value: string(attachment)}})
+		body, _ := bson.Marshal(bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.Raw(log)}})
+		return body
+	}
+	cases := map[string]func(map[string]any){
+		"key":                   func(f map[string]any) { f["k"] = "" },
+		"dimensions":            func(f map[string]any) { f["w"] = 0 },
+		"size":                  func(f map[string]any) { f["s"] = MaxImageBytes + 1 },
+		"checksum_hex":          func(f map[string]any) { f["cs"] = strings.Repeat("Z", 40) },
+		"checksum_missing":      func(f map[string]any) { delete(f, "cs") },
+		"checksum_length_64":    func(f map[string]any) { f["cs"] = strings.Repeat("A", 64) },
+		"checksum_length_long":  func(f map[string]any) { f["cs"] = strings.Repeat("A", 200) },
+		"media_type":            func(f map[string]any) { f["mt"] = "image/heic" },
+		"attachment_json":       func(f map[string]any) { f["w"] = "3" },
+		"url_host":              func(f map[string]any) { f["url"] = "https://elsewhere.example/p/file" },
+		"url_scheme":            func(f map[string]any) { f["url"] = "http://talk.kakaocdn.net/p/file" },
+		"url_authority":         func(f map[string]any) { f["url"] = "https://talk.kakaocdn.net:8443/p/file" },
+		"url_path":              func(f map[string]any) { f["url"] = "https://talk.kakaocdn.net" },
+		"thumbnail_url_missing": func(f map[string]any) { delete(f, "thumbnailUrl") },
+		"caption":               func(f map[string]any) { f["cmt"] = "bad\x00caption" },
+	}
+	for reason, change := range cases {
+		_, err := DecodePhotoMessage(decodeEnvelope(t, encode(change)))
+		var invalid *InvalidMessageError
+		if !errors.Is(err, ErrInvalidMessage) || !errors.As(err, &invalid) || invalid.Reason != reason {
+			t.Errorf("%s: err = %v", reason, err)
+		}
+	}
+}
