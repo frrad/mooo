@@ -222,3 +222,18 @@ func TestZeroReaderWrapsErrType(t *testing.T) {
 		t.Fatalf("zero Reader error = %v; want ErrType", err)
 	}
 }
+
+func TestShapeDescribesKeysAndTypesWithoutValues(t *testing.T) {
+	raw, err := bson.Marshal(bson.D{{Key: "k", Value: "secret-upload-key"}, {Key: "p", Value: int32(9282)},
+		{Key: "nested", Value: bson.D{{Key: "vh", Value: "host.example"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Shape(raw)
+	if got != "{k:string p:int32 nested:{vh:string}}" {
+		t.Fatalf("Shape = %q", got)
+	}
+	if Shape(bson.Raw{1, 2}) != "invalid" {
+		t.Fatal("invalid document was described")
+	}
+}

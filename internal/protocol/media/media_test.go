@@ -398,3 +398,35 @@ func TestDownloadPhotoChecksumIsOptional(t *testing.T) {
 		t.Fatalf("wrong checksum err = %v", err)
 	}
 }
+
+// A SHIP reply that fails to decode names the failed field and the reply's
+// shape, keeps the upload token out of the error text, and retains the raw
+// reply only for a private dump.
+func TestDecodeShipResponseReportsReasonAndShape(t *testing.T) {
+	cases := []struct {
+		reply  bson.D
+		reason string
+		shape  string
+	}{
+		{bson.D{{Key: "status", Value: int32(0)}, {Key: "k", Value: "synthetic-upload-token"}, {Key: "p", Value: int32(5228)}}, "vh_missing", "{status:int32 k:string p:int32}"},
+		{bson.D{{Key: "k", Value: "synthetic-upload-token"}, {Key: "vh", Value: "up.example"}, {Key: "p", Value: "5228"}}, "p_type", "{k:string vh:string p:string}"},
+		{bson.D{{Key: "k", Value: ""}, {Key: "vh", Value: "up.example"}, {Key: "p", Value: int32(5228)}}, "k_value", "{k:string vh:string p:int32}"},
+	}
+	for _, c := range cases {
+		body, _ := bson.Marshal(c.reply)
+		_, err := DecodeShipResponse(body)
+		var invalid *ResponseError
+		if !errors.Is(err, ErrInvalidResponse) || !errors.As(err, &invalid) {
+			t.Fatalf("%s: err = %v", c.reason, err)
+		}
+		if invalid.Command != ShipCommand || invalid.Reason != c.reason || invalid.Shape != c.shape {
+			t.Fatalf("%s: got %s %s %s", c.reason, invalid.Command, invalid.Reason, invalid.Shape)
+		}
+		if strings.Contains(err.Error(), "synthetic-upload-token") || strings.Contains(err.Error(), "up.example") {
+			t.Fatalf("%s: error text contains a reply value: %v", c.reason, err)
+		}
+		if !bytes.Equal(invalid.RawBody(), body) {
+			t.Fatalf("%s: raw body not retained", c.reason)
+		}
+	}
+}

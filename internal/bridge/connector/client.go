@@ -165,10 +165,12 @@ func init() {
 // explicit connector policy that never
 // changes the protocol client's own lifecycle or retries outbound mutations.
 type KakaoClient struct {
-	login  *bridgev2.UserLogin
-	store  store
-	userID int64
-	open   func() (kakaoClient, error)
+	// debugDumpDir is network.debug_dump_dir; empty disables private dumps.
+	debugDumpDir string
+	login        *bridgev2.UserLogin
+	store        store
+	userID       int64
+	open         func() (kakaoClient, error)
 
 	// queue and sendState default to the login's bridge methods and are
 	// replaced in tests.
