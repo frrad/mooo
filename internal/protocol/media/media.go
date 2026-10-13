@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -61,6 +62,16 @@ func (e *InvalidMessageError) Error() string { return ErrInvalidMessage.Error() 
 func (e *InvalidMessageError) Unwrap() error { return ErrInvalidMessage }
 
 func invalidMessage(reason string) error { return &InvalidMessageError{Reason: reason} }
+
+// checksumLengthReason reports a wrong checksum length. The length tells a
+// hash algorithm apart without revealing the checksum; longer values are
+// grouped so the code stays bounded.
+func checksumLengthReason(n int) string {
+	if n > 128 {
+		return "checksum_length_long"
+	}
+	return "checksum_length_" + strconv.Itoa(n)
+}
 
 // fields reads response fields; callers map every failure to their own
 // response error.
@@ -143,8 +154,10 @@ func DecodePhotoMessage(env chatlog.Envelope) (PhotoMessage, error) {
 		return PhotoMessage{}, invalidMessage("dimensions")
 	case attachment.Size <= 0 || attachment.Size > MaxImageBytes:
 		return PhotoMessage{}, invalidMessage("size")
+	case attachment.Checksum == "":
+		return PhotoMessage{}, invalidMessage("checksum_missing")
 	case len(attachment.Checksum) != 40:
-		return PhotoMessage{}, invalidMessage("checksum")
+		return PhotoMessage{}, invalidMessage(checksumLengthReason(len(attachment.Checksum)))
 	case attachment.MediaType != "image/jpg" && attachment.MediaType != "image/jpeg" && attachment.MediaType != "image/png":
 		return PhotoMessage{}, invalidMessage("media_type")
 	}
@@ -155,7 +168,7 @@ func DecodePhotoMessage(env chatlog.Envelope) (PhotoMessage, error) {
 		return PhotoMessage{}, invalidMessage("thumbnail_url_" + problem)
 	}
 	if _, err := hex.DecodeString(attachment.Checksum); err != nil {
-		return PhotoMessage{}, invalidMessage("checksum")
+		return PhotoMessage{}, invalidMessage("checksum_hex")
 	}
 	if !ValidCaption(attachment.Comment) {
 		return PhotoMessage{}, invalidMessage("caption")
