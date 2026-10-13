@@ -8,6 +8,10 @@ import (
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 )
 
+// ErrHistoryBelowFloor means an empty response supplied a floor above the
+// selected ceiling. It does not claim a fixed retention duration.
+var ErrHistoryBelowFloor = errors.New("client: selected history is below the returned server floor")
+
 // HistoryPage is uncommitted history from an explicitly selected interval.
 // Its cursor belongs to the caller's history journal, never the live checkpoint.
 type HistoryPage struct {
@@ -61,6 +65,9 @@ func decodeHistoryPage(request syncmsg.Request, response syncmsg.Response, limit
 		}
 	}
 	if len(result.Events) == 0 {
+		if len(response.ChatLogs) == 0 && response.MinLogID > request.Max {
+			return HistoryPage{}, errors.Join(ErrGapUnresolved, ErrHistoryBelowFloor)
+		}
 		return HistoryPage{}, errors.Join(ErrGapUnresolved, errors.New("client: selected history interval unavailable or non-progressing"))
 	}
 	result.Complete = result.Next == request.Max

@@ -212,3 +212,18 @@ An unfinished selection cannot be overwritten by another selection; resume is
 explicit. There is currently no command to discard an unfinished selection.
 An unavailable interval therefore stays reserved until it can complete or its
 budget is exhausted. No automatic request retry or widening of bounds occurs.
+
+
+### Returned-floor classification (2026-10-13)
+
+The production response parser now preserves the client-wide `minLogId` supplied
+by SYNCMSG. When an empty response supplies a floor strictly above the explicitly
+selected ceiling, `ReadHistoryPage` returns `ErrHistoryBelowFloor` together with
+`ErrGapUnresolved`. It returns no events and advances neither history completion
+nor live/read checkpoints. Empty responses with no floor, or a floor at/below
+the ceiling, remain unresolved rather than being labeled below-floor or complete.
+
+The production client regression consumes both sanitized HST-LIVE-001 cases from
+`research/fixtures/history-startup/observed-window.json`. This classifies the
+observed unavailable selection; it does not establish a fixed retention duration
+or a successful import. Automatic pacing/cache recovery remains separate work.
