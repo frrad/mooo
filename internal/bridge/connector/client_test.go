@@ -116,6 +116,7 @@ type fakeKakao struct {
 	reactionPages     []reactions.SyncMetaPage
 	reactionCursors   []int64
 	reactionSyncErr   error
+	seedDelivered     map[int64]bool
 
 	catchupHoldUntilRelease bool
 }
@@ -210,6 +211,26 @@ func (f *fakeKakao) CatchUp(ctx context.Context, chatID, targetMax int64) ([]eve
 		}
 	}
 	return result.events, result.err
+}
+
+// SeedLastMessage treats every chat as never delivered unless seedDelivered
+// names it, mirroring the client's decode and accept checks.
+func (f *fakeKakao) SeedLastMessage(chat chatmeta.ChatData, accept func(events.Event) bool) (events.Event, error) {
+	f.mu.Lock()
+	f.calls = append(f.calls, fmt.Sprintf("SeedLastMessage(%d)", chat.ChatID))
+	delivered := f.seedDelivered[chat.ChatID]
+	f.mu.Unlock()
+	if delivered || len(chat.LastChatLog) == 0 {
+		return nil, nil
+	}
+	evt, err := events.DecodeChatLog(chat.ChatID, chat.LastChatLog)
+	if err != nil {
+		return nil, err
+	}
+	if !accept(evt) {
+		return nil, nil
+	}
+	return evt, nil
 }
 
 func (f *fakeKakao) CommitEvent(evt events.Event) error {

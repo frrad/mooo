@@ -1,0 +1,59 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for Mac 26.8.0 arm64",
+    "date": "2026-10-13",
+    "method": "Read-only Ghidra trace of ordinary post-inventory bulk selection and per-room completion branches; no official-code execution",
+    "doc": "research/bridge/HISTORY-STATIC.md"
+  },
+  "status": "Static leads only; not executed parity, server window or read-effect evidence",
+  "bulk_request_cases": [
+    {
+      "name": "fresh-zero-cursor-without-loss-marks",
+      "input": {
+        "client_min_log_id": 500,
+        "rooms": [{"chat_id": 701, "last_log_id": 9001, "last_mchat_log_id": 0, "loss_marks": [], "unread_count": 0}]
+      },
+      "expected": {"method": "MCHATLOGS", "chatIds": [701], "sinces": [0]}
+    },
+    {
+      "name": "numeric-order-and-floor-equality",
+      "input": {
+        "client_min_log_id": 500,
+        "rooms": [
+          {"chat_id": 709, "last_log_id": 500, "last_mchat_log_id": 0},
+          {"chat_id": 701, "last_log_id": 9001, "last_mchat_log_id": 7001},
+          {"chat_id": 719, "last_log_id": 499, "last_mchat_log_id": 0},
+          {"chat_id": 727, "last_log_id": 9001, "last_mchat_log_id": 9001}
+        ]
+      },
+      "expected": {"method": "MCHATLOGS", "chatIds": [701, 709], "sinces": [7001, 0]}
+    }
+  ],
+  "bulk_continuation_cases": [
+    {
+      "name": "eof-retires-selected-batch",
+      "input": {"selected_chat_ids": [701, 709], "successful_response": true, "eof": true},
+      "expected": {"retired_chat_ids": [701, 709]}
+    },
+    {
+      "name": "partial-response-keeps-last-returned-chat",
+      "input": {"selected_chat_ids": [701, 709, 719], "successful_response": true, "eof": false, "last_returned_log_chat_id": 709},
+      "expected": {"retired_chat_ids": [701], "retained_selected_chat_ids": [709, 719]}
+    }
+  ],
+  "sync_continuation_cases": [
+    {"input": {"successful_response": true, "isOK": true, "request_held_count": 300, "returned_log_count": 0}, "expected": {"attempt_per_room_coordinator_again": true}},
+    {"input": {"successful_response": true, "isOK": true, "request_held_count": 0, "returned_log_count": 1}, "expected": {"attempt_per_room_coordinator_again": false}},
+    {"input": {"successful_response": true, "isOK": false, "request_held_count": 0, "returned_log_count": 1}, "expected": {"attempt_per_room_coordinator_again": true}},
+    {"input": {"successful_response": true, "isOK": false, "request_held_count": 300, "returned_log_count": 0}, "expected": {"attempt_per_room_coordinator_again": false}},
+    {"input": {"successful_response": false, "isOK": false, "request_held_count": 0, "returned_log_count": 1}, "expected": {"attempt_per_room_coordinator_again": false, "failure_completion": true}}
+  ],
+  "limits": {
+    "bulk_selected_valid_rooms_per_request": 100,
+    "local_backward_display_fetch_limit": 50,
+    "sync_request_held_count_cap": 300,
+    "server_messages_per_chat": "unobserved",
+    "server_read_effects": "unobserved for these cases"
+  }
+}

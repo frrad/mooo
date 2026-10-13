@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/frrad/mooo/internal/continuity"
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -107,6 +108,57 @@ func (c *Client) ResumeTargets(ctx context.Context) ([]syncmsg.Target, error) {
 		}
 	}
 	return result, nil
+}
+
+// SeedLastMessage admits the last message that the login inventory already
+// carries for a chat this profile has never delivered, so a fresh login can
+// show every chat's latest message without requesting history. It returns nil
+// without queuing anything when the chat was delivered before, has no last
+// message, or accept rejects the decoded event. An admitted event's commit is
+// queued as catch-up's are: the caller must deliver and commit it before any
+// later event of that chat, or abandon the session.
+func (c *Client) SeedLastMessage(chat chatmeta.ChatData, accept func(events.Event) bool) (events.Event, error) {
+	if c == nil || chat.ChatID <= 0 || accept == nil {
+		return nil, ErrProtocol
+	}
+	if len(chat.LastChatLog) == 0 {
+		return nil, nil
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, ErrClientClosed
+	}
+	checkpoint := c.checkpoint
+	c.mu.Unlock()
+	if checkpoint == nil {
+		return nil, ErrProtocol
+	}
+	state := checkpoint.Snapshot()
+	if state.CommittedMax(chat.ChatID) > 0 || state.FirstDeliveryStart(chat.ChatID) > 0 {
+		return nil, nil
+	}
+	event, err := events.DecodeChatLog(chat.ChatID, chat.LastChatLog)
+	if err != nil {
+		return nil, err
+	}
+	chatID, logID, ok := events.MessagePosition(event)
+	if !ok || chatID != chat.ChatID {
+		return nil, protocolErr("LOGINLIST", "chatDatas.l")
+	}
+	if !accept(event) {
+		return nil, nil
+	}
+	c.commitMu.Lock()
+	defer c.commitMu.Unlock()
+	if len(c.pendingCommits[chatID]) > 0 {
+		return nil, nil
+	}
+	if c.pendingCommits == nil {
+		c.pendingCommits = make(map[int64][]int64)
+	}
+	c.pendingCommits[chatID] = []int64{logID}
+	return event, nil
 }
 
 // CatchUp retrieves the missing interval after this profile's committed chat
