@@ -63,6 +63,41 @@ func (e *InvalidMessageError) Unwrap() error { return ErrInvalidMessage }
 
 func invalidMessage(reason string) error { return &InvalidMessageError{Reason: reason} }
 
+// ResponseError reports a media reply that failed to decode. Reason is a fixed
+// code naming the failed check and Shape lists the reply's keys and BSON types;
+// both are safe to log. The raw reply, which can hold an upload token, is kept
+// out of Error and is available only through RawBody for a private dump.
+type ResponseError struct {
+	Command string
+	Reason  string
+	Shape   string
+	body    []byte
+}
+
+func (e *ResponseError) Error() string {
+	return fmt.Sprintf("%s: %s %s, reply %s", ErrInvalidResponse, e.Command, e.Reason, e.Shape)
+}
+func (e *ResponseError) Unwrap() error { return ErrInvalidResponse }
+
+// RawBody returns a copy of the reply. It is private: never log it.
+func (e *ResponseError) RawBody() []byte { return bytes.Clone(e.body) }
+
+func invalidResponse(command, reason string, body []byte) error {
+	return &ResponseError{Command: command, Reason: reason, Shape: bsonfield.Shape(body), body: bytes.Clone(body)}
+}
+
+// fieldReason names how a required reply field failed: wrong type, missing,
+// or present but empty or out of range.
+func fieldReason(key string, present bool, err error) string {
+	switch {
+	case err != nil:
+		return key + "_type"
+	case !present:
+		return key + "_missing"
+	}
+	return key + "_value"
+}
+
 // checksumLengthReason reports a wrong checksum length. The length tells a
 // hash algorithm apart without revealing the checksum; longer values are
 // grouped so the code stays bounded.
@@ -336,17 +371,20 @@ type ShipResponse struct {
 
 func DecodeShipResponse(body []byte) (ShipResponse, error) {
 	raw := bson.Raw(body)
+	if raw.Validate() != nil {
+		return ShipResponse{}, invalidResponse(ShipCommand, "bson", body)
+	}
 	key, ok, err := fields.String(raw, "k")
 	if err != nil || !ok || key == "" {
-		return ShipResponse{}, ErrInvalidResponse
+		return ShipResponse{}, invalidResponse(ShipCommand, fieldReason("k", ok, err), body)
 	}
 	host, ok, err := fields.String(raw, "vh")
 	if err != nil || !ok || host == "" {
-		return ShipResponse{}, ErrInvalidResponse
+		return ShipResponse{}, invalidResponse(ShipCommand, fieldReason("vh", ok, err), body)
 	}
 	port64, ok, err := fields.Int64(raw, "p")
 	if err != nil || !ok || port64 <= 0 || port64 > 65535 {
-		return ShipResponse{}, ErrInvalidResponse
+		return ShipResponse{}, invalidResponse(ShipCommand, fieldReason("p", ok, err), body)
 	}
 	return ShipResponse{Key: key, Host: host, Port: int(port64)}, nil
 }
@@ -428,12 +466,15 @@ func SendResultPosition(result SendResult) (logID, sendAt int64, err error) {
 func DecodeComplete(body []byte) (SendResult, error) {
 	raw := bson.Raw(body)
 	value, err := raw.LookupErr("chatLog")
-	if err != nil || value.Type != bson.TypeEmbeddedDocument {
-		return SendResult{}, ErrInvalidResponse
+	if err != nil {
+		return SendResult{}, invalidResponse(CompleteCommand, "chatLog_missing", body)
+	}
+	if value.Type != bson.TypeEmbeddedDocument {
+		return SendResult{}, invalidResponse(CompleteCommand, "chatLog_type", body)
 	}
 	chatLog := append(bson.Raw(nil), value.Document()...)
 	if err := chatLog.Validate(); err != nil {
-		return SendResult{}, ErrInvalidResponse
+		return SendResult{}, invalidResponse(CompleteCommand, "chatLog_bson", body)
 	}
 	return SendResult{ChatLog: chatLog}, nil
 }

@@ -207,3 +207,56 @@ func (r Reader) sentinel() error {
 func (r Reader) typeError(keys []string) error {
 	return fmt.Errorf("%w: %s", r.sentinel(), keys[0])
 }
+
+// Shape describes a document by key names and BSON types only, recursing into
+// embedded documents, for example "{k:string vh:string p:int32}". It never
+// includes a value, so it is safe to log for a reply that failed to decode.
+// An invalid document is described as "invalid".
+func Shape(raw bson.Raw) string {
+	return shape(raw, 0)
+}
+
+func shape(raw bson.Raw, depth int) string {
+	elements, err := raw.Elements()
+	if err != nil {
+		return "invalid"
+	}
+	out := "{"
+	for i, element := range elements {
+		if i > 0 {
+			out += " "
+		}
+		value := element.Value()
+		out += element.Key() + ":"
+		if value.Type == bson.TypeEmbeddedDocument && depth < 4 {
+			out += shape(value.Document(), depth+1)
+			continue
+		}
+		out += shapeType(value.Type)
+	}
+	return out + "}"
+}
+
+func shapeType(t bson.Type) string {
+	switch t {
+	case bson.TypeString:
+		return "string"
+	case bson.TypeInt32:
+		return "int32"
+	case bson.TypeInt64:
+		return "int64"
+	case bson.TypeDouble:
+		return "double"
+	case bson.TypeBoolean:
+		return "bool"
+	case bson.TypeEmbeddedDocument:
+		return "document"
+	case bson.TypeArray:
+		return "array"
+	case bson.TypeNull:
+		return "null"
+	case bson.TypeBinary:
+		return "binary"
+	}
+	return fmt.Sprintf("type_0x%02x", byte(t))
+}

@@ -116,6 +116,7 @@ func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c outboundAPI, inten
 	}
 	response, err := c.SendImage(ctx, chatID, data, caption)
 	if err != nil {
+		kc.noteMediaReplyFailure(err)
 		return nil, outboundSendError(err)
 	}
 	logID, sendAt, err := media.SendResultPosition(response)
@@ -156,6 +157,7 @@ func (kc *KakaoClient) sendMatrixUpload(ctx context.Context, c outboundAPI, inte
 	}
 	response, err := c.SendUpload(ctx, chatID, upload)
 	if err != nil {
+		kc.noteMediaReplyFailure(err)
 		return nil, outboundSendError(err)
 	}
 	logID, sendAt, err := media.SendResultPosition(response)
@@ -209,6 +211,7 @@ func (kc *KakaoClient) sendMatrixAlbum(ctx context.Context, c outboundAPI, inten
 		return nil, err
 	}
 	response, err := c.SendAlbum(ctx, chatID, photos, caption)
+	kc.noteMediaReplyFailure(err)
 	if errors.Is(err, client.ErrAlbumNotCreated) {
 		// No WRITE was sent, so no message exists. The reservation keeps this
 		// Matrix event from being sent again.

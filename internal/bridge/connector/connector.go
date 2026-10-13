@@ -41,10 +41,10 @@ type Config struct {
 	// Matrix clients show as the KakaoTalk network icon. Empty publishes none.
 	NetworkIcon string `yaml:"network_icon"`
 
-	// GapDumpDir optionally receives a private raw dump of every message whose
-	// content failed decoding. Off by default; the dumps contain message
-	// content.
-	GapDumpDir string `yaml:"gap_dump_dir"`
+	// DebugDumpDir optionally receives private raw dumps for debugging: every
+	// message whose content failed decoding and every media reply that failed
+	// to decode. Off by default; the dumps contain message content.
+	DebugDumpDir string `yaml:"debug_dump_dir"`
 }
 
 // BSONShadowConfig is the bridge-facing form of shadow.Config.
@@ -61,7 +61,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "bson_shadow", "mode")
 	helper.Copy(up.Str, "bson_shadow", "dump_dir")
 	helper.Copy(up.Str, "network_icon")
-	helper.Copy(up.Str, "gap_dump_dir")
+	helper.Copy(up.Str, "debug_dump_dir")
 }
 
 // ErrUnsafeEventDelivery reports a bridge configuration under which
@@ -121,11 +121,11 @@ func (kc *KakaoConnector) Start(ctx context.Context) error {
 			return errors.New("connector: network.network_icon must be an mxc:// content URI")
 		}
 	}
-	if dir := kc.Config.GapDumpDir; dir != "" {
-		if err := prepareGapDumpDir(dir); err != nil {
+	if dir := kc.Config.DebugDumpDir; dir != "" {
+		if err := prepareDebugDumpDir(dir); err != nil {
 			return err
 		}
-		kc.gapObserver = newGapDumper(dir, kc.Bridge.Log.With().Str("component", "gap_dump").Logger(), time.Now)
+		kc.gapObserver = newGapDumper(dir, kc.Bridge.Log.With().Str("component", "debug_dump").Logger(), time.Now)
 	}
 	return kc.configureBSONShadow()
 }
@@ -248,8 +248,10 @@ func (kc *KakaoConnector) LoadUserLogin(ctx context.Context, login *bridgev2.Use
 	if err != nil {
 		return err
 	}
-	login.Client = newKakaoClient(login, newBridgeStore(login.Bridge.DB), userID, func() (kakaoClient, error) {
+	kakao := newKakaoClient(login, newBridgeStore(login.Bridge.DB), userID, func() (kakaoClient, error) {
 		return openProfileClient(statePath, client.OpenOptions{PacketObserver: kc.packetObserver, GapObserver: kc.gapObserver})
 	})
+	kakao.debugDumpDir = kc.Config.DebugDumpDir
+	login.Client = kakao
 	return nil
 }

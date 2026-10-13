@@ -66,11 +66,12 @@ the More tab. Then confirm the code the bot shows. If the code expires, send
 Group chats appear after login. A one-to-one chat appears when its first new
 message arrives. Earlier history is not brought over.
 
-To debug a "could not be displayed (malformed_payload: …)" notice, opt in to
-raw dumps by setting `network.gap_dump_dir: /data/gap-dumps` in
-`data/config.yaml` and restarting the bridge. Each such message is then also
-written to `data/gap-dumps/` on the host. The dumps contain private message
-content, so keep them out of Git and delete them when you're done.
+To debug a "could not be displayed (malformed_payload: …)" notice or a media
+send that fails, opt in to raw dumps by setting
+`network.debug_dump_dir: /data/debug-dumps` in `data/config.yaml` and
+restarting the bridge. Each such message or reply is then also written to
+`data/debug-dumps/` on the host. The dumps contain private message content and
+upload tokens, so keep them out of Git and delete them when you're done.
 
 Upgrades, backups and restart behavior are as described in the
 [main deployment guide](../README.md#persistence-and-upgrades).
