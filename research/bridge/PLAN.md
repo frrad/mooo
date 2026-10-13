@@ -305,8 +305,13 @@ The implemented supervisor and its bounded policy are documented in
       reconnect, terminal events, delivery failures, and cleanup timeouts.
       One controlled idle carriage drop, bounded replacement gate, missed A
       message recovery, and subsequent live delivery passed on 2026-10-07.
-      Terminal events, delivery failures and cleanup timeouts still lack live
-      acceptance; synthetic regressions cover these paths.
+      Delivery failures passed owned acceptance on 2026-10-10
+      ([failure recovery](GROUP-FAILURE-RECOVERY.md)). A crash loop, restart
+      during backoff, operator `reconnect`, and a full network outage with
+      fast and slow recovery passed on 2026-10-11 and 2026-10-13
+      ([deployment validation](DEPLOYMENT-VALIDATION.md#restart-crash-loop-and-outage-recovery)).
+      A live KICKOUT, a server-sent CHANGESVR and cleanup timeouts still lack
+      live acceptance; synthetic regressions cover these paths.
 - [ ] Opt-in, bounded backfill with an explicit read-side-effect policy.
 
 ### B4: polish and packaging
