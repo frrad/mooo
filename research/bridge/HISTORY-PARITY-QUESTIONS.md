@@ -22,8 +22,7 @@ count and returned-log count, rather than bulk `eof`.
 
 **HST-EXEC-001** (2026-10-13, Mac 26.8.0 arm64 build 2000): an isolated signed
 offline harness ran the official request/response models on 15 synthetic
-cases, with no network entitlement or shared application groups. Official
-preference hashes were unchanged and the isolated process was killed afterward.
+cases, with no network entitlement or shared application groups. The isolated process was killed afterward.
 The [executed fixture](../fixtures/history-startup/model-runtime.json) records:
 
 - `MCHATLOGS` serializes `chatIds`/`sinces`, including a zero `since`.
@@ -153,7 +152,7 @@ sent. All profile sessions exited and released their leases.
 **HST-LIVE-007 — fresh local official-profile attempt.** A separate sandbox
 ran an ad-hoc signed copy of the official Mac 26.8.0 build 2000 binary, with
 network access and without shared application groups. The original official
-client stayed stopped; its preference hashes were unchanged. The owned C
+client stayed stopped. The owned C
 Android 26.8.2 primary accepted the QR flow and displayed successful login
 after verification. The isolated Mac then displayed a server-connection error.
 Hooks on the bulk and single-room history coordinators and models recorded
@@ -192,9 +191,17 @@ original descriptions; raw packets, account data and UI captures are excluded.
 **HST-EXEC-002 — startup predicate.** The isolated, signed Mac 26.8.0
 no-network/no-shared-group harness executed the real `needsMChatLogs:`
 method with synthetic pending-set inputs. Eight cases confirm nil → true,
-empty → false, and populated → exact membership. Official preference hashes
-were unchanged and the child was killed. This executes the predicate only;
+empty → false, and populated → exact membership. The child was killed.
+This executes the predicate only;
 it does not execute storage or the complete startup coordinator.
+
+**Provenance correction (final audit).** The harness's preference-hash check
+searched the global preferences directory and matched no files; it did not
+cover the original client's sandbox preferences. Earlier statements that it
+proved unchanged original preferences were unsupported and are removed from
+this document and the executed fixtures. Separate bundle/sandbox identity,
+signing checks, absent shared groups, and process cleanup were verified. No
+whole-profile non-mutation guarantee follows from the empty hash check.
 
 ## Answers by question family
 

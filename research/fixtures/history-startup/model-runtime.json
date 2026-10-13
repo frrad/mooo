@@ -3,8 +3,9 @@
     "kind": "executed",
     "client": "KakaoTalk for Mac 26.8.0 arm64, build 2000",
     "date": "2026-10-13",
-    "method": "Isolated signed model harness with network entitlement and shared app groups absent; synthetic request construction and JSON response decoding; official preference hashes unchanged",
-    "doc": "research/bridge/HISTORY-PARITY-QUESTIONS.md"
+    "method": "Isolated signed model harness with network entitlement and shared app groups absent; synthetic request construction and JSON response decoding",
+    "doc": "research/bridge/HISTORY-PARITY-QUESTIONS.md",
+    "limits": "Original preference non-mutation was not verified: the initial global-directory hash check matched no files and did not cover the official sandbox."
   },
   "evidence": "HST-EXEC-001",
   "scope": "Models only; no coordinator, transport, server, persistence or read-state parity claim",
