@@ -227,3 +227,32 @@ The production client regression consumes both sanitized HST-LIVE-001 cases from
 `research/fixtures/history-startup/observed-window.json`. This classifies the
 observed unavailable selection; it does not establish a fixed retention duration
 or a successful import. Automatic pacing/cache recovery remains separate work.
+
+
+### Acquisition admission (2026-10-13)
+
+Clients opened from operator profiles now route zero-held-count SYNCMSG through
+one serialized admission object. Identical concurrent room/cursor/ceiling requests
+share one source attempt and retain their separate delivery limits. The bridge
+exposes `network.history_pacing.minimum_interval` (default 2 seconds),
+`error_backoff` (30 seconds), `max_pending` (32 demands, including coalesced
+waiters), and `maximum_duration` (1 minute for admission plus one source attempt,
+also when the caller has no deadline). These are conservative operator defaults, not measured server limits.
+
+The private profile's `.history-admission` file binds the cooldown to its account.
+Before dispatch the client atomically reserves the error cooldown; after a validated
+progressing response it records normal spacing, measured from response completion.
+Transport/decode failures and empty/inclusive-only pages keep the longer cooldown.
+A corrupt, wrong-account, unsafe-permission or failed-write state prevents dispatch.
+No request is automatically repeated. Catch-up still records its unresolved durable
+gap when admission detects non-progress, and changes no delivery/read watermark.
+Shutdown cancels waiting acquisition and joins persistence before releasing the
+profile lease. Explicit positive-held-count read acknowledgements are separate.
+
+This slice does not yet persist acquired messages or prevent later sequential
+refetches. Dependency metadata/media requests and MCHATLOGS remain outside this
+admission path. Separate copies of the same account profile do not yet share a
+worker; account-wide coordination across those copies is an outstanding gate.
+The three-flow goal remains incomplete. Tests execute the production history reader,
+carriage request, admission and checkpoint paths against synthetic responses;
+this establishes worker mechanics, not an official-client rate or parity claim.

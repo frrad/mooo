@@ -4,6 +4,19 @@
 # accessible only by the bridge's user (mode 0700).
 profile_dir: ./profiles
 
+# Acquisition policy, not an advertised Kakao rate limit. Zero values select
+# these defaults. Applies to zero-held-count SYNCMSG, including catch-up and
+# explicit history. Identical concurrent requests share one source attempt.
+# Cooldowns persist in each private profile's .history-admission file.
+# Metadata/media dependency pacing and startup bulk requests are separate
+# remaining integration work; this is not a complete history rate limiter yet.
+history_pacing:
+    minimum_interval: 2s
+    error_backoff: 30s
+    max_pending: 32
+    # Total admission wait + one source attempt, also when callers have no deadline.
+    maximum_duration: 1m
+
 # Optional research comparison of every incoming LOCO body. Production
 # decoding is unchanged; when enabled, a second, source-compatible decoder
 # reads the same bytes and any difference in the data callers would see is

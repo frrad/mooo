@@ -33,6 +33,11 @@ source requests. Cloud backup/restore remains out of scope.
 - [ ] Audit shipped acquisition, continuity and bridge journals against the
       [history evidence](research/bridge/HISTORY-PARITY-QUESTIONS.md). Keep source
       acquisition, Matrix delivery and read cursors separate.
+- [x] First admission slice: zero-held-count SYNCMSG now uses configurable
+      spacing, error/non-progress cooldowns, bounded pending demand and concurrent
+      request coalescing. Reservations survive profile restart and shutdown joins
+      admission persistence. This is currently profile-scoped; metadata/media,
+      bulk calls and cross-profile account ownership remain to be integrated.
 - [ ] Add a durable account-scoped history store and acquisition worker, consumed
       by actual client/bridge paths. Store private content only in the operator's
       profile; preserve source identities and explicit unavailable boundaries.
