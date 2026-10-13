@@ -7,6 +7,28 @@ Last code/evidence audit: 2026-10-09, committed baseline `8caaca0` (PR #267).
 Implementation, synthetic coverage, and owned-account acceptance are tracked
 separately; in-progress branches are not counted as shipped features.
 
+## Fresh-login history research (2026-10-13)
+
+PR #336's information request has a
+[static findings dossier](research/bridge/HISTORY-STATIC.md) and synthetic
+static leads. Ordinary startup has a separate `MCHATLOGS` chain; do not infer
+"last message only" from the absence of fresh-room loss marks. Its 100-room
+batch cap, numeric ordering and persisted cursors differ from local display
+paging and the single-room `SYNCMSG` continuation rule.
+
+- [x] Trace startup bulk selection, request/response fields, scheduling,
+      principal callback writes, floor ownership and single-room continuation.
+- [ ] Close the documented loss-marker UI, notification and historical
+      media/profile/reaction consumer gaps; execute the synthetic model leads
+      separately before claiming parity.
+- [ ] Confirm server window direction, retention, pre-join visibility and
+      read effects with bounded direct/group observations, then fresh official
+      startup/open observations. **Live test-account experiments are on HOLD
+      by maintainer instruction; do not begin them until that hold is lifted.**
+- [ ] Choose and implement fresh-login backfill only after the evidence
+      establishes its boundaries and read policy. Cloud backup/restore stays
+      out of scope.
+
 ## Current feature gaps and next work
 
 The client and bridge already support client-owned QR enrollment, secure leased

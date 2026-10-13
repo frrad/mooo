@@ -81,10 +81,16 @@ marker at `max + 1` when the next known server message links back with
 next-message-link cleanup pattern.
 
 At the storage layer, exact removal queries chat ID, log ID, and loss-mark type;
-range removal first clamps the lower bound to the room's minimum retained log ID,
+range removal first clamps the lower bound to the active protocol client's
+server-supplied `minLogId` (not a room-local oldest-message ID),
 then deletes markers satisfying `lower < logId < upper`. This proves that missing
 history is durable room state in the official client, not merely a transient
 error return.
+
+The ordinary post-inventory bulk-history path, its 100-room request cap,
+`eof` continuation, and the source of this client-wide boundary are documented
+in [fresh-login static findings](bridge/HISTORY-STATIC.md). These static leads
+do not establish server retention, history-window selection or read effects.
 
 `doAfterSyncMsg:` is narrower than an initial decompiler function boundary
 suggested: when the room's pending thread-ID set is non-empty, it passes that
