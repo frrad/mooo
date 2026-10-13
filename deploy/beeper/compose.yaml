@@ -1,0 +1,61 @@
+# Self-hosted mooo bridge connected to a Beeper account. See README.md.
+#
+#   docker compose run --rm bbctl login   # once, interactive
+#   docker compose up -d
+#
+# On `up`, the bbctl service registers the bridge and writes data/config.yaml
+# if it does not exist yet; the bridge starts once that has succeeded.
+
+services:
+  bbctl:
+    build:
+      dockerfile_inline: |
+        FROM alpine:3
+        ARG BBCTL_VERSION=v0.15.0
+        ARG TARGETARCH
+        # Checksums from the release's sha256sums.txt.
+        RUN apk add --no-cache ca-certificates \
+         && case "$$TARGETARCH" in \
+              amd64) sum=ff3091816429d41aeb51871445f8ccd77864ebe479a57a4b4a5981fd5051a73e ;; \
+              arm64) sum=aea4f129ac1dffd964d1ad8a57bd2d080c969f277666d0aa734b73de7c6f0033 ;; \
+              *) echo "unsupported architecture: $$TARGETARCH" >&2; exit 1 ;; \
+            esac \
+         && wget -qO /usr/local/bin/bbctl \
+              "https://github.com/beeper/bridge-manager/releases/download/$${BBCTL_VERSION}/bbctl-linux-$${TARGETARCH}" \
+         && echo "$$sum  /usr/local/bin/bbctl" | sha256sum -c - \
+         && chmod 0755 /usr/local/bin/bbctl
+    image: mooo-bbctl:v0.15.0
+    user: "${MOOO_UID:-10001}:${MOOO_GID:-10001}"
+    volumes:
+      - ./data:/data
+    working_dir: /data
+    # With arguments, run bbctl with them. Without, generate the bridge config
+    # unless one already exists.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ "$$#" -gt 0 ]; then exec bbctl "$$@"; fi
+        if [ -e /data/config.yaml ]; then exit 0; fi
+        bbctl config --type bridgev2 -o /data/config.yaml "$${MOOO_BRIDGE_NAME}"
+        # bbctl exits 0 when it is not logged in, so check for the file.
+        if [ ! -s /data/config.yaml ]; then
+          echo "No config generated. Log in first: docker compose run --rm bbctl login" >&2
+          exit 1
+        fi
+      - bbctl
+    command: []
+    environment:
+      BBCTL_CONFIG: /data/bbctl/config.json
+      MOOO_BRIDGE_NAME: ${MOOO_BRIDGE_NAME:-sh-kakaotalk}
+
+  mooo-bridge:
+    image: ${MOOO_IMAGE:-ghcr.io/frrad/mooo-bridge:main}
+    user: "${MOOO_UID:-10001}:${MOOO_GID:-10001}"
+    volumes:
+      - ./data:/data
+    depends_on:
+      bbctl:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+    restart: unless-stopped
