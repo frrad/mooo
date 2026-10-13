@@ -33,6 +33,9 @@ type Config struct {
 	// private auth-state file plus its lock and continuity siblings.
 	ProfileDir string `yaml:"profile_dir"`
 
+	// HistoryPacing controls source acquisition admission, not server limits.
+	HistoryPacing client.HistoryPacing `yaml:"history_pacing"`
+
 	// BSONShadow optionally enables the research comparison of every incoming
 	// LOCO body against the source-compatible observed decoder. Off by default.
 	BSONShadow BSONShadowConfig `yaml:"bson_shadow"`
@@ -58,6 +61,9 @@ type BSONShadowConfig struct {
 
 func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "profile_dir")
+	helper.Copy(up.Str, "history_pacing", "minimum_interval")
+	helper.Copy(up.Str, "history_pacing", "error_backoff")
+	helper.Copy(up.Int, "history_pacing", "max_pending")
 	helper.Copy(up.Str, "bson_shadow", "mode")
 	helper.Copy(up.Str, "bson_shadow", "dump_dir")
 	helper.Copy(up.Str, "network_icon")
@@ -249,7 +255,7 @@ func (kc *KakaoConnector) LoadUserLogin(ctx context.Context, login *bridgev2.Use
 		return err
 	}
 	kakao := newKakaoClient(login, newBridgeStore(login.Bridge.DB), userID, func() (kakaoClient, error) {
-		return openProfileClient(statePath, client.OpenOptions{PacketObserver: kc.packetObserver, GapObserver: kc.gapObserver})
+		return openProfileClient(statePath, client.OpenOptions{PacketObserver: kc.packetObserver, GapObserver: kc.gapObserver, HistoryPacing: kc.Config.HistoryPacing})
 	})
 	kakao.debugDumpDir = kc.Config.DebugDumpDir
 	login.Client = kakao

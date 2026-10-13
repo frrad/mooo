@@ -32,11 +32,28 @@ func (c *Client) syncMessages(ctx context.Context, request syncmsg.Request) (syn
 	if c == nil || ctx == nil {
 		return syncmsg.Response{}, ErrProtocol
 	}
-	c.readMu.Lock()
-	defer c.readMu.Unlock()
-	return withSession(c, ctx, func(session *session) (syncmsg.Response, error) {
-		return session.syncMessages(ctx, request)
-	})
+	fetch := func(ctx context.Context) (syncmsg.Response, error) {
+		c.readMu.Lock()
+		defer c.readMu.Unlock()
+		return withSession(c, ctx, func(session *session) (syncmsg.Response, error) { return session.syncMessages(ctx, request) })
+	}
+	c.mu.Lock()
+	admission := c.historyAdmission
+	if request.Count == 0 && admission != nil {
+		if c.closed {
+			c.mu.Unlock()
+			return syncmsg.Response{}, ErrClientClosed
+		}
+		endPersistence := c.beginPersistenceLocked()
+		c.mu.Unlock()
+		defer endPersistence()
+		if _, err := request.MarshalBSON(); err != nil {
+			return syncmsg.Response{}, err
+		}
+		return admission.run(ctx, request, fetch)
+	}
+	c.mu.Unlock()
+	return fetch(ctx)
 }
 
 // InitialSyncTargets returns each synchronized chat's current last-log ceiling.
@@ -206,6 +223,11 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 			ChatID: chatID, Cur: current, Max: targetMax, Count: 0,
 		})
 		if err != nil {
+			if errors.Is(err, ErrGapUnresolved) {
+				if persistErr := c.checkpointWrite(func(checkpoint *continuity.Store) error { return checkpoint.RecordGap(chatID, gapStart, targetMax) }); persistErr != nil {
+					return nil, errors.Join(err, persistErr)
+				}
+			}
 			return nil, err
 		}
 		progressed := false

@@ -56,11 +56,14 @@ type Client struct {
 	commitDone       chan struct{}
 	pendingCommits   map[int64][]int64
 	readMu           sync.Mutex
+	historyAdmission *historyAdmission
 	gaps             gapFunc
 }
 
 // OpenOptions selects explicit bootstrap behavior for an operator-owned profile.
 type OpenOptions struct {
+	// HistoryPacing controls acquisition admission without changing read acknowledgements.
+	HistoryPacing HistoryPacing
 	// FullChatList requests a full inventory at the next login by using the
 	// documented zero list token. Message commit positions and LBK are retained.
 	FullChatList bool
@@ -138,6 +141,12 @@ func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*
 		_ = lease.Close()
 		return nil, err
 	}
+	admission, err := openHistoryAdmission(statePath+".history-admission", state.Credentials.UserID, options.HistoryPacing)
+	if err != nil {
+		_ = lease.Close()
+		return nil, err
+	}
+	client.historyAdmission = admission
 	client.checkpoint = checkpoint
 	client.gaps = newGapFunc(options.GapObserver)
 	resume := options.loginResume(checkpoint.Snapshot())
@@ -278,6 +287,9 @@ func (c *Client) adoptSession(session *session) (*session, error) {
 			c.mu.Lock()
 			c.cleanupSession = session
 			c.closed = true
+			if c.historyAdmission != nil {
+				c.historyAdmission.stop()
+			}
 			c.mu.Unlock()
 			_ = session.Close()
 			return nil, err
@@ -361,6 +373,9 @@ func (c *Client) interruptTerminal() {
 	}
 	c.mu.Lock()
 	c.closed = true
+	if c.historyAdmission != nil {
+		c.historyAdmission.stop()
+	}
 	session := c.session
 	c.mu.Unlock()
 	if session != nil {
@@ -720,6 +735,9 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		c.shutdownActive = true
 		c.shutdownDone = make(chan struct{})
 		c.closed = true
+		if c.historyAdmission != nil {
+			c.historyAdmission.stop()
+		}
 		session := c.session
 		cleanup := c.cleanupSession
 		if session == nil {

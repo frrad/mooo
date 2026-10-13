@@ -3,9 +3,11 @@ package connector
 import (
 	"context"
 	"errors"
+	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/bridgeconfig"
@@ -227,5 +229,15 @@ func TestFillPortalBridgeInfoPublishesNetworkIcon(t *testing.T) {
 	}
 	if content.Network.AvatarURL != "mxc://example.org/syntheticKakaoIcon" {
 		t.Fatalf("network avatar_url = %q", content.Network.AvatarURL)
+	}
+}
+
+func TestExampleConfigExposesHistoryPacing(t *testing.T) {
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(exampleConfig), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HistoryPacing.MinimumInterval != 2*time.Second || cfg.HistoryPacing.ErrorBackoff != 30*time.Second || cfg.HistoryPacing.MaxPending != 32 {
+		t.Fatalf("example policy did not decode: %+v", cfg.HistoryPacing)
 	}
 }

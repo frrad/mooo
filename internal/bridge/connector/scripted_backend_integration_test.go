@@ -26,7 +26,9 @@ import (
 // must decode identically under both decoders.
 func shadowCheckedOptions() client.OpenOptions {
 	return client.OpenOptions{
-		FullChatList:   true,
+		FullChatList: true,
+		// Keep real admission enabled with short synthetic-test intervals.
+		HistoryPacing:  client.HistoryPacing{MinimumInterval: time.Millisecond, ErrorBackoff: 10 * time.Millisecond},
 		PacketObserver: shadow.NewObserver(shadow.Config{Mode: shadow.ModePanic}),
 	}
 }
