@@ -58,6 +58,9 @@ func replyTargetStatus(err error) error {
 // Any other failure may have been delivered; it is never retried or shown as retriable,
 // because a manual resend could duplicate a delivered message.
 func outboundSendError(err error) error {
+	if errors.Is(err, client.ErrPhotoNotCreated) {
+		return certainSendFailure(err, "The attachment upload failed before a KakaoTalk message was created; the photo was not sent.")
+	}
 	if errors.Is(err, media.ErrUploadRedirect) {
 		return certainRefusal(err, "KakaoTalk requested an upload method this bridge does not support yet; the attachment was not sent.")
 	}

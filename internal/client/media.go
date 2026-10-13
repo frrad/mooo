@@ -15,8 +15,10 @@ import (
 // SendImage validates and uploads one JPEG or PNG through the current session.
 // SHIP, POST, and the byte stream are each sent exactly once. Transport failure
 // is ambiguous and is never retried automatically.
-// SendImage uploads one photo with an optional caption.
 func (s *session) SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error) {
+	if !media.ValidCaption(caption) {
+		return media.SendResult{}, media.ErrInvalidCaption
+	}
 	image, err := media.PrepareImage(data)
 	if err != nil {
 		return media.SendResult{}, err
