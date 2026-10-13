@@ -1,7 +1,10 @@
 # Beeper deployment
 
-Runs the bridge against a Beeper account. Beeper validation has not run yet;
-see [deployment validation](../../research/bridge/DEPLOYMENT-VALIDATION.md#beeper-independent-gate).
+Runs the bridge against a Beeper account. On 2026-10-13 one owned account
+passed config generation, QR login, group room creation and inbound messages
+through Beeper. The rest of the
+[Beeper gate](../../research/bridge/DEPLOYMENT-VALIDATION.md#beeper-independent-gate)
+has not run.
 
 Beeper hosts the Matrix homeserver, so there is no homeserver to configure and
 no registration file to install. The bridge connects out to Beeper over a
@@ -53,8 +56,15 @@ succeeds. On later runs, the service sees the existing config and exits.
 on first start. The database and logs also land under `data/`, because the
 container's working directory is `/data`.
 
-The bridge bot then appears in Beeper. Open a chat with it and log in to
-KakaoTalk.
+KakaoTalk does not appear in Beeper's "Add an account" list. Start a chat
+with the bridge bot, `@sh-kakaotalkbot:beeper.local` for the default name, and
+send `login qr`. Scan the QR code within about a minute with the scanner in
+KakaoTalk on your phone: open it from the search icon at the top right, or from
+the More tab. Then confirm the code the bot shows. If the code expires, send
+`login qr` again.
+
+Group chats appear after login. A one-to-one chat appears when its first new
+message arrives. Earlier history is not brought over.
 
 Upgrades, backups and restart behavior are as described in the
 [main deployment guide](../README.md#persistence-and-upgrades).
