@@ -19,9 +19,13 @@ type HistoryPacing struct {
 	MinimumInterval time.Duration `yaml:"minimum_interval"`
 	ErrorBackoff    time.Duration `yaml:"error_backoff"`
 	MaxPending      int           `yaml:"max_pending"`
+	MaximumDuration time.Duration `yaml:"maximum_duration"`
 }
 
 func (p HistoryPacing) normalized() (HistoryPacing, error) {
+	if p.MaximumDuration == 0 {
+		p.MaximumDuration = time.Minute
+	}
 	if p.MaxPending == 0 {
 		p.MaxPending = 32
 	}
@@ -31,7 +35,7 @@ func (p HistoryPacing) normalized() (HistoryPacing, error) {
 	if p.ErrorBackoff == 0 {
 		p.ErrorBackoff = 30 * time.Second
 	}
-	if p.MinimumInterval < 0 || p.ErrorBackoff < p.MinimumInterval || p.ErrorBackoff > 24*time.Hour || p.MaxPending < 1 || p.MaxPending > 4096 {
+	if p.MinimumInterval < 0 || p.ErrorBackoff < p.MinimumInterval || p.ErrorBackoff > 24*time.Hour || p.MaxPending < 1 || p.MaxPending > 4096 || p.MaximumDuration < 0 || p.MaximumDuration > 24*time.Hour {
 		return HistoryPacing{}, ErrProtocol
 	}
 	return p, nil
@@ -80,7 +84,7 @@ func openHistoryAdmission(path string, accountID int64, policy HistoryPacing) (*
 			return nil, err
 		}
 		if found {
-			if state.Version != 1 || state.AccountID != accountID || state.NextAllowed.After(time.Now().Add(24*time.Hour)) {
+			if state.Version != 1 || state.AccountID != accountID || state.NextAllowed.IsZero() || state.NextAllowed.After(time.Now().Add(24*time.Hour)) {
 				return nil, privatejson.ErrCorrupt
 			}
 			a.state = state
@@ -101,6 +105,8 @@ func (a *historyAdmission) run(ctx context.Context, request syncmsg.Request, fet
 	if err := ctx.Err(); err != nil {
 		return syncmsg.Response{}, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, a.policy.MaximumDuration)
+	defer cancel()
 	if a.stopCtx.Err() != nil {
 		return syncmsg.Response{}, ErrClientClosed
 	}

@@ -14,6 +14,8 @@ history_pacing:
     minimum_interval: 2s
     error_backoff: 30s
     max_pending: 32
+    # Total admission wait + one source attempt, also when callers have no deadline.
+    maximum_duration: 1m
 
 # Optional research comparison of every incoming LOCO body. Production
 # decoding is unchanged; when enabled, a second, source-compatible decoder

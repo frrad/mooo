@@ -235,8 +235,9 @@ Clients opened from operator profiles now route zero-held-count SYNCMSG through
 one serialized admission object. Identical concurrent room/cursor/ceiling requests
 share one source attempt and retain their separate delivery limits. The bridge
 exposes `network.history_pacing.minimum_interval` (default 2 seconds),
-`error_backoff` (30 seconds), and `max_pending` (32 demands, including coalesced
-waiters). These are conservative operator defaults, not measured server limits.
+`error_backoff` (30 seconds), `max_pending` (32 demands, including coalesced
+waiters), and `maximum_duration` (1 minute for admission plus one source attempt,
+also when the caller has no deadline). These are conservative operator defaults, not measured server limits.
 
 The private profile's `.history-admission` file binds the cooldown to its account.
 Before dispatch the client atomically reserves the error cooldown; after a validated

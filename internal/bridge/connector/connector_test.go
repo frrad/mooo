@@ -237,7 +237,7 @@ func TestExampleConfigExposesHistoryPacing(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(exampleConfig), &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.HistoryPacing.MinimumInterval != 2*time.Second || cfg.HistoryPacing.ErrorBackoff != 30*time.Second || cfg.HistoryPacing.MaxPending != 32 {
+	if cfg.HistoryPacing.MinimumInterval != 2*time.Second || cfg.HistoryPacing.ErrorBackoff != 30*time.Second || cfg.HistoryPacing.MaxPending != 32 || cfg.HistoryPacing.MaximumDuration != time.Minute {
 		t.Fatalf("example policy did not decode: %+v", cfg.HistoryPacing)
 	}
 }

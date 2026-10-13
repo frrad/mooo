@@ -351,3 +351,31 @@ func TestHistoryAdmissionSerializesAndSpacesDifferentRooms(t *testing.T) {
 		t.Fatalf("source requests spaced only %s", gap)
 	}
 }
+
+func TestHistoryAdmissionBoundsCallersWithoutDeadlines(t *testing.T) {
+	a := testAdmission(t, "")
+	a.policy.MaximumDuration = 20 * time.Millisecond
+	called := false
+	_, err := a.run(context.Background(), syncmsg.Request{ChatID: 42, Cur: 100, Max: 103}, func(ctx context.Context) (syncmsg.Response, error) {
+		called = true
+		<-ctx.Done()
+		return syncmsg.Response{}, ctx.Err()
+	})
+	if !called || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("unbounded source attempt: called=%v err=%v", called, err)
+	}
+}
+
+func TestHistoryAdmissionRejectsIncompleteDurableState(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "admission.json")
+	if err := privatejson.WriteAtomic(path, historyAdmissionState{Version: 1, AccountID: 1000}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openHistoryAdmission(path, 1000, HistoryPacing{}); !errors.Is(err, privatejson.ErrCorrupt) {
+		t.Fatal("missing cooldown silently reset admission", err)
+	}
+}

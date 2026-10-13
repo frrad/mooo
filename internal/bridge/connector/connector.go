@@ -64,6 +64,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "history_pacing", "minimum_interval")
 	helper.Copy(up.Str, "history_pacing", "error_backoff")
 	helper.Copy(up.Int, "history_pacing", "max_pending")
+	helper.Copy(up.Str, "history_pacing", "maximum_duration")
 	helper.Copy(up.Str, "bson_shadow", "mode")
 	helper.Copy(up.Str, "bson_shadow", "dump_dir")
 	helper.Copy(up.Str, "network_icon")
