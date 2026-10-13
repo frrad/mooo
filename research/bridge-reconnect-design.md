@@ -74,9 +74,10 @@ Matrix rooms, and the dead connection went unnoticed: each refresh request
 cancels the keepalive ping and re-arms it for a full interval, so with managed
 groups the ping never fired. In an owned Docker run with all Kakao traffic
 dropped, the bridge still reported itself connected four minutes into the
-outage. The official client closes the carriage when a request gets no
-response header within 20 seconds; this client has no such timeout, so any
-other request that times out still postpones the next ping.
+outage. Since 2026-10-13 the client also implements the official client's
+receive-header timeout: a request that gets no reply within GETCONF's
+`recvHeaderTimeout` (20 seconds observed) closes the carriage, whichever
+request it was, and the bridge recovers as for any dropped connection.
 
 CHANGESVR performs old-session cleanup and books a fresh session. It does not
 replay outbound mutations.
