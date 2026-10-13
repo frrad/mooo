@@ -299,7 +299,7 @@ func TestRecoveryKeepsRetryingPastFastScheduleAndReportsStall(t *testing.T) {
 		}
 	}
 	stalls := 0
-	for _, state := range harness.states {
+	for _, state := range harness.allStates() {
 		if state.Error == stateRecoveryStalled {
 			stalls++
 			if state.StateEvent != status.StateUnknownError || state.Message == "" {

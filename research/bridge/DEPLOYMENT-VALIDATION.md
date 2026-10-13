@@ -87,6 +87,61 @@ bridge-native enrollment on owned B passed with the default renderer and
 then resumed after restart; see [the enrollment record](QR-ENROLLMENT.md).
 Owned A reached approval but reported an explicit secondary-device restriction.
 
+## Restart, crash-loop and outage recovery
+
+Observed on 2026-10-11 and 2026-10-13 with the owned disposable B profile and
+the disposable Synapse. Native runs used a binary from revision `8844d27`
+(PRs #326 and #328); the Docker runs used images built from `878d4cb` (#330)
+and `71f23e5` (#331). Configuration, database, profile, logs and receipts
+stayed in the private lab. Every start, stop, kill and firewall change was
+recorded before it ran.
+
+- **Crash loop (native).** The bridge was killed with SIGKILL about 2.7 s
+  after each login began and restarted at once. The first restart, 43 s after
+  a stable login, connected at once. The next waited until the previous login
+  plus 10.0 s, and the one after until the previous login plus 20.0 s, each
+  reporting `kakao-reconnect-scheduled` first. The last run then connected.
+  The state message is mautrix's human-readable text for the code, not the
+  bridge's countdown.
+- **Operator reconnect (native).** With the profile lease held by another
+  process, the bridge reported `kakao-profile-unavailable` and did not retry
+  for 90 s. After the lease was released, `!kakao reconnect` replied
+  "Reconnecting to KakaoTalk", and the login reached `CONNECTED` 18 s later
+  after catch-up. A second `reconnect` replied "already connected" and opened
+  no session.
+- **Docker deployment.** The image ran as the host directory owner's UID with
+  the private data directory bind-mounted, the homeserver reached it through a
+  published loopback port, and the login connected and caught up.
+- **Network outage (Docker).** A sidecar owning the container's network
+  namespace dropped all traffic except DNS, Matrix and the appservice port.
+  On the `878d4cb` image the minute-by-minute group refresh timed out and
+  reported `kakao-group-membership-pending`, and the bridge still reported
+  itself connected four minutes into the outage: each refresh request re-armed
+  the keepalive ping, so it never fired. PR #331 fixed this. On the `71f23e5`
+  image the refresh failed on the connection 64 s into the outage and the
+  bridge reported `kakao-disconnected`. Recovery then retried after 5, 10, 20,
+  40 and 60 s, each attempt failing on a 10 s GETCONF dial timeout, and
+  reported `kakao-recovery-stalled` once with the next retry 15 minutes away.
+- **Restart during backoff (Docker).** `docker restart` 13 s after the stalled
+  state started a process that reported `kakao-reconnect-scheduled` and did
+  not log in. The saved schedule held attempt 6 and the retry time from the
+  previous process. The firewall was then opened. The waiting process
+  connected at the saved retry time to the second, caught up, and reported
+  `CONNECTED` 13 s later.
+- **Receive-header timeout (Docker, 2026-10-13).** On an image built from
+  `761f2e4` (PR #333), Kakao traffic was dropped just after a group refresh,
+  and the tester sent one synthetic text into the selected portal. The bridge
+  wrote WRITE into the dead carriage. Exactly 20.0 s later the session closed
+  with "no reply within the receive-header timeout", the Matrix send failed,
+  and the bridge reported `kakao-disconnected`. After the firewall opened, the
+  first 5 s retry reconnected and caught up. The text was not resent.
+
+Not live-tested: a real `KICKOUT` (requires revoking and re-enrolling the lab
+device), a server-sent `CHANGESVR`, and an owner cleanup that times out. Each
+is covered by synthetic regression tests. A laptop host does not run recovery
+timers while asleep; the 2026-10-11 run recovered up to about two hours after
+disconnects that happened during sleep.
+
 ## Beeper: independent gate
 
 Beeper validation has not run. The current official

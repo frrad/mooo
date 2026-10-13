@@ -18,7 +18,12 @@ five attempts after an outage follow a fast schedule: ordinary failures wait
 60, 120, 240, 480 and 900 seconds. After that, the bridge reports
 `UNKNOWN_ERROR` `kakao-recovery-stalled` once and keeps retrying every 15
 minutes. The first connect retries on the same schedule, so a network outage
-at startup no longer leaves the bridge down until a restart.
+at startup no longer leaves the bridge down until a restart. A network failure
+during bootstrap (the GETCONF and CHECKIN dials and requests, before LOGINLIST
+sends any credentials) is retryable. Until 2026-10-13 the client hid its cause,
+so a DNS failure right after a lab Mac woke from sleep stopped the bridge for
+good. A transport failure during LOGINLIST itself is still classified only as
+a login failure and is not retried.
 
 The schedule restarts only after a session has stayed connected for five
 minutes. A session that ends sooner, for example by repeated `CHANGESVR` or a
@@ -58,6 +63,21 @@ again with the same credentials and could displace whichever device caused
 the kick. The state message follows the official logout alert, including the
 server's explanation text and help link when present
 ([KICKOUT notification](reconnect/KICKOUT-NOTIFICATION.md#logout-alert)).
+
+The once-a-minute group profile refresh ends the session when its source
+request fails on the connection: the session closed, the transport failed, or
+no reply arrived within its 30 second timeout (2026-10-13). The bridge then
+reports `kakao-disconnected` and recovers on the schedule above, and recovery's
+group discovery refreshes the paused group. Before this, a network outage was
+reported as `kakao-group-membership-pending`, which asks the operator to repair
+Matrix rooms, and the dead connection went unnoticed: each refresh request
+cancels the keepalive ping and re-arms it for a full interval, so with managed
+groups the ping never fired. In an owned Docker run with all Kakao traffic
+dropped, the bridge still reported itself connected four minutes into the
+outage. Since 2026-10-13 the client also implements the official client's
+receive-header timeout: a request that gets no reply within GETCONF's
+`recvHeaderTimeout` (20 seconds observed) closes the carriage, whichever
+request it was, and the bridge recovers as for any dropped connection.
 
 CHANGESVR performs old-session cleanup and books a fresh session. It does not
 replay outbound mutations.

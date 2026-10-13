@@ -9,3 +9,4 @@ services:
     ports:
       - "127.0.0.1:29340:29340"
     stop_grace_period: 30s
+    restart: unless-stopped

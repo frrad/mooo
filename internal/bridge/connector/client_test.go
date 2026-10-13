@@ -340,6 +340,13 @@ func (h *testHarness) sendState(state status.BridgeState) {
 	h.states = append(h.states, state)
 }
 
+// allStates returns a copy of every state sent so far.
+func (h *testHarness) allStates() []status.BridgeState {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]status.BridgeState(nil), h.states...)
+}
+
 func (h *testHarness) stateEvents() []status.BridgeStateEvent {
 	h.mu.Lock()
 	defer h.mu.Unlock()

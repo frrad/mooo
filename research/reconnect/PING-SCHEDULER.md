@@ -90,10 +90,13 @@ reply.
 Clean-room deviation: when a caller's context ends a non-PING request without
 a reply, the Go session re-arms the keepalive. The request path cancels the
 timer before writing, so without this a quiet session would have no keepalive
-until another request completed. The Mac client never reaches that state,
-because its 20-second receive-header timeout closes the carriage; this client
-does not implement that timeout, so the next PING detects a dead carriage
-instead. A transport write failure and an abandoned PING still do not re-arm.
+until another request completed. The Mac client has no caller abandonment, and
+its receive-header timeout closes a carriage that stops replying. This client
+also implements that timeout (2026-10-13, see
+[RECEIVE-HEADER-TIMEOUT.md](RECEIVE-HEADER-TIMEOUT.md)), and an abandoned
+request keeps its timer, so a dead carriage closes within the timeout even
+while abandoned requests keep postponing the PING. A transport write failure
+and an abandoned PING still do not re-arm.
 
 Untraced: exact OS queue execution timing, whether an already-eligible delayed
 invocation can run before a queued cancellation, global first-admission ordering

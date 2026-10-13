@@ -97,7 +97,7 @@ func TestRestartWaitsOutPersistedRecoveryBackoff(t *testing.T) {
 		t.Fatalf("restart delays = %v, want [3s]: the rest of the saved 5s backoff", got)
 	}
 	scheduledStates := 0
-	for _, state := range harness.states {
+	for _, state := range harness.allStates() {
 		if state.Error == stateReconnectScheduled {
 			scheduledStates++
 			if state.StateEvent != status.StateTransientDisconnect || state.Message == "" {

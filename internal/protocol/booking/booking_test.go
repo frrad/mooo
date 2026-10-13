@@ -186,6 +186,34 @@ func TestDecodeForegroundPingInterval(t *testing.T) {
 	}
 }
 
+func TestDecodeReceiveHeaderTimeout(t *testing.T) {
+	getconf := func(wifi bson.D) []byte {
+		return mustMarshal(t, bson.D{
+			{Key: "ticket", Value: bson.D{{Key: "lsl", Value: bson.A{"ticket.example.test"}}}},
+			{Key: "wifi", Value: wifi},
+		})
+	}
+	ports := bson.E{Key: "ports", Value: bson.A{int32(443)}}
+	for _, tc := range []struct {
+		name string
+		body []byte
+		want time.Duration
+	}{
+		// The observed 2026-10-11 GETCONF carries wifi.recvHeaderTimeout as int32 seconds.
+		{name: "observed shape", body: getconf(bson.D{ports, {Key: "recvHeaderTimeout", Value: int32(20)}, {Key: "connTimeout", Value: int32(15)}}), want: 20 * time.Second},
+		{name: "server value", body: getconf(bson.D{ports, {Key: "recvHeaderTimeout", Value: int32(7)}}), want: 7 * time.Second},
+		{name: "zero", body: getconf(bson.D{ports, {Key: "recvHeaderTimeout", Value: int32(0)}}), want: DefaultReceiveHeaderTimeout},
+		{name: "negative", body: getconf(bson.D{ports, {Key: "recvHeaderTimeout", Value: int32(-1)}}), want: DefaultReceiveHeaderTimeout},
+		{name: "absent", body: getconf(bson.D{ports}), want: DefaultReceiveHeaderTimeout},
+		{name: "not int32", body: getconf(bson.D{ports, {Key: "recvHeaderTimeout", Value: "20"}}), want: DefaultReceiveHeaderTimeout},
+		{name: "no wifi", body: mustMarshal(t, bson.D{{Key: "status", Value: int32(0)}}), want: DefaultReceiveHeaderTimeout},
+	} {
+		if got := DecodeReceiveHeaderTimeout(tc.body); got != tc.want {
+			t.Errorf("%s: timeout = %s, want %s", tc.name, got, tc.want)
+		}
+	}
+}
+
 func mustMarshal(t *testing.T, doc bson.D) []byte {
 	t.Helper()
 	body, err := bson.Marshal(doc)
