@@ -46,6 +46,9 @@ func (r Request) MarshalBSON() ([]byte, error) {
 
 type Response struct {
 	ChatLogs []bson.Raw
+	// MinLogID is a server-supplied client-wide floor, not a per-room oldest log
+	// or a retention duration. Missing/non-integer values normalize to zero.
+	MinLogID int64
 }
 
 type Target struct {
@@ -91,13 +94,14 @@ func ParseResponse(body []byte) (Response, error) {
 	if err := raw.Validate(); err != nil {
 		return Response{}, ErrInvalidResponse
 	}
+	result := Response{ChatLogs: []bson.Raw{}, MinLogID: bsonfield.Int64OrZero(raw, "minLogId")}
 	value, err := raw.LookupErr("chatLogs")
 	if err != nil {
 		// Live status-0 responses omit chatLogs when the page is empty.
-		return Response{ChatLogs: []bson.Raw{}}, nil
+		return result, nil
 	}
 	if value.Type == bson.TypeNull {
-		return Response{ChatLogs: []bson.Raw{}}, nil
+		return result, nil
 	}
 	if value.Type != bson.TypeArray {
 		return Response{}, fmt.Errorf("%w: chatLogs type %s", ErrInvalidResponse, value.Type)
@@ -106,7 +110,7 @@ func ParseResponse(body []byte) (Response, error) {
 	if err != nil {
 		return Response{}, ErrInvalidResponse
 	}
-	result := Response{ChatLogs: make([]bson.Raw, 0, len(values))}
+	result.ChatLogs = make([]bson.Raw, 0, len(values))
 	var previous int64
 	for _, value := range values {
 		if value.Type != bson.TypeEmbeddedDocument {
