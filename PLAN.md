@@ -7,39 +7,276 @@ Last code/evidence audit: 2026-10-09, committed baseline `8caaca0` (PR #267).
 Implementation, synthetic coverage, and owned-account acceptance are tracked
 separately; in-progress branches are not counted as shipped features.
 
-## Fresh-login history research (2026-10-13)
+## History parity plan (2026-10-13)
 
-PR #336's information request has a
-[static findings dossier](research/bridge/HISTORY-STATIC.md) and synthetic
-static leads. Ordinary startup has a separate `MCHATLOGS` chain; do not infer
-"last message only" from the absence of fresh-room loss marks. Its 100-room
-batch cap, numeric ordering and persisted cursors differ from local display
-paging and the single-room `SYNCMSG` continuation rule.
+### Objective, scope and starting point
 
-- [x] Trace startup bulk selection, request/response fields, scheduling,
-      principal callback writes, floor ownership and single-room continuation.
-- [ ] Close the documented loss-marker UI, notification and historical
-      media/profile/reaction consumer gaps; execute the synthetic model leads
-      separately before claiming parity.
-- [ ] Confirm server window direction, retention, pre-join visibility and
-      read effects with bounded direct/group observations, then fresh official
-      startup/open observations. The maintainer lifted the initial live hold
-      on 2026-10-13 and requested continuing evidence on PR #336. HST-EXEC-001
-      has executed the offline request/response models; scheduling and
-      persistence fixtures remain static leads.
-- HST-LIVE-001–003 now establish an unavailable interval below the supplied
-  floor and a five-log group window: two forward SYNCMSG pages match one
-  MCHATLOGS page; the fresh sender unread count stayed unchanged. HST-LIVE-004 extends the bounded unread observation to an owned direct
-  chat; HST-EXEC-002 executes the startup pending-set predicate. Larger
-  windows now have HST-LIVE-005/006: 305 numbered direct-chat texts and
-  identical 312-log sequences through five SYNC and four bulk pages. Forward
-  ordinary pages held 80 logs here; 300 remains a held-count parameter.
-  New-device/pre-join access remains unproved. Keep
-  the next observations bounded; do not infer a fixed retention duration or
-  a global no-read-effect policy from this group.
-- [ ] Choose and implement fresh-login backfill only after the evidence
-      establishes its boundaries and read policy. Cloud backup/restore stays
-      out of scope.
+Bring regular direct and regular group history closer to the official macOS
+client across fresh login, startup acquisition, opening a chat, retrieving older
+available messages, source read effects, durable progress and bridge delivery.
+Cloud backup/restore, Secret/Open/Team Chat and unsupported formats remain outside
+this milestone. A local empty profile and a newly registered server device are
+separate experimental conditions; neither proves the other.
+
+Use PR #336's [question register](research/bridge/HISTORY-PARITY-QUESTIONS.md),
+[static dossier](research/bridge/HISTORY-STATIC.md) and
+[fixture policy](research/parity-fixtures.md) as the evidence baseline. Pin the
+reference client to macOS 26.8.0/build 2000; revalidate affected contracts when
+that version changes. This plan does not initiate experiments.
+
+Current shipped code has `internal/client/history.go:ReadHistoryPage`, an explicit
+zero-held-count SYNCMSG request with no automatic retry or live checkpoint commit,
+and `internal/bridge/connector/group_history.go:BackfillGroup`, an opt-in bounded
+regular-group import with a separate journal. These are useful foundations, not
+an implementation of the ordinary official startup MCHATLOGS coordinator. Preserve
+existing acceptance and identify missing behavior before replacing either path.
+The command already warns that requests may affect source read state; keep that
+warning until the relevant evidence supports a narrower statement.
+
+Established boundaries:
+
+- Startup bulk selection is independent of loss marks: persisted bulk cursor
+  below room last ID, with room last ID at or above the client-wide floor.
+  Static tracing gives signed numeric room order, at most 100 valid rooms per
+  request, paired room IDs/cursors and callback-driven serial bulk scheduling.
+- Executed model fixtures and the pending-set predicate do not execute the whole
+  coordinator, persistence transaction or startup UI.
+- Observed forward SYNCMSG and MCHATLOGS traversals agree on 312 direct-chat log
+  identities, including 305 numbered texts. Ordinary pages held 80 logs in that
+  experiment. Neither 80 nor 300 is a proven universal server page size; 300 is
+  the official SYNC held-message-count ceiling. Log IDs are sparse.
+- Bulk `eof` and SYNC `isOK` have different roles. Final observed SYNC pages can
+  have `isOK=false`; successful empty responses need explicit non-progress handling.
+- Small group and direct observations constrain unread effects, but the direct
+  zero-held-count SYNC request did not reach the fresh unread target. The large
+  corpus was authored by the receiving account and is not an unread experiment.
+- The isolated official-client fresh-login attempt authenticated, then failed
+  before traced history calls. It proves neither startup acquisition nor rendering.
+  Retention duration, pre-join/new-device visibility and abrupt restart remain open.
+
+### Completion accounting
+
+Maintain a coverage ledger in the question register. Each requirement below gets
+an ID, room type, reference build, evidence/fixture links, production test path,
+result, remaining gap and any deliberate deviation. Use `untraced`, `static`,
+`executed`, `observed`, `implemented` and `accepted` explicitly; do not collapse
+these into a percentage. An unchecked gate stays open even if adjacent work ships.
+Every evidence record must state date, method, initial conditions, sanitized
+observation, confidence and provenance. Only executed/observed reference fixtures
+support parity claims. A synthetic failure test can establish robustness without
+establishing official-client parity.
+
+For an interval, completion means the expected ordered source identity set is
+accounted for, all supported content is delivered or an explicit unavailable/
+unsupported outcome is recorded, and durable progress agrees with that outcome.
+Matching counts alone, reaching a cursor alone, `isOK=true`, or a successful login
+are insufficient. Unavailability is a terminal outcome only when supported by
+evidence and explicitly reported; it must never be reported as complete import.
+
+### H0 — Freeze the baseline and make evidence repeatable
+
+- [ ] Audit current main's history, continuity, inventory, read routing, journal,
+      deduplication and conversion paths. Record which existing tests and owned
+      acceptance cover each requirement; exclude unmerged work from the baseline.
+- [ ] Define a bounded owned-account experiment manifest: leased profile, build,
+      room type, local-cache state, server-device state, source interval, corpus,
+      request/time budget, read baseline, expected results and cleanup procedure.
+      Reuse the existing corpus where possible; do not create a large new corpus
+      merely to repeat the known pagination result.
+- [ ] Repair/diagnose the isolated fresh-login connection failure before another
+      authentication attempt. Follow current private handoff state and failure
+      backoff; distinguish signing/sandbox instrumentation effects from server
+      behavior. A functional reference control must reach history callbacks.
+- [ ] Require nonempty manifests containing every mandatory original file before
+      any preservation check. Declare database/preferences/keychain coverage
+      separately. Hash equality for two preference files proves only those files
+      during that run, not whole-profile immutability or earlier-run safety.
+
+**Done iff:** a versioned public method and sanitized baseline exist, private
+artifacts remain outside tracked files, an empty/incomplete baseline fails closed,
+and instrumentation has a working reference control. A blocked login does not
+block offline stages, but cannot satisfy a live startup gate.
+
+### H1 — Close the official scheduling and persistence chain
+
+- [ ] Trace remaining loss-marker-to-history UI bindings, callers and failures;
+      classify restore-only paths without implementing or testing cloud restore.
+- [ ] Execute the real official coordinator where feasible in an isolated offline
+      harness: nil/empty/populated pending sets; 0, 1, 100 and 101 eligible rooms;
+      signed numeric ordering; missing/deleted rooms; equal/below-floor cursors;
+      EOF, partial non-EOF, empty success, nil completion and non-success status.
+      Use synthetic rooms in the harness rather than creating 101 live rooms.
+- [ ] Capture request-to-callback-to-persistence-to-next-dispatch transitions,
+      including partial-page retirement and overlap between bulk, room sync and
+      live reception. Distinguish proven per-controller guards from an unproved
+      global concurrency bound.
+- [ ] Trace all writers/readers of bulk, sync, seen and floor state, transaction
+      failure paths, notification publication and restart reconstruction. Determine
+      whether separate phases are atomic; do not infer this from a transaction
+      wrapper whose begin/commit return values are unchecked.
+
+**Done iff:** every layer has evidence or an explicit bounded gap; executable
+coordinator cases produce sanitized transition fixtures; request ordering and
+cursor retirement are reproducible. Full scheduling parity remains open if only
+models/predicates ran. Unexecutable crash behavior proceeds to H3 observation.
+
+### H2 — Resolve server visibility and read-policy boundaries
+
+- [ ] Run direct and group zero-held-count SYNC through the actual fresh unread
+      target. Record sender unread and receiver notification/read state before
+      login, after login, after each request and after target delivery. Keep the
+      receiver primary from opening the chat. Use independent controls for bulk
+      and sync, repeat with fresh targets, and include an explicit read action as
+      a positive control after retrieval observations finish.
+- [ ] Extend the known corpus to a bounded regular-group traversal and a small
+      multi-room bulk traversal. Compare complete ordered identities across paths,
+      request cursors and page boundaries. Include mixed content/record sizes to
+      distinguish an observed page count from a universal limit. Never deliberately
+      trigger throttling with load; document naturally observed errors separately.
+- [ ] Compare known available/unavailable intervals, old/new local cache and
+      existing/new server device identity separately. For pre-join visibility, use
+      an owned disposable group with records on both sides of a documented join.
+      Preserve current access and do not change an established room for this test.
+- [ ] Test competing `minLogId`/`jsi` interpretations with controlled boundaries;
+      separate storage loss-mark behavior from server visibility. Age-dependent
+      retention requires dated repeat observations; one floor cannot establish
+      a fixed retention duration.
+
+**Done iff:** each supported room/request mode has reproducible target-reaching
+read observations with a working positive control, and visibility results identify
+what the server returned versus what was merely locally cached. Unsupported or
+unavailable cases have an explicit result. Unknown retention duration may remain
+unknown, but no product promise may depend on an invented duration. Automatic
+read-neutral backfill remains gated on the corresponding read evidence.
+
+### H3 — Observe official fresh startup, chat open and restart
+
+- [ ] On a functioning isolated reference, observe empty-local-cache startup from
+      inventory through first bulk request, persistence, retirement and visible
+      history. Record request ordering, eligibility, cursor values and when rows
+      render. Repeat for direct and group rooms with available and unavailable
+      selected intervals; identify server-device registration separately.
+- [ ] Observe chat open and older-history navigation with warm and cold caches:
+      local 50-message display windows, CHATONROOM, loss-triggered SYNC, caller
+      held counts, metadata/reaction fetches and source read effects. Identify
+      which actions only read local storage and which cause network requests.
+- [ ] Interrupt the disposable reference at recorded persistence boundaries and
+      restart a fresh process. Compare durable messages/cursors, rebuilt pending
+      sets, duplicate handling and remaining acquisition. Use offline injected
+      failures when a live crash cannot be controlled safely or reproducibly.
+
+**Done iff:** traces reach the actual history/display paths and explain initial
+render, older-history acquisition and recovery for the scoped rooms. Fresh login
+alone is not acceptance. A modified sandbox's behavior is attributed to that
+method until an appropriate reference control supports broader claims.
+
+### H4 — Specify the production state machine before implementation
+
+- [ ] Write an implementation-neutral contract for startup bulk, explicit import,
+      local older-history selection and single-room reconciliation. Separate
+      acquisition cursor, delivered cursor, live checkpoint and read watermark.
+      Define eligibility, EOF/partial retirement, raised floors, errors, cancellation
+      and non-progress outcomes without assuming contiguous IDs or newest-N queries.
+- [ ] Choose explicit product policy: automatic startup scope/budgets, concurrency,
+      source-read behavior and operator recovery from unavailable intervals. A
+      conservative single global history request is an implementation choice until
+      the official global bound is demonstrated. A recent-only cap is a deliberate
+      deviation from acquiring all eligible available history and must be labeled.
+- [ ] Specify finite request/time/message budgets, repeated-response detection,
+      access checks, retry classification and durable uncertain-request state.
+      Distinguish exhausted budget, unavailable interval, permission loss,
+      malformed response and complete import in status and resume behavior.
+- [ ] Define crash-safe journal transitions and stable Matrix transaction identities
+      before changing the existing importer; preserve explicit opt-in while the
+      automatic policy gates remain open.
+
+**Done iff:** every transition has an invariant and a named verification case,
+all decisions requiring H1–H3 evidence are resolved or explicitly block the affected
+feature, and the specification never turns a missing interval into success.
+
+### H5 — Implement acquisition through real consuming paths
+
+- [ ] Land request/response support and startup coordination in small PRs consumed
+      by the client login/inventory path. Keep protocol code independent of Matrix.
+      Do not add production APIs whose only callers are tests.
+- [ ] Test the actual production state machine against executed/observed fixtures:
+      valid paired bulk batches, signed ordering and 100-room selection, persisted
+      since values, partial retirement, EOF, inventory-preview isolation and floor
+      changes. Keep static leads labeled as such until promoted by evidence.
+- [ ] Add synthetic robustness tests for empty/non-progress pages, repeated cursors,
+      malformed identities, errors, cancellation and overlapping live events.
+      Verify finite dispatch and no cursor advance without the required durable
+      outcome. Any discovered production bug gets a failing regression first.
+
+**Done iff:** startup really invokes the new production path; fixtures compare
+its outputs/transitions to the reference; it handles bounded failures without
+losing or falsely completing history; and no test substitutes a local model of
+the official coordinator for the production code under test.
+
+### H6 — Preserve history meaning through bridge delivery
+
+- [ ] Reuse existing conversion, source identity mapping and encrypted delivery.
+      Verify text, replies and supported media on historical inputs, including
+      unavailable reply targets, attribution and live/history overlap. Historical
+      membership feeds must not overwrite today's access or roster.
+- [ ] Reconcile edits/deletions and missing targets through the traced lookup path.
+      Deleted records can retain source text: never render that retained text as
+      a visible historical message. Type 24 posts and type 14 votes are content,
+      not membership feeds. Unsupported formats get an explicit scoped outcome.
+- [ ] Treat reactions, profiles, room metadata and expired media as dependency
+      paths with separate contracts, cursors and failure behavior. LOCO history
+      alone does not supply reaction aggregates. Missing/expired media must have
+      a clear outcome without blocking unrelated durable delivery indefinitely.
+- [ ] Preserve event ordering and stable identities across partial multipart
+      delivery, Matrix refusal, accepted-but-unacknowledged delivery and replay.
+      Advance delivered progress only after the required parts are accounted for.
+
+**Done iff:** owned encrypted direct/group acceptance matches the expected source
+identity/content/order projection for each claimed format; restart produces no
+extra visible event; deletions remain deleted; current membership is preserved;
+and every unresolved dependency is visible rather than silently skipped.
+
+### H7 — Fault acceptance and release gate
+
+- [ ] Exercise fresh-process crashes before dispatch, after request reservation,
+      after response/before persistence, after persistence/before cursor advance,
+      and after Matrix acceptance/before acknowledgment, plus partial multipart
+      delivery. Test concurrent live overlap, floor increases, revoked access,
+      transport failure and session termination using reproducible scoped methods.
+- [ ] For each fault compare the ordered expected source identities, durable
+      journal, delivered event identities, source read state and request budget.
+      Recovery must produce no missing supported event, duplicate visible event,
+      cursor regression, false completion or unbounded request loop. Persisted
+      ambiguous attempts must have an explicit documented recovery action.
+- [ ] Run the final owned encrypted direct/group matrix on the shipped path, not
+      only raw probes. Repeat startup and restart from declared clean conditions;
+      retain sanitized projections and remove transient sensitive captures.
+- [ ] Update operator documentation, coverage ledger and deliberate deviations.
+      Run `make check`, secret scanning and required CI; squash merge only while
+      GitHub reports mergeable and all required checks pass on the current head.
+
+**Done iff:** every release-scope row is accepted against executed/observed evidence,
+all discovered bugs have production regression tests, and public claims state the
+reference build, room types, formats and visibility bounds. Any open read-safety,
+identity-loss, deletion-exposure or false-completion defect blocks release of the
+corresponding automatic path. Broader parity remains open outside this scope.
+
+### Order and reviewable milestones
+
+1. H0 plus offline H1: baseline/fixtures and remaining-chain documentation PRs.
+2. H2 plus H3: separate bounded evidence PRs for read policy, visibility and
+   official startup/recovery. Do not bundle an auth blocker with speculative code.
+3. H4: contract and explicit product decisions, with blockers tied to ledger IDs.
+4. H5: client acquisition PRs, then H6 bridge/dependency PRs; preserve existing
+   opt-in acceptance while adding the new paths.
+5. H7: failure/regression and owned acceptance PRs, followed by scoped release docs.
+
+A research milestone finishes when its specified observations are reproducible
+or its blockers are precisely documented; this does not finish implementation.
+The implementation milestone finishes when real production paths pass their
+reference fixtures. The release milestone finishes only after H7 acceptance.
+No milestone requires claiming an unknown universal retention window, and none
+includes cloud backup or restore.
 
 ## Current feature gaps and next work
 
