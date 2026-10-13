@@ -48,6 +48,8 @@ var errQRBackendUnavailable = errors.New("connector: QR enrollment backend is un
 
 var qrPollInterval = 3 * time.Second
 
+var errQRExpired = errors.New("connector: QR code expired; send `login qr` again for a new code")
+
 // qrBackend is the narrow bridge seam around the reviewed registration
 // service. It intentionally returns typed results and never exposes raw HTTP
 // bodies or logs challenge/credential values.
@@ -396,7 +398,7 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 		l.mu.Unlock()
 		return nil, errors.New("connector: QR wait already active")
 	}
-	backend, identity, qrID, qrData := l.backend, l.identity, l.qrID, l.qrData
+	backend, identity, qrID := l.backend, l.identity, l.qrID
 	pollDelay := l.nextPollDelay
 	if pollDelay <= 0 {
 		pollDelay = qrPollInterval
@@ -410,7 +412,7 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 		if l.cancelRemote(ctx) {
 			l.cleanupUnenrolledProfile()
 		}
-		return nil, errors.New("connector: QR challenge expired")
+		return nil, errQRExpired
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -454,7 +456,7 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 			if l.cancelRemote(ctx) {
 				l.cleanupUnenrolledProfile()
 			}
-			return nil, errors.New("connector: QR challenge expired")
+			return nil, errQRExpired
 		case <-pollTimer.C:
 			stopQRTimer(deadlineTimer)
 		}
@@ -465,7 +467,7 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 			if l.cancelRemote(ctx) {
 				l.cleanupUnenrolledProfile()
 			}
-			return nil, errors.New("connector: QR challenge expired")
+			return nil, errQRExpired
 		}
 		wireUUID, err := identity.WireDeviceUUID()
 		if err != nil {
@@ -482,7 +484,7 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 				if l.cancelRemote(ctx) {
 					l.cleanupUnenrolledProfile()
 				}
-				return nil, errors.New("connector: QR challenge expired")
+				return nil, errQRExpired
 			}
 			// The command framework discards the login when Wait returns an
 			// error. Decoder failures occur before a typed poll result exists;
@@ -525,7 +527,7 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 			if l.cancelRemote(ctx) {
 				l.cleanupUnenrolledProfile()
 			}
-			return nil, errors.New("connector: QR challenge expired")
+			return nil, errQRExpired
 		}
 		if polled.Result.Kind == registration.QRPollSuccess {
 			if polled.Result.Success == nil {
@@ -575,7 +577,9 @@ func (l *qrLogin) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
 		switch polled.Result.ServerError.QROutcome() {
 		case registration.OutcomePending:
 			if !deviceAuth {
-				return qrDisplayStep(qrData), nil
+				// The framework already shows this challenge's QR code; returning
+				// it again would post a duplicate message on every poll.
+				continue
 			}
 			if polled.DeviceAuthCode != "" {
 				if !validDeviceAuthCode(polled.DeviceAuthCode) {
@@ -728,7 +732,7 @@ func (l *qrLogin) cancelRemote(ctx context.Context) bool {
 }
 
 func qrDisplayStep(data string) *bridgev2.LoginStep {
-	return &bridgev2.LoginStep{Type: bridgev2.LoginStepTypeDisplayAndWait, StepID: "com.github.frrad.mooo.qr", Instructions: "Scan this QR code with the KakaoTalk primary device.", DisplayAndWaitParams: &bridgev2.LoginDisplayAndWaitParams{Type: bridgev2.LoginDisplayTypeQR, Data: data, CanCancel: true}}
+	return &bridgev2.LoginStep{Type: bridgev2.LoginStepTypeDisplayAndWait, StepID: "com.github.frrad.mooo.qr", Instructions: "Scan this QR code with KakaoTalk on your phone: open the scanner from the search icon at the top right, or from the More tab.", DisplayAndWaitParams: &bridgev2.LoginDisplayAndWaitParams{Type: bridgev2.LoginDisplayTypeQR, Data: data, CanCancel: true}}
 }
 
 func newQRProfileName() (string, error) {
