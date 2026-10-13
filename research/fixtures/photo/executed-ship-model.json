@@ -1,0 +1,78 @@
+{
+  "cases": [
+    {
+      "input": {
+        "status": 0,
+        "k": "",
+        "vh": "",
+        "p": 0,
+        "rd": true
+      },
+      "isSuccess": true,
+      "redirect": true,
+      "token": "",
+      "host": "",
+      "port": 0
+    },
+    {
+      "input": {
+        "status": 0,
+        "k": "synthetic",
+        "vh": "media.example",
+        "p": 443,
+        "rd": false
+      },
+      "isSuccess": true,
+      "redirect": false,
+      "token": "synthetic",
+      "host": "media.example",
+      "port": 443
+    },
+    {
+      "input": {
+        "status": 0,
+        "k": "synthetic",
+        "vh": "media.example",
+        "p": 443
+      },
+      "isSuccess": true,
+      "redirect": false,
+      "token": "synthetic",
+      "host": "media.example",
+      "port": 443
+    },
+    {
+      "input": {
+        "status": 0,
+        "k": "",
+        "vh": "",
+        "p": 0,
+        "rd": false
+      },
+      "isSuccess": true,
+      "redirect": false,
+      "token": "",
+      "host": "",
+      "port": 0,
+      "mooo_deviation": "mooo validates non-redirect endpoints and rejects empty token/host/port, although the response model alone accepts them. This fixture does not execute the coordinator or trailer connection."
+    },
+    {
+      "input": {
+        "status": -1,
+        "rd": true
+      },
+      "isSuccess": false,
+      "redirect": true,
+      "token": null,
+      "host": null,
+      "port": 0
+    }
+  ],
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk for Mac 26.8.0 build 2000",
+    "date": "2026-10-13",
+    "method": "Five synthetic JSON inputs executed through LocoShipResponse.initWithJSONTextString and its isSuccess/redirect/token/host/port getters in an isolated signed no-network/no-shared-app-group copy of the official binary. Probe killed; the two mandatory original sandbox preference files hashed before and after and unchanged. This covers the response model only, not coordinator or network parity.",
+    "doc": "research/bridge/SHIP-REDIRECT.md"
+  }
+}

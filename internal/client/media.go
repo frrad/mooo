@@ -57,6 +57,9 @@ func (s *session) trailerUpload(ctx context.Context, shipBody, data []byte, post
 	if err != nil {
 		return media.SendResult{}, err
 	}
+	if ship.Redirect {
+		return media.SendResult{}, media.ErrUploadRedirect
+	}
 	postBody, err := post(ship.Key)
 	if err != nil {
 		return media.SendResult{}, err
