@@ -355,15 +355,43 @@ func TestQRLoginUsesServerIntervalForPendingPoll(t *testing.T) {
 	original := qrPollInterval
 	qrPollInterval = 0
 	t.Cleanup(func() { qrPollInterval = original })
-	if _, err := login.Wait(context.Background()); err != nil {
-		t.Fatal(err)
-	}
 	started := time.Now()
 	if _, err := login.Wait(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if elapsed := time.Since(started); elapsed < 900*time.Millisecond {
 		t.Fatalf("pending server interval was not honored: %v", elapsed)
+	}
+}
+
+// Regression: a pending poll returned the QR step again, so the command
+// framework posted the same QR code every few seconds until approval.
+func TestQRLoginPendingPollsDoNotRepeatQRStep(t *testing.T) {
+	backend := newFakeQRBackend(t, `{"status":0,"user":{"userId":42},"accessToken":"access","refreshToken":"refresh","tokenType":"bearer"}`)
+	pending := qrPollResult{Result: registration.QRPollResult{Kind: registration.QRPollServerError, ServerError: &registration.ServerErrorEnvelope{Status: -150}}}
+	backend.pollSequence = []qrPollResult{pending, pending, backend.poll}
+	login := newQRTestLogin(t, backend)
+	login.completeLogin = func(context.Context, int64) (*bridgev2.LoginStep, error) {
+		return &bridgev2.LoginStep{Type: bridgev2.LoginStepTypeComplete}, nil
+	}
+	if _, err := login.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	original := qrPollInterval
+	qrPollInterval = 0
+	t.Cleanup(func() { qrPollInterval = original })
+	step, err := login.Wait(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if step.Type != bridgev2.LoginStepTypeComplete {
+		t.Fatalf("Wait returned %q after pending polls, want the completion step", step.StepID)
+	}
+	backend.mu.Lock()
+	pollCalls := backend.pollCalls
+	backend.mu.Unlock()
+	if pollCalls != 3 {
+		t.Fatalf("poll calls = %d, want 3 in one Wait", pollCalls)
 	}
 }
 
@@ -424,7 +452,7 @@ func TestQRLoginSamePendingCodeExpiresBeforeNextPoll(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	step, err := login.Wait(ctx)
-	if err == nil || !strings.Contains(err.Error(), "challenge expired") || step != nil {
+	if err == nil || !errors.Is(err, errQRExpired) || step != nil {
 		t.Fatalf("same pending code expiry = step %#v, err %v", step, err)
 	}
 	backend.mu.Lock()
@@ -562,7 +590,7 @@ func TestQRLoginSameUnregisteredCodeExpiresBeforeNextPoll(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	step, err := login.Wait(ctx)
-	if err == nil || !strings.Contains(err.Error(), "challenge expired") || step != nil {
+	if err == nil || !errors.Is(err, errQRExpired) || step != nil {
 		t.Fatalf("same unregistered code expiry = step %#v, err %v", step, err)
 	}
 	backend.mu.Lock()
