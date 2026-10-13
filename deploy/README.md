@@ -2,8 +2,9 @@
 
 This image packages the current bridge. Full alpha acceptance and Beeper
 validation remain tracked in [the bridge plan](../research/bridge/PLAN.md).
-Build and configuration smoke tests do not establish Kakao enrollment or
-long-running recovery validation.
+Build and configuration smoke tests do not establish Kakao enrollment.
+Restart and outage recovery was validated on an owned test account; see
+[deployment validation](../research/bridge/DEPLOYMENT-VALIDATION.md).
 
 ## Get the image
 
@@ -92,6 +93,35 @@ startup; rollback may require restoring the offline database/profile snapshot
 with the old image. Never start old and new bridge containers against the same
 profile concurrently.
 
-The compose example deliberately does not automatically restart the process:
-current session recovery behavior is described in the bridge plan. Set a restart
-policy only when it matches the validated release behavior.
+## Restarts and recovery
+
+The compose example restarts the bridge unless you stopped it
+(`restart: unless-stopped`). This is safe because the bridge, not the
+supervisor, decides when to log in to KakaoTalk:
+
+- Inside one process the bridge reconnects on its own. After a dropped
+  connection or a network failure it waits 5, 10, 20, 40 and 60 seconds
+  between attempts, then reports `kakao-recovery-stalled` and keeps trying
+  every 15 minutes. A dead connection is usually noticed within one to three
+  minutes, by the periodic group refresh or the keepalive ping.
+- The reconnect schedule is saved with the login. A restarted process first
+  waits out a pending retry. If it restarts within five minutes of its last
+  login, for example in a crash loop, it waits as if that session had ended
+  early, so repeated crashes back off from 5 seconds to 15 minutes instead of
+  logging in on every restart. While waiting it reports
+  `kakao-reconnect-scheduled`.
+- A KICKOUT is saved and blocks every later connect, including after a
+  restart, until you log out of the bridge and log in again.
+- Some stops wait for you instead of retrying: a rejected login, an
+  unidentifiable message, or a profile that another process holds. Fix the
+  cause, then send `reconnect` to the bridge bot (or `!kakao reconnect` in
+  any room the bot is in). The command never shortens a scheduled retry.
+
+Any other supervisor works the same way. For a native binary on macOS, a
+launchd agent with `KeepAlive` is equivalent; keep its working directory and
+data outside any source checkout, and never run it at the same time as
+another copy that uses the same profile.
+
+On a laptop, recovery timers do not run while the machine sleeps, so the
+bridge reconnects a while after waking rather than on schedule. Run it on an
+always-on host if that matters.
