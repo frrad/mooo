@@ -360,7 +360,6 @@ func TestDecodePhotoMessageReportsReason(t *testing.T) {
 		"dimensions":            func(f map[string]any) { f["w"] = 0 },
 		"size":                  func(f map[string]any) { f["s"] = MaxImageBytes + 1 },
 		"checksum_hex":          func(f map[string]any) { f["cs"] = strings.Repeat("Z", 40) },
-		"checksum_missing":      func(f map[string]any) { delete(f, "cs") },
 		"checksum_length_64":    func(f map[string]any) { f["cs"] = strings.Repeat("A", 64) },
 		"checksum_length_long":  func(f map[string]any) { f["cs"] = strings.Repeat("A", 200) },
 		"media_type":            func(f map[string]any) { f["mt"] = "image/heic" },
@@ -378,5 +377,24 @@ func TestDecodePhotoMessageReportsReason(t *testing.T) {
 		if !errors.Is(err, ErrInvalidMessage) || !errors.As(err, &invalid) || invalid.Reason != reason {
 			t.Errorf("%s: err = %v", reason, err)
 		}
+	}
+}
+
+// Without a checksum the download is verified by size and image decoding only;
+// a checksum that is present must still match.
+func TestDownloadPhotoChecksumIsOptional(t *testing.T) {
+	data := syntheticJPEG(t)
+	client := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(data)), Request: req}, nil
+	})}
+	attachment := PhotoAttachment{Key: "opaque", Width: 3, Height: 2, Size: int64(len(data)), MediaType: "image/jpg",
+		URL: "https://talk.kakaocdn.net/p/file", ThumbnailURL: "https://talk.kakaocdn.net/p/thumb", ExpiresAt: 4102444800000}
+	downloaded, err := DownloadPhoto(t.Context(), client, attachment)
+	if err != nil || !bytes.Equal(downloaded, data) {
+		t.Fatalf("no checksum: bytes=%d err=%v", len(downloaded), err)
+	}
+	attachment.Checksum = strings.Repeat("A", 40)
+	if _, err := DownloadPhoto(t.Context(), client, attachment); !errors.Is(err, ErrChecksumMismatch) {
+		t.Fatalf("wrong checksum err = %v", err)
 	}
 }

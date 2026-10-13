@@ -27,6 +27,12 @@ inferred.
 - The chat-list summary (`lastMessageOfChatMessage:forExport:` at `1013b46f4`)
   renders a photo as the localized "Photo" without the caption.
 
+- Observed 2026-10-13 ([#337](https://github.com/frrad/mooo/issues/337)):
+  a photo the owner sent from their primary Android phone arrives with
+  `cs: ""` and with `rsc`, `rt` and `hfac` present, matching the model above.
+  mooo therefore accepts an empty `cs` and verifies SHA-1 only when `cs` is
+  present ([fixture](../fixtures/photo/observed-owner-android-empty-checksum.json)).
+
 ### Download
 
 - The traced LOCO trailer path (`LPTrailerController` `101654d84`,

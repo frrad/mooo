@@ -1,0 +1,28 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android (primary phone; version not recorded)",
+    "date": "2026-10-13",
+    "method": "The account owner sent one photo from their primary Android phone into an owned 1:1 chat. The bridge's opt-in gap dump (network.gap_dump_dir) captured the MSG push; a local shape reader recorded only chat-log and attachment key sets, value kinds and string lengths. All values below are synthetic; string lengths of k, rsc, rt and hfac match the observation (58, 58, 2, 10).",
+    "doc": "research/bridge/GROUP-PHOTOS.md"
+  },
+  "chat_log_message": "photo",
+  "chat_log_extra_keys": ["prevId", "msgId", "revision", "scope"],
+  "attachment": {
+    "k": "synthetic-owner-photo-key-00000000000000000000000000000000",
+    "rsc": "synthetic-owner-photo-rsc-00000000000000000000000000000000",
+    "rt": "sy",
+    "hfac": "synthetic0",
+    "url": "https://talk.kakaocdn.net/synthetic/owner-photo.jpg",
+    "thumbnailUrl": "https://talk.kakaocdn.net/synthetic/owner-thumb.jpg",
+    "thumbnailWidth": 240,
+    "thumbnailHeight": 180,
+    "expire": 4102444800000,
+    "cs": "",
+    "s": 124851,
+    "mt": "image/jpg",
+    "w": 640,
+    "h": 480
+  },
+  "expected": "Decodes as a photo and bridges as a Matrix image with the exact downloaded bytes. The Mac client's LocoChatLogPhoto has no checksum property and its download verifies only the length (research/bridge/GROUP-PHOTOS.md), so an empty cs must not reject or fail the photo."
+}
