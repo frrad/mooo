@@ -140,6 +140,27 @@ func DecodeForegroundPingInterval(body []byte) time.Duration {
 	return time.Duration(value.Int32()) * time.Second
 }
 
+// DefaultReceiveHeaderTimeout is the receive-header timeout the Mac booking
+// initializer supplies to the carriage at its one reviewed call site.
+const DefaultReceiveHeaderTimeout = 20 * time.Second
+
+// DecodeReceiveHeaderTimeout reads wifi.recvHeaderTimeout, int32 seconds, from
+// a GETCONF reply. A value below 1, an absent value, or a non-int32 value
+// falls back to DefaultReceiveHeaderTimeout. The Mac client would not arm the
+// timer for a value below 1, but the mapping from this key to its timer is
+// untraced, so this client keeps the timeout rather than disabling it.
+func DecodeReceiveHeaderTimeout(body []byte) time.Duration {
+	wifi, err := bson.Raw(body).LookupErr("wifi")
+	if err != nil || wifi.Type != bson.TypeEmbeddedDocument {
+		return DefaultReceiveHeaderTimeout
+	}
+	value, err := wifi.Document().LookupErr("recvHeaderTimeout")
+	if err != nil || value.Type != bson.TypeInt32 || value.Int32() < 1 {
+		return DefaultReceiveHeaderTimeout
+	}
+	return time.Duration(value.Int32()) * time.Second
+}
+
 // DecodeCheckinEndpoint reads the secure carriage host and port from a CHECKIN
 // reply. The port may be BSON int32 or int64 and must be in 1-65535.
 func DecodeCheckinEndpoint(body []byte) (string, int, error) {

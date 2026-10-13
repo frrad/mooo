@@ -128,6 +128,13 @@ recorded before it ran.
   previous process. The firewall was then opened. The waiting process
   connected at the saved retry time to the second, caught up, and reported
   `CONNECTED` 13 s later.
+- **Receive-header timeout (Docker, 2026-10-13).** On an image built from
+  `761f2e4` (PR #333), Kakao traffic was dropped just after a group refresh,
+  and the tester sent one synthetic text into the selected portal. The bridge
+  wrote WRITE into the dead carriage. Exactly 20.0 s later the session closed
+  with "no reply within the receive-header timeout", the Matrix send failed,
+  and the bridge reported `kakao-disconnected`. After the firewall opened, the
+  first 5 s retry reconnected and caught up. The text was not resent.
 
 Not live-tested: a real `KICKOUT` (requires revoking and re-enrolling the lab
 device), a server-sent `CHANGESVR`, and an owner cleanup that times out. Each
