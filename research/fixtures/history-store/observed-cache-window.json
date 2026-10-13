@@ -1,0 +1,30 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "mooo production Go client, owned existing Mac-derived secondary profile",
+    "date": "2026-10-13",
+    "method": "One selected regular group after exact three-owned-account roster verification. A first bounded source page held one record; its stored bounds were reused for one next-page source request. Warm limited/full reads and profile restart used the acquired store. Restart HTTP and LOCO dialers rejected every network attempt. No message sends, read acknowledgments or delivery commits.",
+    "doc": "research/bridge/GROUP-HISTORY.md"
+  },
+  "evidence": "HST-CACHE-LIVE-001",
+  "observations": {
+    "first_source_page_records": 1,
+    "next_source_page_records": 4,
+    "next_page_source_syncmsg_replies": 1,
+    "first_delivery_limit": 1,
+    "stored_undelivered_tail_records": 3,
+    "warm_extra_syncmsg_replies": 0,
+    "restart_http_attempts": 0,
+    "restart_loco_dial_attempts": 0,
+    "identity_content_order_equal": true,
+    "delivery_read_cursors_unchanged": true,
+    "returned_event_kinds": {"message_gap": 2, "post_message": 1, "text_message": 1}
+  },
+  "limits": [
+    "The initial probe incorrectly required more than one record in its first page; it stopped after that assertion and released the profile. This is not a source or cache failure.",
+    "The continuation verified the four-record page; it made one additional source request, not an automatic retry.",
+    "SDK cache mechanics only: not an official-client startup/open/scroll observation or a live encrypted Matrix/Beeper insertion test.",
+    "Local read-cursor equality does not establish server unread neutrality.",
+    "Two acquired records decode as explicit message gaps; their content parity remains unresolved."
+  ]
+}

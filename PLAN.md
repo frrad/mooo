@@ -38,7 +38,13 @@ source requests. Cloud backup/restore remains out of scope.
       request coalescing. Reservations survive profile restart and shutdown joins
       admission persistence. This is currently profile-scoped; metadata/media,
       bulk calls and cross-profile account ownership remain to be integrated.
-- [ ] Add a durable account-scoped history store and acquisition worker, consumed
+- [x] First acquired-store slice: full validated zero-held-count pages persist in
+      a private account/device-bound store, independently of delivery. Cache reads
+      reuse connected acquired prefixes and apply targeted edits/deletions; restart
+      and limited delivery retain the undelivered tail. HST-CACHE-LIVE-001 verifies
+      one owned four-record page with restart transports denied. This is SDK cache
+      acceptance; bulk acquisition and the three end-to-end flow gates remain open.
+- [ ] Complete the durable account-scoped history store and acquisition worker, consumed
       by actual client/bridge paths. Store private content only in the operator's
       profile; preserve source identities and explicit unavailable boundaries.
 - [ ] Make every acquisition entry point obey one account-wide in-flight limit,

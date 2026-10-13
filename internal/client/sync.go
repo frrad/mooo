@@ -35,11 +35,31 @@ func (c *Client) syncMessages(ctx context.Context, request syncmsg.Request) (syn
 	fetch := func(ctx context.Context) (syncmsg.Response, error) {
 		c.readMu.Lock()
 		defer c.readMu.Unlock()
-		return withSession(c, ctx, func(session *session) (syncmsg.Response, error) { return session.syncMessages(ctx, request) })
+		if request.Count == 0 && c.historyStore != nil {
+			cached, found, err := c.historyStore.lookup(request)
+			if err != nil || found {
+				return cached, err
+			}
+		}
+		response, err := withSession(c, ctx, func(session *session) (syncmsg.Response, error) { return session.syncMessages(ctx, request) })
+		if err == nil && request.Count == 0 && c.historyStore != nil {
+			if err = c.historyStore.save(request, response); err != nil {
+				return syncmsg.Response{}, err
+			}
+			projected, found, err := c.historyStore.lookup(request)
+			if err != nil {
+				return syncmsg.Response{}, err
+			}
+			if !found {
+				return syncmsg.Response{}, ErrHistoryTargetUnresolved
+			}
+			return projected, nil
+		}
+		return response, err
 	}
 	c.mu.Lock()
 	admission := c.historyAdmission
-	if request.Count == 0 && admission != nil {
+	if request.Count == 0 && (admission != nil || c.historyStore != nil) {
 		if c.closed {
 			c.mu.Unlock()
 			return syncmsg.Response{}, ErrClientClosed
@@ -50,7 +70,19 @@ func (c *Client) syncMessages(ctx context.Context, request syncmsg.Request) (syn
 		if _, err := request.MarshalBSON(); err != nil {
 			return syncmsg.Response{}, err
 		}
-		return admission.run(ctx, request, fetch)
+		if err := ctx.Err(); err != nil {
+			return syncmsg.Response{}, err
+		}
+		if c.historyStore != nil {
+			cached, found, err := c.historyStore.lookup(request)
+			if err != nil || found {
+				return cached, err
+			}
+		}
+		if admission != nil {
+			return admission.run(ctx, request, fetch)
+		}
+		return fetch(ctx)
 	}
 	c.mu.Unlock()
 	return fetch(ctx)
@@ -257,6 +289,12 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 			progressed = true
 		}
 		if current == targetMax {
+			projected, projectionErr := c.projectAcquiredEvents(result)
+			if projectionErr != nil {
+				persistErr := c.checkpointWrite(func(checkpoint *continuity.Store) error { return checkpoint.RecordGap(chatID, gapStart, targetMax) })
+				return nil, errors.Join(ErrGapUnresolved, projectionErr, persistErr)
+			}
+			result = projected
 			if checkpointState.HasGapThrough(chatID, targetMax) {
 				if err := c.checkpointWrite(func(checkpoint *continuity.Store) error { return checkpoint.ResolveGapThrough(chatID, targetMax) }); err != nil {
 					return nil, err

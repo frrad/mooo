@@ -57,6 +57,7 @@ type Client struct {
 	pendingCommits   map[int64][]int64
 	readMu           sync.Mutex
 	historyAdmission *historyAdmission
+	historyStore     *historyStore
 	gaps             gapFunc
 }
 
@@ -146,6 +147,13 @@ func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*
 		_ = lease.Close()
 		return nil, err
 	}
+	history, err := openHistoryStore(statePath+".history-store", state.Credentials.UserID, state.Identity.DeviceUUID)
+	if err != nil {
+		admission.stop()
+		_ = lease.Close()
+		return nil, err
+	}
+	client.historyStore = history
 	client.historyAdmission = admission
 	client.checkpoint = checkpoint
 	client.gaps = newGapFunc(options.GapObserver)
@@ -359,7 +367,7 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 	c.mu.Unlock()
 	go func() {
 		defer close(done)
-		decodeEventStreamWithTerminalStop(raw, stream, checkpoint, c.queueCommit, c.interruptTerminal, stop, c.gaps)
+		decodeEventStreamWithTerminalStop(raw, stream, checkpoint, c.queueCommit, c.interruptTerminal, stop, c.gaps, c.observeHistoryPacket)
 	}()
 	return stream, nil
 }
@@ -390,7 +398,7 @@ type messagePosition struct {
 
 const observedPositionLimit = 4096
 
-func decodeEventStreamWithTerminalStop(raw <-chan loco.Packet, output chan<- events.Result, checkpoint *continuity.Store, delivered func(int64, int64), terminal func(), stop <-chan struct{}, gaps gapFunc) {
+func decodeEventStreamWithTerminalStop(raw <-chan loco.Packet, output chan<- events.Result, checkpoint *continuity.Store, delivered func(int64, int64), terminal func(), stop <-chan struct{}, gaps gapFunc, observers ...func(loco.Packet, events.Event) error) {
 	defer close(output)
 	seen := make(map[messagePosition]struct{})
 	order := make([]messagePosition, 0, observedPositionLimit)
@@ -411,6 +419,18 @@ func decodeEventStreamWithTerminalStop(raw <-chan loco.Packet, output chan<- eve
 		}
 		event, err := events.DecodeForDelivery(packet)
 		if err == nil {
+			for _, observe := range observers {
+				if err = observe(packet, event); err != nil {
+					break
+				}
+			}
+			if err != nil {
+				if terminal != nil {
+					terminal()
+				}
+				_ = emitEventResult(output, events.Result{Err: err}, stop)
+				return
+			}
 			gaps.observe(packet.Header.Method, event, packet.Body)
 		}
 		if err != nil && (packet.Header.Method == "MSG" || errors.Is(err, events.ErrUnidentifiableMembership)) {
