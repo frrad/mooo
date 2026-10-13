@@ -732,7 +732,7 @@ func (l *qrLogin) cancelRemote(ctx context.Context) bool {
 }
 
 func qrDisplayStep(data string) *bridgev2.LoginStep {
-	return &bridgev2.LoginStep{Type: bridgev2.LoginStepTypeDisplayAndWait, StepID: "com.github.frrad.mooo.qr", Instructions: "Scan this QR code with KakaoTalk on your phone: tap ⋯ at the bottom right, then QR code.", DisplayAndWaitParams: &bridgev2.LoginDisplayAndWaitParams{Type: bridgev2.LoginDisplayTypeQR, Data: data, CanCancel: true}}
+	return &bridgev2.LoginStep{Type: bridgev2.LoginStepTypeDisplayAndWait, StepID: "com.github.frrad.mooo.qr", Instructions: "Scan this QR code with KakaoTalk on your phone: open the scanner from the search icon at the top right, or from the More tab.", DisplayAndWaitParams: &bridgev2.LoginDisplayAndWaitParams{Type: bridgev2.LoginDisplayTypeQR, Data: data, CanCancel: true}}
 }
 
 func newQRProfileName() (string, error) {
