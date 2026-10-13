@@ -1,0 +1,23 @@
+{
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk macOS 26.8.0 build 2000",
+    "date": "2026-10-13",
+    "method": "Executed the official NTChatPhoto media-data consumer with synthetic extra fields rsc, rt, __ext__uploadHash, width and height. The resulting dictionary was bridged and serialized to JSON offline.",
+    "doc": "research/bridge/SHIP-REDIRECT.md"
+  },
+  "input": {
+    "rsc": "synthetic-resource",
+    "rt": "vk",
+    "__ext__uploadHash": "synthetic0",
+    "width": 3,
+    "height": 2
+  },
+  "expected": {
+    "resource": "synthetic-resource",
+    "resourceType": "vk",
+    "hfac": "synthetic0",
+    "width": 3,
+    "height": 2
+  }
+}

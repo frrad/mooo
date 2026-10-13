@@ -1,0 +1,37 @@
+{
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk macOS 26.8.0 build 2000",
+    "date": "2026-10-13",
+    "method": "Executed the official LocoWriteMediaRequest initializer and JSONObject serializer with synthetic inputs in an isolated copy without network or shared app groups. This covers the request model, not a complete official send.",
+    "doc": "research/bridge/SHIP-REDIRECT.md"
+  },
+  "input": {
+    "chat_id": 5000,
+    "message_id": 7,
+    "resource": "synthetic-resource",
+    "resource_type": "vk",
+    "upload_key": "synthetic0",
+    "width": 3,
+    "height": 2,
+    "caption": "synthetic caption"
+  },
+  "command": "WRITEMEDIA",
+  "expected": {
+    "photo": {
+      "hfac": "synthetic0",
+      "resourceType": "vk",
+      "width": 3,
+      "height": 2,
+      "resource": "synthetic-resource"
+    },
+    "noSeen": false,
+    "type": 2,
+    "noLight": false,
+    "extra": "{\"cmt\":\"synthetic caption\"}",
+    "silence": false,
+    "scope": 1,
+    "msgId": 7,
+    "chatId": 5000
+  }
+}

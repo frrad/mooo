@@ -1,0 +1,31 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "mooo Client owned disposable Mac-profile lab account; official Mac 26.8.0 caller independently traced",
+    "date": "2026-10-13",
+    "method": "Fresh synthetic JPEG uploads after SHIP redirect and HTTP prepare. Local filename produced HTTP 404; filename derived from prepared resource produced HTTP 200. Fresh production SendImage PNG then completed WRITEMEDIA and downloaded exact bytes with its caption. All ticket and resource values here are synthetic.",
+    "doc": "research/bridge/SHIP-REDIRECT.md"
+  },
+  "resource": "synthetic/bucket/object/server-photo.jpg",
+  "local_filename": "synthetic.jpg",
+  "expected_multipart_filename": "server-photo.jpg",
+  "wrong_filename_response": {
+    "status": 404,
+    "body": {
+      "msg": "Not found upload ready key."
+    }
+  },
+  "accepted_response": {
+    "status": 200,
+    "body": {
+      "msg": "ok",
+      "info": [
+        {
+          "filename": "server-photo.jpg",
+          "length": 21,
+          "content_type": "image"
+        }
+      ]
+    }
+  }
+}

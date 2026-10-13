@@ -1,0 +1,38 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "mooo production Client.SendImage with owned disposable Mac-profile account",
+    "date": "2026-10-13",
+    "method": "Sent one fresh 1400x1400 synthetic PNG through SHIP redirect, prepare, two Kage chunks and WRITEMEDIA; independently downloaded exact bytes from the stored photo and verified caption rendering in the owned recipient Android 26.8.2 viewer. Tickets and filenames are replaced with synthetic values.",
+    "doc": "research/bridge/SHIP-REDIRECT.md"
+  },
+  "size": 5884063,
+  "chunk_size": 4194304,
+  "resource": "synthetic/bucket/object/server-photo.png",
+  "requests": [
+    {
+      "offset": 0,
+      "bytes": 4194304
+    },
+    {
+      "offset": 4194304,
+      "bytes": 1689759
+    }
+  ],
+  "responses": [
+    {
+      "offset": "4194304",
+      "msg": "ok"
+    },
+    {
+      "msg": "ok",
+      "info": [
+        {
+          "filename": "server-photo.png",
+          "length": 5884063,
+          "content_type": "image"
+        }
+      ]
+    }
+  ]
+}
