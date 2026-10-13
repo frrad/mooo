@@ -27,7 +27,8 @@ debug_dump_dir: ""
 
 # Optional mxc:// URI of an image to publish as the KakaoTalk network icon.
 # It is published as the m.bridge protocol and network avatar_url and used as
-# the avatar of the bridge space and bot. Beeper Desktop (4.3) shows the
+# the avatar of the bridge space and management room when they are created;
+# the bot's own avatar is appservice.bot.avatar. Beeper Desktop (4.3) shows the
 # network avatar as the account's sidebar icon; its chat-list badges come
 # from its own built-in icon set and ignore this. Upload an image you are
 # entitled to use to your homeserver and paste its mxc:// URI here. Existing
