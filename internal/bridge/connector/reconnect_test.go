@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
+	"maunium.net/go/mautrix/bridgev2"
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/events"
@@ -256,15 +260,189 @@ func TestCleanupRetryFailureLeavesOwnerRetryableWithoutChannelReuse(t *testing.T
 	}
 }
 
-func TestRecoveryAttemptBudgetIsBounded(t *testing.T) {
-	if len(ordinaryRecoveryDelays) != maxRecoveryAttempts || len(rateLimitedRecoveryDelays) != maxRecoveryAttempts {
-		t.Fatalf("recovery policy lengths = %d/%d, want %d", len(ordinaryRecoveryDelays), len(rateLimitedRecoveryDelays), maxRecoveryAttempts)
+func TestRecoveryKeepsRetryingPastFastScheduleAndReportsStall(t *testing.T) {
+	first := &fakeKakao{stream: make(chan events.Result)}
+	recovered := &fakeKakao{stream: make(chan events.Result)}
+	var opens atomic.Int32
+	kc, harness := newTestClient(t, func() (kakaoClient, error) {
+		switch n := opens.Add(1); {
+		case n == 1:
+			return first, nil
+		case n <= 8:
+			return &fakeKakao{connectErr: io.EOF}, nil
+		default:
+			return recovered, nil
+		}
+	})
+	var mu sync.Mutex
+	var delays []time.Duration
+	kc.wait = func(_ context.Context, delay time.Duration) error {
+		mu.Lock()
+		delays = append(delays, delay)
+		mu.Unlock()
+		return nil
 	}
-	kc, _ := newTestClient(t, func() (kakaoClient, error) { return nil, errors.New("unused") })
-	kc.recoveryTry = maxRecoveryAttempts
-	if kc.retryAfter(client.ErrClosed, kc.generation) {
-		t.Fatal("recovery scheduled past the bounded attempt budget")
+	kc.Connect(context.Background())
+	close(first.stream)
+	waitFor(t, func() bool { return opens.Load() == 9 && kc.IsLoggedIn() })
+
+	mu.Lock()
+	got := append([]time.Duration(nil), delays...)
+	mu.Unlock()
+	want := []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 60 * time.Second, 15 * time.Minute, 15 * time.Minute, 15 * time.Minute}
+	if len(got) != len(want) {
+		t.Fatalf("recovery delays = %v, want %v", got, want)
 	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("recovery delays = %v, want %v", got, want)
+		}
+	}
+	stalls := 0
+	for _, state := range harness.allStates() {
+		if state.Error == stateRecoveryStalled {
+			stalls++
+			if state.StateEvent != status.StateUnknownError || state.Message == "" {
+				t.Fatalf("stalled state = %+v, want UNKNOWN_ERROR with a message", state)
+			}
+		}
+	}
+	if stalls != 1 {
+		t.Fatalf("stalled states = %d, want exactly 1 when the slow schedule begins", stalls)
+	}
+	if harness.lastState().StateEvent != status.StateConnected {
+		t.Fatalf("final state = %+v, want CONNECTED", harness.lastState())
+	}
+	close(recovered.stream)
+	kc.Disconnect()
+}
+
+func TestRateLimitedRecoveryAlsoKeepsRetrying(t *testing.T) {
+	limited := client.StatusError{Command: "LOGINLIST", Status: -328}
+	if got := recoveryDelay(limited, fastRecoveryAttempts); got != slowRecoveryDelay {
+		t.Fatalf("-328 delay after the fast schedule = %s, want %s", got, slowRecoveryDelay)
+	}
+	if got := recoveryDelay(limited, fastRecoveryAttempts+10); got != slowRecoveryDelay {
+		t.Fatalf("-328 delay long after the fast schedule = %s, want %s", got, slowRecoveryDelay)
+	}
+}
+
+func TestFirstConnectTransportFailureRetries(t *testing.T) {
+	connected := &fakeKakao{stream: make(chan events.Result)}
+	var opens atomic.Int32
+	kc, harness := newTestClient(t, func() (kakaoClient, error) {
+		if opens.Add(1) == 1 {
+			return &fakeKakao{connectErr: io.EOF}, nil
+		}
+		return connected, nil
+	})
+	kc.wait = func(context.Context, time.Duration) error { return nil }
+	kc.Connect(context.Background())
+	waitFor(t, func() bool { return opens.Load() == 2 && kc.IsLoggedIn() })
+	if harness.lastState().StateEvent != status.StateConnected {
+		t.Fatalf("final state = %+v, want CONNECTED", harness.lastState())
+	}
+	close(connected.stream)
+	kc.Disconnect()
+}
+
+func TestFirstConnectLoginRejectionDoesNotRetry(t *testing.T) {
+	var opens atomic.Int32
+	kc, harness := newTestClient(t, func() (kakaoClient, error) {
+		opens.Add(1)
+		return &fakeKakao{connectErr: client.ErrLogin}, nil
+	})
+	kc.wait = func(context.Context, time.Duration) error {
+		t.Error("login rejection scheduled a retry")
+		return nil
+	}
+	kc.Connect(context.Background())
+	if got := opens.Load(); got != 1 {
+		t.Fatalf("opens = %d, want 1", got)
+	}
+	if state := harness.lastState(); state.Error != stateConnectFailed {
+		t.Fatalf("final state = %+v, want %s", state, stateConnectFailed)
+	}
+	kc.Disconnect()
+}
+
+// changeServerSessions returns an open function whose first sessions each
+// deliver CHANGESVR as soon as they subscribe, and whose later sessions stay
+// connected. The returned closer ends the stable session.
+func changeServerSessions(t *testing.T, endedEarly int32) (func() (kakaoClient, error), *atomic.Int32, func()) {
+	t.Helper()
+	stable := &fakeKakao{stream: make(chan events.Result)}
+	var opens atomic.Int32
+	open := func() (kakaoClient, error) {
+		if opens.Add(1) > endedEarly {
+			return stable, nil
+		}
+		stream := make(chan events.Result, 1)
+		stream <- events.Result{Event: events.ChangeServer{}}
+		close(stream)
+		return &fakeKakao{stream: stream}, nil
+	}
+	return open, &opens, func() { close(stable.stream) }
+}
+
+func TestRepeatedChangeServerRightAfterLoginEscalatesBackoff(t *testing.T) {
+	open, opens, closeStable := changeServerSessions(t, 4)
+	kc, _ := newTestClient(t, open)
+	fixed := time.Date(2026, 10, 11, 0, 0, 0, 0, time.UTC)
+	kc.now = func() time.Time { return fixed }
+	var mu sync.Mutex
+	var delays []time.Duration
+	kc.wait = func(_ context.Context, delay time.Duration) error {
+		mu.Lock()
+		delays = append(delays, delay)
+		mu.Unlock()
+		return nil
+	}
+	kc.Connect(context.Background())
+	waitFor(t, func() bool { return opens.Load() == 5 && kc.IsLoggedIn() })
+	mu.Lock()
+	got := append([]time.Duration(nil), delays...)
+	mu.Unlock()
+	want := []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second}
+	if len(got) != len(want) {
+		t.Fatalf("delays after short sessions = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("delays after short sessions = %v, want %v", got, want)
+		}
+	}
+	closeStable()
+	kc.Disconnect()
+}
+
+func TestStableSessionRestartsRecoverySchedule(t *testing.T) {
+	open, opens, closeStable := changeServerSessions(t, 2)
+	kc, _ := newTestClient(t, open)
+	var clock atomic.Int64
+	start := time.Date(2026, 10, 11, 0, 0, 0, 0, time.UTC)
+	kc.now = func() time.Time {
+		// Every reading is one stable session later than the previous one.
+		return start.Add(time.Duration(clock.Add(1)) * stableSessionDuration)
+	}
+	var mu sync.Mutex
+	var delays []time.Duration
+	kc.wait = func(_ context.Context, delay time.Duration) error {
+		mu.Lock()
+		delays = append(delays, delay)
+		mu.Unlock()
+		return nil
+	}
+	kc.Connect(context.Background())
+	waitFor(t, func() bool { return opens.Load() == 3 && kc.IsLoggedIn() })
+	mu.Lock()
+	got := append([]time.Duration(nil), delays...)
+	mu.Unlock()
+	if len(got) != 2 || got[0] != 5*time.Second || got[1] != 5*time.Second {
+		t.Fatalf("delays after stable sessions = %v, want [5s 5s]", got)
+	}
+	closeStable()
+	kc.Disconnect()
 }
 
 func TestStaleBootstrapCannotPublishConnectedState(t *testing.T) {
@@ -298,19 +476,53 @@ func TestStaleBootstrapCannotPublishConnectedState(t *testing.T) {
 	}
 }
 
-func TestKickoutIsTerminalAndDoesNotReopen(t *testing.T) {
+func TestKickoutIsPersistedAndBlocksReconnectAfterRestart(t *testing.T) {
+	ctx := context.Background()
 	first := &fakeKakao{stream: make(chan events.Result, 1)}
 	var opens atomic.Int32
-	kc, harness := newTestClient(t, func() (kakaoClient, error) {
+	kc, harness, br := newFrameworkTestClient(t, func() (kakaoClient, error) {
 		opens.Add(1)
 		return first, nil
 	})
+	user := kc.login.User
+	record := kc.login.UserLogin
 	kc.wait = func(context.Context, time.Duration) error { return nil }
-	kc.Connect(context.Background())
-	first.stream <- events.Result{Event: events.Kickout{}}
+	kc.Connect(ctx)
+	first.stream <- events.Result{Event: events.Kickout{Reason: 7}}
 	close(first.stream)
-	waitFor(t, func() bool { return opens.Load() == 1 && harness.lastState().StateEvent == status.StateBadCredentials })
+	waitFor(t, func() bool { return harness.lastState().StateEvent == status.StateBadCredentials })
+	if state := harness.lastState(); state.Error != stateKickedOut || !strings.Contains(state.Message, "reason 7") {
+		t.Fatalf("kickout state = %+v, want %s naming reason 7", state, stateKickedOut)
+	}
 	kc.Disconnect()
+	if got := opens.Load(); got != 1 {
+		t.Fatalf("opens after kickout = %d, want 1", got)
+	}
+
+	// A restart loads the saved login. It must not open the profile again.
+	reloaded, err := br.DB.UserLogin.GetByID(ctx, record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, ok := reloaded.Metadata.(*UserLoginMetadata)
+	if !ok || saved.KickedOut == nil || saved.KickedOut.Reason != 7 {
+		t.Fatalf("saved metadata = %+v, want kickout reason 7", reloaded.Metadata)
+	}
+	restartedLogin := &bridgev2.UserLogin{UserLogin: reloaded, Bridge: br, User: user, Log: zerolog.Nop()}
+	restarted := newKakaoClient(restartedLogin, newBridgeStore(br.DB), testSelfID, func() (kakaoClient, error) {
+		t.Error("restarted bridge opened a kicked-out profile")
+		return nil, errors.New("unexpected open")
+	})
+	restartedHarness := &testHarness{}
+	restarted.sendState = restartedHarness.sendState
+	restarted.Connect(ctx)
+	if state := restartedHarness.lastState(); state.StateEvent != status.StateBadCredentials || state.Error != stateKickedOut {
+		t.Fatalf("restarted state = %+v, want BAD_CREDENTIALS %s", state, stateKickedOut)
+	}
+	if restarted.IsLoggedIn() {
+		t.Fatal("restarted kicked-out login reports logged in")
+	}
+	restarted.Disconnect()
 }
 
 func TestChangeServerCleansUpAndReopens(t *testing.T) {

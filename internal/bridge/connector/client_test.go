@@ -340,6 +340,13 @@ func (h *testHarness) sendState(state status.BridgeState) {
 	h.states = append(h.states, state)
 }
 
+// allStates returns a copy of every state sent so far.
+func (h *testHarness) allStates() []status.BridgeState {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]status.BridgeState(nil), h.states...)
+}
+
 func (h *testHarness) stateEvents() []status.BridgeStateEvent {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -366,7 +373,30 @@ func newTestClient(t *testing.T, open func() (kakaoClient, error)) (*KakaoClient
 	harness := &testHarness{}
 	kc.queue = harness.queue
 	kc.sendState = harness.sendState
+	kc.saveLogin = func(context.Context) error { return nil }
 	return kc, harness
+}
+
+// newFrameworkTestClient is newTestClient over a framework bridge, for tests
+// that save the login. The login record is stored for testSelfID.
+func newFrameworkTestClient(t *testing.T, open func() (kakaoClient, error)) (*KakaoClient, *testHarness, *bridgev2.Bridge) {
+	t.Helper()
+	ctx := context.Background()
+	br, _ := newFrameworkBridge(t, frameworkOpts{})
+	user, err := br.GetUserByMXID(ctx, id.UserID("@owner:test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := &database.UserLogin{BridgeID: br.ID, UserMXID: user.MXID, ID: makeUserLoginID(testSelfID), Metadata: &UserLoginMetadata{Profile: "synthetic-profile"}}
+	if err = br.DB.UserLogin.Insert(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	login := &bridgev2.UserLogin{UserLogin: record, Bridge: br, User: user, Log: zerolog.Nop()}
+	kc := newKakaoClient(login, newBridgeStore(br.DB), testSelfID, open)
+	harness := &testHarness{}
+	kc.queue = harness.queue
+	kc.sendState = harness.sendState
+	return kc, harness, br
 }
 
 func convertedBody(t *testing.T, converted *bridgev2.ConvertedMessage) *event.MessageEventContent {
@@ -787,20 +817,6 @@ func TestConnectRunsEventLoopAndReportsSessionEnd(t *testing.T) {
 	}
 }
 
-func TestKickoutReportsBadCredentials(t *testing.T) {
-	fake := &fakeKakao{stream: make(chan events.Result, 2)}
-	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
-
-	kc.Connect(context.Background())
-	fake.stream <- events.Result{Event: events.Kickout{Reason: 1}}
-	close(fake.stream)
-
-	waitForState(t, harness, status.StateBadCredentials)
-	if harness.lastState().Error != stateKickedOut {
-		t.Fatalf("error = %q", harness.lastState().Error)
-	}
-}
-
 func TestChangeServerReportsDistinctTerminalDisconnect(t *testing.T) {
 	fake := &fakeKakao{stream: make(chan events.Result, 2)}
 	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
@@ -827,7 +843,8 @@ func TestTerminalNoticeStopsLaterEvents(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := &fakeKakao{stream: make(chan events.Result, 3)}
-			kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+			// A kickout is saved on the login, which needs the framework.
+			kc, harness, _ := newFrameworkTestClient(t, func() (kakaoClient, error) { return fake, nil })
 
 			kc.Connect(context.Background())
 			fake.stream <- events.Result{Event: tc.event}

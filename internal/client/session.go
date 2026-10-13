@@ -29,6 +29,9 @@ var (
 	ErrLogin             = errors.New("client: login rejected")
 	ErrClosed            = errors.New("client: session closed")
 	ErrProtocol          = errors.New("client: protocol error")
+	// errReceiveHeaderTimeout is the close cause when a request got no reply
+	// within the receive-header timeout. It wraps ErrClosed.
+	errReceiveHeaderTimeout = fmt.Errorf("%w: no reply within the receive-header timeout", ErrClosed)
 )
 
 // protocolErr reports a malformed or unexpected reply, naming the command
@@ -38,13 +41,18 @@ func protocolErr(command, field string) error {
 }
 
 // stageErr wraps a bootstrap or login failure with the stage that failed
-// and the cause's text. The cause is formatted with %v, not %w, so callers
-// classify the failure only by sentinel (errBootstrap or ErrLogin), exactly
-// as before the cause was attached: a network cause must not make a
-// rejected bootstrap look like a retryable transport error. Causes come
-// from net, tls, bson, loco framing and the booking/sessionlogin decoders,
-// none of which include request bodies or credentials.
+// and the cause. A bootstrap cause stays reachable through errors.Is and
+// errors.As: bootstrap runs before LOGINLIST and sends no credentials, so the
+// connector may retry a network failure there. A login cause is formatted
+// with %v, not %w, so a login failure is classified only as ErrLogin: a
+// transport error during a request that carried credentials must not look
+// retryable. Causes come from net, tls, bson, loco framing and the
+// booking/sessionlogin decoders, none of which include request bodies or
+// credentials.
 func stageErr(sentinel error, stage string, cause error) error {
+	if sentinel == errBootstrap {
+		return fmt.Errorf("%w: %s: %w", sentinel, stage, cause)
+	}
 	return fmt.Errorf("%w: %s: %v", sentinel, stage, cause)
 }
 
@@ -96,6 +104,22 @@ type session struct {
 	bootstrapDone      bool
 	bootstrapPushes    []loco.Packet
 	readLoopStarted    bool
+	// headerClock and headerTimeout arm one receive-header timer per written
+	// request; headerTimers holds the armed ones by packet ID. A nil clock or
+	// a non-positive timeout arms nothing. mu guards headerTimers.
+	headerClock   relativeTimer
+	headerTimeout time.Duration
+	headerTimers  map[uint32]*headerTimer
+	// closeCause, when set, replaces the read error delivered to pending
+	// requests after the session closes itself.
+	closeCause error
+}
+
+// headerTimer is one armed receive-header timer. A reply disarms it only when
+// it carries the same packet ID and method.
+type headerTimer struct {
+	method string
+	handle timerHandle
 }
 
 func newSession(scheduler lifecycleScheduler) *session {
@@ -156,13 +180,21 @@ type requestResult struct {
 
 type wireDialer func(context.Context, string, int) (*wireConn, error)
 
-const defaultPingInterval = 180 * time.Second
+const defaultPingInterval = booking.DefaultPingInterval
 const defaultPingRequestTimeout = 15 * time.Second
 
 type pingSessionOptions struct {
-	clock                  relativeTimer
-	interval               time.Duration
-	timeout                time.Duration
+	clock    relativeTimer
+	interval time.Duration
+	// serverInterval replaces interval with GETCONF's wifi.fgPingItv, as
+	// the Mac client does.
+	serverInterval bool
+	timeout        time.Duration
+	// headerTimeout is the receive-header timeout, armed on clock for every
+	// request written on the carriage. serverHeaderTimeout replaces it with
+	// GETCONF's wifi.recvHeaderTimeout.
+	headerTimeout          time.Duration
+	serverHeaderTimeout    bool
 	beforeBootstrapRequest func()
 }
 
@@ -203,7 +235,10 @@ type sessionConfig struct {
 
 // realtimePingOptions is the production keepalive policy.
 func realtimePingOptions() pingSessionOptions {
-	return pingSessionOptions{clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout}
+	return pingSessionOptions{
+		clock: realtimeTimer{}, interval: defaultPingInterval, timeout: defaultPingRequestTimeout, serverInterval: true,
+		headerTimeout: booking.DefaultReceiveHeaderTimeout, serverHeaderTimeout: true,
+	}
 }
 
 // connectSession performs GETCONF, CHECKIN, secure carriage setup, and
@@ -239,6 +274,12 @@ func connectSession(ctx context.Context, state authstate.State, config sessionCo
 	hosts, ports, err := booking.DecodeBookingTargets(bookingReply.Body)
 	if err != nil {
 		return nil, stageErr(errBootstrap, "getconf", err)
+	}
+	if pingOptions.serverInterval {
+		pingOptions.interval = booking.DecodeForegroundPingInterval(bookingReply.Body)
+	}
+	if pingOptions.serverHeaderTimeout {
+		pingOptions.headerTimeout = booking.DecodeReceiveHeaderTimeout(bookingReply.Body)
 	}
 
 	checkinBody, err := (booking.CheckinRequest{
@@ -278,6 +319,8 @@ func connectSession(ctx context.Context, state authstate.State, config sessionCo
 		})
 	}
 	session = newSession(owner)
+	session.headerClock = pingOptions.clock
+	session.headerTimeout = pingOptions.headerTimeout
 	session.wire = carriage
 	session.bootstrapDone = false
 	session.bootstrapPushes = make([]loco.Packet, 0)
@@ -425,8 +468,10 @@ func (s *session) requestRaw(ctx context.Context, id uint32, command string, bod
 	s.queueCancelRequest()
 	if err := s.writeRequest(ctx, wire, id, command, body); err != nil {
 		s.removePending(id, result)
+		s.rearmAfterAbandon(ctx, command)
 		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, err)
 	}
+	s.armHeaderTimeout(id, command, result)
 	select {
 	case outcome := <-result:
 		if outcome.err != nil {
@@ -435,7 +480,79 @@ func (s *session) requestRaw(ctx context.Context, id uint32, command string, bod
 		return outcome.packet, nil
 	case <-ctx.Done():
 		s.removePending(id, result)
+		s.rearmAfterAbandon(ctx, command)
 		return loco.Packet{}, fmt.Errorf("client: %s request: %w", command, ctx.Err())
+	}
+}
+
+// rearmAfterAbandon re-arms the keepalive after the caller's context ended a
+// request without a reply, during the write or while waiting. requestRaw
+// cancelled the timer before writing, so without this a quiet session would
+// have no keepalive until another request completed. A request the caller
+// abandoned after writing still has its receive-header timer, which closes a
+// dead carriage on its own. An abandoned PING closes the session itself, and
+// a transport write failure is left to the read loop.
+func (s *session) rearmAfterAbandon(ctx context.Context, command string) {
+	if ctx.Err() != nil && command != "PING" {
+		s.queueSchedule()
+	}
+}
+
+// armHeaderTimeout arms the receive-header timer for a written request, as
+// the Mac carriage does after sending on its connected path. A reply that
+// already arrived removed the request from pending, so nothing is armed for
+// it. The timer outlives the caller: an abandoned request keeps it until a
+// reply or the timeout.
+func (s *session) armHeaderTimeout(id uint32, method string, result chan requestResult) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.headerClock == nil || s.headerTimeout <= 0 || s.closed || s.closing || s.pending[id].result != result {
+		return
+	}
+	if s.headerTimers == nil {
+		s.headerTimers = make(map[uint32]*headerTimer)
+	}
+	if previous := s.headerTimers[id]; previous != nil {
+		previous.handle.Stop()
+	}
+	timer := &headerTimer{method: method}
+	timer.handle = s.headerClock.AfterFunc(s.headerTimeout, func() { s.fireHeaderTimeout(id, timer) })
+	s.headerTimers[id] = timer
+}
+
+// fireHeaderTimeout closes the carriage when a request got no reply in time.
+// Every pending request then fails with errReceiveHeaderTimeout, and the
+// push stream closes so the owner can reconnect.
+func (s *session) fireHeaderTimeout(id uint32, timer *headerTimer) {
+	s.mu.Lock()
+	if s.headerTimers[id] != timer || s.closed || s.closing {
+		s.mu.Unlock()
+		return
+	}
+	delete(s.headerTimers, id)
+	if s.closeCause == nil {
+		s.closeCause = errReceiveHeaderTimeout
+	}
+	s.mu.Unlock()
+	_ = s.Close()
+}
+
+// disarmHeaderTimeoutLocked stops the timer for a reply's packet ID when the
+// methods match. The caller holds s.mu.
+func (s *session) disarmHeaderTimeoutLocked(header loco.Header) {
+	timer := s.headerTimers[header.PacketID]
+	if timer == nil || timer.method != header.Method {
+		return
+	}
+	timer.handle.Stop()
+	delete(s.headerTimers, header.PacketID)
+}
+
+// stopHeaderTimersLocked stops every armed timer. The caller holds s.mu.
+func (s *session) stopHeaderTimersLocked() {
+	for id, timer := range s.headerTimers {
+		timer.handle.Stop()
+		delete(s.headerTimers, id)
 	}
 }
 
@@ -453,7 +570,11 @@ func (s *session) allocateRequestIDLocked() (uint32, error) {
 		if s.nextID >= requestIDMax {
 			s.nextID = requestIDMin
 		}
-		if _, pending := s.pending[id]; !pending {
+		// An abandoned request keeps its receive-header timer, so its ID
+		// stays reserved until a reply or the timeout clears it.
+		_, pending := s.pending[id]
+		_, armed := s.headerTimers[id]
+		if !pending && !armed {
 			return id, nil
 		}
 		if s.nextID == start {
@@ -609,6 +730,7 @@ func (s *session) readLoopBody() {
 // method is not a completion and stays on the push path.
 func (s *session) dispatchPacket(packet loco.Packet) bool {
 	s.mu.Lock()
+	s.disarmHeaderTimeoutLocked(packet.Header)
 	request, ok := s.pending[packet.Header.PacketID]
 	ok = ok && request.method == packet.Header.Method
 	if ok {
@@ -654,6 +776,10 @@ func (s *session) finishRead(err error) {
 	pending := s.pending
 	s.pending = nil
 	pushes := s.pushes
+	s.stopHeaderTimersLocked()
+	if s.closeCause != nil {
+		err = s.closeCause
+	}
 	s.mu.Unlock()
 	if shouldSchedule {
 		for range pending {
@@ -679,6 +805,7 @@ func (s *session) Close() error {
 		return nil
 	}
 	s.closing = true
+	s.stopHeaderTimersLocked()
 	wire := s.wire
 	if wire == nil {
 		s.closed = true

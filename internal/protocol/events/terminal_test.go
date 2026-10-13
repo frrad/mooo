@@ -81,3 +81,48 @@ func TestDecodeTerminalPacketsPreservesMalformedAndUnknown(t *testing.T) {
 		t.Fatalf("unknown terminal-like method = %#v (%T), error = %v", event, event, err)
 	}
 }
+
+// The Mac client's KICKOUT model inherits three optional string properties
+// from its push-notice base, with no key mapping, so they arrive as top-level
+// errMsg, errUrl and errUrlLabel (static trace, macOS 26.8.0).
+func TestDecodeKickoutExplanationText(t *testing.T) {
+	body, err := bson.Marshal(bson.D{
+		{Key: "reason", Value: int32(3)},
+		{Key: "errMsg", Value: "Synthetic explanation"},
+		{Key: "errUrl", Value: "https://example.test/help"},
+		{Key: "errUrlLabel", Value: "Synthetic help"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := Decode(rawTerminalPacket("KICKOUT", body))
+	if err != nil {
+		t.Fatalf("Decode(KICKOUT) error = %v", err)
+	}
+	want := Kickout{Reason: 3, Message: "Synthetic explanation", URL: "https://example.test/help", URLLabel: "Synthetic help"}
+	if event != want {
+		t.Fatalf("KICKOUT = %#v, want %#v", event, want)
+	}
+}
+
+// A malformed optional text field must never block a terminal notice: the
+// session still has to stop. Non-string values are ignored.
+func TestDecodeKickoutIgnoresNonStringText(t *testing.T) {
+	body, err := bson.Marshal(bson.D{
+		{Key: "reason", Value: int32(3)},
+		{Key: "errMsg", Value: int32(7)},
+		{Key: "errUrl", Value: bson.D{}},
+		{Key: "errUrlLabel", Value: "Synthetic help"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := Decode(rawTerminalPacket("KICKOUT", body))
+	if err != nil {
+		t.Fatalf("Decode(KICKOUT) error = %v", err)
+	}
+	want := Kickout{Reason: 3, URLLabel: "Synthetic help"}
+	if event != want {
+		t.Fatalf("KICKOUT = %#v, want %#v", event, want)
+	}
+}

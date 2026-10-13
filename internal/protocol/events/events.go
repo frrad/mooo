@@ -143,8 +143,14 @@ func (ChangeServer) isEvent()   {}
 
 // Kickout reports a server-directed session termination notice. Reason is the
 // signed int32 value supplied by the server, or zero when it is absent.
+// Message, URL and URLLabel are the optional errMsg, errUrl and errUrlLabel
+// strings that the Mac client shows in its logout alert; each is empty when
+// absent or not a string.
 type Kickout struct {
-	Reason int32
+	Reason   int32
+	Message  string
+	URL      string
+	URLLabel string
 }
 
 func (Kickout) Kind() Kind { return KindKickout }
@@ -301,7 +307,22 @@ func decodeKickout(body []byte) (Event, error) {
 		}
 		reason = value.Int32()
 	}
-	return Kickout{Reason: reason}, nil
+	return Kickout{
+		Reason:   reason,
+		Message:  optionalString(raw, "errMsg"),
+		URL:      optionalString(raw, "errUrl"),
+		URLLabel: optionalString(raw, "errUrlLabel"),
+	}, nil
+}
+
+// optionalString returns a top-level string value, or "" when the key is
+// absent or holds another type.
+func optionalString(raw bson.Raw, key string) string {
+	value, err := raw.LookupErr(key)
+	if err != nil || value.Type != bson.TypeString {
+		return ""
+	}
+	return value.StringValue()
 }
 
 func decodeMemberRemoved(body []byte) (Event, error) {

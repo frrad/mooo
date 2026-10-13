@@ -73,3 +73,28 @@ ordered effects with an injected relative scheduler, keep owner/selector/tag
 identity explicit, and choose a terminal pending-request failure policy. Those
 choices do not describe unobserved Foundation queue timing or durable manager
 state.
+
+## Implementation (2026-10-13)
+
+The Go session arms one timer per request after writing it, using
+GETCONF's `wifi.recvHeaderTimeout` (int32 seconds; observed 20 in RC-LIVE-001).
+A value below 1, an absent value or a non-int32 value falls back to 20 seconds,
+the value at the reviewed startup call site. The Mac admission gate would arm
+nothing for a non-positive value, but the edge from this GETCONF key to the
+timeout setter is untraced, so this is an implementation decision.
+
+A reply disarms the timer when its packet ID and method match the request's,
+the unique-id pair. The timer is independent of the caller: a request whose
+caller stopped waiting keeps its timer, and its packet ID stays reserved, until
+a reply or the timeout. If no request on the Mac's
+status-3 path can be abandoned, this matches the reviewed lifetime. A reply
+that arrives before the timer is armed leaves no timer. When the timer fires,
+the session closes the carriage, every pending request fails with an error
+wrapping `ErrClosed`, and the push stream closes so the bridge reconnects. The
+PING request is armed like any other; its own 15 second request timeout
+usually closes the session first.
+
+Not modeled: main-queue execution timing, the status handler's indirect
+pending-map effects, and the exact `LocoAgent` error value. A LOGINLIST that
+times out fails as a login failure and is not retried automatically, because
+the request carried credentials.

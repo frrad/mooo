@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/frrad/mooo/internal/continuity"
+	"github.com/frrad/mooo/internal/protocol/booking"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -88,6 +89,39 @@ func TestConnectSessionArmsPingOnlyAfterLoginCompletion(t *testing.T) {
 	defer func() { _ = session.Close() }()
 	clock.runLast()
 	waitBackends(t, backends...)
+}
+
+func TestConnectSessionUsesGetConfForegroundPingInterval(t *testing.T) {
+	state := reusableTestState()
+	dialers, backends := scriptedLoginWithWifi(t,
+		bson.D{{Key: "ports", Value: bson.A{int32(443)}}, {Key: "fgPingItv", Value: int32(90)}},
+		testloco.Expect("LOGINLIST", nil, statusDocument(
+			bson.E{Key: "chatDatas", Value: bson.A{}},
+			bson.E{Key: "eof", Value: true},
+			bson.E{Key: "lastTokenId", Value: int64(11)},
+			bson.E{Key: "lbk", Value: int32(2)},
+		)),
+		testloco.HoldOpen(),
+	)
+	clock := &queuedTimerClock{}
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: pingSessionOptions{clock: clock, interval: time.Second, timeout: time.Second, serverInterval: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.mu.Lock()
+	delays := append([]time.Duration(nil), clock.delays...)
+	clock.mu.Unlock()
+	if len(delays) == 0 || delays[len(delays)-1] != 90*time.Second {
+		t.Fatalf("ping delays = %v, want the GETCONF interval 1m30s", delays)
+	}
+	_ = session.Close()
+	waitBackends(t, backends...)
+}
+
+func TestRealtimePingOptionsFollowServerInterval(t *testing.T) {
+	if !realtimePingOptions().serverInterval {
+		t.Fatal("production keepalive ignores the GETCONF interval")
+	}
 }
 
 func TestConnectSessionPingTimeoutDoesNotKeepRequestPending(t *testing.T) {
@@ -254,4 +288,57 @@ func TestConnectSessionHeartbeatCanCompleteDuringBootstrapPagination(t *testing.
 		t.Fatal("bootstrap did not complete after pagination heartbeat")
 	}
 	waitBackends(t, backends...)
+}
+
+func TestConnectSessionUsesGetConfReceiveHeaderTimeout(t *testing.T) {
+	state := reusableTestState()
+	dialers, backends := scriptedLoginWithWifi(t,
+		bson.D{{Key: "ports", Value: bson.A{int32(443)}}, {Key: "recvHeaderTimeout", Value: int32(7)}},
+		testloco.Expect("LOGINLIST", nil, statusDocument(
+			bson.E{Key: "chatDatas", Value: bson.A{}},
+			bson.E{Key: "eof", Value: true},
+			bson.E{Key: "lastTokenId", Value: int64(11)},
+			bson.E{Key: "lbk", Value: int32(2)},
+		)),
+		testloco.HoldOpen(),
+	)
+	clock := &queuedTimerClock{}
+	session, err := connectSession(t.Context(), state, sessionConfig{resume: continuity.Checkpoint{Version: continuity.Version}, dialers: dialers, ping: pingSessionOptions{
+		clock: clock, interval: time.Second, timeout: time.Second, headerTimeout: 20 * time.Second, serverHeaderTimeout: true,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.mu.Lock()
+	armed := 0
+	for i, delay := range clock.delays {
+		if delay == 7*time.Second {
+			armed++
+			if !clock.timers[i].stopped.Load() {
+				t.Errorf("answered request %d left its receive-header timer armed", i)
+			}
+		}
+	}
+	clock.mu.Unlock()
+	// LOGINLIST may be answered before its timer is armed, so it arms at most
+	// once; it must never use the 20 s fallback when GETCONF supplies a value.
+	clock.mu.Lock()
+	for _, delay := range clock.delays {
+		if delay == 20*time.Second {
+			t.Errorf("receive-header timer used the fallback %s instead of the GETCONF value", delay)
+		}
+	}
+	clock.mu.Unlock()
+	if armed > 1 {
+		t.Fatalf("receive-header timers with the GETCONF value = %d, want at most 1", armed)
+	}
+	_ = session.Close()
+	waitBackends(t, backends...)
+}
+
+func TestRealtimePingOptionsUseServerReceiveHeaderTimeout(t *testing.T) {
+	options := realtimePingOptions()
+	if !options.serverHeaderTimeout || options.headerTimeout != booking.DefaultReceiveHeaderTimeout {
+		t.Fatalf("production receive-header timeout = %s (server %t), want the GETCONF value with a %s fallback", options.headerTimeout, options.serverHeaderTimeout, booking.DefaultReceiveHeaderTimeout)
+	}
 }

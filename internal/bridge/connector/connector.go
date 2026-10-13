@@ -14,6 +14,8 @@ import (
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/commands"
 	"maunium.net/go/mautrix/bridgev2/database"
+	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/protocol/loco"
@@ -32,6 +34,10 @@ type Config struct {
 	// BSONShadow optionally enables the research comparison of every incoming
 	// LOCO body against the source-compatible observed decoder. Off by default.
 	BSONShadow BSONShadowConfig `yaml:"bson_shadow"`
+
+	// NetworkIcon optionally names an operator-uploaded mxc:// image that
+	// Matrix clients show as the KakaoTalk network icon. Empty publishes none.
+	NetworkIcon string `yaml:"network_icon"`
 }
 
 // BSONShadowConfig is the bridge-facing form of shadow.Config.
@@ -47,6 +53,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "profile_dir")
 	helper.Copy(up.Str, "bson_shadow", "mode")
 	helper.Copy(up.Str, "bson_shadow", "dump_dir")
+	helper.Copy(up.Str, "network_icon")
 }
 
 // ErrUnsafeEventDelivery reports a bridge configuration under which
@@ -72,14 +79,15 @@ type KakaoConnector struct {
 }
 
 var (
-	_ bridgev2.NetworkConnector = (*KakaoConnector)(nil)
+	_ bridgev2.NetworkConnector               = (*KakaoConnector)(nil)
+	_ bridgev2.PortalBridgeInfoFillingNetwork = (*KakaoConnector)(nil)
 )
 
 func (kc *KakaoConnector) Init(bridge *bridgev2.Bridge) {
 	kc.Bridge = bridge
 	installHistoryMatrix(bridge)
 	if processor, ok := bridge.Commands.(*commands.Processor); ok {
-		processor.AddHandlers(commandReconcileGroup, commandCompleteGroupInvitations, commandGroupHistory)
+		processor.AddHandlers(commandReconcileGroup, commandCompleteGroupInvitations, commandGroupHistory, commandReconnect)
 	}
 }
 
@@ -96,6 +104,11 @@ func (kc *KakaoConnector) Start(ctx context.Context) error {
 	}
 	if !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
 		return errors.New("connector: profile_dir must be a directory accessible only by its owner")
+	}
+	if icon := kc.Config.NetworkIcon; icon != "" {
+		if uri, err := id.ParseContentURI(icon); err != nil || !uri.IsValid() {
+			return errors.New("connector: network.network_icon must be an mxc:// content URI")
+		}
 	}
 	return kc.configureBSONShadow()
 }
@@ -154,10 +167,28 @@ func (kc *KakaoConnector) GetName() bridgev2.BridgeName {
 	return bridgev2.BridgeName{
 		DisplayName:          "KakaoTalk",
 		NetworkURL:           "https://www.kakaocorp.com/page/service/service/KakaoTalk",
+		NetworkIcon:          id.ContentURIString(kc.Config.NetworkIcon),
 		NetworkID:            "kakaotalk",
 		BeeperBridgeType:     "kakaotalk",
 		DefaultPort:          29340,
 		DefaultCommandPrefix: "!kakao",
+	}
+}
+
+// FillPortalBridgeInfo adds an m.bridge network section carrying the
+// configured icon. Beeper Desktop ignores the protocol avatar but shows the
+// network avatar as the account's sidebar icon. Every portal shares one
+// network ID, so the account stays a single sidebar entry. Without an icon
+// the section is omitted and the bridge info is unchanged.
+func (kc *KakaoConnector) FillPortalBridgeInfo(_ *bridgev2.Portal, content *event.BridgeEventContent) {
+	if kc.Config.NetworkIcon == "" {
+		return
+	}
+	name := kc.GetName()
+	content.Network = &event.BridgeInfoSection{
+		ID:          name.NetworkID,
+		DisplayName: name.DisplayName,
+		AvatarURL:   name.NetworkIcon,
 	}
 }
 

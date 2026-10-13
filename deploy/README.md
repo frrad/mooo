@@ -2,12 +2,28 @@
 
 This image packages the current bridge. Full alpha acceptance and Beeper
 validation remain tracked in [the bridge plan](../research/bridge/PLAN.md).
-Build and configuration smoke tests do not establish Kakao enrollment or
-long-running recovery validation.
+Build and configuration smoke tests do not establish Kakao enrollment.
+Restart and outage recovery was validated on an owned test account; see
+[deployment validation](../research/bridge/DEPLOYMENT-VALIDATION.md).
+
+## Get the image
+
+CI publishes a multi-arch (`linux/amd64`, `linux/arm64`) image to
+`ghcr.io/frrad/mooo-bridge` on every merge to `main`, tagged `main`, the full
+commit SHA, and `sha-<short>`. To use it instead of building locally, export
+the image name before every compose command below:
+
+```sh
+export MOOO_IMAGE=ghcr.io/frrad/mooo-bridge:main
+docker compose pull
+```
+
+Pin a commit tag instead of `main` when you want an exact, rollback-able
+revision.
 
 ## Build and configure
 
-The build uses Go 1.27.1, the pure-Go Olm backend, and cgo SQLite. The runtime
+To build locally instead, the build uses the Go toolchain pinned in the Dockerfile, the pure-Go Olm backend, and cgo SQLite. The runtime
 runs as UID/GID 10001. Build from a clean source checkout:
 
 ```sh
@@ -34,6 +50,10 @@ Edit the generated `data/config.yaml`:
 - Set `database.type` to `sqlite3-fk-wal` and `database.uri` to
   `file:/data/mooo-bridge.db?_txlock=immediate`.
 - Set `network.profile_dir` to `/data/profiles`.
+- Optionally set `network.network_icon` to the `mxc://` URI of an image you
+  uploaded to your homeserver. It becomes the bridge space and bot avatar and
+  Beeper's sidebar icon for the account; Beeper's chat-list badge does not use
+  it.
 - Grant your Matrix user `admin` in `bridge.permissions`; remove any wildcard
   grants if this installation is intended for one user.
 - Keep database, logging output, and any other writable paths under `/data`.
@@ -67,11 +87,41 @@ permissions and treat the copy as sensitive authentication material.
 
 Before upgrading, stop the bridge, make an offline copy of `data`, and record
 the current image identifier. Build the new image from the intended source
-revision and start it with the same mounted data. Database migrations run during
+revision, or `docker compose pull` the published tag, and start it with the
+same mounted data. Database migrations run during
 startup; rollback may require restoring the offline database/profile snapshot
 with the old image. Never start old and new bridge containers against the same
 profile concurrently.
 
-The compose example deliberately does not automatically restart the process:
-current session recovery behavior is described in the bridge plan. Set a restart
-policy only when it matches the validated release behavior.
+## Restarts and recovery
+
+The compose example restarts the bridge unless you stopped it
+(`restart: unless-stopped`). This is safe because the bridge, not the
+supervisor, decides when to log in to KakaoTalk:
+
+- Inside one process the bridge reconnects on its own. After a dropped
+  connection or a network failure it waits 5, 10, 20, 40 and 60 seconds
+  between attempts, then reports `kakao-recovery-stalled` and keeps trying
+  every 15 minutes. A dead connection is usually noticed within one to three
+  minutes, by the periodic group refresh or the keepalive ping.
+- The reconnect schedule is saved with the login. A restarted process first
+  waits out a pending retry. If it restarts within five minutes of its last
+  login, for example in a crash loop, it waits as if that session had ended
+  early, so repeated crashes back off from 5 seconds to 15 minutes instead of
+  logging in on every restart. While waiting it reports
+  `kakao-reconnect-scheduled`.
+- A KICKOUT is saved and blocks every later connect, including after a
+  restart, until you log out of the bridge and log in again.
+- Some stops wait for you instead of retrying: a rejected login, an
+  unidentifiable message, or a profile that another process holds. Fix the
+  cause, then send `reconnect` to the bridge bot (or `!kakao reconnect` in
+  any room the bot is in). The command never shortens a scheduled retry.
+
+Any other supervisor works the same way. For a native binary on macOS, a
+launchd agent with `KeepAlive` is equivalent; keep its working directory and
+data outside any source checkout, and never run it at the same time as
+another copy that uses the same profile.
+
+On a laptop, recovery timers do not run while the machine sleeps, so the
+bridge reconnects a while after waking rather than on schedule. Run it on an
+always-on host if that matters.

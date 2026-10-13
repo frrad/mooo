@@ -78,6 +78,26 @@ one-shot request path with a bounded context. This is a clean-room runtime
 decision and test seam; it does not assert that the official client uses the
 same first-admission point.
 
+Live observation (2026-10-11, RC-LIVE-001): a clean-room login's GETCONF
+reply carries the `LocoConnInfo` keys as int32 fields of its `wifi` document,
+with `fgPingItv` set to 180. The Go client now takes its keepalive interval
+from `wifi.fgPingItv`, with the Mac's 180-second fallback for a value below 1.
+An absent or non-int32 value also falls back, matching the model's zero
+default for a missing scalar. The static edge from the response to the setter
+is still untraced; the mapping rests on the matching key and the observed
+reply.
+
+Clean-room deviation: when a caller's context ends a non-PING request without
+a reply, the Go session re-arms the keepalive. The request path cancels the
+timer before writing, so without this a quiet session would have no keepalive
+until another request completed. The Mac client has no caller abandonment, and
+its receive-header timeout closes a carriage that stops replying. This client
+also implements that timeout (2026-10-13, see
+[RECEIVE-HEADER-TIMEOUT.md](RECEIVE-HEADER-TIMEOUT.md)), and an abandoned
+request keeps its timer, so a dead carriage closes within the timeout even
+while abandoned requests keep postponing the PING. A transport write failure
+and an abandoned PING still do not re-arm.
+
 Untraced: exact OS queue execution timing, whether an already-eligible delayed
 invocation can run before a queued cancellation, global first-admission ordering
 among concurrent traffic, and any alternate scheduler caller outside the
