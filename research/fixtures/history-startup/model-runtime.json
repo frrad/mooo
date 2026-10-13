@@ -1,0 +1,256 @@
+{
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk for Mac 26.8.0 arm64, build 2000",
+    "date": "2026-10-13",
+    "method": "Isolated signed model harness with network entitlement and shared app groups absent; synthetic request construction and JSON response decoding; official preference hashes unchanged",
+    "doc": "research/bridge/HISTORY-PARITY-QUESTIONS.md"
+  },
+  "evidence": "HST-EXEC-001",
+  "scope": "Models only; no coordinator, transport, server, persistence or read-state parity claim",
+  "requests": [
+    {
+      "input": {
+        "chatIds": [
+          5000,
+          5001
+        ],
+        "sinces": [
+          0,
+          100
+        ]
+      },
+      "expected": {
+        "method": "MCHATLOGS",
+        "json": {
+          "chatIds": [
+            5000,
+            5001
+          ],
+          "sinces": [
+            0,
+            100
+          ]
+        }
+      }
+    },
+    {
+      "input": {
+        "chatIds": [],
+        "sinces": []
+      },
+      "expected": {
+        "method": "MCHATLOGS",
+        "json": {
+          "chatIds": [],
+          "sinces": []
+        }
+      }
+    },
+    {
+      "input": {
+        "chatIds": [
+          5000
+        ],
+        "sinces": []
+      },
+      "expected": {
+        "method": "MCHATLOGS",
+        "json": {
+          "chatIds": [
+            5000
+          ],
+          "sinces": []
+        }
+      }
+    }
+  ],
+  "responses": [
+    {
+      "method": "MCHATLOGS",
+      "input": {
+        "status": 0,
+        "chatLogs": [],
+        "eof": true
+      },
+      "expected": {
+        "logsNil": false,
+        "logsCount": 0,
+        "isSuccess": true,
+        "eof": true
+      }
+    },
+    {
+      "method": "MCHATLOGS",
+      "input": {
+        "status": 0
+      },
+      "expected": {
+        "logsNil": true,
+        "logsCount": null,
+        "isSuccess": true,
+        "eof": false
+      }
+    },
+    {
+      "method": "MCHATLOGS",
+      "input": {
+        "status": 0,
+        "chatLogs": null,
+        "eof": false
+      },
+      "expected": {
+        "logsNil": true,
+        "logsCount": null,
+        "isSuccess": true,
+        "eof": false
+      }
+    },
+    {
+      "method": "MCHATLOGS",
+      "input": {
+        "status": 0,
+        "isOK": true,
+        "minLogId": 100,
+        "jsi": 200,
+        "chatLogs": []
+      },
+      "expected": {
+        "logsNil": false,
+        "logsCount": 0,
+        "isSuccess": true,
+        "eof": false
+      }
+    },
+    {
+      "method": "MCHATLOGS",
+      "input": {
+        "status": 0,
+        "isOK": false,
+        "minLogId": 100,
+        "jsi": 200,
+        "chatLogs": []
+      },
+      "expected": {
+        "logsNil": false,
+        "logsCount": 0,
+        "isSuccess": true,
+        "eof": false
+      }
+    },
+    {
+      "method": "MCHATLOGS",
+      "input": {
+        "status": -1,
+        "isOK": true,
+        "eof": true,
+        "chatLogs": []
+      },
+      "expected": {
+        "logsNil": false,
+        "logsCount": 0,
+        "isSuccess": false,
+        "eof": true
+      }
+    },
+    {
+      "method": "SYNCMSG",
+      "input": {
+        "status": 0,
+        "chatLogs": [],
+        "eof": true
+      },
+      "expected": {
+        "logsNil": false,
+        "logsCount": 0,
+        "isSuccess": true,
+        "isOK": false,
+        "minLogId": "0",
+        "jsi": "0"
+      }
+    },
+    {
+      "method": "SYNCMSG",
+      "input": {
+        "status": 0
+      },
+      "expected": {
+        "logsNil": true,
+        "logsCount": null,
+        "isSuccess": true,
+        "isOK": false,
+        "minLogId": "0",
+        "jsi": "0"
+      }
+    },
+    {
+      "method": "SYNCMSG",
+      "input": {
+        "status": 0,
+        "chatLogs": null,
+        "eof": false
+      },
+      "expected": {
+        "logsNil": true,
+        "logsCount": null,
+        "isSuccess": true,
+        "isOK": false,
+        "minLogId": "0",
+        "jsi": "0"
+      }
+    },
+    {
+      "method": "SYNCMSG",
+      "input": {
+        "status": 0,
+        "isOK": true,
+        "minLogId": 100,
+        "jsi": 200,
+        "chatLogs": []
+      },
+      "expected": {
+        "logsNil": false,
+        "logsCount": 0,
+        "isSuccess": true,
+        "isOK": true,
+        "minLogId": "100",
+        "jsi": "200"
+      }
+    },
+    {
+      "method": "SYNCMSG",
+      "input": {
+        "status": 0,
+        "isOK": false,
+        "minLogId": 100,
+        "jsi": 200,
+        "chatLogs": []
+      },
+      "expected": {
+        "logsNil": false,
+        "logsCount": 0,
+        "isSuccess": true,
+        "isOK": false,
+        "minLogId": "100",
+        "jsi": "200"
+      }
+    },
+    {
+      "method": "SYNCMSG",
+      "input": {
+        "status": -1,
+        "isOK": true,
+        "eof": true,
+        "chatLogs": []
+      },
+      "expected": {
+        "logsNil": false,
+        "logsCount": 0,
+        "isSuccess": false,
+        "isOK": true,
+        "minLogId": "0",
+        "jsi": "0"
+      }
+    }
+  ]
+}

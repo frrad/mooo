@@ -1,10 +1,53 @@
 # Fresh-login history: official-client information request
 
-Status: open research request, 2026-10-13. Nothing here is implemented.
+Status: active research, 2026-10-13. Findings are recorded below as they are
+established. Inventory last-message seeding landed separately in PR #338;
+this PR adds research evidence, not new history implementation.
+
+## Findings so far
+
+The [static dossier](HISTORY-STATIC.md) records HST-STATIC-001 through 006
+(Mac 26.8.0, read-only binary analysis). Ordinary startup has a separate
+`MCHATLOGS` chain, independent of loss marks: numeric chat-ID ordering, at
+most 100 valid rooms per request, persisted `lastMChatLogId` values in
+`sinces`, and `eof`-driven continuation. Inventory preview updates preserve
+that cursor while startup's pending set is nil. Local timeline display reads
+50 messages from storage; this does not establish a server page size.
+
+Two earlier descriptions are corrected: marker range cleanup uses the active
+client's server-supplied `minLogId`, not a room-local oldest message; and the
+single-room synchronized-state skip requires `lastSyncLogId` to equal both
+`lastSeenLogId` and `lastLogId`. SYNCMSG continuation uses `isOK`, request held
+count and returned-log count, rather than bulk `eof`.
+
+**HST-EXEC-001** (2026-10-13, Mac 26.8.0 arm64 build 2000): an isolated signed
+offline harness ran the official request/response models on 15 synthetic
+cases, with no network entitlement or shared application groups. Official
+preference hashes were unchanged and the isolated process was killed afterward.
+The [executed fixture](../fixtures/history-startup/model-runtime.json) records:
+
+- `MCHATLOGS` serializes `chatIds`/`sinces`, including a zero `since`.
+  Empty and mismatched arrays also serialize at the **model** layer; coordinator
+  validation and server acceptance do not follow from that behavior.
+- Bulk responses retain `eof`; an absent `eof` defaults to false. Empty
+  `chatLogs` gives an empty collection; omitted/null gives nil.
+- `SYNCMSG` decodes `isOK`, `minLogId` and `jsi`. Absent scalar fields default
+  to false/zero. `isOK` and success status are independent: an unsuccessful
+  synthetic response can retain `isOK=true`, so callers must gate success first.
+
+Confidence is high for these executed model cases, limited to the exact build
+and inputs. This does not execute startup scheduling or cursor persistence and
+does not establish server ordering, retention, pre-join visibility or read
+effects. Those questions remain open below.
+
+The maintainer lifted the live test-account hold on 2026-10-13. Future owned
+observations use bounded requests, private attempt receipts and cleanup; cloud
+backup/restore remains excluded. No live experiment preceded this model result.
 
 ## Context
 
-After a fresh login the bridge shows no chat history. Catch-up only covers
+At the request's initial baseline, a fresh login showed no chat history.
+PR #338 now seeds inventory last messages into portals. Catch-up only covers
 chats this profile has already committed (`ResumeTargets`), regular groups get
 empty rooms, and direct chats get no room until a new message arrives. The only
 history path is the operator command `history-group` (see
@@ -45,7 +88,7 @@ faithfully, separating what is known from what is not.
   and maximum, can create a mark at `first.prevId + 1` when the previous
   message lies beyond the response's `jsi` boundary, and removes the mark at
   `max + 1` when the next known message has `prevId == max`. Range removal
-  clamps its lower bound to the room's minimum retained log ID (SL-BIN-014,
+  clamps its lower bound to the active client's server-supplied `minLogId` (SL-BIN-014,
   SL-BIN-015).
 - `MCHATLOGS` uses the same open-range and next-message cleanup pattern
   (static only).
@@ -57,8 +100,9 @@ faithfully, separating what is known from what is not.
 On a fresh install no older local history exists, so the `LOGINLIST` loss-mark
 condition fails. A freshly logged-in official client may therefore hold only
 each chat's last message with no marker before it, and load earlier messages
-through a different mechanism. That mechanism is unknown and is the first gap
-to close.
+through a different mechanism. That mechanism is now traced statically as
+`MCHATLOGS`, as described above. The server's returned window and fresh-install
+behavior still need observation.
 
 ## Required information
 
@@ -69,8 +113,8 @@ official model code), or **observed** (controlled owned-account experiment).
 
 ### A. History fetched at login without user action (step 3)
 
-If the official client fetches nothing eagerly, a faithful step 3 is "last
-message only".
+The eager bulk request path is now established statically; the returned window
+and fresh-install result remain unobserved.
 
 1. Every `SYNCMSG`, `MCHATLOGS` or other history request issued after
    `LOGINLIST`/`LCHATLIST` completes: trigger, selected chats, parameters.

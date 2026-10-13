@@ -23,8 +23,10 @@ paging and the single-room `SYNCMSG` continuation rule.
       separately before claiming parity.
 - [ ] Confirm server window direction, retention, pre-join visibility and
       read effects with bounded direct/group observations, then fresh official
-      startup/open observations. **Live test-account experiments are on HOLD
-      by maintainer instruction; do not begin them until that hold is lifted.**
+      startup/open observations. The maintainer lifted the initial live hold
+      on 2026-10-13 and requested continuing evidence on PR #336. HST-EXEC-001
+      has executed the offline request/response models; scheduling and
+      persistence fixtures remain static leads.
 - [ ] Choose and implement fresh-login backfill only after the evidence
       establishes its boundaries and read policy. Cloud backup/restore stays
       out of scope.
