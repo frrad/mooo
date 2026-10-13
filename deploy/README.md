@@ -6,6 +6,9 @@ Build and configuration smoke tests do not establish Kakao enrollment.
 Restart and outage recovery was validated on an owned test account; see
 [deployment validation](../research/bridge/DEPLOYMENT-VALIDATION.md).
 
+To run the bridge against a Beeper account instead of your own homeserver, use
+[`beeper/`](beeper/README.md).
+
 ## Get the image
 
 CI publishes a multi-arch (`linux/amd64`, `linux/arm64`) image to
