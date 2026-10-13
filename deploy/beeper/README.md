@@ -48,9 +48,10 @@ On the first `up`, the `bbctl` service registers the bridge with Beeper as
 `sh-`) and writes `data/config.yaml`. The bridge starts only after that
 succeeds. On later runs, the service sees the existing config and exits.
 
-The generated config has no `network` section. The bridge fills it in with
-defaults on first start. The database, logs and profiles live under `data/`,
-because the container's working directory is `/data`.
+`bbctl` writes no `network` section, so the service adds one with
+`profile_dir: /data/profiles`, and the bridge fills in the remaining defaults
+on first start. The database and logs also land under `data/`, because the
+container's working directory is `/data`.
 
 The bridge bot then appears in Beeper. Open a chat with it and log in to
 KakaoTalk.

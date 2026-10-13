@@ -43,6 +43,10 @@ services:
           echo "No config generated. Log in first: docker compose run --rm bbctl login" >&2
           exit 1
         fi
+        # bbctl writes no network section; the bridge fills in the rest of it
+        # on start, but its default profile_dir is relative and profile
+        # creation requires an absolute path.
+        printf 'network:\n    profile_dir: /data/profiles\n' >> /data/config.yaml
       - bbctl
     command: []
     environment:
