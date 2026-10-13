@@ -37,6 +37,7 @@ type groupCreationMatrix struct {
 	messageBodies    []string
 	failMessage      string
 	failMessageError error
+	doublePuppet     bool
 }
 
 func (m *groupCreationMatrix) Init(*bridgev2.Bridge) {}
@@ -62,8 +63,11 @@ func (m *groupCreationMatrix) ParseGhostMXID(mxid id.UserID) (networkid.UserID, 
 	}
 	return networkid.UserID(user), true
 }
-func (m *groupCreationMatrix) NewUserIntent(context.Context, id.UserID, string) (bridgev2.MatrixAPI, string, error) {
-	return nil, "", nil
+func (m *groupCreationMatrix) NewUserIntent(_ context.Context, user id.UserID, token string) (bridgev2.MatrixAPI, string, error) {
+	if !m.doublePuppet {
+		return nil, "", nil
+	}
+	return &groupCreationIntent{m: m, mxid: user}, token, nil
 }
 func (m *groupCreationMatrix) GetMembers(context.Context, id.RoomID) (map[id.UserID]*event.MemberEventContent, error) {
 	m.mu.Lock()

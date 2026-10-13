@@ -6,7 +6,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.52
 	github.com/rs/zerolog v1.35.1
 	go.mau.fi/util v0.10.2-0.20260918225449-a4c0d5b86aa8
-	go.mongodb.org/mongo-driver/v2 v2.9.1
+	go.mongodb.org/mongo-driver/v2 v2.9.2
 	golang.org/x/text v0.42.0
 	maunium.net/go/mautrix v0.31.1-0.20260929131313-40942319c433
 )
