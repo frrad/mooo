@@ -778,3 +778,20 @@ images, cache lifecycle and full official-chain parity remain open.
       failure behavior. Owned native Announce showed all three clients; Matrix
       pin/topic projection is absent. Keep this separate from shared
       `CHGMETA` Notice type 1; see research/chat-metadata.md and its fixture.
+
+## Outbound SHIP redirect failure (#342)
+
+- [x] Reproduce with a fresh synthetic image in the existing owned disposable direct chat; retain private raw SHIP reply, no retries.
+- [ ] Trace Mac 26.8.0 request/response, rd branch, upload route, completion, persistence and failure consumers.
+- [ ] Publish implementation-neutral contract and sanitized observed/executed fixture.
+- [ ] Show a failing production-path regression, implement the evidenced fallback, and verify owned recipient delivery.
+- [ ] Run make check and secret scanning, open PR, and squash merge after required CI passes.
+
+Use local lab profiles only; rhino remains read-only and is excluded from this work.
+
+Interim result: `rd=true` is recognized, and the bridge reports certainly not
+sent without a trailer attempt. The alternate uploader is still pending:
+scoped Go transfers and an official Kage uploader control returned HTTP 404;
+prepare/authentication/ready-key initialization and WRITEMEDIA need further
+trace. See [SHIP redirect evidence](research/bridge/SHIP-REDIRECT.md). Do not
+close #342 or claim delivery acceptance from this interim change.

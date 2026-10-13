@@ -1,0 +1,23 @@
+{
+  "cases": [
+    {
+      "className": "KakaoTalk.BrewJsonReqCommand",
+      "body": {
+        "extension": "png",
+        "mediaType": "image",
+        "chatId": 5000,
+        "size": 21
+      },
+      "method": 0,
+      "useGzip": 0,
+      "addXVC": 0
+    }
+  ],
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk for Mac 26.8.0 build 2000",
+    "date": "2026-10-13",
+    "method": "Official prepare request builder executed with synthetic chat ID, media type, size and extension in an isolated no-network/no-shared-group signed binary copy. Its request dispatcher was replaced before calling it; the resulting command parameters and method/gzip/XVC flags were recorded. Probe killed; two mandatory original sandbox preference files unchanged.",
+    "doc": "research/bridge/SHIP-REDIRECT.md"
+  }
+}
