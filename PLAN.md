@@ -559,6 +559,9 @@ Execution follows [`research/bridge/PLAN.md`](research/bridge/PLAN.md).
 - [x] Implement bidirectional read-receipt routing with production regressions.
 - [ ] Live-validate read receipts and catch-up read effects; add opt-in backfill
       only after its policy is settled.
+- [ ] Owned-account acceptance of fresh-login last-message seeding
+      (`research/bridge/LAST-MESSAGE-SEEDING.md`), then decide on a bounded
+      recent-history window using the observed subdevice retention.
 - [ ] Validate standard Matrix appservice deployment and Beeper compatibility.
 - [x] Package Docker/configuration for a single-user Linux homelab without
       operator-specific values; full deployment acceptance remains open.
