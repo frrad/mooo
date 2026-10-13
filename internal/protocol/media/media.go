@@ -154,9 +154,9 @@ func DecodePhotoMessage(env chatlog.Envelope) (PhotoMessage, error) {
 		return PhotoMessage{}, invalidMessage("dimensions")
 	case attachment.Size <= 0 || attachment.Size > MaxImageBytes:
 		return PhotoMessage{}, invalidMessage("size")
-	case attachment.Checksum == "":
-		return PhotoMessage{}, invalidMessage("checksum_missing")
-	case len(attachment.Checksum) != 40:
+	// The Mac client models no photo checksum, and photos sent from the
+	// owner's Android phone carry an empty cs. A present cs must be SHA-1 hex.
+	case attachment.Checksum != "" && len(attachment.Checksum) != 40:
 		return PhotoMessage{}, invalidMessage(checksumLengthReason(len(attachment.Checksum)))
 	case attachment.MediaType != "image/jpg" && attachment.MediaType != "image/jpeg" && attachment.MediaType != "image/png":
 		return PhotoMessage{}, invalidMessage("media_type")
@@ -245,8 +245,10 @@ func DownloadPhoto(ctx context.Context, client *http.Client, attachment PhotoAtt
 	if err != nil || (attachment.MediaType == "image/png" && format != "png") || attachment.MediaType != "image/png" && format != "jpeg" {
 		return nil, fmt.Errorf("%w: %w", ErrUnsupportedImage, ErrDownload)
 	}
+	// Without a checksum, the size bound and image decoding above are the
+	// integrity checks, as on the Mac client's download path.
 	sum := sha1.Sum(data)
-	if !strings.EqualFold(hex.EncodeToString(sum[:]), attachment.Checksum) {
+	if attachment.Checksum != "" && !strings.EqualFold(hex.EncodeToString(sum[:]), attachment.Checksum) {
 		return nil, fmt.Errorf("%w: %w", ErrChecksumMismatch, ErrDownload)
 	}
 	return data, nil
