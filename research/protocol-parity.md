@@ -116,8 +116,10 @@ explicit state rather than an acknowledged cursor.
 The official persistence path represents that state with synthetic loss-mark
 messages. It suppresses redundant markers using exact and neighboring-message
 lookups, removes an exact marker after boundary recovery, and can delete markers
-strictly inside a recovered range after clamping its lower bound to the room's
-minimum retained log ID. LOGINLIST marker creation uses either `prevId + 1` from
+strictly inside a recovered range after clamping its lower bound to the active
+protocol client's server-supplied `minLogId`. This is not a room-local oldest
+message (HST-STATIC-003, [fresh-login findings](bridge/HISTORY-STATIC.md)).
+LOGINLIST marker creation uses either `prevId + 1` from
 the returned last chat log or `lastServerLogId + 1` when no last chat log exists.
 SYNCMSG uses the first returned message's `prevId + 1` after checking its `jsi`
 boundary and local storage; it clears the marker at `max + 1` when the next known
