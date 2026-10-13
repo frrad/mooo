@@ -18,7 +18,12 @@ five attempts after an outage follow a fast schedule: ordinary failures wait
 60, 120, 240, 480 and 900 seconds. After that, the bridge reports
 `UNKNOWN_ERROR` `kakao-recovery-stalled` once and keeps retrying every 15
 minutes. The first connect retries on the same schedule, so a network outage
-at startup no longer leaves the bridge down until a restart.
+at startup no longer leaves the bridge down until a restart. A network failure
+during bootstrap (the GETCONF and CHECKIN dials and requests, before LOGINLIST
+sends any credentials) is retryable. Until 2026-10-13 the client hid its cause,
+so a DNS failure right after a lab Mac woke from sleep stopped the bridge for
+good. A transport failure during LOGINLIST itself is still classified only as
+a login failure and is not retried.
 
 The schedule restarts only after a session has stayed connected for five
 minutes. A session that ends sooner, for example by repeated `CHANGESVR` or a
