@@ -85,13 +85,101 @@ at its synchronized-state dispatch guard.
 Confidence is high for these specific packets, identity/order comparisons and
 native unread observations. It establishes a five-log available window and
 one group's bounded unread behavior, not oldest/newest selection in a window
-larger than 300, general direct-chat read policy, fresh-device access or
+larger than 300 at that stage, general direct-chat read policy, fresh-device access or
 pre-join visibility. The two receiver emulators remained stopped. The probes
 emitted neither `NOTIREAD` nor `CHATONROOM`, committed no history, and retried
 no request. Every session exited and released its lease; the sender emulator
 was returned to HOME and stopped, and transient UI captures were removed.
 
-No production bug was exposed: empty-page decoding and reporting an unreached
+**HST-LIVE-004 — direct-chat fetch and unread.** A fresh native text in the
+existing direct chat between two owned accounts showed one unread participant.
+The count stayed one after secondary login/inventory/roster verification,
+a zero-held `SYNCMSG`, and `MCHATLOGS(since=0)`. The single-room request
+returned one type-24 log without the fresh text; bulk returned seven ascending
+logs of types 24, 24, 24, 14, 14, 14, 1, including the fresh text. The six older
+logs carry 2026-10-11 timestamps. Both receiver primary clients stayed stopped;
+no `CHATONROOM`, `NOTIREAD` or history commits occurred. The response supplied
+positive `jsi` below positive `minLogId`, as in the group observation.
+This adds direct-chat evidence, not a guarantee across all rooms or a general
+retention duration. A preflight stopped while the exact native draft remained
+unsent; another stopped on its trailing newline. Neither issued history.
+The draft was completed once after checking it remained in the composer, and
+the successful probe verified the normalized unique synthetic preview and
+exact owned roster before requesting history.
+
+**HST-STATIC-007 — database write boundary.** Additional Mac 26.8.0 analysis
+traces the data-store write wrapper: it runs the supplied block, then processes
+changed objects. Changed-object processing takes a lock, begins a database
+transaction, saves/deletes the changed objects, commits, clears the change set,
+and schedules change notifications. Its exception path rolls back and reverts
+affected objects. The reviewed routine does not branch on the transaction
+begin/commit return values. This establishes a transaction boundary for one
+change-set flush; it does not establish one atomic operation covering history
+insertion, later feed reconciliation and bulk pending-set retirement. Cursor
+state is persistent, while the pending bulk selection is rebuilt at login.
+Crash behavior between these phases and database-error handling remain gaps.
+
+**HST-LIVE-005 — available window larger than 300.** After exact owned A/B
+roster verification, 305 distinct numbered synthetic texts were sent once
+from the existing secondary profile. Sends were serial, with a two-second pause
+after each successful acknowledgement; neither writes nor history requests
+were retried. The receiver primary remained outside the chat. Five bounded
+`SYNCMSG(cnt=0)` requests returned **1, 80, 80, 80, 71** logs, respectively.
+They covered all 305 numbered texts exactly once, in order, plus the seven
+older logs already observed. All five responses had `isOK=false`, including
+the page that reached the selected upper identity. One initial
+`MCHATLOGS(since=0)` returned the **oldest 80 available logs**, with `eof=false`.
+
+**HST-LIVE-006 — bulk continuation and identity comparison.** Three bounded
+bulk requests, each starting at the previous bulk page's last returned log ID,
+returned **80, 80, 72** logs. Only the final page had `eof=true`; it reached the
+selected upper identity. Offline comparison of the retained packets proved
+that the combined four bulk pages and five SYNC pages had exactly the same
+**312 log identities, in the same ascending order and without overlap**.
+The [compact observed fixture](../fixtures/history-startup/observed-large-window.json)
+retains these relationships using synthetic identity indices.
+
+This answers B2 for the observed direct-chat window: retrieval progresses
+forward through available history rather than selecting the newest 300.
+The observed ordinary pages contain 80 logs; the Mac's 300 held-message count
+is a separate parameter. Do not generalize 80 to every chat type, payload size
+or server version. The first zero-cur SYNC response's single-log boundary also
+prevents treating every response as a full ordinary page. No sparse-ID
+subtraction, reverse page or server-side newest-N selector was demonstrated.
+Own authored writes make this a pagination experiment, not a fresh unread
+experiment. No history was committed and no explicit read acknowledgement was
+sent. All profile sessions exited and released their leases.
+
+**HST-LIVE-007 — fresh local official-profile attempt.** A separate sandbox
+ran an ad-hoc signed copy of the official Mac 26.8.0 build 2000 binary, with
+network access and without shared application groups. The original official
+client stayed stopped; its preference hashes were unchanged. The owned C
+Android 26.8.2 primary accepted the QR flow and displayed successful login
+after verification. The isolated Mac then displayed a server-connection error.
+Hooks on the bulk and single-room history coordinators and models recorded
+**no invocation of those traced history paths** before that failure. This is a failed startup
+observation; it does not confirm fresh-profile history, fresh device visibility,
+render timing, or official-client crash/resume parity. The altered signing and
+sandbox environment are additional limits. No authentication retry followed
+the completed verification/server-connection failure.
+
+The attempt exposed lab-tool defects: a cached picker thumbnail retained an
+expired QR after its file was replaced; a unique immutable image and comparison
+of the actual picker QR against the current QR protected the later scans.
+The phone's direct `Log In` approval path can lead either to success or a code
+form, and that form exposes `Enter the verification code.` as its text when
+empty. The lab helper now handles these states, with failing-first synthetic
+regressions and a successful observed verification submission. Verification
+codes were ephemeral, passed through private stdin, and excluded from files
+and published evidence. The earlier incomplete verification was never
+submitted; it expired while the helper defects were diagnosed.
+
+All capture hooks were detached and the isolated client stopped. Transient
+QR files, picker captures and phone media entries were removed; temporary
+photo/camera permission changes were restored, and owned emulators stopped.
+Private raw research remains outside the repository.
+
+No history-production bug was exposed: empty-page decoding and reporting an unreached
 history target as an explicit gap already have regression coverage. The raw
 probes isolate protocol evidence from bridge delivery policy.
 
@@ -100,6 +188,68 @@ isolated synthetic model execution and controlled owned-account observations.
 Redaction and expression review passed. Public fixtures retain only synthetic
 identities, protocol field/type behavior, relative boundaries, counts and
 original descriptions; raw packets, account data and UI captures are excluded.
+
+**HST-EXEC-002 — startup predicate.** The isolated, signed Mac 26.8.0
+no-network/no-shared-group harness executed the real `needsMChatLogs:`
+method with synthetic pending-set inputs. Eight cases confirm nil → true,
+empty → false, and populated → exact membership. Official preference hashes
+were unchanged and the child was killed. This executes the predicate only;
+it does not execute storage or the complete startup coordinator.
+
+## Answers by question family
+
+This index distinguishes an answered client contract from remaining server or
+runtime evidence. The detailed static dossier and evidence entries above are
+the authority; a linked result does not imply every question in its family is
+closed.
+
+| Family | Answer established | Remaining measurement |
+| --- | --- | --- |
+| A: startup | Eligible rooms use the independent bulk chain; no unread/recency gate; numeric ordering; 100-room batches; persisted since; serial continuation. Fresh stored cursors start at zero, restart reuses them. | Fresh official Mac end-to-end startup, display timing and overlap with unrelated requests. |
+| B: opening | Local-first 50-message display, CHATONROOM then guarded sync from stored lastSync; cnt is held count. SYNC continuation depends on isOK, held count and nonempty output. | Group/payload-general window behavior, exact fresh-open observation and server meaning of jsi. |
+| C: older/end | Immediate regular timeline scrolling pages the local database backward in groups of 50. Bulk eof retires rooms; target-reaching SYNC can still say isOK=false. Floor is global server minLogId. | Non-restore marker bindings, status-specific server refusals and remote exhaustion UI. Cloud restore remains excluded. |
+| D: visibility/content | Below-floor intervals can return status-zero/null logs. Direct and group windows contain ordered earlier logs plus current text. | Retention duration, registration/join visibility, format-general revision behavior and true expired-media observation. |
+| E: side traffic | GETMSGS can recover unresolved modified targets; threads reconcile locally; missing room members use MEMBER. Reactions use a separate HTTP metadata chain. | Full author/link/emoticon/thumbnail view-trigger accounting. |
+| F: reads | Local divider uses saved seen/own watermark; historical DB badge updates differ from live notification enqueue. Zero-held and bulk fetch left fresh text unread in one direct chat and one group. | Broader no-read guarantee and indirect notification completeness. |
+| G: pacing | Main bulk chain is serial and allows at most 100 room IDs/request; each chat controller has its own in-flight guard. Shared carriage disconnect/timeout completes pending callbacks once. | Global overlap cap, maximum real startup burst and history throttle statuses; no deliberate throttle/load experiment. |
+| H: persistence | Bulk, sync and seen cursors are distinct; writes flush changed objects in a database transaction. Login rebuilds bulk selection from persisted cursors. | Abrupt interruption across callback phases and database-error return handling. |
+
+### Recovered side-request and media contracts
+
+The existing official-client dossiers resolve several parts of D4/E:
+
+- [Reaction metadata](GROUP-REACTIONS.md#official-client-contract-macos-2680-static)
+  is absent from LOCO history aggregates. Open-chat metadata recovery uses
+  `/messaging/chats/{chatId}/chat-log/meta/sync-meta?cur&max&cnt`, its own
+  revision cursors, a held-meta cap of 300, `last` continuation and repeated-
+  parameter guard. The first open-chat timer tick is 10 seconds; later ticks
+  depend on successful message sync and differing cursors. HTTP failure retains
+  cursors without an automatic retry in that chain. Visible mini reactions
+  can cause a separate debounced `/emoticon/chat/rx/logmetas` fetch; reaction
+  member/detail requests are on demand. This is static client behavior, not
+  historical-server completeness.
+- [Photo expiry](GROUP-PHOTOS.md#download) uses epoch-millisecond `expire`,
+  local-cache presence and server expiry-class errors. A past expiry does not
+  make an already cached original unavailable. The bubble displays an expired
+  icon and an original-expired alert when the resource is unavailable. Trailer
+  download has its own cache/GETTRAILER/DOWN chain and failure outcomes.
+  These are resource/view contracts; history insertion alone does not prove
+  a download. A genuinely expired historical photo has not been measured.
+- [Historical edits and deletions](GROUP-EDITS-DELETIONS.md#observed-fixtures)
+  already have an owned 2026-10-10 observation: SYNCMSG returned edited text
+  at its original log position with revision 1 **and** a later feed-25 record.
+  It returned a deleted text as type 16385 (text with the deleted flag), still
+  containing its original text, **and** the later feed-14 record. Therefore
+  the answer for that regular-group case is revised content plus feeds, not
+  original-only logs and not feeds-only logs. Never display retained deleted
+  content. This evidence is the existing
+  [observed fixture](../fixtures/edits/observed-group-edit-delete.json), not a
+  newly repeated mutation. It does not establish every format's server policy.
+- [Read acknowledgements](../read-state-notiread.md) have a single recovered
+  NOTIREAD send caller in live MSG handling. Inventory, catch-up and history
+  callbacks do not call it. Explicit reading uses SYNCMSG instead. Sender
+  unread observations remain essential because absence of NOTIREAD alone
+  does not establish absence of read effects.
 
 ## Context
 
@@ -273,9 +423,9 @@ parity. *Static.*
 
 ## Suggested order
 
-1. Observe B2 and D1 with mooo's own bounded `SYNCMSG` probes on owned
-   accounts. Until they are answered it is unknown whether "last N messages"
-   is reachable through `SYNCMSG` at all.
+1. B2 now has a bounded direct-chat result: forward retrieval through the
+   available window. Investigate group/payload variations and D1 separately;
+   no general server-side "last N" selector is established.
 2. In parallel, statically trace A and C from the `SYNCMSG` and `MCHATLOGS`
    constructors up to callers and UI triggers and down through callbacks,
    persistence and failure paths, and execute the `MCHATLOGS` model in the

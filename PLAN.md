@@ -29,8 +29,12 @@ paging and the single-room `SYNCMSG` continuation rule.
       persistence fixtures remain static leads.
 - HST-LIVE-001–003 now establish an unavailable interval below the supplied
   floor and a five-log group window: two forward SYNCMSG pages match one
-  MCHATLOGS page; the fresh sender unread count stayed unchanged. Larger
-  windows, direct chats and new-device/pre-join access remain unproved. Keep
+  MCHATLOGS page; the fresh sender unread count stayed unchanged. HST-LIVE-004 extends the bounded unread observation to an owned direct
+  chat; HST-EXEC-002 executes the startup pending-set predicate. Larger
+  windows now have HST-LIVE-005/006: 305 numbered direct-chat texts and
+  identical 312-log sequences through five SYNC and four bulk pages. Forward
+  ordinary pages held 80 logs here; 300 remains a held-count parameter.
+  New-device/pre-join access remains unproved. Keep
   the next observations bounded; do not infer a fixed retention duration or
   a global no-read-effect policy from this group.
 - [ ] Choose and implement fresh-login backfill only after the evidence

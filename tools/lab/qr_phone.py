@@ -30,6 +30,8 @@ def screen(root):
         return "device-code-required"
     if PREFIX + "btn_login_with_pc" in ids:
         return "qr-approval"
+    if {PREFIX + "btn_login", PREFIX + "btn_cancel"} <= ids:
+        return "qr-login-approval"
     return "unknown"
 
 
@@ -86,13 +88,18 @@ class Phone:
             state = screen(root)
             if state in {"invalid-qr", "secondary-login-restricted"}:
                 raise ValueError(state)
-            if state == expected:
+            states = (expected,) if isinstance(expected, str) else expected
+            if state in states:
                 return root
             time.sleep(.25)
         raise ValueError("QR screen timed out")
 
     def approve(self):
-        root = self.wait("qr-approval")
+        root = self.wait(("qr-approval", "qr-login-approval"))
+        if screen(root) == "qr-login-approval":
+            self.tap(root, "btn_login")
+            next_root = self.wait(("qr-authorized", "device-code-required"))
+            return screen(next_root)
         # Persistent PC verification is the maintainer's standing preference.
         self.tap(root, "btn_login_with_pc")
         self.wait("device-code-required")
@@ -103,7 +110,7 @@ class Phone:
             raise ValueError("invalid device code")
         root = self.wait("device-code-required")
         field, _ = target(root, "edit_text")
-        if field.get("text", ""):
+        if field.get("text", "") not in {"", "Enter the verification code."}:
             raise ValueError("device code field is not empty")
         self.tap(root, "edit_text")
         # The code exists only in this process and ADB stdin, never argv.

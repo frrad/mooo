@@ -1,0 +1,159 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "Clean-room Go LOCO probe on existing owned secondary profile; Mac 26.8.0-derived request models",
+    "date": "2026-10-13",
+    "method": "Exact owned A/B direct roster; 305 distinct numbered synthetic texts sent once, serially with two seconds between acknowledgements; bounded zero-held single-room and bulk requests; offline exact identity/order comparison; no history commit or read acknowledgement",
+    "doc": "research/bridge/HISTORY-PARITY-QUESTIONS.md"
+  },
+  "evidence": [
+    "HST-LIVE-005",
+    "HST-LIVE-006"
+  ],
+  "sanitization": "Compact projection. Live log IDs replaced by a shared zero-based identity index; indices represent ascending sparse identities, not arithmetic over wire IDs. Message bodies, account/device IDs, tokens, author IDs and unrelated fields omitted. Counts, types, order, continuation flags and request-cursor relationships retained.",
+  "available_window": {
+    "logs": 312,
+    "initial_types": [
+      24,
+      24,
+      24,
+      14,
+      14,
+      14,
+      1
+    ],
+    "numbered_texts": 305,
+    "numbered_text_identity_indices": [
+      7,
+      311
+    ],
+    "numbered_text_order": [
+      1,
+      305
+    ],
+    "all_numbered_texts_exactly_once": true
+  },
+  "sync": {
+    "input": {
+      "chatId": 5001,
+      "initial_cur": 0,
+      "max": "identity[311]",
+      "cnt": 0
+    },
+    "pages": [
+      {
+        "after": "zero",
+        "identity_indices": [
+          0,
+          0
+        ],
+        "logs": 1,
+        "isOK": false,
+        "target_reached": false
+      },
+      {
+        "after": "identity[0]",
+        "identity_indices": [
+          1,
+          80
+        ],
+        "logs": 80,
+        "isOK": false,
+        "target_reached": false
+      },
+      {
+        "after": "identity[80]",
+        "identity_indices": [
+          81,
+          160
+        ],
+        "logs": 80,
+        "isOK": false,
+        "target_reached": false
+      },
+      {
+        "after": "identity[160]",
+        "identity_indices": [
+          161,
+          240
+        ],
+        "logs": 80,
+        "isOK": false,
+        "target_reached": false
+      },
+      {
+        "after": "identity[240]",
+        "identity_indices": [
+          241,
+          311
+        ],
+        "logs": 71,
+        "isOK": false,
+        "target_reached": true
+      }
+    ]
+  },
+  "bulk": {
+    "input": {
+      "chatIds": [
+        5001
+      ],
+      "initial_sinces": [
+        0
+      ]
+    },
+    "pages": [
+      {
+        "since": "zero",
+        "identity_indices": [
+          0,
+          79
+        ],
+        "logs": 80,
+        "eof": false,
+        "target_reached": false
+      },
+      {
+        "since": "identity[79]",
+        "identity_indices": [
+          80,
+          159
+        ],
+        "logs": 80,
+        "eof": false,
+        "target_reached": false
+      },
+      {
+        "since": "identity[159]",
+        "identity_indices": [
+          160,
+          239
+        ],
+        "logs": 80,
+        "eof": false,
+        "target_reached": false
+      },
+      {
+        "since": "identity[239]",
+        "identity_indices": [
+          240,
+          311
+        ],
+        "logs": 72,
+        "eof": true,
+        "target_reached": true
+      }
+    ]
+  },
+  "cross_method_comparison": {
+    "exact_identity_sequences_equal": true,
+    "ascending_no_overlap": true,
+    "seed_indices_exactly_1_through_305": true
+  },
+  "limits": [
+    "One direct chat and this text/post/poll window; not a universal 80-log cap",
+    "No newest-N request or reverse-server paging established",
+    "Own authored writes make this a pagination experiment, not an unread-effect experiment",
+    "No fixed retention duration, new-device or pre-join guarantee"
+  ]
+}

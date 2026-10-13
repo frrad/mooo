@@ -1,0 +1,63 @@
+{
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk for Mac 26.8.0 arm64, build 2000",
+    "date": "2026-10-13",
+    "method": "Isolated signed no-network/no-shared-group harness executed needsMChatLogs: on allocated client with explicitly assigned synthetic pending set; preference hashes unchanged; child killed",
+    "doc": "research/bridge/HISTORY-PARITY-QUESTIONS.md"
+  },
+  "evidence": "HST-EXEC-002",
+  "scope": "Startup predicate only; allocated receiver without full initialized coordinator; no persistence, scheduling or server claim",
+  "cases": [
+    {
+      "pending": null,
+      "query": 5000,
+      "needs": true
+    },
+    {
+      "pending": null,
+      "query": 5002,
+      "needs": true
+    },
+    {
+      "pending": [],
+      "query": 5000,
+      "needs": false
+    },
+    {
+      "pending": [],
+      "query": 5002,
+      "needs": false
+    },
+    {
+      "pending": [
+        5000
+      ],
+      "query": 5000,
+      "needs": true
+    },
+    {
+      "pending": [
+        5000
+      ],
+      "query": 5002,
+      "needs": false
+    },
+    {
+      "pending": [
+        5000,
+        5001
+      ],
+      "query": 5000,
+      "needs": true
+    },
+    {
+      "pending": [
+        5000,
+        5001
+      ],
+      "query": 5002,
+      "needs": false
+    }
+  ]
+}
