@@ -21,7 +21,7 @@ implementation-neutral; synthetic cases are
 | HST-STATIC-003 | The loss-marker cleanup floor is the client-wide server-supplied `minLogId`. | High for login/SYNCMSG writes and consumers; its server policy is unknown. |
 | HST-STATIC-004 | Chat open first displays local history; older display reads use a 50-message local limit. `SYNCMSG` continuation uses `isOK`, held count and returned logs. | High for traced paths; initial server window, viewport prefetch and UI event coverage remain limited. |
 | HST-STATIC-005 | Bulk and single-room callbacks reconcile feeds, cursors and missing-history state; fetching and local read state are intertwined. | High for direct callback effects; server read effects, notification behavior and interruption durability require separate confirmation. |
-| HST-STATIC-006 | The notification manager's database observer updates counters/badges; notification delivery has a separate enqueue path. A loss-marker restore precheck reaches cloud backup configuration. | High for direct consumers; other indirect observers and all restore UI bindings are not exhaustively proved. |
+| HST-STATIC-006 | The notification manager's database observer updates counters/badges; notification delivery has a separate enqueue path. A message-restore precheck reaches cloud backup configuration. | High for direct consumers; other indirect observers and all restore UI bindings are not exhaustively proved. |
 
 ## A. Ordinary startup and bulk history
 
@@ -150,7 +150,7 @@ data absent from the local store through this immediate local-fetch chain.
 Loss-marker UI actions and special chat types must be traced separately;
 cloud-restore actions are outside this work's scope.
 
-The recovered loss-marker restore precheck reaches cloud backup-configuration
+The recovered message-restore precheck reaches cloud backup-configuration
 work before starting its continuation. This is a restore-dependent affordance,
 not evidence of ordinary `SYNCMSG` older paging. It was inspected only far
 enough to prevent a false parity inference; no restore operation was executed
@@ -262,7 +262,7 @@ harness or a controlled restart experiment, not a persistence-column inventory.
 | B2: which end is returned | No static server implementation is available. | Bounded owned-account differential; HOLD. |
 | B4/C3: boundaries | Global login/SYNCMSG `minLogId` source and `jsi` consumers recovered. | Classify server boundary meanings; execute edge inputs. |
 | B6/F1–F3: reads/notifications | Local seen writes, divider, watermark gating, NOTIREAD and database badge updates separated from notification enqueue. | Observe reads independently of fetch; indirect notification consumers remain a completeness gap. |
-| C1–C2: older/end-of-history | Immediate scroll path is local backward paging; bulk EOF and single-room continuation differ. One loss-marker precheck reaches cloud configuration and is excluded. | Other marker UI bindings remain a static gap; remote exhaustion needs observation. |
+| C1–C2: older/end-of-history | Immediate scroll path is local backward paging; bulk EOF and single-room continuation differ. One message-restore precheck reaches cloud configuration and is excluded. | Marker UI bindings remain a static gap; remote exhaustion needs observation. |
 | C4/H1–H2: state/resume | Separate stored bulk/sync/seen positions and callback writes recovered. | Full atomic interruption/resume proof remains open. |
 | C5/G2–G3: errors/retries | Nil/unsuccessful branches recovered; no dedicated bulk delay/throttle-code handling in this chain. | Shared transport timeout/disconnect evidence is SL-BIN-024; no observed history-specific throttling policy. |
 | D1–D3/D5: retention, joins, formats | Client predicates cannot answer these server questions; historical feed consumers identified. | Controlled server observations; HOLD. |
