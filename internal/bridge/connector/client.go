@@ -40,6 +40,7 @@ type sessionAPI interface {
 	CommitEvent(event events.Event) error
 	ResumeTargets(ctx context.Context) ([]syncmsg.Target, error)
 	CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error)
+	SeedLastMessage(chat chatmeta.ChatData, accept func(events.Event) bool) (events.Event, error)
 	Shutdown(ctx context.Context) error
 }
 
@@ -190,6 +191,9 @@ type KakaoClient struct {
 	cacheMu       sync.Mutex
 	sourceBlocked map[int64]error
 	profiles      map[int64]chatmeta.Member
+	// inventoryRooms holds direct chats whose rooms are being created from
+	// login inventory data while their last message is seeded.
+	inventoryRooms map[int64]chatmeta.ChatData
 	// profileRefreshAfter is the periodic profile refresh cursor; groupGate
 	// guards it.
 	profileRefreshAfter string
@@ -260,6 +264,9 @@ func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (
 	}
 	if err := kc.discoverGroups(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "group-discovery", err: err}
+	}
+	if err := kc.seedLastMessages(ctx, c); err != nil {
+		return nil, bootstrapFailure{stage: "last-messages", err: err}
 	}
 	if err := kc.catchUp(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "catch-up", err: err}
@@ -521,6 +528,11 @@ func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 func (kc *KakaoClient) getChatInfo(ctx context.Context, portal *bridgev2.Portal, regularGroupOnly bool) (*bridgev2.ChatInfo, error) {
 	if portal == nil {
 		return nil, errChatInfoMismatch
+	}
+	if chatID, err := parseChatID(portal.ID); err == nil && !regularGroupOnly {
+		if info, err := kc.inventoryChatInfo(portal, chatID); info != nil || err != nil {
+			return info, err
+		}
 	}
 	c, err := kc.metadataClient()
 	if err != nil {
