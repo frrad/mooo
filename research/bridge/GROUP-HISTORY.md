@@ -256,3 +256,45 @@ worker; account-wide coordination across those copies is an outstanding gate.
 The three-flow goal remains incomplete. Tests execute the production history reader,
 carriage request, admission and checkpoint paths against synthetic responses;
 this establishes worker mechanics, not an official-client rate or parity claim.
+
+
+### Acquired-page store (2026-10-13)
+
+The production profile now owns a private `.history-store` directory (0700,
+records 0600), bound to account and device identity. Validated source pages and
+current target records are written atomically before acquisition returns. They
+are independent of live commit and read watermarks. Returning one event does not
+discard the rest of the source page. Cache reads combine connected acquired
+prefixes, preserve sparse identities/order, and never broaden a selected ceiling.
+A raised ceiling can reuse its known prefix without fetching it again.
+
+Live edit/delete observations and historical feeds update durable target records
+before page publication. Known deletion is terminal for that target and prevents
+retained text from being rendered. Edits with a replacement update older snapshots;
+known edits without the target block that acquired position until reconciliation.
+Unrelated acquired history stays available. GETMSGS results can supply current
+replacement records. Buffered catch-up events are projected through target state
+before delivery admission, so a later delete feed cannot leave its old text in an
+earlier buffered message. Unknown/unavailable edit targets can still pause catch-up;
+automatic bounded target reconciliation is remaining integration work.
+
+Cached reads require no source request and bypass source admission cooldowns.
+Corrupt, mismatched or unsafe storage fails closed, rather than silently becoming
+an acquisition miss. Each serialized record is bounded by the private JSON limit;
+capacity/write failures are explicit and advance no delivery checkpoint. Mutation
+records precede page writes, so already durable target updates survive an interrupted
+later page write. Unpublished temporary files do not count as acquired coverage.
+
+[HST-CACHE-LIVE-001](../fixtures/history-store/observed-cache-window.json) used one
+owned three-member regular group. The first source page held one record; the next
+held four. The continuation returned one record, then the other three from storage.
+A reopened profile reproduced identities, content and order with both HTTP and LOCO
+transports denied (zero attempts). Local delivery/read cursors remained unchanged.
+The first probe stopped on an incorrect assumption that its first page must contain
+multiple records; cleanup ran, and the continuation reused its private saved bounds.
+There were two source page requests in total, across the two bounded observations.
+
+This proves SDK store behavior, not official UI parity, encrypted Matrix insertion,
+or server unread neutrality. Two records remain explicit message gaps. Startup
+MCHATLOGS, room viewing, backward bridge pagination, metadata/media pacing and
+complete account-wide integration still require the remaining three-flow gates.
