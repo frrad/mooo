@@ -44,13 +44,70 @@ The maintainer lifted the live test-account hold on 2026-10-13. Future owned
 observations use bounded requests, private attempt receipts and cleanup; cloud
 backup/restore remains excluded. No live experiment preceded this model result.
 
+### Owned observations (2026-10-13)
+
+The [observed window fixture](../fixtures/history-startup/observed-window.json)
+records HST-LIVE-001 through 003. Each request selected the same existing
+regular group, after full login-inventory visibility and an exact roster of
+the three owned disposable accounts were verified. The existing secondary
+profile was exclusively leased; no new device was enrolled. A private lab copy
+of the clean-room transport exposed raw request/response bodies without adding
+an unused API to production. Raw account data stayed outside the repository.
+
+**HST-LIVE-001 — unavailable old interval.** Two `SYNCMSG` requests used
+`cnt=0` and an upper bound covering synthetic texts seeded on 2026-10-10.
+One started at zero; the other started immediately before the first selected
+text. Both returned status 0, `isOK=true`, and `chatLogs=null`. The returned
+`minLogId` exceeded the requested maximum in both. Only the zero-cur response
+included a positive `jsi`, below the requested maximum. This demonstrates an
+unavailable interval below a supplied floor and separates `jsi` from that
+floor. It does not determine a fixed retention duration or a join policy.
+
+**HST-LIVE-002 — fresh control and bulk comparison.** One native synthetic
+text was sent once in that group. The sender's unread count was 2 before the
+probe and stayed 2 after login/inventory/roster verification. A bounded
+`SYNCMSG(cur=0, max=freshText, cnt=0)` returned status 0, `isOK=false` and one
+type-24 log, without the fresh text. The sender still showed 2 unread.
+One-room `MCHATLOGS(chatIds=[selected], sinces=[0])` then returned status 0,
+`eof=true`, and five logs of types 24, 14, 24, 14, 1, including the fresh text.
+The sender still showed 2 unread after that response.
+
+**HST-LIVE-003 — bounded forward continuation.** A separate bounded request
+started at the first SYNCMSG page's returned log ID, with the same fresh upper
+bound and `cnt=0`. It returned the remaining four logs, including the fresh
+text. The combined two-page log-ID sequence equalled the single bulk page's
+sequence, in order and without overlap. Sender unread remained 2.
+This final page still had `isOK=false`: that field alone is not an EOF or
+more-data flag. The requested upper identity was reached, so no further page
+was requested. The static coordinator may attempt continuation and then stop
+at its synchronized-state dispatch guard.
+
+Confidence is high for these specific packets, identity/order comparisons and
+native unread observations. It establishes a five-log available window and
+one group's bounded unread behavior, not oldest/newest selection in a window
+larger than 300, general direct-chat read policy, fresh-device access or
+pre-join visibility. The two receiver emulators remained stopped. The probes
+emitted neither `NOTIREAD` nor `CHATONROOM`, committed no history, and retried
+no request. Every session exited and released its lease; the sender emulator
+was returned to HOME and stopped, and transient UI captures were removed.
+
+No production bug was exposed: empty-page decoding and reporting an unreached
+history target as an explicit gap already have regression coverage. The raw
+probes isolate protocol evidence from bridge delivery policy.
+
+Transfer review: Codex, 2026-10-13. Source classes are binary-analysis,
+isolated synthetic model execution and controlled owned-account observations.
+Redaction and expression review passed. Public fixtures retain only synthetic
+identities, protocol field/type behavior, relative boundaries, counts and
+original descriptions; raw packets, account data and UI captures are excluded.
+
 ## Context
 
 At the request's initial baseline, a fresh login showed no chat history.
-PR #338 now seeds inventory last messages into portals. Catch-up only covers
-chats this profile has already committed (`ResumeTargets`), regular groups get
-empty rooms, and direct chats get no room until a new message arrives. The only
-history path is the operator command `history-group` (see
+At that baseline catch-up covered only chats this profile had already committed
+(`ResumeTargets`), regular groups got empty rooms, and direct chats got no room
+until a new message arrived. PR #338 now seeds inventory last messages into
+portals. The separate operator history path is `history-group` (see
 [group history](GROUP-HISTORY.md)).
 
 The proposed fix is staged:
@@ -70,7 +127,7 @@ faithfully, separating what is known from what is not.
 ## Known
 
 - `SYNCMSG` takes int64 `chatId`, `cur`, `max` and int32 `cnt`; the normal page
-  limit is 300; a successful empty page may omit or null `chatLogs`
+  held-message count cap is 300; a successful empty page may omit or null `chatLogs`
   (SL-BIN-011, SL-LIVE-011, [message continuity](../message-continuity.md)).
 - `cnt` declares how many messages the client already holds after `cur`, not a
   page size; `cnt=0` returns messages the client lacks (SL-BIN-035,

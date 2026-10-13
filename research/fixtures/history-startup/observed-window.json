@@ -1,0 +1,67 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "Clean-room Go LOCO probe; Android 26.8.2 sender; Mac 26.8.0-derived request models",
+    "date": "2026-10-13",
+    "method": "Bounded requests on one selected regular group after inventory and exact three-owned-account roster verification; one native synthetic control; sender unread observations before/after; no request retry, NOTIREAD, CHATONROOM or history commit",
+    "doc": "research/bridge/HISTORY-PARITY-QUESTIONS.md"
+  },
+  "evidence": ["HST-LIVE-001", "HST-LIVE-002", "HST-LIVE-003"],
+  "sanitization": "Live IDs replaced by synthetic order-preserving representatives. Responses are projections: status, relevant field presence, returned log ordering/types/counts and unread counts are preserved; message bodies, IDs, tokens and unrelated fields are removed.",
+  "cases": [
+    {
+      "name": "old-interval-below-returned-floor-zero-cur",
+      "method": "SYNCMSG",
+      "input": {"chatId": 5000, "cur": 0, "max": 300, "cnt": 0},
+      "expected_projection": {"status": 0, "isOK": true, "chatLogs": null, "minLogId": 350, "jsi": 50},
+      "observation": "Requested synthetic messages were seeded on 2026-10-10; returned minLogId exceeded the requested maximum. No fixed retention duration is inferred."
+    },
+    {
+      "name": "old-interval-below-returned-floor-nonzero-cur",
+      "method": "SYNCMSG",
+      "input": {"chatId": 5000, "cur": 199, "max": 300, "cnt": 0},
+      "expected_projection": {"status": 0, "isOK": true, "chatLogs": null, "minLogId": 350},
+      "absent_fields": ["jsi"]
+    },
+    {
+      "name": "fresh-window-first-sync-page",
+      "method": "SYNCMSG",
+      "input": {"chatId": 5000, "cur": 0, "max": 800, "cnt": 0},
+      "expected_projection": {"status": 0, "isOK": false, "chatLogs": [{"logId": 400, "type": 24}]},
+      "fresh_control_returned": false
+    },
+    {
+      "name": "fresh-window-bulk-page",
+      "method": "MCHATLOGS",
+      "input": {"chatIds": [5000], "sinces": [0]},
+      "expected_projection": {
+        "status": 0,
+        "eof": true,
+        "chatLogs": [{"logId": 400, "type": 24}, {"logId": 500, "type": 14}, {"logId": 600, "type": 24}, {"logId": 700, "type": 14}, {"logId": 800, "type": 1}]
+      },
+      "fresh_control_returned": true
+    },
+    {
+      "name": "fresh-window-sync-continuation",
+      "method": "SYNCMSG",
+      "input": {"chatId": 5000, "cur": 400, "max": 800, "cnt": 0},
+      "expected_projection": {
+        "status": 0,
+        "isOK": false,
+        "chatLogs": [{"logId": 500, "type": 14}, {"logId": 600, "type": 24}, {"logId": 700, "type": 14}, {"logId": 800, "type": 1}]
+      },
+      "fresh_control_returned": true,
+      "target_reached": true,
+      "observation": "The two ordered SYNCMSG pages equal the bulk page's log-ID sequence, with no overlap. isOK remains false on the final page; it is not a standalone more-data/EOF flag."
+    }
+  ],
+  "fresh_sender_unread_observations": {
+    "before_login": 2,
+    "after_login_and_roster": 2,
+    "after_first_syncmsg": 2,
+    "after_mchatlogs": 2,
+    "after_syncmsg_continuation": 2,
+    "scope": "One selected group and one fresh synthetic message, with the two receiver emulators stopped; not a general direct/group no-read-effect guarantee"
+  },
+  "limits": ["No more-than-300-log window tested", "No direct-chat differential", "No new-device/pre-registration retention inference", "No pre-join visibility test", "No global concurrency/throttling test"]
+}

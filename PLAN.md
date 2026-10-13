@@ -27,6 +27,12 @@ paging and the single-room `SYNCMSG` continuation rule.
       on 2026-10-13 and requested continuing evidence on PR #336. HST-EXEC-001
       has executed the offline request/response models; scheduling and
       persistence fixtures remain static leads.
+- HST-LIVE-001–003 now establish an unavailable interval below the supplied
+  floor and a five-log group window: two forward SYNCMSG pages match one
+  MCHATLOGS page; the fresh sender unread count stayed unchanged. Larger
+  windows, direct chats and new-device/pre-join access remain unproved. Keep
+  the next observations bounded; do not infer a fixed retention duration or
+  a global no-read-effect policy from this group.
 - [ ] Choose and implement fresh-login backfill only after the evidence
       establishes its boundaries and read policy. Cloud backup/restore stays
       out of scope.
