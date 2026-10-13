@@ -203,6 +203,18 @@ this document and the executed fixtures. Separate bundle/sandbox identity,
 signing checks, absent shared groups, and process cleanup were verified. No
 whole-profile non-mutation guarantee follows from the empty hash check.
 
+**HST-EXEC-003 — repeat with a fail-closed preference baseline.** The 15
+model cases and eight predicate cases were repeated offline with mandatory
+baselines for the original sandbox's `com.kakao.KakaoTalkMac.plist` and
+`com.google.gmp.measurement.monitor.plist`. Both files existed and their hashes
+matched before and after each isolated run; the case outputs matched the
+initial runs exactly. A regression rejects an empty or incomplete baseline
+and detects a changed file. This verifies those two preference files during
+the repeat runs only. It does not retroactively verify the earlier runs or
+fresh live attempt, and is not a whole-profile non-mutation guarantee.
+The repeated models retained the no-network/no-shared-group isolation, and
+both child processes were killed.
+
 ## Answers by question family
 
 This index distinguishes an answered client contract from remaining server or

@@ -3,9 +3,9 @@
     "kind": "executed",
     "client": "KakaoTalk for Mac 26.8.0 arm64, build 2000",
     "date": "2026-10-13",
-    "method": "Isolated signed no-network/no-shared-group harness executed needsMChatLogs: on allocated client with explicitly assigned synthetic pending set; child killed",
+    "method": "Isolated signed no-network/no-shared-group harness executed needsMChatLogs: on allocated client with explicitly assigned synthetic pending set; child killed; repeated offline with two mandatory original sandbox preference hashes verified before/after",
     "doc": "research/bridge/HISTORY-PARITY-QUESTIONS.md",
-    "limits": "Original preference non-mutation was not verified: the initial global-directory hash check matched no files and did not cover the official sandbox."
+    "limits": "Hash verification covers two mandatory original preference files during the repeat runs only. The initial empty baseline and fresh live attempt do not establish unchanged preferences; no whole-profile guarantee."
   },
   "evidence": "HST-EXEC-002",
   "scope": "Startup predicate only; allocated receiver without full initialized coordinator; no persistence, scheduling or server claim",
@@ -60,5 +60,6 @@
       "query": 5002,
       "needs": false
     }
-  ]
+  ],
+  "verification_evidence": "HST-EXEC-003"
 }
