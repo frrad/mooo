@@ -376,8 +376,11 @@ eventLoop:
 		var result events.Result
 		select {
 		case <-profileTicker.C:
-			if !kickedOut && !changeServer {
-				kc.refreshOneGroupProfiles(c)
+			if !kickedOut && !changeServer && kc.refreshOneGroupProfiles(c) {
+				// The connection failed mid-request. Ending the session reports
+				// a disconnect, and recovery reconnects on its schedule and
+				// refreshes the group.
+				break eventLoop
 			}
 			continue
 		case next, ok := <-stream:

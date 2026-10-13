@@ -64,6 +64,20 @@ the kick. The state message follows the official logout alert, including the
 server's explanation text and help link when present
 ([KICKOUT notification](reconnect/KICKOUT-NOTIFICATION.md#logout-alert)).
 
+The once-a-minute group profile refresh ends the session when its source
+request fails on the connection: the session closed, the transport failed, or
+no reply arrived within its 30 second timeout (2026-10-13). The bridge then
+reports `kakao-disconnected` and recovers on the schedule above, and recovery's
+group discovery refreshes the paused group. Before this, a network outage was
+reported as `kakao-group-membership-pending`, which asks the operator to repair
+Matrix rooms, and the dead connection went unnoticed: each refresh request
+cancels the keepalive ping and re-arms it for a full interval, so with managed
+groups the ping never fired. In an owned Docker run with all Kakao traffic
+dropped, the bridge still reported itself connected four minutes into the
+outage. The official client closes the carriage when a request gets no
+response header within 20 seconds; this client has no such timeout, so any
+other request that times out still postpones the next ping.
+
 CHANGESVR performs old-session cleanup and books a fresh session. It does not
 replay outbound mutations.
 

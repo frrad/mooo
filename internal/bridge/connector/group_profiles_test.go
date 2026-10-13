@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+
+	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -229,5 +233,49 @@ func TestGroupProfileRefreshClearsKnownGhostAndPreservesUnavailableGhost(t *test
 	}
 	if missing.Intent.GetMXID() != ghosts[4000].Intent.GetMXID() || missing.Name != "Previous profile" || missing.AvatarMXC != "mxc://test/previous" {
 		t.Fatal("unavailable profile erased existing ghost fields or identity")
+	}
+}
+
+// A periodic refresh that fails on the connection ends the session instead of
+// reporting a membership problem. Recovery's group discovery refreshes the
+// paused group on the next session. Regression: a network outage reported
+// kakao-group-membership-pending in the lab (2026-10-11 and 2026-10-13).
+func TestPeriodicGroupProfileRefreshTransportFailureEndsSession(t *testing.T) {
+	for name, cause := range map[string]error{"closed": client.ErrClosed, "eof": io.EOF, "timeout": context.DeadlineExceeded} {
+		t.Run(name, func(t *testing.T) {
+			kc, backend, _ := newGroupCreationFramework(t)
+			harness := &testHarness{}
+			kc.sendState = harness.sendState
+			ctx := context.Background()
+			if _, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}}); err != nil {
+				t.Fatal(err)
+			}
+			backend.chatInfoErr = fmt.Errorf("client: CHATINFO request: %w", cause)
+			if !kc.refreshOneGroupProfiles(backend) {
+				t.Fatal("refresh failed on the connection but did not ask to end the session")
+			}
+			for _, state := range harness.allStates() {
+				if state.Error == stateGroupMembershipPending || state.Error == stateGroupAccessRemoved {
+					t.Fatalf("connection failure reported %s", state.Error)
+				}
+			}
+		})
+	}
+}
+
+func TestPeriodicGroupProfileRefreshOtherFailureReportsPendingMembership(t *testing.T) {
+	kc, backend, _ := newGroupCreationFramework(t)
+	harness := &testHarness{}
+	kc.sendState = harness.sendState
+	ctx := context.Background()
+	if _, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}}); err != nil {
+		t.Fatal(err)
+	}
+	backend.chatInfoErr = errors.New("synthetic source rejection")
+	if kc.refreshOneGroupProfiles(backend) {
+		t.Fatal("non-transport refresh failure ended the session")
+	}
+	if state := harness.lastState(); state.Error != stateGroupMembershipPending {
+		t.Fatalf("last state = %+v, want %s", state, stateGroupMembershipPending)
 	}
 }
