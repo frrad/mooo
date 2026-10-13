@@ -58,6 +58,38 @@ class QRPhoneTests(unittest.TestCase):
             self.assertEqual(phone.approve(), "device-code-required")
         self.assertEqual(phone.calls, [(('shell', 'input', 'tap', '20', '30'), None)])
 
+    def test_direct_qr_approval_submits_once_and_waits_for_success(self):
+        login = xml('<node resource-id="com.kakao.talk:id/btn_login" enabled="true" bounds="[10,20][30,40]"/>'
+                    '<node resource-id="com.kakao.talk:id/btn_cancel"/>')
+        success = xml('<node text="Successfully logged in"/><node text="Close"/><node text="Manage Devices"/>')
+        phone = FakePhone([login, success])
+        self.assertEqual(phone.approve(), "qr-authorized")
+        self.assertEqual(phone.calls, [(('shell', 'input', 'tap', '20', '30'), None)])
+
+    def test_direct_qr_restriction_after_submission_stops(self):
+        login = xml('<node resource-id="com.kakao.talk:id/btn_login" enabled="true" bounds="[10,20][30,40]"/>'
+                    '<node resource-id="com.kakao.talk:id/btn_cancel"/>')
+        restricted = xml('<node text="Logins are restricted from sub devices due to user protection measures."/>')
+        phone = FakePhone([login, restricted])
+        with self.assertRaisesRegex(ValueError, "secondary-login-restricted"):
+            phone.approve()
+        self.assertEqual(len(phone.calls), 1)
+
+    def test_direct_login_can_require_verification_code(self):
+        login = xml('<node resource-id="com.kakao.talk:id/btn_login" enabled="true" bounds="[10,20][30,40]"/>'
+                    '<node resource-id="com.kakao.talk:id/btn_cancel"/>')
+        phone = FakePhone([login, code_form("Enter the verification code.")])
+        self.assertEqual(phone.approve(), "device-code-required")
+        self.assertEqual(len(phone.calls), 1)
+
+    def test_code_placeholder_is_not_an_existing_code(self):
+        phone = FakePhone([code_form("Enter the verification code."), code_form("A1B2")])
+        self.assertEqual(phone.enter_code("A1B2"), "device-code-submitted")
+        self.assertEqual(sum(args == ('shell', 'input', 'tap', '20', '90') for args, _ in phone.calls), 1)
+
+    def test_ordinary_login_button_is_not_qr_approval(self):
+        self.assertEqual(screen(xml('<node resource-id="com.kakao.talk:id/btn_login"/>')), "unknown")
+
     def test_form_uses_layout_not_old_title(self):
         self.assertEqual(screen(code_form()), "device-code-required")
 

@@ -4,8 +4,9 @@ Evidence date: 2026-10-13. Reference: KakaoTalk for Mac 26.8.0, arm64.
 Method: read-only Ghidra method, selector-call, class-metadata, callback,
 disassembly and persistence analysis of the authorized official binary.
 This answers the static part of [PR #336](https://github.com/frrad/mooo/pull/336).
-No official client was launched, no model harness was executed, and no test
-account, emulator, bridge, carriage, QR or network experiment was used.
+The initial static pass launched no official client or model harness and used
+no test account, emulator, bridge, carriage, QR or network experiment. Later
+executed and observed evidence is linked separately below.
 
 These are **static findings**, not executed parity or observed server behavior.
 Raw reports remain in the private external lab. Public descriptions below are
@@ -53,8 +54,10 @@ client-selected per-room message count in this request model.
 The request method is `MCHATLOGS`; its declared fields are `chatIds` and
 `sinces`, both arrays of 64-bit integers. The response model declares a typed
 `chatLogs` collection and Boolean `eof`, in addition to shared response state.
-Exact omitted/null/default/coercion behavior has not been executed for this
-model. Do not reuse the executed `GETMSGS` fixture as evidence for it.
+The subsequent HST-EXEC-001
+[model run](HISTORY-PARITY-QUESTIONS.md#findings-so-far) confirms empty versus
+omitted/null collections and default-false `eof`; broader coercion and
+coordinator behavior remain unexecuted. The `GETMSGS` fixture is separate.
 
 On a successful response, the lower coordinator persists/reconciles its logs
 before delivering the response to the bulk scheduler. The scheduler examines
@@ -248,7 +251,11 @@ the separately documented open-window/no-watermark-hold/non-self-author path
 requests or bulk startup have no server read effects. Backfill must preserve
 its independent delivery journal and read policy.
 
-Stored cursor fields supply a restart lead, but this analysis does not prove
+HST-STATIC-007 subsequently traced the data-store write wrapper. It runs the
+caller block, then flushes its changed objects inside a begin/save-or-delete/
+commit transaction and schedules change notifications afterward. An exception
+path rolls back and reverts affected objects; begin/commit return values are
+not checked in that routine. This narrows the storage boundary, but does not prove
 atomic durability across interruption between log writes, feed application,
 cursor updates and pending-set retirement. That requires an executed storage
 harness or a controlled restart experiment, not a persistence-column inventory.
@@ -258,29 +265,29 @@ harness or a controlled restart experiment, not a persistence-column inventory.
 | PR #336 area | Static result | Remaining evidence |
 | --- | --- | --- |
 | A1–A5: eager startup | Bulk trigger, predicates, cursor preservation, order, 100-room cap, callback continuation and ordinary-startup separation recovered. | Confirm fresh-install output/window and list-render timing. |
-| B1/B3/B5: chat open, response, amount | Local-first display, CHATONROOM separation, response fields and SYNCMSG continuation recovered; display limit 50. | Execute model decoding; observe initial remote interval/window and viewport behavior. |
-| B2: which end is returned | No static server implementation is available. | Bounded owned-account differential; HOLD. |
+| B1/B3/B5: chat open, response, amount | Local-first display, CHATONROOM separation, response fields and SYNCMSG continuation recovered; display limit 50. | Model decoding executed in HST-EXEC-001; fresh-open/viewport behavior remains unobserved. |
+| B2: which end is returned | No static server implementation is available. | HST-LIVE-005/006 observed a 312-log direct-chat forward window; group/payload generality remains open. |
 | B4/C3: boundaries | Global login/SYNCMSG `minLogId` source and `jsi` consumers recovered. | Classify server boundary meanings; execute edge inputs. |
 | B6/F1–F3: reads/notifications | Local seen writes, divider, watermark gating, NOTIREAD and database badge updates separated from notification enqueue. | Observe reads independently of fetch; indirect notification consumers remain a completeness gap. |
 | C1–C2: older/end-of-history | Immediate scroll path is local backward paging; bulk EOF and single-room continuation differ. One message-restore precheck reaches cloud configuration and is excluded. | Marker UI bindings remain a static gap; remote exhaustion needs observation. |
 | C4/H1–H2: state/resume | Separate stored bulk/sync/seen positions and callback writes recovered. | Full atomic interruption/resume proof remains open. |
 | C5/G2–G3: errors/retries | Nil/unsuccessful branches recovered; no dedicated bulk delay/throttle-code handling in this chain. | Shared transport timeout/disconnect evidence is SL-BIN-024; no observed history-specific throttling policy. |
-| D1–D3/D5: retention, joins, formats | Client predicates cannot answer these server questions; historical feed consumers identified. | Controlled server observations; HOLD. |
+| D1–D3/D5: retention, joins, formats | Client predicates cannot answer these server questions; historical feed consumers identified. | Small direct/group windows observed; general policies remain open. |
 | D4/E: media and side requests | Exact-edit recovery, local threads, room/member and chat-log metadata dependencies identified. | Full historical media/author/reaction consumer accounting remains a static gap. |
 | G1/G4: pacing/envelope | Serial main bulk chain, numeric order, 100-room request cap, controller-local sync guard. | Global overlap cap and actual largest source-visible burst unproved. |
 
-## Next work, with live hold
+## Next work and authorization
 
-The maintainer explicitly requires **HOLD before any live experiment using
-the test accounts**. The suggested observed-first order in PR #336 is
-superseded by that hold. Do not generate QR codes, enroll/revoke devices,
-start the bridge/probes, connect a profile, navigate signed-in clients, seed
-messages, fetch source history or test throttling without the hold being lifted.
+The initial static pass ran under **HOLD before any live experiment using
+the test accounts**. The maintainer lifted that hold on 2026-10-13 and requested
+continued research on PR #336. This authorization does not change the
+owned-profile, bounded-attempt, cleanup and cloud-restore exclusions.
 
-Offline model execution is separately pending; it is not represented as done
-by these static fixtures. Additional static work should close the explicit
+HST-EXEC-001 subsequently executed the request/response models on synthetic
+inputs. It does not execute these static control-flow fixtures. Additional
+static work should close the explicit
 consumer gaps above before any implementation claims complete parity.
-When authorized later, first observe a small existing direct/group interval
+Next, observe a small existing direct/group interval
 and unread state, then compare bulk startup and chat open on a fresh official
 profile. Avoid speculative bursts or device changes just to answer a window
 question. Cloud backup/restore remains excluded.

@@ -1,0 +1,95 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "Clean-room Go LOCO probe; Android 26.8.2 native sender; Mac 26.8.0-derived request models",
+    "date": "2026-10-13",
+    "method": "One fresh synthetic text in existing exact-owned-AB direct chat; paused native unread observations after inventory and each raw request; no NOTIREAD, CHATONROOM or history commits",
+    "doc": "research/bridge/HISTORY-PARITY-QUESTIONS.md"
+  },
+  "evidence": "HST-LIVE-004",
+  "sanitization": "Projection with order-preserving synthetic IDs, protocol counts/types and field relationships; live identities, bodies, tokens and unrelated fields omitted.",
+  "cases": [
+    {
+      "name": "direct-first-sync-page",
+      "input": {
+        "method": "SYNCMSG",
+        "chatId": 5001,
+        "cur": 0,
+        "max": 1000,
+        "cnt": 0
+      },
+      "expected_projection": {
+        "status": 0,
+        "isOK": false,
+        "chatLogs": [
+          {
+            "logId": 400,
+            "type": 24
+          }
+        ],
+        "minLogId": 350,
+        "jsi": 50
+      },
+      "fresh_control_returned": false
+    },
+    {
+      "name": "direct-bulk-page",
+      "input": {
+        "method": "MCHATLOGS",
+        "chatIds": [
+          5001
+        ],
+        "sinces": [
+          0
+        ]
+      },
+      "expected_projection": {
+        "status": 0,
+        "eof": true,
+        "chatLogs": [
+          {
+            "logId": 400,
+            "type": 24
+          },
+          {
+            "logId": 500,
+            "type": 24
+          },
+          {
+            "logId": 600,
+            "type": 24
+          },
+          {
+            "logId": 700,
+            "type": 14
+          },
+          {
+            "logId": 800,
+            "type": 14
+          },
+          {
+            "logId": 900,
+            "type": 14
+          },
+          {
+            "logId": 1000,
+            "type": 1
+          }
+        ]
+      },
+      "fresh_control_returned": true
+    }
+  ],
+  "sender_unread": {
+    "before_login": 1,
+    "after_inventory": 1,
+    "after_sync": 1,
+    "after_bulk": 1
+  },
+  "limits": [
+    "Single direct chat/control; not a universal no-read guarantee",
+    "Single SYNC page did not reach the fresh control",
+    "Seven-log bulk window does not establish large-window direction",
+    "Older returned records had 2026-10-11 timestamps; no universal retention rule inferred"
+  ]
+}

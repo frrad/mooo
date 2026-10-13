@@ -23,8 +23,20 @@ paging and the single-room `SYNCMSG` continuation rule.
       separately before claiming parity.
 - [ ] Confirm server window direction, retention, pre-join visibility and
       read effects with bounded direct/group observations, then fresh official
-      startup/open observations. **Live test-account experiments are on HOLD
-      by maintainer instruction; do not begin them until that hold is lifted.**
+      startup/open observations. The maintainer lifted the initial live hold
+      on 2026-10-13 and requested continuing evidence on PR #336. HST-EXEC-001
+      has executed the offline request/response models; scheduling and
+      persistence fixtures remain static leads.
+- HST-LIVE-001–003 now establish an unavailable interval below the supplied
+  floor and a five-log group window: two forward SYNCMSG pages match one
+  MCHATLOGS page; the fresh sender unread count stayed unchanged. HST-LIVE-004 extends the bounded unread observation to an owned direct
+  chat; HST-EXEC-002 executes the startup pending-set predicate. Larger
+  windows now have HST-LIVE-005/006: 305 numbered direct-chat texts and
+  identical 312-log sequences through five SYNC and four bulk pages. Forward
+  ordinary pages held 80 logs here; 300 remains a held-count parameter.
+  New-device/pre-join access remains unproved. Keep
+  the next observations bounded; do not infer a fixed retention duration or
+  a global no-read-effect policy from this group.
 - [ ] Choose and implement fresh-login backfill only after the evidence
       establishes its boundaries and read policy. Cloud backup/restore stays
       out of scope.
