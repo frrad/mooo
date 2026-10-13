@@ -591,7 +591,11 @@ func (c *Client) SendReply(ctx context.Context, request chat.ReplyRequest) (chat
 // any ambiguous mutation or upload stage.
 func (c *Client) SendImage(ctx context.Context, chatID int64, data []byte, caption string) (media.SendResult, error) {
 	return withSession(c, ctx, func(session *session) (media.SendResult, error) {
-		return session.SendImage(ctx, chatID, data, caption)
+		result, err := session.SendImage(ctx, chatID, data, caption)
+		if !errors.Is(err, media.ErrUploadRedirect) {
+			return result, err
+		}
+		return c.directPhoto(ctx, session, chatID, data, caption)
 	})
 }
 

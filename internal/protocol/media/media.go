@@ -37,8 +37,9 @@ var (
 	ErrInvalidImage     = errors.New("media: invalid image")
 	ErrUnsupportedImage = errors.New("media: unsupported image format")
 	ErrInvalidResponse  = errors.New("media: invalid response")
-	// ErrUploadRedirect means SHIP selected an upload strategy not implemented
-	// by this client. No trailer upload or chat message was attempted.
+	// ErrUploadRedirect means an alternate upload strategy is required. The
+	// trailer path returns it before uploading; unsupported HTTP strategies
+	// also return it without attempting a chat message.
 	ErrUploadRedirect    = errors.New("media: alternate upload required")
 	ErrInvalidOffset     = errors.New("media: invalid upload offset")
 	ErrInvalidMessage    = errors.New("media: invalid photo message")

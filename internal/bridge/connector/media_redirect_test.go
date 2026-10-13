@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/frrad/mooo/internal/client"
+	"github.com/frrad/mooo/internal/protocol/macweb"
 	"github.com/frrad/mooo/internal/protocol/media"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/event"
@@ -32,5 +34,13 @@ func TestOutboundRedirectReportsAttachmentCertainlyNotSent(t *testing.T) {
 	}
 	if reservations != 1 || fake.imageCalls != 1 {
 		t.Fatalf("reservations %d sends %d", reservations, fake.imageCalls)
+	}
+}
+
+func TestDirectPhotoUploadFailureReportsCertainlyNotSent(t *testing.T) {
+	err := outboundSendError(errors.Join(client.ErrPhotoNotCreated, macweb.ErrTransport))
+	var status bridgev2.MessageStatus
+	if !errors.As(err, &status) || !status.IsCertain || status.Status != event.MessageStatusFail || !strings.Contains(status.Message, "not sent") {
+		t.Fatalf("upload failure status %v", err)
 	}
 }
