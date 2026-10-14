@@ -13,6 +13,7 @@ import (
 	"image/jpeg"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -428,5 +429,41 @@ func TestDecodeShipResponseReportsReasonAndShape(t *testing.T) {
 		if !bytes.Equal(invalid.RawBody(), body) {
 			t.Fatalf("%s: raw body not retained", c.reason)
 		}
+	}
+}
+
+// Newer clients send photos as WebP. They decode and download like JPEG, and
+// the downloaded bytes must match the advertised type.
+func TestWebPPhotoDecodesAndDownloads(t *testing.T) {
+	data, err := os.ReadFile("../../../research/fixtures/stickers/synthetic.webp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachment := fmt.Sprintf(`{"k":"opaque.webp","w":64,"h":64,"s":%d,"cs":"","mt":"image/webp","url":"https://talk.kakaocdn.net/p/file?token=synthetic","thumbnailUrl":"https://talk.kakaocdn.net/p/thumb?token=synthetic","expire":4102444800000}`, len(data))
+	log, _ := bson.Marshal(bson.D{{Key: "type", Value: messagetype.Photo}, {Key: "logId", Value: int64(99)}, {Key: "attachment", Value: attachment}})
+	body, _ := bson.Marshal(bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.Raw(log)}})
+	message, err := DecodePhotoMessage(decodeEnvelope(t, body))
+	if err != nil {
+		t.Fatalf("decode err = %v", err)
+	}
+	serve := func(data []byte) *http.Client {
+		return &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(data)), Request: req}, nil
+		})}
+	}
+	downloaded, err := DownloadPhoto(t.Context(), serve(data), message.Attachment)
+	if err != nil || !bytes.Equal(downloaded, data) {
+		t.Fatalf("download bytes=%d err=%v", len(downloaded), err)
+	}
+	jpeg := syntheticJPEG(t)
+	mislabeled := message.Attachment
+	mislabeled.Size = int64(len(jpeg))
+	if _, err := DownloadPhoto(t.Context(), serve(jpeg), mislabeled); !errors.Is(err, ErrUnsupportedImage) {
+		t.Fatalf("JPEG labeled WebP err = %v", err)
+	}
+	mislabeled = message.Attachment
+	mislabeled.MediaType = "image/jpeg"
+	if _, err := DownloadPhoto(t.Context(), serve(data), mislabeled); !errors.Is(err, ErrUnsupportedImage) {
+		t.Fatalf("WebP labeled JPEG err = %v", err)
 	}
 }
