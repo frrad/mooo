@@ -411,19 +411,7 @@ func (s *historyStore) lookup(req syncmsg.Request) (syncmsg.Response, bool, erro
 		return syncmsg.Response{}, false, s.failed
 	}
 	// Cover only a connected acquired prefix. Sparse IDs are identities, not counts.
-	end := req.Cur
-	for {
-		next := end
-		for _, ref := range s.pages {
-			if ref.request.ChatID == req.ChatID && ref.request.Cur <= end && ref.last > end {
-				next = max(next, min(ref.last, req.Max))
-			}
-		}
-		if next == end {
-			break
-		}
-		end = next
-	}
+	end := s.coveredThroughLocked(req)
 	if end == req.Cur {
 		observation, err := s.unavailableLocked(req)
 		if err != nil {
@@ -589,8 +577,32 @@ type historyBulkProgress struct {
 func (s *historyStore) bulkSnapshot() map[int64]int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return maps.Clone(s.bulkCursors)
+	// A suffix can advance the highest acquired identity without acquiring the
+	// preceding window. Derive startup progress from connected durable coverage,
+	// including when an older journal recorded that suffix's high watermark.
+	cursors := make(map[int64]int64, len(s.bulkCursors))
+	for id, high := range s.bulkCursors {
+		cursors[id] = s.coveredThroughLocked(syncmsg.Request{ChatID: id, Max: high})
+	}
+	return cursors
 }
+
+func (s *historyStore) coveredThroughLocked(req syncmsg.Request) int64 {
+	end := req.Cur
+	for {
+		next := end
+		for _, ref := range s.pages {
+			if ref.request.ChatID == req.ChatID && ref.request.Cur <= end && ref.last > end {
+				next = max(next, min(ref.last, req.Max))
+			}
+		}
+		if next == end {
+			return end
+		}
+		end = next
+	}
+}
+
 func (s *historyStore) commitBulk(cursors map[int64]int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

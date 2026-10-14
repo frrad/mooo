@@ -37,6 +37,16 @@ concurrency, configurable spacing, coalesced demand, finite budgets, and backoff
 or stopping on errors/non-progress. Cached history must not cause unnecessary
 source requests. Cloud backup/restore remains out of scope.
 
+2026-10-14 checkpoint: keep SQLite. The
+[combined evidence draft](research/bridge/HISTORY-THREE-FLOW-ACCEPTANCE.md)
+records controlled Android opening/read observations, current startup acquisition
+followed by real encrypted Matrix pagination and recovery, a real cache-gap case
+and the startup cursor fix it exposed, and the Mac failure's distinct diagnostic
+paths. These slices do not satisfy the complete three-flow gate. Next: trace the
+Mac failure's actual callback/result and native viewing chain, then dependency
+and competing-request acceptance through the full bridge/client path. Consolidate sanitized fixtures
+and traces for publication within the requested PR limit.
+
 ### Shared foundation
 
 - [x] Preserve the returned SYNCMSG floor and distinguish an observed empty

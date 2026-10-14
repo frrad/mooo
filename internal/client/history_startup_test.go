@@ -148,6 +148,87 @@ func TestStartupBulkReconstructsCursorFromDurablePage(t *testing.T) {
 	}
 }
 
+func TestStartupBulkDoesNotSkipDisconnectedCachedSuffix(t *testing.T) {
+	for _, legacyJournal := range []bool{false, true} {
+		t.Run(fmt.Sprintf("legacy_journal_%t", legacyJournal), func(t *testing.T) {
+			backend := newScriptedBackend(t, false, testloco.Expect("MCHATLOGS",
+				checkBulk([]int64{42}, []int64{0}),
+				statusDocument(bson.E{Key: "eof", Value: true}, bson.E{Key: "chatLogs", Value: bson.A{
+					bulkLog(42, 101), bulkLog(42, 102), bulkLog(42, 103),
+				}})))
+			api, dir := startupClient(t, backend, []bson.Raw{bulkRoom(t, 42, 103)}, 0)
+			if err := api.historyStore.save(syncmsg.Request{ChatID: 42, Cur: 102, Max: 103},
+				syncmsg.Response{ChatLogs: []bson.Raw{mustBSON(bulkLog(42, 103))}}); err != nil {
+				t.Fatal(err)
+			}
+			if legacyJournal {
+				// Previously written journals can record the highest acquired identity
+				// even though its page does not connect to the beginning of the window.
+				if err := api.historyStore.commitBulk(map[int64]int64{42: 103}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			api.historyStore = reopenTestHistoryStore(t, dir)
+			got, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{MaxPages: 1})
+			if err != nil || got.Pages != 1 || got.Pending != 0 {
+				t.Fatalf("disconnected suffix skipped acquisition: %+v %v", got, err)
+			}
+			api.historyStore = reopenTestHistoryStore(t, dir)
+			page, err := api.ReadHistoryPage(t.Context(), 42, 0, 103, 300)
+			if err != nil || !page.Complete || len(page.Events) != 3 {
+				t.Fatalf("recovered prefix: %+v %v", page, err)
+			}
+			for i, ev := range page.Events {
+				message, ok := ev.(events.TextMessage)
+				if !ok || message.LogID != int64(101+i) || message.Message != "synthetic acquired" {
+					t.Fatalf("recovered identity/order/content at %d: %+v", i, ev)
+				}
+			}
+			again, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{MaxPages: 1})
+			if err != nil || again.Pages != 0 || again.Pending != 0 {
+				t.Fatalf("satisfied restart reacquired history: %+v %v", again, err)
+			}
+			waitBackends(t, backend)
+		})
+	}
+}
+
+func TestStartupBulkBudgetResumeStopsAtGapBeforeCachedSuffix(t *testing.T) {
+	backend := newScriptedBackend(t, false,
+		testloco.Expect("MCHATLOGS", checkBulk([]int64{42}, []int64{0}),
+			statusDocument(bson.E{Key: "eof", Value: false}, bson.E{Key: "chatLogs", Value: bson.A{bulkLog(42, 101)}})),
+		testloco.Expect("MCHATLOGS", checkBulk([]int64{42}, []int64{101}),
+			statusDocument(bson.E{Key: "eof", Value: true}, bson.E{Key: "chatLogs", Value: bson.A{bulkLog(42, 102)}})),
+	)
+	api, dir := startupClient(t, backend, []bson.Raw{bulkRoom(t, 42, 103)}, 0)
+	if err := api.historyStore.save(syncmsg.Request{ChatID: 42, Cur: 102, Max: 103},
+		syncmsg.Response{ChatLogs: []bson.Raw{mustBSON(bulkLog(42, 103))}}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{MaxPages: 1})
+	if err != nil || first.Pages != 1 || first.Pending != 1 {
+		t.Fatal(first, err)
+	}
+	api.historyStore = reopenTestHistoryStore(t, dir)
+	if cursor := api.historyStore.bulkSnapshot()[42]; cursor != 101 {
+		t.Fatalf("budget restart skipped unresolved gap: %d", cursor)
+	}
+	next, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{MaxPages: 1})
+	if err != nil || next.Pages != 1 || next.Pending != 0 {
+		t.Fatal(next, err)
+	}
+	api.historyStore = reopenTestHistoryStore(t, dir)
+	page, err := api.ReadHistoryPage(t.Context(), 42, 0, 103, 300)
+	if err != nil || !page.Complete || len(page.Events) != 3 || api.historyStore.bulkSnapshot()[42] != 103 {
+		t.Fatalf("connected prefix/suffix recovery: %+v %v", page, err)
+	}
+	again, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{MaxPages: 1})
+	if err != nil || again.Pages != 0 {
+		t.Fatal(again, err)
+	}
+	waitBackends(t, backend)
+}
+
 func TestStartupBulkSelectionFailsClosedAndDoesNotExpand(t *testing.T) {
 	backend := newScriptedBackend(t, false, testloco.Expect("MCHATLOGS", checkBulk([]int64{42}, []int64{0}), statusDocument(bson.E{Key: "eof", Value: true}, bson.E{Key: "chatLogs", Value: bson.A{bulkLog(42, 10)}})))
 	api, _ := startupClient(t, backend, []bson.Raw{bulkRoom(t, 42, 10), bulkRoom(t, 43, 10)}, 0)
