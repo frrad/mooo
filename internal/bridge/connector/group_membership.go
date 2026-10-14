@@ -14,6 +14,7 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 )
 
@@ -44,6 +45,9 @@ func (kc *KakaoClient) saveMembershipCheckpoint(ctx context.Context, p *bridgev2
 // refreshGroupMembership uses a fresh full source roster rather than a possibly
 // delayed notice delta. It clears access only after verifying Matrix convergence.
 func (kc *KakaoClient) refreshGroupMembership(ctx context.Context, c kakaoClient, chatID int64, create bool) error {
+	return kc.refreshGroupMembershipInventory(ctx, c, chatID, create, nil)
+}
+func (kc *KakaoClient) refreshGroupMembershipInventory(ctx context.Context, c kakaoClient, chatID int64, create bool, inventory *chatmeta.ChatData) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	p, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(chatID, kc.login.ID))
@@ -60,7 +64,7 @@ func (kc *KakaoClient) refreshGroupMembership(ctx context.Context, c kakaoClient
 	if err = kc.saveMembershipCheckpoint(ctx, p, true, nil); err != nil {
 		return err
 	}
-	info, snap, err := kc.chatInfoFromClient(ctx, p, c, chatInfoOptions{regularGroupOnly: true})
+	info, snap, err := kc.chatInfoFromClient(ctx, p, c, chatInfoOptions{regularGroupOnly: true, inventory: inventory})
 	if err != nil {
 		return err
 	}
@@ -143,6 +147,9 @@ func (kc *KakaoClient) managedMembershipEvent(ctx context.Context, c kakaoClient
 	}
 	err = kc.refreshGroupMembership(ctx, c, chatID, create)
 	if err != nil {
+		if !errors.Is(err, errSourceAccessRemoved) {
+			kc.scheduleMembershipRetry(chatID, 1)
+		}
 		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupMembershipPending})
 	} else if kc.IsLoggedIn() {
 		kc.sendReadyState()

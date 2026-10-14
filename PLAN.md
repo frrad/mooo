@@ -992,3 +992,14 @@ the authorized squash merge.
       regressions, full make check and secret scanning.
 - [x] Prepare the cooldown slice for CI-gated PR landing. The asynchronous refresh
       worker and issue #372 deadline/recovery work remain separate.
+
+## Background metadata queue and issue #372 (2026-10-14)
+
+- [x] Review native MEMBER coordinator/persistence and missing-profile reuse;
+      write implementation contract in research/bridge/BACKGROUND-METADATA-REFRESH.md.
+- [x] Implement room-first projection and a bounded coalescing background queue
+      that retains account-global pacing, persistent freshness and safe publication.
+- [x] Reproduce/fix periodic deadline teardown; test queue lifecycle, stale results,
+      membership isolation, failures, account pacing and restart.
+- [x] Run owned-account end-to-end room/enrichment/traffic/restart acceptance, full
+      make check and secret scans; publish sanitized results and squash merge after CI.

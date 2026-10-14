@@ -82,7 +82,11 @@ func (kc *KakaoClient) announcementResync(chatID int64) bridgev2.RemoteEvent {
 		}
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		// The source snapshot, rather than a delayed push payload, selects the topic.
+		// Enqueue a source read instead of applying a delayed push payload.
+		if kc.enqueueExistingRoomEnrichment(ctx, chatID, refreshBoards, true) {
+			return &bridgev2.ChatInfo{}, nil
+		}
+		kc.invalidateEnrichment(ctx, chatID, refreshBoards)
 		return kc.GetChatInfo(ctx, p)
 	}}
 }
@@ -109,9 +113,7 @@ func (kc *KakaoClient) refreshAnnouncements(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if result := kc.queue(kc.announcementResync(id)); !committable(result) {
-			return fmt.Errorf("queue announcement refresh")
-		}
+		kc.enqueueExistingRoomEnrichment(ctx, id, refreshBoards, false)
 	}
 	return nil
 }

@@ -453,8 +453,8 @@ func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
 	if info.Name == nil || *info.Name != "Source room" {
 		t.Fatalf("room name = %v, want source metadata", info.Name)
 	}
-	if info.Avatar == nil || info.Avatar.ID == "" {
-		t.Fatal("room avatar = nil, want source room image URL")
+	if info.Avatar != nil {
+		t.Fatal("room avatar download was not deferred")
 	}
 	if !info.Members.IsFull || info.Members.TotalMemberCount != 2 {
 		t.Fatalf("members = %+v, want complete initial roster", info.Members)
@@ -463,26 +463,31 @@ func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
 		t.Fatalf("direct metadata = type %v, other user %q", info.Type, info.Members.OtherUserID)
 	}
 	other, ok := info.Members.MemberMap[makeUserID(testOtherID)]
-	if !ok || other.UserInfo == nil || other.UserInfo.Name == nil || *other.UserInfo.Name != "Source user" {
-		t.Fatalf("other member = %+v, want source profile", other)
-	}
-	if other.UserInfo.Avatar == nil || other.UserInfo.Avatar.ID == "" {
-		t.Fatal("member avatar = nil, want source profile image URL")
+	if !ok || other.UserInfo != nil {
+		t.Fatal("unknown profile did not remain an unresolved identity")
 	}
 	if _, ok := info.Members.MemberMap[makeUserID(9999)]; ok {
 		t.Fatal("metadata admitted a profile outside the requested roster")
 	}
-	if got := fake.metadataCalls; fmt.Sprint(got) != "[ChatInfo(3000) MemberList(3000,0) Members(3000,1)]" {
+	if got := fake.metadataCalls; fmt.Sprint(got) != "[ChatInfo(3000) MemberList(3000,0)]" {
 		t.Fatalf("metadata calls = %v", got)
 	}
 
+	// The production resolver warms the persistent cache; subsequent projection
+	// can reuse the name without doing source I/O or downloading an avatar.
+	if _, err := kc.resolveMemberProfiles(context.Background(), fake, testChatID, []int64{testOtherID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kc.GetChatInfo(context.Background(), portal); err != nil {
+		t.Fatal(err)
+	}
 	ghost := &bridgev2.Ghost{Ghost: &database.Ghost{ID: makeUserID(testOtherID)}}
 	user, err := kc.GetUserInfo(context.Background(), ghost)
 	if err != nil || user.Name == nil || *user.Name != "Source user" {
 		t.Fatalf("cached user info = %+v, err = %v", user, err)
 	}
-	if user.Avatar == nil || user.Avatar.ID == "" {
-		t.Fatal("cached user avatar = nil, want source profile image URL")
+	if user.Avatar != nil {
+		t.Fatal("GetUserInfo synchronously exposed an unprepared avatar")
 	}
 }
 
@@ -1785,4 +1790,11 @@ func TestBootstrapCleanupCannotShutdownOwnerAlreadyClaimedByDisconnect(t *testin
 	kc.mu.Lock()
 	kc.release(fake, nil)
 	kc.mu.Unlock()
+}
+
+func (f *fakeKakao) PersonalMetas(ctx context.Context) (map[int64]chatmeta.RoomMeta, error) {
+	if f.personalMeta == nil {
+		return nil, f.personalMetaErr
+	}
+	return map[int64]chatmeta.RoomMeta{f.chatInfo.ChatData.ChatID: *f.personalMeta}, f.personalMetaErr
 }

@@ -361,6 +361,9 @@ func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room
 	if err = kc.verifyGroupBinding(ctx, portal, info, expected); err != nil {
 		return nil, err
 	}
+	if err = kc.saveMembershipCheckpoint(ctx, portal, false, snap.roster); err != nil {
+		return nil, err
+	}
 	if err = portal.Save(ctx); err != nil {
 		return nil, err
 	}

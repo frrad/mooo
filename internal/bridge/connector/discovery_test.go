@@ -84,17 +84,15 @@ func TestNewMemberDiscoveryMayCreatePortalButLeaveMayNot(t *testing.T) {
 }
 
 func TestDiscoveryFailureStopsBeforeEventsAndDoesNotCreatePortal(t *testing.T) {
-	for _, mode := range []string{"incomplete-list", "wrong-room", "unsupported-room", "missing-roster", "matrix-failure"} {
+	for _, mode := range []string{"incomplete-list", "invalid-inventory", "missing-roster", "matrix-failure"} {
 		t.Run(mode, func(t *testing.T) {
 			kc, h := newDiscoveryFramework(t, testChatID, []int64{testSelfID, testOtherID})
 			f := &fakeKakao{stream: make(chan events.Result), chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat"}}, chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: testChatID, Type: "MultiChat"}}, memberList: chatmeta.MemberListResponse{MemberIDs: []int64{testSelfID, testOtherID}}}
 			switch mode {
 			case "incomplete-list":
 				f.chatInventoryErr = client.ErrChatListIncomplete
-			case "wrong-room":
-				f.chatInfo.ChatData.ChatID = 4000
-			case "unsupported-room":
-				f.chatInfo.ChatData.Type = "SecretChat"
+			case "invalid-inventory":
+				f.chatInventory[0].ChatID = 0
 			case "missing-roster":
 				f.memberList.MemberIDs = nil
 			case "matrix-failure":
@@ -118,6 +116,7 @@ func TestDiscoveryFailureStopsBeforeEventsAndDoesNotCreatePortal(t *testing.T) {
 func TestDiscoveryDeduplicatesInventoryAndPreservesSourceRoster(t *testing.T) {
 	kc, h := newDiscoveryFramework(t, testChatID, []int64{testSelfID, testOtherID, 4000})
 	f := &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat"}, {ChatID: testChatID, Type: "MultiChat"}}, chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: testChatID, Type: "MultiChat", ChatMetas: []chatmeta.ChatMeta{{Type: chatmeta.SharedMetaTitle, Content: "Synthetic group"}}}}, memberList: chatmeta.MemberListResponse{MemberIDs: []int64{testSelfID, testOtherID, 4000}}}
+	f.chatInventory[0].ChatMetas = f.chatInfo.ChatData.ChatMetas
 	if err := kc.discoverGroups(context.Background(), f); err != nil {
 		t.Fatal(err)
 	}
@@ -181,8 +180,18 @@ func TestObservedGroupDiscoveryFixtureUsesProductionBootstrap(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if info.Name == nil || *info.Name != tc.ExpectedName || !info.Members.IsFull || len(info.Members.MemberMap) != len(tc.ExpectedMembers) {
+			if !info.Members.IsFull || len(info.Members.MemberMap) != len(tc.ExpectedMembers) {
 				t.Fatalf("info=%+v", info)
+			}
+			drainMetadataRefresh(t, kc, f)
+			foundName := info.Name != nil && *info.Name == tc.ExpectedName
+			for _, queued := range h.queued {
+				if change, ok := queued.(*simplevent.ChatInfoChange); ok && change.ChatInfoChange.ChatInfo != nil && change.ChatInfoChange.ChatInfo.Name != nil && *change.ChatInfoChange.ChatInfo.Name == tc.ExpectedName {
+					foundName = true
+				}
+			}
+			if !foundName {
+				t.Fatal("observed room title did not converge through background enrichment")
 			}
 			for _, memberID := range tc.ExpectedMembers {
 				if _, ok := info.Members.MemberMap[networkid.UserID(strconv.FormatInt(memberID, 10))]; !ok {

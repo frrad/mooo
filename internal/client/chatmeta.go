@@ -136,3 +136,11 @@ func (c *Client) ChatOnRoom(ctx context.Context, chatID int64) (chatmeta.ChatOnR
 		return session.ChatOnRoom(ctx, chatID)
 	})
 }
+
+// PersonalMetas reads the account's room settings once for background refresh.
+func (c *Client) PersonalMetas(ctx context.Context) (map[int64]chatmeta.RoomMeta, error) {
+	return withSession(c, ctx, func(s *session) (map[int64]chatmeta.RoomMeta, error) {
+		response, err := call(s, ctx, chatmeta.PersonalMetaCommand, chatmeta.PersonalMetaRequest{}, chatmeta.DecodePersonalMetaResponse)
+		return response.Rooms, err
+	})
+}

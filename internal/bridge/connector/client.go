@@ -48,6 +48,7 @@ type chatMetaAPI interface {
 	ListChats(ctx context.Context) ([]chatmeta.ChatData, error)
 	ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error)
 	PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.RoomMeta, error)
+	PersonalMetas(ctx context.Context) (map[int64]chatmeta.RoomMeta, error)
 	MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error)
 	Members(ctx context.Context, chatID int64, userIDs []int64) ([]chatmeta.Member, error)
 	MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error)
@@ -201,6 +202,7 @@ type KakaoClient struct {
 	// profileRefreshAfter is the periodic profile refresh cursor; groupGate
 	// guards it.
 	profileRefreshAfter string
+	metadataRefresh     *metadataRefreshQueue
 
 	reactionNoticeMu sync.Mutex
 	reactionNotices  map[string]time.Time
@@ -235,9 +237,11 @@ func newKakaoClient(login *bridgev2.UserLogin, st store, userID int64, open func
 		open:            open,
 		queue:           login.QueueRemoteEvent,
 		profiles:        make(map[int64]chatmeta.Member),
+		metadataRefresh: newMetadataRefreshQueue(),
 		reactionNotices: make(map[string]time.Time),
 	}
 	kc.wait = waitForRecovery
+	kc.metadataRefresh.dropped = func() { kc.log().Warn().Msg("Background metadata queue is full; deferring refresh") }
 	kc.now = time.Now
 	kc.reserveOutbound = kc.reserveOutboundKV
 	kc.refreshMembership = kc.refreshMembershipAsync
@@ -557,6 +561,11 @@ func (kc *KakaoClient) getChatInfo(ctx context.Context, portal *bridgev2.Portal,
 	if portal == nil {
 		return nil, errChatInfoMismatch
 	}
+	if !regularGroupOnly {
+		if info, found, err := kc.cachedChatInfo(ctx, portal); found || err != nil {
+			return info, err
+		}
+	}
 	if chatID, err := parseChatID(portal.ID); err == nil && !regularGroupOnly {
 		if info, err := kc.inventoryChatInfo(portal, chatID); info != nil || err != nil {
 			return info, err
@@ -583,7 +592,7 @@ func (kc *KakaoClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 	if !ok {
 		return &bridgev2.UserInfo{}, nil
 	}
-	return userInfoForMember(profile, kc), nil
+	return kc.snapshotUserInfo(profile, true), nil
 }
 
 func chatName(data chatmeta.ChatData) string {

@@ -115,7 +115,9 @@ func (kc *KakaoClient) inventoryChatInfo(portal *bridgev2.Portal, chatID int64) 
 	// A direct chat's two participants are its complete roster. Its profile
 	// is display data rather than a MEMBER record, so it is not cached and
 	// fields the inventory omits stay unset rather than cleared.
-	info, err := kc.projectChatInfo(portal, chatSnapshot{data: chat, roster: chat.DisplayUserIDs})
+	snap := chatSnapshot{data: chat, roster: chat.DisplayUserIDs, deferred: true}
+	kc.enqueueEnrichment(snap, roomMetadataCache{})
+	info, err := kc.projectChatInfo(portal, snap)
 	if err != nil {
 		return nil, err
 	}
@@ -125,9 +127,7 @@ func (kc *KakaoClient) inventoryChatInfo(portal *bridgev2.Portal, chatID int64) 
 	if len(chat.DisplayNicknames) == 1 && chat.DisplayNicknames[0] != "" {
 		userInfo.Name = &chat.DisplayNicknames[0]
 	}
-	if len(chat.DisplayImageURLs) == 1 && chat.DisplayImageURLs[0] != "" {
-		userInfo.Avatar = avatarFromURL(chat.DisplayImageURLs[0], kc)
-	}
+	// Avatar acquisition is optional enrichment handled by the worker.
 	member.UserInfo = userInfo
 	info.Members.MemberMap[other] = member
 	return info, nil

@@ -19,6 +19,9 @@ func TestMemberProfileCooldownAcrossRoomsAndRestart(t *testing.T) {
 	kc, backend, _ := newGroupCreationFramework(t)
 	ctx := context.Background()
 	backend.members = []chatmeta.Member{{UserID: 2000, Nickname: "Shared profile"}}
+	if _, err := kc.resolveMemberProfiles(ctx, backend, 5000, []int64{2000, 4000}); err != nil {
+		t.Fatal(err)
+	}
 	read := func(kc *KakaoClient, chatID int64) {
 		t.Helper()
 		backend.chatInfo.ChatData.ChatID = chatID
@@ -325,6 +328,9 @@ func TestMemberProfileCooldownMembershipChangesRetainPartialResult(t *testing.T)
 	kc, _ := newTestClient(t, nil)
 	backend := &fakeKakao{members: []chatmeta.Member{{UserID: 2000, Nickname: "Completed profile"}}, membersErr: errors.New("synthetic later batch failed")}
 	kc.client = backend
+	if _, err := kc.resolveMemberProfiles(t.Context(), backend, 3000, []int64{2000, 4000}); !errors.Is(err, backend.membersErr) {
+		t.Fatal(err)
+	}
 	changes, err := kc.memberChanges(t.Context(), 3000, []events.MemberIdentity{{UserID: 2000}, {UserID: 4000}}, true)
 	if err != nil {
 		t.Fatal(err)
