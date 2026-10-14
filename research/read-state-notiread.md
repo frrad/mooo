@@ -16,13 +16,14 @@ addresses, account values, message contents or proprietary assets.
 when all of these hold:
 
 - a message from another member arrives as a live `MSG` push;
-- that room's chat window is open (the room is "chat-on");
-- the window still holds focus.
+- that room's transient status is chat-on;
+- no user ID holds the room's watermark.
 
 In that case the message is read the moment it arrives, so `NOTIREAD` is the
-read acknowledgement for it. With the window closed or in the background, the
-Mac client sends nothing and counts the message as unread. A later explicit
-read goes through `SYNCMSG` (see [below](#explicit-user-read-operations)).
+read acknowledgement for it. A closed room or a watermark hold prevents that
+send. The preview preference controls one window-activation hold/release path;
+do not equate this gate with every key-focus change. A later explicit read
+goes through `SYNCMSG` (see [below](#explicit-user-read-operations)).
 
 ## Send path
 
@@ -64,8 +65,56 @@ The room status and the watermark hold are both transient UI state:
 - Opening a chat window sets the status to 1. Closing it ("chat-off") sets it
   back to 0. Both values reset to 0 whenever a room is loaded from storage or
   created.
-- When the chat window loses key focus, the client holds the watermark under
-  the user's own ID. Releasing the hold clears it and synchronizes messages.
+- In the reviewed preview-enabled main-window resignation path, the client
+  holds the watermark under its own user ID. Main-window activation schedules
+  release. Releasing a nonzero hold clears it, updates the local own watermark,
+  and synchronizes messages. See the exact activation contract below.
+
+## Preview-dependent main-window read orchestration
+
+Additional first-party tracing on 2026-10-14 resolves the ordinary Mac 26.8.0
+window/controller path. Runtime class/selector metadata was inspected in the
+isolated, network-disabled official binary; request behavior below is derived
+from disassembly and callback analysis, not an executed owned UI flow.
+
+- `FSChatWindowController.windowDidBecomeMain:` verifies that the notification
+  belongs to its window. With `UseChatPreview` enabled and a chatting controller
+  present, it cancels an earlier scheduled `unholdWatermark` for that controller
+  and schedules a replacement after **0.1 seconds** with a nil argument.
+- The matching `windowDidResignMain:` branch, with the same preview preference
+  enabled, cancels pending release and calls `holdWatermark`.
+- `windowDidBecomeKey:` and `windowDidResignKey:` enter different helpers that
+  maintain controller focus and input state. The reviewed key-notification
+  helpers do not contain that hold/release scheduling pair. Main-window and
+  key-window notifications must remain distinct in this contract.
+- `FCChattingController.holdWatermark` does nothing without a room or when an
+  existing positive hold is present. Otherwise it stores the current user's
+  ID in the room's transient hold field; it sends no acknowledgement itself.
+- `unholdWatermark` does nothing without a room or with a zero hold. Otherwise
+  it clears the hold, runs a synchronous data-store block updating the own
+  member watermark to the room's `lastLogId`, and then calls `syncMessage:`
+  with nil. The local mutation precedes the protocol coordinator; it is not
+  evidence that a network read acknowledgement succeeded.
+- `FSChatWindowController.dealloc` cancels the pending controller release.
+
+The delayed selector invocation explains why a direct-call-only search found
+no ordinary caller of `unholdWatermark`. Swift Objective-C thunks also make a
+nearest preceding selector an unreliable owner for an instruction: the main
+notification wrappers, helper targets and callback pointer were resolved
+separately before assigning these paths.
+
+This 100 ms delay is local UI orchestration, not a server request-spacing limit.
+The immediate older-message display path remains a local database query, as
+documented in [the history trace](bridge/HISTORY-STATIC.md#c-chat-open-local-paging-and-single-room-sync).
+It does not itself call this release method. An active room can separately
+process live pushes, so this does not promise that all concurrent read state
+stays unchanged during a scroll.
+
+Still unverified: the preference's default and every alternative activation
+path, actual notification/timer ordering in an owned window, and native
+failure recovery after the local watermark update. The regular sync
+coordinator's request/response and persistence contract is documented
+separately; no universal background-window read policy follows from this branch.
 
 Push-alert and silence settings, message type, chat type and the hidden state
 do not gate the send. The trace found no duplicate-log check before it; the
@@ -172,7 +221,8 @@ run. Its mechanism remains unresolved.
 
 - The owning class of the delegate, and a second delegate implementation that
   was not disassembled.
-- The callers that release the watermark hold, and the full chat-on sequence.
+- The full chat-on sequence, alternative release paths and owned UI acceptance
+  of the preview-dependent activation/timer contract above.
 - The superclass's key derivation for request and notice models.
 - The database column that persists the room's extra information.
 - Duplicate handling inside the message builder, and when the data-store
