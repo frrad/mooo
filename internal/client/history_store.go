@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/frrad/mooo/internal/privatejson"
 	"github.com/frrad/mooo/internal/protocol/bsonfield"
@@ -67,6 +68,7 @@ type historyStore struct {
 	failed       error
 	targets      map[historyTarget]bool
 	bulkCursors  map[int64]int64
+	unavailable  map[syncmsg.Request]historyUnavailableRecord
 }
 
 func historyDigest(value string) string {
@@ -121,6 +123,24 @@ func openHistoryStore(dir string, accountID int64, deviceID string) (*historySto
 		}
 		path := filepath.Join(dir, name)
 		switch {
+		case strings.HasPrefix(name, "unavailable-"):
+			r, found, err := privatejson.Read[historyUnavailableRecord](path)
+			if err != nil || !found || !s.validUnavailable(r) || name != unavailableName(r.Request) {
+				return nil, ErrHistoryStoreCorrupt
+			}
+			if !time.Now().Before(r.Observation.RetryAfter) {
+				if err = os.Remove(path); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			if s.unavailable == nil {
+				s.unavailable = make(map[syncmsg.Request]historyUnavailableRecord)
+			}
+			if len(s.unavailable) >= historyUnavailableMaximum {
+				return nil, ErrHistoryStoreCapacity
+			}
+			s.unavailable[r.Request] = r
 		case name == "bulk.json":
 			progress, found, err := privatejson.Read[historyBulkProgress](path)
 			if err != nil || !found || progress.Version != 1 || progress.Binding != s.binding {
@@ -315,6 +335,9 @@ func (s *historyStore) observeRecords(chatID int64, logs []bson.Raw) error {
 	return nil
 }
 func (s *historyStore) save(req syncmsg.Request, response syncmsg.Response) error {
+	if len(response.ChatLogs) == 0 && response.MinLogID > req.Max {
+		return s.saveUnavailable(req, response)
+	}
 	last, err := validateAcquiredPage(req, response)
 	if err != nil {
 		return err
@@ -402,6 +425,13 @@ func (s *historyStore) lookup(req syncmsg.Request) (syncmsg.Response, bool, erro
 		end = next
 	}
 	if end == req.Cur {
+		observation, err := s.unavailableLocked(req)
+		if err != nil {
+			return syncmsg.Response{}, false, err
+		}
+		if observation != nil {
+			return syncmsg.Response{}, true, &HistoryUnavailableError{Observation: *observation}
+		}
 		return syncmsg.Response{}, false, nil
 	}
 	rows := make(map[int64]bson.Raw)

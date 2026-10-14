@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -108,6 +109,9 @@ func TestHistoryPageObservedFloorIsExplicitAndDoesNotAdvance(t *testing.T) {
 			backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", checkSyncRequest(tc.Input.ChatID, tc.Input.Cur, tc.Input.Max), doc))
 			checkpoint := testCheckpoint(t)
 			api := testContinuityClient(t, checkpoint, backend)
+			api.historyStore, _ = testHistoryStore(t)
+			api.historyAdmission = testAdmission(t, "")
+			t.Cleanup(func() { _ = api.Shutdown(context.Background()) })
 			page, err := api.ReadHistoryPage(t.Context(), tc.Input.ChatID, tc.Input.Cur, tc.Input.Max, 3)
 			if !errors.Is(err, ErrHistoryBelowFloor) || !errors.Is(err, ErrGapUnresolved) {
 				t.Fatalf("floor not reported: %+v %v", page, err)
@@ -116,6 +120,9 @@ func TestHistoryPageObservedFloorIsExplicitAndDoesNotAdvance(t *testing.T) {
 				t.Fatal("unavailable history advanced progress")
 			}
 			waitBackends(t, backend)
+			if _, err = api.ReadHistoryPage(t.Context(), tc.Input.ChatID, tc.Input.Cur, tc.Input.Max, 3); !errors.Is(err, ErrHistoryBelowFloor) {
+				t.Fatal("known unavailable window was refetched instead of reused", err)
+			}
 		})
 	}
 	if cases != 2 {

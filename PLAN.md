@@ -75,6 +75,12 @@ source requests. Cloud backup/restore remains out of scope.
       per-demand request/time budgets. Include dependent metadata/media requests
       in the accounting. Persist progress and cooldowns across restart; do not
       reset them when a client retries or a room reopens.
+- [x] Retain exact observed below-floor empty windows separately from acquired
+      coverage for five minutes. Warm/restarted demand returns a typed unavailable
+      result without source calls or cursor/read advancement; expiry permits paced
+      revalidation. Observed regressions failed before the fix. No global or
+      permanent retention rule is inferred; see
+      [unavailable-window policy](research/bridge/HISTORY-BRIDGE-PAGES.md).
 - [ ] Serve acquired history without source requests. Stop repeated/empty
       non-progress responses and classify failures before any retry. Use explicit
       conservative configured pacing until official-client observations establish

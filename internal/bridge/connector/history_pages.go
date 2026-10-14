@@ -139,6 +139,9 @@ func (kc *KakaoClient) FetchMessages(ctx context.Context, params bridgev2.FetchM
 	if err != nil {
 		return nil, err
 	}
+	if page.Unavailable != nil {
+		return nil, &client.HistoryUnavailableError{Observation: *page.Unavailable}
+	}
 	if !page.Complete {
 		if !params.AllowSlowFetch && !params.Forward {
 			return &bridgev2.FetchMessagesResponse{HasMore: true, Cursor: params.Cursor, MoreRequiresSlowFetch: true}, nil
