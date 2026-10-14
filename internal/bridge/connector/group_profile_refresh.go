@@ -8,8 +8,8 @@ import (
 	"maunium.net/go/mautrix/bridgev2/database"
 )
 
-// refreshOneGroupProfiles scans one managed room and only enqueues work: a
-// roster check, which also retries a paused group, and optional enrichment.
+// refreshOneGroupProfiles scans one managed room and only enqueues optional
+// enrichment. Membership is not polled; paused groups retry on their own.
 // Its short context bounds local database work, never a source request. It does
 // not pause membership or end a session when optional metadata is unavailable.
 func (kc *KakaoClient) refreshOneGroupProfiles(c kakaoClient) (connectionFailed bool) {
@@ -41,7 +41,7 @@ func (kc *KakaoClient) refreshOneGroupProfiles(c kakaoClient) (connectionFailed 
 			continue
 		}
 		meta, ok := p.Metadata.(*KakaoPortalMetadata)
-		if !ok || meta == nil || meta.SourceRemoved {
+		if !ok || meta == nil || meta.SourceRemoved || meta.MembershipPending {
 			continue
 		}
 		knownRegularGroup := meta.GroupMembershipManaged
@@ -71,12 +71,7 @@ func (kc *KakaoClient) refreshOneGroupProfiles(c kakaoClient) (connectionFailed 
 	if err != nil {
 		return false
 	}
-	kc.metadataRefresh.offer(metadataRefreshTask{kind: refreshRoster, chatID: chatID})
-	meta := next.Metadata.(*KakaoPortalMetadata)
-	if meta.MembershipPending {
-		return false
-	}
-	kc.enqueueMemberEnrichment(chatID, meta.MembershipRoster)
+	kc.enqueueMemberEnrichment(chatID, next.Metadata.(*KakaoPortalMetadata).MembershipRoster)
 	kc.enqueueExistingRoomEnrichment(ctx, chatID, refreshPersonal, false)
 	kc.enqueueExistingRoomEnrichment(ctx, chatID, refreshBoards, false)
 	return false

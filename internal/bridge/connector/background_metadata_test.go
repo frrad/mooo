@@ -3,7 +3,6 @@ package connector
 import (
 	"context"
 	"errors"
-	"fmt"
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/client"
 	testloco "github.com/frrad/mooo/internal/testsupport/loco"
@@ -344,7 +343,7 @@ func TestExistingRoomMetadataDemandDoesNotBlockOrResyncRoster(t *testing.T) {
 	}
 }
 
-func TestPeriodicRosterCheckRetriesPausedGroup(t *testing.T) {
+func TestFailedMembershipRefreshRetriesWithBackoffAndUnpauses(t *testing.T) {
 	kc, backend, _ := newGroupCreationFramework(t)
 	ctx := context.Background()
 	response, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}})
@@ -352,24 +351,39 @@ func TestPeriodicRosterCheckRetriesPausedGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	drainMetadataRefresh(t, kc, backend)
-	// A local refresh failure left the group paused.
-	meta := response.Portal.Metadata.(*KakaoPortalMetadata)
-	meta.MembershipPending = true
-	if err = response.Portal.Save(ctx); err != nil {
-		t.Fatal(err)
+	// A membership notice's refresh fails locally and pauses the group.
+	backend.memberListErr = errors.New("synthetic local refresh failure")
+	if _, ok := kc.managedMembershipEvent(ctx, backend, 5000, false); ok {
+		t.Fatal("failed refresh reported success")
 	}
-	kc.refreshOneGroupProfiles(backend)
-	drainMetadataRefresh(t, kc, backend)
 	p, err := kc.login.Bridge.GetPortalByKey(ctx, response.Portal.PortalKey)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !p.Metadata.(*KakaoPortalMetadata).MembershipPending {
+		t.Fatal("failed refresh did not pause the group")
+	}
+	if _, due, _ := kc.metadataRefresh.take(time.Now()); due {
+		t.Fatal("membership retry ran without backoff")
+	}
+	task, due, _ := kc.metadataRefresh.take(time.Now().Add(metadataRetryDelay(1)))
+	if !due || task.kind != retryMembership || task.chatID != 5000 {
+		t.Fatalf("scheduled retry = %+v (due %t), want one membership retry for 5000", task, due)
+	}
+	backend.memberListErr = nil
+	if kc.applyMetadataRefresh(backend, kc.performMetadataRefresh(ctx, backend, task)) {
+		t.Fatal("membership retry ended the session")
+	}
+	p, err = kc.login.Bridge.GetPortalByKey(ctx, response.Portal.PortalKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if p.Metadata.(*KakaoPortalMetadata).MembershipPending {
-		t.Fatal("periodic roster check left a paused group paused after the source roster converged")
+		t.Fatal("membership retry left the group paused after the source roster converged")
 	}
 }
 
-func TestPeriodicRosterCheckWithUnchangedRosterReadsOnlyMEMLIST(t *testing.T) {
+func TestPeriodicProfileTickNeverReadsMEMLIST(t *testing.T) {
 	kc, backend, _ := newGroupCreationFramework(t)
 	ctx := context.Background()
 	response, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}})
@@ -377,46 +391,21 @@ func TestPeriodicRosterCheckWithUnchangedRosterReadsOnlyMEMLIST(t *testing.T) {
 		t.Fatal(err)
 	}
 	drainMetadataRefresh(t, kc, backend)
-	backend.metadataCalls = nil
-	kc.metadataRefresh.offer(metadataRefreshTask{kind: refreshRoster, chatID: 5000})
-	drainMetadataRefresh(t, kc, backend)
-	if fmt.Sprint(backend.metadataCalls) != "[MemberList(5000,0)]" {
-		t.Fatalf("unchanged roster check calls = %v, want one MEMLIST", backend.metadataCalls)
-	}
-	p, err := kc.login.Bridge.GetPortalByKey(ctx, response.Portal.PortalKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.Metadata.(*KakaoPortalMetadata).MembershipPending {
-		t.Fatal("an unchanged roster paused the group")
-	}
-}
-
-func TestPeriodicRosterCheckReconcilesDepartedMember(t *testing.T) {
-	kc, backend, matrix := newGroupCreationFramework(t)
-	ctx := context.Background()
-	response, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	drainMetadataRefresh(t, kc, backend)
-	// The leave notice for 4000 was lost; only the roster shows it.
-	backend.memberList.MemberIDs = []int64{1000, 2000}
-	kc.metadataRefresh.offer(metadataRefreshTask{kind: refreshRoster, chatID: 5000})
-	drainMetadataRefresh(t, kc, backend)
-	p, err := kc.login.Bridge.GetPortalByKey(ctx, response.Portal.PortalKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := p.Metadata.(*KakaoPortalMetadata).MembershipRoster; fmt.Sprint(got) != "[1000 2000]" {
-		t.Fatalf("persisted roster = %v, want the fresh source roster", got)
-	}
-	members, err := matrix.GetMembers(ctx, response.Portal.MXID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if m := members["@kakao_4000:test"]; m != nil && m.Membership.IsInviteOrJoin() {
-		t.Fatal("departed member is still in the Matrix room")
+	for _, pending := range []bool{false, true} {
+		meta := response.Portal.Metadata.(*KakaoPortalMetadata)
+		meta.MembershipPending = pending
+		if err = response.Portal.Save(ctx); err != nil {
+			t.Fatal(err)
+		}
+		backend.metadataCalls = nil
+		kc.profileRefreshAfter = ""
+		kc.refreshOneGroupProfiles(backend)
+		drainMetadataRefresh(t, kc, backend)
+		for _, call := range backend.metadataCalls {
+			if strings.HasPrefix(call, "MemberList(") || strings.HasPrefix(call, "ChatInfo(") {
+				t.Fatalf("profile tick (pending %t) polled membership: %v", pending, backend.metadataCalls)
+			}
+		}
 	}
 }
 

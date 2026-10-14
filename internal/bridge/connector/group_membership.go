@@ -147,6 +147,9 @@ func (kc *KakaoClient) managedMembershipEvent(ctx context.Context, c kakaoClient
 	}
 	err = kc.refreshGroupMembership(ctx, c, chatID, create)
 	if err != nil {
+		if !errors.Is(err, errSourceAccessRemoved) {
+			kc.scheduleMembershipRetry(chatID, 1)
+		}
 		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupMembershipPending})
 	} else if kc.IsLoggedIn() {
 		kc.sendReadyState()

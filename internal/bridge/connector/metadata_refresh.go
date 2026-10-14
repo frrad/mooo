@@ -23,10 +23,11 @@ const (
 	refreshPersonal
 	refreshBoards
 	refreshRoomInfo
-	// refreshRoster compares a fresh source roster with the persisted one. It
-	// is not optional enrichment: a difference, or a paused group, is handed to
-	// the authoritative membership refresh on the event pump.
-	refreshRoster
+	// retryMembership retries the authoritative membership refresh of a group
+	// that a failed refresh left paused. It is scheduled by that failure, with
+	// backoff, never polled: the official client reads MEMLIST only from its
+	// member-list views and learns membership from login deltas and notices.
+	retryMembership
 )
 const maxMetadataRefreshJobs = 1024
 
@@ -47,7 +48,7 @@ type metadataRefreshTask struct {
 // versioned reports whether the task belongs to one remembered room snapshot.
 // Account personal metadata and roster checks do not.
 func (t metadataRefreshTask) versioned() bool {
-	return t.kind != refreshPersonal && t.kind != refreshRoster
+	return t.kind != refreshPersonal && t.kind != retryMembership
 }
 
 func metadataRetryDelay(attempts int) time.Duration {
@@ -463,7 +464,7 @@ func (kc *KakaoClient) performMetadataRefresh(ctx context.Context, c kakaoClient
 			}
 		}
 		result.info = info
-	case refreshRoster:
+	case retryMembership:
 		p, err := kc.store.portalByKey(ctx, makePortalKey(task.chatID, kc.login.ID))
 		if err != nil {
 			result.err = err
@@ -476,28 +477,15 @@ func (kc *KakaoClient) performMetadataRefresh(ctx context.Context, c kakaoClient
 		if !ok || meta == nil || meta.SourceRemoved {
 			break
 		}
-		if meta.MembershipPending {
-			result.reconcile = true // Retry a paused group's refresh.
-			break
-		}
-		roster, err := c.MemberList(ctx, task.chatID, 0)
-		if err != nil {
-			result.err, result.sourceErr = err, err
-			break
-		}
-		result.reconcile = !sameMembers(roster.MemberIDs, meta.MembershipRoster)
+		// A notice or another refresh may have already converged the group.
+		result.reconcile = meta.MembershipPending
 	}
 	return result
 }
 
-func sameMembers(a, b []int64) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	a, b = slices.Clone(a), slices.Clone(b)
-	slices.Sort(a)
-	slices.Sort(b)
-	return slices.Equal(a, b)
+// scheduleMembershipRetry queues a paused group's refresh after backoff.
+func (kc *KakaoClient) scheduleMembershipRetry(chatID int64, attempts int) {
+	kc.metadataRefresh.offer(metadataRefreshTask{kind: retryMembership, chatID: chatID, attempts: attempts, notBefore: time.Now().Add(metadataRetryDelay(attempts))})
 }
 
 // No source I/O happens here. Pre-uploaded avatar results avoid admission waits
@@ -520,11 +508,13 @@ func (kc *KakaoClient) applyMetadataRefresh(c kakaoClient, result metadataRefres
 		kc.metadataRefresh.offer(retry)
 	}
 	if result.reconcile {
-		// The same authoritative path a membership notice takes. It pauses
-		// the group until the fresh roster has converged in Matrix.
+		// The same authoritative path a membership notice takes. It keeps
+		// the group paused until the fresh roster has converged in Matrix.
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		kc.managedMembershipEvent(ctx, c, result.task.chatID, false)
+		if _, ok := kc.managedMembershipEvent(ctx, c, result.task.chatID, false); !ok {
+			kc.scheduleMembershipRetry(result.task.chatID, result.task.attempts+1)
+		}
 		return false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

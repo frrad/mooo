@@ -44,12 +44,16 @@ connection failure and reconnected.
   and only when it is a transport failure. Local deadlines and cancellation,
   Matrix errors and database errors never can. A failed task retries after 2,
   4, 8 ... minutes, capped at one hour.
-- **Periodic roster checks.** The minute ticker rotates through managed groups
-  and enqueues one roster check (MEMLIST) plus due enrichment. If the roster
-  differs from the persisted one, or the group is paused (`MembershipPending`),
-  the pump runs the same authoritative membership refresh a membership notice
-  uses. A group paused by a failed refresh is therefore retried, and a lost
-  leave notice is still reconciled.
+- **No membership polling.** As in the official client, membership comes from
+  login room data (startup discovery) and member push notices. The official
+  client sends MEMLIST only from its member-list views, and the bridge never
+  polls it. The minute ticker only enqueues due profile, personal and Boards
+  enrichment.
+- **Paused-group retry.** A group paused by a failed authoritative refresh
+  (`MembershipPending`) is bridge-only safety state with no native counterpart.
+  The failure itself schedules a retry with the backoff above. The retry runs
+  the same refresh a membership notice uses and un-pauses the group once Matrix
+  converges. A missed leave notice is corrected at the next reconnect's discovery.
 - **Freshness.** Profiles keep the per-user policy from
   [PROFILE-REFRESH-COOLDOWN.md](PROFILE-REFRESH-COOLDOWN.md). Personal and Boards
   checkpoints are fresh for 15 minutes and are invalidated by the corresponding
@@ -74,10 +78,8 @@ Android client (26.8.x), so the bridge's stored nickname was stale.
    MEMBER reads within the freshness window.
 2. **Warm restart.** A restart inside the freshness window made no MEMBER,
    GETMCMETA or GETMOMETA reads; persisted enrichment was reused.
-3. **Fixed build.** The run was repeated after the review fixes described above
-   (source-only failure classification, retry backoff, periodic roster checks,
-   personal-name preservation in room-info refresh). Each tick issued one MEMLIST
-   with no reconnect.
+3. **Final build.** Profile ticks sent no MEMLIST or other membership reads,
+   and the session did not reconnect.
 
 Startup is still paced at about two seconds per read: one MEMLIST per group and
 one CHATONROOM per bridged chat, about 30 seconds for this account. Moving those
@@ -86,7 +88,7 @@ reads behind CONNECTED is a separate question.
 ## Remaining gaps
 
 - Native room invalidation and background profile notification triggers are not
-  fully traced. No claim is made that the worker reproduces native pacing.
+  fully traced. The minute profile tick is bridge policy pending that trace. No claim is made that the worker reproduces native pacing.
 - Personal metadata cached in a checkpoint takes precedence over a snapshot's
   inventory value. This assumes the checkpoint is the fresher of the two, which
   holds for every write path in this change.
