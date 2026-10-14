@@ -87,8 +87,11 @@ reads behind CONNECTED is a separate question.
 
 ## Remaining gaps
 
-- Native room invalidation and background profile notification triggers are not
-  fully traced. The minute profile tick is bridge policy pending that trace. No claim is made that the worker reproduces native pacing.
+- [Metadata triggers](METADATA-TRIGGERS.md) traces every request here to its
+  native trigger. The official client has no MEMBER, Boards or personal
+  metadata timer and no regular profile push, so the minute tick and the
+  15-minute freshness windows are bridge deviations. Their removal is planned
+  in `PLAN.md`. No claim is made that the worker reproduces native pacing.
 - Personal metadata cached in a checkpoint takes precedence over a snapshot's
   inventory value. This assumes the checkpoint is the fresher of the two, which
   holds for every write path in this change.
