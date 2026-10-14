@@ -159,11 +159,31 @@ Hooks on the bulk and single-room history coordinators and models recorded
 **no invocation of those traced history paths** before that failure. This is a failed startup
 observation; it does not confirm fresh-profile history, fresh device visibility,
 render timing, or official-client crash/resume parity. The altered signing and
-sandbox environment are additional limits. No authentication retry followed
-the completed verification/server-connection failure.
+sandbox environment are additional limits. The initial experiment stopped after
+the completed verification/server-connection failure; the later guarded
+diagnostic is below.
 
-The attempt exposed lab-tool defects: a cached picker thumbnail retained an
-expired QR after its file was replaced; a unique immutable image and comparison
+**HST-LIVE-012 — guarded diagnostic approval, 2026-10-13 PDT.** A later
+controlled attempt used the same isolated Mac 26.8.0 build 2000 environment and
+an owned disposable primary. The current QR and actual picker thumbnail were
+decoded and compared before the single approval action. The phone explicitly
+reported that secondary-device login was restricted; no verification or
+completed approval followed. The Mac recorded no auto-login dispatch or traced
+history call. The attempt stopped without an automatic retry, restored temporary
+phone permissions, removed transient QR/picker captures, and verified the two
+mandatory original Mac preference hashes were unchanged.
+
+This establishes the **current approval-policy block**, not the cause of the
+earlier completed-verification Mac failure. The diagnostic's Android version was
+not independently reverified (the prior lab inventory was 26.8.2). A static
+trace narrows the earlier retained wording to the common connection-error
+resource, which is used by both an auto-login failure callback and a separate
+alert path; the earlier capture did not record which path ran or its error.
+Canonical signed-client startup, old-group opening, scrolling and native read
+effects remain unverified. No cloud backup or restore was attempted.
+
+The earlier HST-LIVE-007 attempt exposed lab-tool defects: a cached picker
+thumbnail retained an expired QR after its file was replaced; a unique immutable image and comparison
 of the actual picker QR against the current QR protected the later scans.
 The phone's direct `Log In` approval path can lead either to success or a code
 form, and that form exposes `Enter the verification code.` as its text when

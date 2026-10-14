@@ -110,6 +110,11 @@ source requests. Cloud backup/restore remains out of scope.
       window. Exact decrypted content, source order/timestamps, separate read/live
       cursors and an offline completed replay passed. Two type-14 content gaps
       remain; source acquisition/native UI/backward insertion were not exercised.
+- [x] Historical multipart recovery reuses live existing-part handling: whole
+      Matrix-authored albums are not expanded again, and partial albums retry only
+      missing parts/dependencies with all-part confirmation after restart. Tests
+      use the observed album payload, real SDK dependency cache and actual backward
+      executor with a synthetic sink; real historical insertion remains open.
 - [ ] Complete the full owned encrypted initial delivery and native UI/read acceptance;
       inventory previews must not falsely prove acquired/history delivery.
 

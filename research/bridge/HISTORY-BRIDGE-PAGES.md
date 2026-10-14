@@ -25,8 +25,8 @@ than rendering stale content. Cache reads never connect, fetch or acknowledge.
 Forward fetches require startup acquisition coverage. Backward fetches use stored
 rows first. If a missing interval needs acquisition and `AllowSlowFetch` is false,
 return an empty slow-fetch deferral; the pinned framework otherwise discards a
-batch carrying that flag. Explicit/allowed slow fetches acquire forward from zero
-to the selected anchor through the shared SYNCMSG worker, at most 25 page-reader
+batch carrying that flag. Explicit/allowed slow fetches acquire forward from the first missing
+coverage boundary to the selected gap through the shared SYNCMSG worker, at most 25 page-reader
 iterations and 30 seconds. This is bounded missing-range reconciliation, not a
 new remote reverse-page command. Partial source progress remains in the store.
 
@@ -35,6 +35,17 @@ Synapse's ordinary send API cannot insert older events at their historical timel
 position. Forward legacy sends have a stable per-part transaction adapter. Batch
 sends use the framework's deterministic event identities; missing mapped parts
 are selected independently, including multipart messages.
+
+Historical albums and Mini multipart messages now reuse the live converter's
+existing-part handling before fetching media. A Matrix-authored album's single
+whole-message mapping satisfies the source album; startup and backward paging
+must not expand it into duplicate photos. An incomplete album converts only its
+missing parts, while completion verifies every source part, including those
+already mapped before the call. The regression uses the observed two-photo
+fixture, real SDK dependency caching and the actual backward executor: a lost
+synthetic batch response and an SDK/connector restart replay one missing part
+with one source media download. This is a recovery regression; the sink is
+synthetic and does not prove historical insertion on a real homeserver.
 
 ## Delivery and restart invariants
 
