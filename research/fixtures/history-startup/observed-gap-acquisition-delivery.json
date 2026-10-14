@@ -1,0 +1,38 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "date": "2026-10-14",
+    "client": "mooo 89709347a5b4f42a7d2f88ece1937d225c283702; existing Kakao secondary profile AppVersion 26.8.0; mautrix 40942319c433 with goolm",
+    "platform": "macOS 26.6.2 arm64; Go 1.27.2",
+    "method": "Exclusive existing owned-profile lease, account/device/version guards and fresh inventory/three-owned-member roster. Clone seeded with two records from a previously acquired five-record group. Actual connector backward executor and SDK acquisition acquired the missing prefix with one allowed call per process. First short page persisted one record; offline audit verified its identity and boundary before a second bounded process continued from that boundary. A synthetic batch sink withheld the accepted older-batch response. Fresh offline SDK/connector/SQLite process replayed pending delivery, confirmed mappings and exhausted the window. Offline production reader compared all five projections to the earlier owned cache.",
+    "doc": "research/bridge/HISTORY-BRIDGE-PAGES.md"
+  },
+  "evidence": "HST-BRIDGE-GAP-011",
+  "sanitization": "Counts, booleans and software versions only. Profiles, credentials, device/chat/message identities, bodies, raw BSON, packet metadata and private receipts remain outside tracked files.",
+  "expected": {
+    "initial_cached_records": 2,
+    "initial_short_page_acquired_records": 1,
+    "continuation_acquired_records": 2,
+    "bounded_source_acquisition_calls_total": 2,
+    "continuation_syncmsg_replies": 1,
+    "full_acquired_cache_records": 5,
+    "source_identity_order_matches_reference": true,
+    "reacquired_projections_match_reference": true,
+    "supported_text_records": 1,
+    "supported_post_records": 2,
+    "existing_gap_notice_records": 2,
+    "continuation_local_read_live_checkpoint_unchanged": true,
+    "pending_records_replayed_offline": 3,
+    "restart_source_acquisition_calls": 0,
+    "confirmed_unique_source_mappings": 5,
+    "selected_older_interval_exhausted": true
+  },
+  "limits": [
+    "The first harness stopped after its single-call bound because the valid source page contained one record. The known positive persisted boundary was audited offline before continuing; the completed range was not requested again.",
+    "Matrix batch delivery and response loss used a process-local synthetic sink. Actual encrypted historical insertion, cross-process homeserver deduplication and Beeper UI routing are not established by this experiment.",
+    "Initial scope used fresh inventory/roster; the declared bounded inventory snapshot was used by the bridge adapter and offline restart. Fresh restart inventory and native open/scroll UI were not exercised.",
+    "Local checkpoint equality was verified around the continuation acquisition. Server-side implicit SYNCMSG read effects were not independently measured; no claim of zero server read effects is made.",
+    "Projection equality with the earlier acquired cache is not native display parity. Two existing type-14 records remain explicit gap notices.",
+    "This reused a server-registered owned secondary device, not a new registration or official empty-profile clean login. No real Beeper, primary account, new enrollment or cloud backup/restore was used."
+  ]
+}
