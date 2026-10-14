@@ -287,6 +287,9 @@ func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (
 	if err := kc.seedLastMessages(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "last-messages", err: err}
 	}
+	if err := kc.checkStartupHistoryDelivery(ctx, c); err != nil {
+		return nil, bootstrapFailure{stage: "startup-history-delivery", err: err}
+	}
 	if err := kc.catchUp(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "catch-up", err: err}
 	}

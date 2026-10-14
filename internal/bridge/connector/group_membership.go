@@ -91,6 +91,9 @@ func (kc *KakaoClient) refreshGroupMembership(ctx context.Context, c kakaoClient
 		}
 		return info, nil
 	}}
+	if kc.historyEnabled() {
+		resync.CheckNeedsBackfillFunc = func(context.Context, *database.Message) (bool, error) { return true, nil }
+	}
 	if !committable(kc.queue(resync)) {
 		return errMembershipPending
 	}

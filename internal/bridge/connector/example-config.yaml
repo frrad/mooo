@@ -4,16 +4,17 @@
 # accessible only by the bridge's user (mode 0700).
 profile_dir: ./profiles
 
-# Opt-in startup acquisition into the private history store. This is the bulk
-# source path only; automatic older Matrix delivery is not wired yet.
+# Acquire available startup history and enable framework history delivery/paging.
+# Requires bridge backfill to be enabled; backward timeline insertion requires
+# the homeserver's batch-sending capability. Off by default.
 startup_history: false
 
 # Acquisition policy, not an advertised Kakao rate limit. Zero values select
 # these defaults. Applies to zero-held-count SYNCMSG, including catch-up and
 # explicit history. Identical concurrent requests share one source attempt.
 # Cooldowns persist in each private profile's .history-admission file.
-# Metadata/media dependency pacing and startup bulk requests are separate
-# remaining integration work; this is not a complete history rate limiter yet.
+# Startup MCHATLOGS shares this worker. Metadata/media dependencies and ownership
+# across profiles for one account remain to be integrated.
 history_pacing:
     minimum_interval: 2s
     error_backoff: 30s

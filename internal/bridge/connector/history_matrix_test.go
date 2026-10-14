@@ -399,3 +399,45 @@ func TestLiveUnmarkedSendsKeepTheirOwnTransactions(t *testing.T) {
 		t.Fatalf("send transactions:\n%s", strings.Join(paths, "\n"))
 	}
 }
+
+func TestFrameworkHistoryCryptoCarriesTransactionWithoutEventContext(t *testing.T) {
+	probe := &historyEncryptionProbe{}
+	crypto := &historyCrypto{Crypto: probe}
+	content := &event.Content{Raw: map[string]any{historyPartMarker: "synthetic-stable-part", "synthetic_extra": true}}
+	if err := crypto.Encrypt(t.Context(), "!selected:test", event.EventMessage, content); err != nil {
+		t.Fatal(err)
+	}
+	if probe.sawMarker || content.Raw[historyPartMarker] != "synthetic-stable-part" {
+		t.Fatal("framework history lost transaction or encrypted its internal marker")
+	}
+}
+func TestFrameworkHistoryTransactionMarkerWithoutContext(t *testing.T) {
+	for _, typ := range []string{"m.room.message", "m.room.encrypted"} {
+		t.Run(typ, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.HasSuffix(r.URL.Path, "/synthetic-stable-part") {
+					t.Errorf("volatile transaction retained: %s", r.URL.Path)
+				}
+				var payload map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Error(err)
+				}
+				if _, ok := payload[historyPartMarker]; ok {
+					t.Error("internal marker leaked onto wire")
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+			data, _ := json.Marshal(map[string]any{historyPartMarker: "synthetic-stable-part", "body": "synthetic"})
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPut, server.URL+"/_matrix/client/v3/rooms/!selected:test/send/"+typ+"/volatile", bytes.NewReader(data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp, err := (&http.Client{Transport: newHistoryTransport(http.DefaultTransport)}).Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+		})
+	}
+}

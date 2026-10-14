@@ -1,5 +1,10 @@
 # Matrix/Beeper history integration investigation
 
+Implementation update (2026-10-14 UTC): the connector now implements opt-in
+FetchMessages and acquired-history initial delivery. The findings below retain
+the dated audit baseline; see [current paths and evidence](HISTORY-BRIDGE-PAGES.md).
+The standard appservice still supplies no room-viewing signal.
+
 Date: 2026-10-13. Scope: clean bridge login, opening an existing portal and
 backward scrolling on the Matrix side. Kakao requests, accounts and experiments
 were held throughout. This is a findings record, not a replacement of the history
