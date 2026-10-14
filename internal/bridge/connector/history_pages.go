@@ -56,6 +56,7 @@ func (kc *KakaoClient) FetchMessages(ctx context.Context, params bridgev2.FetchM
 	if !params.Forward && !kc.login.Bridge.Matrix.GetCapabilities().BatchSending {
 		return nil, errors.New("connector: historical timeline insertion requires batch sending")
 	}
+	ctx = context.WithValue(ctx, historyResourceOwnerKey{}, kc)
 	chatID, err := parseChatID(params.Portal.ID)
 	if err != nil {
 		return nil, err

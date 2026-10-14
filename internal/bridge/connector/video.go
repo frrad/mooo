@@ -18,7 +18,9 @@ func convertVideo(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 		metadata:    newKakaoMessageMetadata(v.ChatID, v.LogID, v.AuthorID, messagetype.Video, "[video]", 0),
 		transferErr: errPhotoTransfer,
 		download: func(ctx context.Context) (attachmentMedia, error) {
-			data, err := media.DownloadVideo(ctx, photoHTTPClient, a)
+			data, err := historyResourceBytes(ctx, []any{"Video", a}, func(ctx context.Context) ([]byte, error) {
+				return media.DownloadVideo(ctx, historyHTTPClient(photoHTTPClient), a)
+			})
 			info := event.FileInfo{Width: int(a.Width), Height: int(a.Height), Duration: int(a.Duration * 1000)}
 			return attachmentMedia{data: data, name: "video.mp4", mime: "video/mp4", info: info}, err
 		},

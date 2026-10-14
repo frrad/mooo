@@ -34,7 +34,9 @@ func stickerPart(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.M
 		deterministic: stickerResourceFailure,
 		transferErr:   errStickerTransfer,
 		download: func(ctx context.Context) (attachmentMedia, error) {
-			resource, err := media.DownloadSticker(ctx, stickerHTTPClient, msg.Attachment)
+			resource, err := historyResourceJSON(ctx, []any{"Sticker", msg.Attachment}, func(ctx context.Context) (media.StickerResource, error) {
+				return media.DownloadSticker(ctx, historyHTTPClient(stickerHTTPClient), msg.Attachment)
+			})
 			if err != nil {
 				return attachmentMedia{}, err
 			}

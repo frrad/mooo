@@ -126,7 +126,7 @@ func (kc *KakaoClient) inventoryChatInfo(portal *bridgev2.Portal, chatID int64) 
 		userInfo.Name = &chat.DisplayNicknames[0]
 	}
 	if len(chat.DisplayImageURLs) == 1 && chat.DisplayImageURLs[0] != "" {
-		userInfo.Avatar = avatarFromURL(chat.DisplayImageURLs[0])
+		userInfo.Avatar = avatarFromURL(chat.DisplayImageURLs[0], kc)
 	}
 	member.UserInfo = userInfo
 	info.Members.MemberMap[other] = member

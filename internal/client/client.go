@@ -59,6 +59,7 @@ type Client struct {
 	readMu           sync.Mutex
 	historyAdmission *historyAdmission
 	historyStore     *historyStore
+	historyResources *historyResourceCache
 	historyStartup   chan struct{}
 	historyStartWait int
 	gaps             gapFunc
@@ -179,8 +180,16 @@ func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*
 		_ = lease.Close()
 		return nil, err
 	}
+	resources, err := openHistoryResourceCache(statePath+".history-resources", history.binding)
+	if err != nil {
+		admission.stop()
+		_ = lease.Close()
+		return nil, err
+	}
+	client.historyResources = resources
 	client.historyStore = history
 	client.historyAdmission = admission
+	client.http = historyDependencyDoer{base: client.http}
 	client.checkpoint = checkpoint
 	client.gaps = newGapFunc(options.GapObserver)
 	resume := options.loginResume(checkpoint.Snapshot())
@@ -719,7 +728,9 @@ func (c *Client) ReactionMembers(ctx context.Context, chatID, logID int64) (reac
 	if err != nil {
 		return reactions.MembersResponse{}, err
 	}
-	return reactionMembers(ctx, doer, state, chatID, logID)
+	return historyReadJSON(c, ctx, []any{"reaction-members", chatID, logID}, func(ctx context.Context) (reactions.MembersResponse, error) {
+		return reactionMembers(ctx, doer, state, chatID, logID)
+	})
 }
 
 // ReactionMetaSync reads one page of message metadata (reaction) changes
@@ -733,7 +744,9 @@ func (c *Client) ReactionMetaSync(ctx context.Context, chatID, cur int64) (react
 	if err != nil {
 		return reactions.SyncMetaPage{}, err
 	}
-	return reactions.FetchSyncMeta(ctx, doer, profile, chatID, cur)
+	return historyReadJSON(c, ctx, []any{"reaction-meta", chatID, cur}, func(ctx context.Context) (reactions.SyncMetaPage, error) {
+		return reactions.FetchSyncMeta(ctx, doer, profile, chatID, cur)
+	})
 }
 
 // MiniReactionDetails returns attribution for the separate mini/custom-
@@ -743,7 +756,9 @@ func (c *Client) MiniReactionDetails(ctx context.Context, chatID, linkID, logID 
 	if err != nil {
 		return reactions.DetailsResponse{}, err
 	}
-	return miniReactionDetails(ctx, doer, state, chatID, linkID, logID)
+	return historyReadJSON(c, ctx, []any{"mini-details", chatID, linkID, logID}, func(ctx context.Context) (reactions.DetailsResponse, error) {
+		return miniReactionDetails(ctx, doer, state, chatID, linkID, logID)
+	})
 }
 
 // ReactionDetails resolves and merges the attribution sources indicated by one
@@ -753,7 +768,7 @@ func (c *Client) ReactionDetails(ctx context.Context, change events.ReactionChan
 	if err != nil {
 		return nil, err
 	}
-	return mergedReactionDetails(ctx, doer, state, change)
+	return mergedReactionDetails(ctx, doer, state, change, reactionReadCallbacks{members: c.ReactionMembers, mini: c.MiniReactionDetails})
 }
 
 // Shutdown marks the Client closed, interrupts its Session without holding

@@ -34,7 +34,12 @@ func miniReactionDetails(ctx context.Context, doer macweb.Doer, state authstate.
 	return reactions.FetchDetails(ctx, doer, profile, chatID, linkID, logID)
 }
 
-func mergedReactionDetails(ctx context.Context, doer macweb.Doer, state authstate.State, change events.ReactionChanged) ([]reactions.Detail, error) {
+type reactionReadCallbacks struct {
+	members func(context.Context, int64, int64) (reactions.MembersResponse, error)
+	mini    func(context.Context, int64, int64, int64) (reactions.DetailsResponse, error)
+}
+
+func mergedReactionDetails(ctx context.Context, doer macweb.Doer, state authstate.State, change events.ReactionChanged, callbacks ...reactionReadCallbacks) ([]reactions.Detail, error) {
 	if ctx == nil || change.ChatID <= 0 || change.LinkID < 0 || change.LogID <= 0 {
 		return nil, ErrProtocol
 	}
@@ -54,6 +59,17 @@ func mergedReactionDetails(ctx context.Context, doer macweb.Doer, state authstat
 	if !needLegacy && !needMini {
 		return []reactions.Detail{}, nil
 	}
+	readers := reactionReadCallbacks{
+		members: func(ctx context.Context, chatID, logID int64) (reactions.MembersResponse, error) {
+			return reactions.FetchMembers(ctx, doer, profile, chatID, logID)
+		},
+		mini: func(ctx context.Context, chatID, linkID, logID int64) (reactions.DetailsResponse, error) {
+			return reactions.FetchDetails(ctx, doer, profile, chatID, linkID, logID)
+		},
+	}
+	if len(callbacks) > 0 {
+		readers = callbacks[0]
+	}
 	var members reactions.MembersResponse
 	var mini reactions.DetailsResponse
 	var membersErr, miniErr error
@@ -62,14 +78,14 @@ func mergedReactionDetails(ctx context.Context, doer macweb.Doer, state authstat
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			members, membersErr = reactions.FetchMembers(ctx, doer, profile, change.ChatID, change.LogID)
+			members, membersErr = readers.members(ctx, change.ChatID, change.LogID)
 		}()
 	}
 	if needMini {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			mini, miniErr = reactions.FetchDetails(ctx, doer, profile, change.ChatID, change.LinkID, change.LogID)
+			mini, miniErr = readers.mini(ctx, change.ChatID, change.LinkID, change.LogID)
 		}()
 	}
 	wait.Wait()

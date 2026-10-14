@@ -78,6 +78,8 @@ type reactionAPI interface {
 
 // historyAPI reads message history by range or position.
 type historyAPI interface {
+	AcquireHistoryBytes(context.Context, string, func(context.Context) ([]byte, error)) ([]byte, error)
+	AcquireHistoryResource(context.Context, string, func(context.Context) ([]byte, error)) ([]byte, error)
 	ReadHistoryPage(ctx context.Context, chatID, after, through int64, limit int) (client.HistoryPage, error)
 	GetMessages(ctx context.Context, chatID int64, logIDs []int64) ([]events.Event, error)
 	InitialSyncTargets(ctx context.Context) ([]syncmsg.Target, error)
@@ -577,7 +579,7 @@ func (kc *KakaoClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 	if !ok {
 		return &bridgev2.UserInfo{}, nil
 	}
-	return userInfoForMember(profile), nil
+	return userInfoForMember(profile, kc), nil
 }
 
 func chatName(data chatmeta.ChatData) string {
@@ -606,7 +608,7 @@ func chatName(data chatmeta.ChatData) string {
 	return strings.Join(names, ", ")
 }
 
-func userInfoForMember(profile chatmeta.Member) *bridgev2.UserInfo {
+func userInfoForMember(profile chatmeta.Member, owners ...*KakaoClient) *bridgev2.UserInfo {
 	// This function consumes a known MEMBER record. Empty fields confirm a clear;
 	// an unavailable profile never calls it and carries no UserInfo instead.
 	name := profile.Nickname
@@ -618,7 +620,7 @@ func userInfoForMember(profile chatmeta.Member) *bridgev2.UserInfo {
 	if raw == "" {
 		info.Avatar = &bridgev2.Avatar{Remove: true}
 	} else {
-		info.Avatar = avatarFromURL(raw)
+		info.Avatar = avatarFromURL(raw, owners...)
 	}
 	return info
 }

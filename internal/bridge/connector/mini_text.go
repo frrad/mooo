@@ -64,7 +64,9 @@ func convertMiniText(ctx context.Context, portal *bridgev2.Portal, intent bridge
 		if budgetExceeded {
 			state.category = "resource_budget"
 		} else {
-			resource, err := media.DownloadMini(ctx, stickerHTTPClient, part.ResourceID)
+			resource, err := historyResourceJSON(ctx, []any{"Mini", part.ResourceID}, func(ctx context.Context) (media.StickerResource, error) {
+				return media.DownloadMini(ctx, historyHTTPClient(stickerHTTPClient), part.ResourceID)
+			})
 			if err != nil {
 				category, ok := stickerResourceFailure(err)
 				if !ok {

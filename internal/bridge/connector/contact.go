@@ -20,7 +20,9 @@ func convertContact(ctx context.Context, portal *bridgev2.Portal, intent bridgev
 		metadata:    newKakaoMessageMetadata(f.ChatID, f.LogID, f.AuthorID, messagetype.Contact, "[contact]", 0),
 		transferErr: errContactTransfer,
 		download: func(ctx context.Context) (attachmentMedia, error) {
-			data, err := media.DownloadContact(ctx, photoHTTPClient, a)
+			data, err := historyResourceBytes(ctx, []any{"Contact", a}, func(ctx context.Context) ([]byte, error) {
+				return media.DownloadContact(ctx, historyHTTPClient(photoHTTPClient), a)
+			})
 			return attachmentMedia{data: data, name: "contact.vcf", mime: "text/vcard"}, err
 		},
 	})

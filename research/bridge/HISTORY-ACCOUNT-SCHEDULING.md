@@ -84,8 +84,9 @@ active history, malformed/wrong-room metadata retains cooldown, and shutdown
 retains the profile lease until dependency publication finishes. No live account,
 source stress probe or real Beeper was used.
 
-Remaining work: authenticated HTTP reaction metadata and media/avatar/sticker
-acquisition must join account accounting, with bounded bytes and validation.
+The follow-up [HTTP dependency implementation](HISTORY-HTTP-DEPENDENCIES.md)
+adds authenticated reaction reads and bridge media/avatar/sticker acquisition to
+account accounting, with bounded bytes, physical redirect spacing and validation.
 Bootstrap authentication/inventory requests remain outside this scheduler.
 Viewing dispatch and actual HTTP/owned encrypted history acceptance remain open.
 Current tests prove synthetic scheduling and persistence behavior, not an official

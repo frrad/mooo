@@ -1758,3 +1758,31 @@ func (f *fakeKakao) ReactionMetaSync(_ context.Context, _ int64, cur int64) (rea
 	f.reactionPages = f.reactionPages[1:]
 	return page, nil
 }
+
+func (f *fakeKakao) AcquireHistoryBytes(ctx context.Context, _ string, fetch func(context.Context) ([]byte, error)) ([]byte, error) {
+	return fetch(ctx)
+}
+
+func (f *fakeKakao) AcquireHistoryResource(ctx context.Context, _ string, fetch func(context.Context) ([]byte, error)) ([]byte, error) {
+	return fetch(ctx)
+}
+
+func TestBootstrapCleanupCannotShutdownOwnerAlreadyClaimedByDisconnect(t *testing.T) {
+	fake := &fakeKakao{}
+	kc, _ := newTestClient(t, nil)
+	kc.mu.Lock()
+	kc.retain(fake)
+	kc.retained.begin()
+	kc.stopping = true
+	kc.mu.Unlock()
+	kc.shutdownBootstrap(fake, "stopped bootstrap", true)
+	fake.mu.Lock()
+	calls := fake.shutdownCalls
+	fake.mu.Unlock()
+	if calls != 0 {
+		t.Fatal("bootstrap duplicated disconnect's claimed Shutdown", calls)
+	}
+	kc.mu.Lock()
+	kc.release(fake, nil)
+	kc.mu.Unlock()
+}

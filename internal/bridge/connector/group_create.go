@@ -48,7 +48,7 @@ func (kc *KakaoClient) ResolveIdentifier(ctx context.Context, identifier string,
 	if !ok {
 		return nil, errors.New("connector: participant is not a previously resolved Kakao identity")
 	}
-	return &bridgev2.ResolveIdentifierResponse{UserID: makeUserID(userID), UserInfo: userInfoForMember(profile)}, nil
+	return &bridgev2.ResolveIdentifierResponse{UserID: makeUserID(userID), UserInfo: userInfoForMember(profile, kc)}, nil
 }
 
 func (kc *KakaoClient) groupCreateRequest(params *bridgev2.GroupCreateParams) (chat.CreateRequest, string, error) {

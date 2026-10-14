@@ -154,6 +154,7 @@ func TestGroupHistoryRepliesMapInsideIntervalAndQuoteOlderSources(t *testing.T) 
 func TestInboundStickerReplyBecomesStickerReply(t *testing.T) {
 	kc, intent := newReplyFramework(t)
 	fake := &fakeKakao{}
+	kc.client = fake
 	data := connectorPNG(t)
 	old := stickerHTTPClient
 	stickerHTTPClient = &http.Client{Transport: photoRoundTripper(func(r *http.Request) (*http.Response, error) {
