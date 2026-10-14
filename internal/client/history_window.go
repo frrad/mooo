@@ -25,9 +25,12 @@ type StoredHistoryPage struct {
 	// CoveredThrough is the end of connected acquired coverage starting at
 	// request.After. Cached islands beyond a gap never advance it.
 	CoveredThrough int64
-	HasMore        bool                // More acquired rows precede the returned window.
-	Unavailable    *HistoryUnavailable // Fresh exact-window observation; never acquired coverage.
-	Complete       bool                // The selected source interval is covered by connected acquired pages.
+	// CachedSuffix means the returned nonempty window has connected acquired
+	// coverage through the ceiling, even when an older prefix remains missing.
+	CachedSuffix bool
+	HasMore      bool                // More rows or missing coverage precede the returned window.
+	Unavailable  *HistoryUnavailable // Fresh exact-window observation; never acquired coverage.
+	Complete     bool                // The selected source interval is covered by connected acquired pages.
 }
 
 // ReadStoredHistory returns the newest local rows in ascending identity order.
@@ -79,6 +82,19 @@ func (s *historyStore) window(ctx context.Context, request StoredHistoryRequest)
 		}
 		covered = next
 	}
+	suffixAfter := request.Through
+	for {
+		next := suffixAfter
+		for _, ref := range s.pages {
+			if ref.request.ChatID == request.ChatID && ref.last >= suffixAfter && ref.request.Cur < suffixAfter {
+				next = min(next, max(request.After, ref.request.Cur))
+			}
+		}
+		if next == suffixAfter {
+			break
+		}
+		suffixAfter = next
+	}
 	rows := map[int64]bson.Raw{}
 	for _, ref := range s.pages {
 		if ref.request.ChatID != request.ChatID || ref.last <= request.After || ref.request.Cur >= request.Through {
@@ -105,10 +121,15 @@ func (s *historyStore) window(ctx context.Context, request StoredHistoryRequest)
 	}
 	ids := make([]int64, 0, len(rows))
 	for id := range rows {
+		if suffixAfter < request.Through && id <= suffixAfter {
+			continue
+		}
 		ids = append(ids, id)
 	}
 	slices.Sort(ids)
 	out := StoredHistoryPage{CoveredThrough: covered, Complete: covered >= request.Through, HasMore: len(ids) > request.Limit}
+	out.CachedSuffix = suffixAfter < request.Through && len(ids) > 0
+	out.HasMore = out.HasMore || (out.CachedSuffix && !out.Complete)
 	if !out.Complete && len(ids) == 0 {
 		observation, err := s.unavailableLocked(syncmsg.Request{ChatID: request.ChatID, Cur: request.After, Max: request.Through})
 		if err != nil {

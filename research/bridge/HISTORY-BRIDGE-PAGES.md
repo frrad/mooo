@@ -271,3 +271,31 @@ acquired coverage, and reopen. Source failure still returns without delivering
 an incomplete window. Existing 30-second/25-page bounds and account pacing
 remain in force. These are synthetic implementation regressions; full native
 flow and live backward insertion acceptance remain required.
+
+### Cached-first backward pages across an older gap
+
+The local reader distinguishes complete interval coverage from a usable cached
+suffix ending at the requested ceiling. A suffix can serve backward pagination
+immediately even if earlier history is missing. The returned page never crosses
+the older coverage gap; its rows stay in ascending source identity order.
+`HasMore` remains true for the missing prefix, including when the cached suffix
+contains fewer rows than the requested count. Forward initial delivery continues
+to require its complete selected interval.
+
+When scrolling reaches the gap, ordinary cached-only demand returns
+`MoreRequiresSlowFetch`; explicit slow demand uses the existing bounded, paced
+acquisition path. Permission to fetch slowly does not itself force a source
+request while a usable cached page exists. Whole-interval `Complete` and the
+connected lower-bound `CoveredThrough` retain their previous meanings; a usable
+suffix does not advance either or retire the older gap.
+
+A synthetic store regression first returned `[100,500,800,900]` across a gap
+between acquired `(0,500]` and `(700,900]`, with `HasMore:false`. It now returns
+only `[800,900]`, with `HasMore:true`, before and after reopen. An actual SDK
+store and framework backward executor serve a cached `(300,500]` suffix without
+any source acquisition, including with slow fetching permitted. An accepted
+synthetic batch loses its response; fresh SDK/connector instances replay the
+same two event identities, confirm both mappings and retain the older gap.
+The next cached-only scroll defers to slow acquisition instead of reporting
+exhaustion. This establishes implementation behavior with a synthetic Matrix
+sink, not live historical insertion, native UI or Beeper routing parity.
