@@ -43,9 +43,9 @@ source requests. Cloud backup/restore remains out of scope.
 - [x] First admission slice: zero-held-count SYNCMSG now uses configurable
       spacing, error/non-progress cooldowns, bounded pending demand and concurrent
       request coalescing. Reservations survive profile restart and shutdown joins
-      admission persistence. This is currently profile-scoped; metadata/media,
-      cross-profile account ownership remain to be integrated; startup bulk now
-      shares this gate.
+      admission persistence. Startup bulk now shares this gate; account ownership
+      and read-only LOCO dependencies landed afterward. HTTP dependencies remain
+      to be integrated.
 - [x] First acquired-store slice: full validated zero-held-count pages persist in
       a private account/device-bound store, independently of delivery. Cache reads
       reuse connected acquired prefixes and apply targeted edits/deletions; restart
@@ -55,6 +55,13 @@ source requests. Cloud backup/restore remains out of scope.
 - [ ] Complete the durable account-scoped history store and acquisition worker, consumed
       by actual client/bridge paths. Store private content only in the operator's
       profile; preserve source identities and explicit unavailable boundaries.
+- [x] First account scheduler and LOCO dependency slice: profiles under one shared
+      root now share queue bounds, one in-flight lease and durable cooldowns;
+      device responses remain separate. Sibling legacy reservations migrate,
+      stronger policies retain timing, and shutdown joins dependencies. CHATINFO,
+      MEMBER/MEMLIST, room metadata/CHATONROOM and GETMSGS now share admission.
+      Cross-process and production-path synthetic checks pass; no live stress
+      probes. See [account scheduling](research/bridge/HISTORY-ACCOUNT-SCHEDULING.md).
 - [ ] Make every acquisition entry point obey one account-wide in-flight limit,
       configurable minimum request spacing, coalescing by room/boundary, and finite
       per-demand request/time budgets. Include dependent metadata/media requests
