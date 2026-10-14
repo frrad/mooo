@@ -17,10 +17,11 @@ ten-second admission, coalescing and bounded cancellation. Decoder defaults
 remain an explicit implementation choice. Standard Matrix appservices lack a
 viewing signal and no longer perform eager offline reaction recovery. The
 implementation also supplies explicit per-room `!kakao sync-reactions` recovery
-through those same gates, with no all-chats option. Hold the
-implementation PR for the maintainer's real-world test; no live acceptance or
-merge is authorized yet. Research and synthetic coverage are not full Mac
-runtime parity.
+through those same gates, with no all-chats option. The maintainer authorized
+owned testing and merge on 2026-10-14. [Owned acceptance](research/bridge/REACTION-DEMAND-ACCEPTANCE.md)
+covers reconnect without a sweep, offline addition/removal, identity and cursor
+reuse, cooldown, business exclusion, read-failure retention and explicit retry. Native viewing and
+real stop-flag exclusion remain unobserved; this is not full Mac runtime parity.
 
 ### Goal
 

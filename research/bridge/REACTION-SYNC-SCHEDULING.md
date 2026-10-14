@@ -121,9 +121,10 @@ expose the Mac's window-open lifecycle. Retaining eager offline recovery would
 need explicit pacing, coalescing and account-wide budgets, while a demand-based
 policy needs reliable room-view/history hooks and a documented recovery delay.
 Neither policy should be described as exact Mac scheduling parity. This
-research changes no production behavior and leaves #355 open.
+static research changed no production behavior; the implementation follow-up
+is described below.
 
-## Proposed implementation, awaiting owned acceptance
+## Implementation and owned acceptance
 
 The follow-up removes `resyncReactions` from connection bootstrap. The shared
 page/delivery/cursor path is retained behind `HandleMatrixViewingChat`:
@@ -153,9 +154,9 @@ does not call the viewing API; Matrix defines no standard open-room signal.
 Consequently that deployment loses eager offline reaction recovery, while live
 push delivery continues. Exact window lifecycle, local meta-table `max`/`cnt`,
 own-reaction immediate refetch and unbounded Mac continuation remain deliberate
-differences. The proposed scheduler has synthetic production-path tests; no
-real client/account test has been run. Hold the implementation PR for the
-maintainer's live test before merge.
+differences. The scheduler has synthetic production-path tests and
+[owned command/reconnect acceptance](REACTION-DEMAND-ACCEPTANCE.md). Those
+observations do not establish native Mac window-timer parity.
 
 For standard appservices, `!kakao sync-reactions` is explicit operator demand
 for the current portal and selected owned login. It shares the viewing/type/
@@ -168,11 +169,9 @@ or advance message delivery cursors. Matrix reaction acknowledgements still
 use the framework's existing queue; the source deadline alone is not proof of
 a wall-clock bound on every downstream Matrix operation.
 
-Owned acceptance is on hold. When the maintainer authorizes it, verify that
-reconnecting makes no metadata HTTP sweep, business-channel command/view demand
-makes no metadata HTTP request, and explicit supported-room demand recovers a
-known offline reaction once. Repeat the command after its cooldown to confirm
-stable identities and cursor reuse. Check stop-flag exclusion and cancel/error
-cursor retention where available; unavailable client viewing signals are a
-reported gap, not simulated official-client evidence. Do not run these checks
-until the maintainer releases the hold.
+The maintainer authorized owned acceptance on 2026-10-14. The normal encrypted
+Matrix command path recovered an offline reaction, reused its identity/cursor,
+respected cooldown, recovered an offline removal, and retained state through a
+one-shot read failure and explicit retry after reconnect. Reconnect itself made
+no metadata sweep. See the linked acceptance report for business exclusion,
+setup details, interrupted attempts and unavailable live gates.
