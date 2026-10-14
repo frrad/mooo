@@ -141,3 +141,22 @@ func TestStoredWindowDoesNotCrossGapBeforeCachedSuffix(t *testing.T) {
 		api.historyStore = reopenTestHistoryStore(t, store.dir)
 	}
 }
+
+func TestStoredWindowMissingRangeStopsAtNextAcquiredPage(t *testing.T) {
+	api, store := windowClient(t)
+	if err := store.save(syncmsg.Request{ChatID: 42, Cur: 300, Max: 500}, syncmsg.Response{ChatLogs: []bson.Raw{historyStoreRaw(t, 400, "cached"), historyStoreRaw(t, 500, "cached")}}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := api.ReadStoredHistory(t.Context(), StoredHistoryRequest{ChatID: 42, Through: 400, ExcludeThrough: true, Limit: 50})
+	if err != nil || p.CoveredThrough != 0 || p.MissingThrough != 300 || p.Complete || len(p.Events) != 0 {
+		t.Fatal(p, err)
+	}
+	// The bridge must acquire only (0,300], then re-read the joined local window.
+	if err := store.save(syncmsg.Request{ChatID: 42, Cur: 0, Max: 300}, syncmsg.Response{ChatLogs: []bson.Raw{historyStoreRaw(t, 100, "older"), historyStoreRaw(t, 300, "join")}}); err != nil {
+		t.Fatal(err)
+	}
+	p, err = api.ReadStoredHistory(t.Context(), StoredHistoryRequest{ChatID: 42, Through: 400, ExcludeThrough: true, Limit: 50})
+	if err != nil || !p.Complete || !reflect.DeepEqual(windowIDs(t, p), []int64{100, 300}) {
+		t.Fatal(p, err)
+	}
+}

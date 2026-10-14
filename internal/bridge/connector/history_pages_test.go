@@ -309,14 +309,37 @@ func TestFetchHistoryUnavailableWindowDoesNotAcquireOrFinishTask(t *testing.T) {
 
 type missingTailSource struct {
 	*cachedProvisionSource
-	after []int64
+	after   []int64
+	through []int64
 }
 
 var errMissingTailProbe = errors.New("synthetic missing-tail stop")
 
-func (s *missingTailSource) ReadHistoryPage(_ context.Context, _, after, _ int64, _ int) (client.HistoryPage, error) {
+func (s *missingTailSource) ReadHistoryPage(_ context.Context, _, after, through int64, _ int) (client.HistoryPage, error) {
 	s.after = append(s.after, after)
+	s.through = append(s.through, through)
 	return client.HistoryPage{}, errMissingTailProbe
+}
+
+func TestBackwardGapAcquisitionExcludesCachedSuffix(t *testing.T) {
+	path := provisioningCacheFixtureAfter(t, 300)
+	sdk, err := client.OpenWithOptions(path, nil, client.OpenOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := sdk.Shutdown(t.Context()); err != nil {
+			t.Error(err)
+		}
+	}()
+	kc, p, mx := pageFramework(t)
+	kc.login.Bridge.Matrix = &historyBatchMatrix{groupCreationMatrix: mx}
+	source := &missingTailSource{cachedProvisionSource: &cachedProvisionSource{sdk: sdk, fakeKakao: &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat", LastServerLogID: 500}}}}}
+	kc.client = source
+	_, err = kc.FetchMessages(t.Context(), bridgev2.FetchMessagesParams{Portal: p, Count: 50, Cursor: historyCursor(testChatID, 400), AllowSlowFetch: true})
+	if !errors.Is(err, errMissingTailProbe) || !reflect.DeepEqual(source.after, []int64{0}) || !reflect.DeepEqual(source.through, []int64{300}) {
+		t.Fatalf("acquisition overlaps known suffix: after=%v through=%v err=%v", source.after, source.through, err)
+	}
 }
 
 func TestBackwardAcquisitionStartsAtPersistedCoverageAfterRestart(t *testing.T) {
@@ -394,5 +417,51 @@ func TestBackwardCachedSuffixDeliversBeforeGapAndReplaysAfterRestart(t *testing.
 		if err != nil || len(rows) != 1 {
 			t.Fatal("missing confirmed mapping", n, err)
 		}
+	}
+}
+
+type acquiringWindowSource struct {
+	*windowSource
+	bounds    [][2]int64
+	overshoot bool
+}
+
+func (s *acquiringWindowSource) ReadHistoryPage(_ context.Context, _, after, through int64, _ int) (client.HistoryPage, error) {
+	s.bounds = append(s.bounds, [2]int64{after, through})
+	next := through
+	if s.overshoot {
+		next++
+	}
+	return client.HistoryPage{Next: next, Complete: true}, nil
+}
+func TestBackwardGapAcquisitionRechecksDurableCoverage(t *testing.T) {
+	for _, mode := range []string{"joined", "not persisted", "overshoot"} {
+		t.Run(mode, func(t *testing.T) {
+			kc, p, mx := pageFramework(t)
+			kc.login.Bridge.Matrix = &historyBatchMatrix{groupCreationMatrix: mx}
+			initial := client.StoredHistoryPage{MissingThrough: 300}
+			joined := client.StoredHistoryPage{CoveredThrough: 400, MissingThrough: 400, Complete: true, Events: []events.Event{pageText(100, "older"), pageText(300, "join")}}
+			if mode == "not persisted" {
+				joined = initial
+			}
+			source := &acquiringWindowSource{windowSource: &windowSource{fakeKakao: &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat", LastServerLogID: 500}}}, pages: []client.StoredHistoryPage{initial, joined}}, overshoot: mode == "overshoot"}
+			kc.client = source
+			got, err := kc.FetchMessages(t.Context(), bridgev2.FetchMessagesParams{Portal: p, Count: 50, Cursor: historyCursor(testChatID, 400), AllowSlowFetch: true})
+			if !reflect.DeepEqual(source.bounds, [][2]int64{{0, 300}}) {
+				t.Fatal("crossed cached boundary or repeated nonprogress", source.bounds)
+			}
+			if mode != "joined" {
+				if !errors.Is(err, client.ErrGapUnresolved) {
+					t.Fatal("unconfirmed acquisition accepted", got, err)
+				}
+				return
+			}
+			if err != nil || len(got.Messages) != 2 || got.HasMore || got.Messages[0].ID != makeMessageID(testChatID, 100) || got.Messages[1].ID != makeMessageID(testChatID, 300) {
+				t.Fatal("joined window not served in source order", got, err)
+			}
+			if len(source.calls) != 0 {
+				t.Fatal("acquisition changed explicit write/read state", source.calls)
+			}
+		})
 	}
 }

@@ -151,23 +151,25 @@ func (kc *KakaoClient) FetchMessages(ctx context.Context, params bridgev2.FetchM
 		} // Startup acquisition must precede delivery.
 		acquisitionCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		position := page.CoveredThrough
-		if position < after || position > through {
-			return nil, client.ErrProtocol
-		}
-		for pages := 0; pages < 25 && position < through; pages++ {
-			acquired, e := c.ReadHistoryPage(acquisitionCtx, chatID, position, through, int(syncmsg.MaxPageSize))
+		for pages := 0; pages < 25 && !page.Complete && !page.CachedSuffix; pages++ {
+			position, ceiling := page.CoveredThrough, page.MissingThrough
+			if position < after || position >= ceiling || ceiling > through {
+				return nil, client.ErrProtocol
+			}
+			acquired, e := c.ReadHistoryPage(acquisitionCtx, chatID, position, ceiling, int(syncmsg.MaxPageSize))
 			if e != nil {
 				return nil, e
 			}
-			if acquired.Next <= position {
+			if acquired.Next <= position || acquired.Next > ceiling {
 				return nil, client.ErrGapUnresolved
 			}
-			position = acquired.Next
-		}
-		page, err = local.ReadStoredHistory(ctx, request)
-		if err != nil {
-			return nil, err
+			page, err = local.ReadStoredHistory(acquisitionCtx, request)
+			if err != nil {
+				return nil, err
+			}
+			if page.CoveredThrough < acquired.Next {
+				return nil, client.ErrGapUnresolved
+			}
 		}
 		if !page.Complete && !page.CachedSuffix {
 			return nil, ErrHistoryBudget
