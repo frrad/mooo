@@ -239,6 +239,9 @@ This closes the owned **cached forward delivery/encryption/restart** gate for
 this window. It does not establish fresh official startup, native room-open/read
 behavior, current roster state or Beeper gesture routing. The two existing
 type-14 gaps still render notices and remain original-content fidelity gaps.
+Subsequent offline cache inspection identifies both as unverified subtype-4
+poll lifecycle cards, without option lists; see [the observed shape and next
+evidence required](../vote.md#historical-lifecycle-cards-offline-cache-inspection).
 Standard Synapse lacks backward batch insertion, so this run does not claim
 faithful insertion before existing events. The complete three-flow goal remains
 open; acquisition, unavailable boundaries, media/replies/edits/deletions and a
