@@ -137,6 +137,14 @@ unnecessary requests, and restart retains the acquired/delivered boundaries.
 
 ### 3. Scroll backward
 
+- [x] Owned missing-prefix acquisition slice: HST-BRIDGE-GAP-011 served two
+      cached records, acquired the remaining three in two bounded source calls,
+      then replayed pending delivery offline after synthetic batch response loss.
+      Five source identities/projections matched the earlier cache, all mappings
+      were confirmed once, and exhaustion made no source acquisition calls.
+      Native UI/server read effects and actual encrypted historical insertion
+      remain unproven; see [scope and evidence](research/bridge/HISTORY-BRIDGE-PAGES.md).
+
 - [ ] Finish the official older-history/loss-marker caller chain. Local display
       pages are 50 messages; this does not establish a source network page size
       or a reverse-history request. Resolve missing ranges without sparse-ID

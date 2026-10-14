@@ -326,3 +326,49 @@ regressions check the joined result and reject overshoot/unpersisted progress
 after one acquisition call. These are synthetic source tests, not live source
 or native-flow acceptance; the next end-to-end gate must exercise bounded
 acquisition followed by actual delivery and restart.
+
+## Owned missing-prefix acquisition and restart: HST-BRIDGE-GAP-011
+
+On 2026-10-14, the actual SDK and connector backward executor acquired a missing
+range in an authorized three-owned-member regular group and delivered it through
+a synthetic Matrix batch sink. The original secondary profile remained
+exclusively leased; a private clone used the same account/device and common
+account pacing directory/policy. Version, current full inventory and fresh
+roster guards passed before history acquisition. No new registration or primary
+account was used.
+
+The clone started with only the two newest records from an earlier acquired
+five-record window. The executor delivered those cached records without a
+history request. Scrolling into the older gap caused a bounded zero-held-count
+SYNCMSG acquisition. The first valid page contained one record, rather than the
+entire three-record prefix. The harness's one-call limit then stopped further
+acquisition. An offline production-reader audit proved that record matched the
+first reference identity and that connected coverage advanced to it, with the
+remaining gap still explicit.
+
+A second, separately reserved process allowed one call from that persisted
+boundary to the same missing-range fence. It acquired the remaining two records
+without repeating the completed prefix or fetching the cached newer suffix.
+The resulting cache held all five reference identities in source order. The
+synthetic sink accepted the three older events, then deliberately lost its
+response. Fresh offline SDK, connector and SQLite instances replayed the pending
+selection, confirmed one mapping for each of the five identities and exhausted
+the selected older interval with zero source acquisition calls.
+
+An offline audit compared the new full cache's decoded projections with the
+earlier owned cache: all five matched, comprising one text, two supported post
+snapshots and two existing gap notices. This checks acquired data/projected
+content consistency, not official native display parity. Continuation acquisition
+left the local read/live checkpoint unchanged; server-side implicit SYNCMSG
+read effects were not independently measured. Do not infer zero source read
+effects from the absence of an explicit bridge read action.
+
+The source half was live; Matrix batching/fault injection was synthetic and
+process-local. The bridge adapter used a declared bounded inventory snapshot
+from the freshly checked room, including during offline restart. This does not
+prove native clean login/open/scroll, a fresh restart roster, actual encrypted
+historical insertion or cross-process homeserver deduplication. Standard
+Synapse's batch-capability limit remains. Private artifacts stay outside Git;
+the [sanitized observation](../fixtures/history-startup/observed-gap-acquisition-delivery.json)
+records the exact scope and limits. All experiment processes stopped and profile
+leases were released.
