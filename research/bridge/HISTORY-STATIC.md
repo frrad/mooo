@@ -232,6 +232,15 @@ local message and can fall forward to a suitable local message when that item
 is absent or unsuitable. This is a display position, not a network read
 acknowledgment or an incoming-message notification.
 
+The preview-enabled ordinary window's **main-window** activation schedules
+watermark release after 100 ms; resignation cancels release and holds the
+watermark. Release first updates the local own member watermark to the room's
+latest log in a data-store block, then invokes the single-room coordinator.
+This is a separate read-orchestration path from older local display, and the
+delay is not a server pacing limit. Key-window callbacks differ, and the
+preference's default/native timer ordering remain unverified. See the
+[resolved preview contract](../read-state-notiread.md#preview-dependent-main-window-read-orchestration).
+
 The notification manager's database-fetch observer responds to inserted/deleted
 room objects by updating new-message counters and the dock badge (and a
 separate favorite-room counter path). That observer does not enqueue a message

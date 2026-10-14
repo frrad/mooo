@@ -119,6 +119,13 @@ interruption resumes without refetching completed ranges or duplicate delivery.
 
 ### 2. Open an old regular group
 
+- [x] Resolve the Mac preview-dependent read path statically: main-window
+      activation schedules 100 ms watermark release, resignation cancels/holds,
+      release updates the local own watermark before synchronization, and
+      controller destruction cancels pending release. Key-window callbacks are
+      distinct. Default preference/native timing and read-effect acceptance
+      remain open; see [the contract](research/read-state-notiread.md#preview-dependent-main-window-read-orchestration).
+
 - [ ] Trace local-first rendering, CHATONROOM, missing-history reconciliation,
       dependent lookups and read effects in the official client.
 - [ ] Establish the intended client's room-open signal: the current standard
