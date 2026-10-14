@@ -56,7 +56,8 @@ connection failure and reconnected.
   the same refresh a membership notice uses and un-pauses the group once Matrix
   converges. A missed leave notice is corrected at the next reconnect's discovery.
 - **Freshness.** Profiles keep the per-user policy from
-  [PROFILE-REFRESH-COOLDOWN.md](PROFILE-REFRESH-COOLDOWN.md). Personal and Boards
+  [PROFILE-REFRESH-COOLDOWN.md](PROFILE-REFRESH-COOLDOWN.md): a stored profile
+  is never refetched. Personal and Boards
   checkpoints are fresh for 15 minutes and are invalidated by the corresponding
   push notices.
 

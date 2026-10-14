@@ -36,8 +36,11 @@ Bridge policy for ordinary member nickname/avatar enrichment:
 - Persist only the nickname and thumbnail/full avatar URLs needed by Matrix,
   not access permits or other MEMBER credentials. Profile contents remain private
   operator data in the bridge database and are never logged.
-- A successfully returned profile is reusable for 15 minutes from completion.
-  Reuse it in any currently authorized ordinary room requesting that identity.
+- A successfully returned profile is reused indefinitely, in any currently
+  authorized ordinary room requesting that identity. The official client sends
+  MEMBER only for users it has no record of
+  ([metadata triggers](METADATA-TRIGGERS.md)), so a stored profile is never
+  fetched again. (Until 2026-10-14 it expired after 15 minutes.)
   Empty returned nickname/avatar fields are confirmed clears. An absent record
   is not a confirmed clear.
 - Before a fetch, atomically reserve that user's next attempt for two minutes.
@@ -45,19 +48,18 @@ Bridge policy for ordinary member nickname/avatar enrichment:
   leave an unresolved member without enrichment. They do not start duplicate
   fetches. Failed and missing responses retain the reservation, so restart loops
   cannot bypass the attempt cooldown.
-- A successful result replaces only its own reservation, extends freshness to
-  15 minutes and publishes the minimal profile. An obsolete completion cannot
+- A successful result replaces only its own reservation and publishes the
+  minimal profile. An obsolete completion cannot
   overwrite a newer reservation. Partial successful batches are retained.
-- Stale profiles remain available during failed/missing attempts; the original
-  freshness timestamp is not advanced by cache reads. After cooldown expiry the
-  next refresh demand can request the user again.
+- A user without a stored profile can be requested again after the cooldown
+  expires. Records written under the earlier 15-minute policy remain valid.
 - New requests still use the selected room's MEMBER endpoint and the existing
   global account scheduler and physical batching. No direct request bypass is
   introduced. Invalid storage or failed durable reservation stops enrichment
   before fetching. Cached profiles never establish a roster or authorize joins.
 
-This intentionally trades up to 15 minutes of nickname/avatar freshness for
-cross-room and cross-restart reuse. Full HTTP profile views, OpenChat identities,
+Like the official client, the bridge therefore does not notice a known member's
+later nickname or avatar change. Full HTTP profile views, OpenChat identities,
 roster refreshes and room display metadata are not cached by this feature.
 There is no automatic timer for every stored user: existing room refresh and
 membership demands consume the policy. The proposed asynchronous account refresh

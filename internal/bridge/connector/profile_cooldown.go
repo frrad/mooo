@@ -10,9 +10,10 @@ import (
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 )
 
-// These are bridge policy, not recovered native intervals. Successful profiles
-// are reused across rooms; failed/missing attempts cannot storm after restart.
-const memberProfileFreshness = 15 * time.Minute
+// The official Mac client sends MEMBER only for users it has no record of, and
+// never refetches a known user on a timer (research/bridge/METADATA-TRIGGERS.md).
+// A stored profile is therefore never due again. The attempt cooldown is
+// bridge failure backoff, so failed/missing attempts cannot storm after restart.
 const memberProfileAttemptCooldown = 2 * time.Minute
 const maxMemberProfileRecord = 64 << 10
 
@@ -46,10 +47,16 @@ func (kc *KakaoClient) readMemberProfile(ctx context.Context, userID int64) (mem
 		return record, "", err
 	}
 	record = memberProfileRecord{}
-	if len(raw) > maxMemberProfileRecord || json.Unmarshal([]byte(raw), &record) != nil || record.Version != 1 || record.AccountID != kc.userID || record.UserID != userID || record.LastAttemptAt.IsZero() || record.NextAttemptAt.Before(record.LastAttemptAt) || record.NextAttemptAt.After(kc.now().Add(memberProfileFreshness+memberProfileAttemptCooldown)) || (record.Profile == nil) != record.FetchedAt.IsZero() {
+	if len(raw) > maxMemberProfileRecord || json.Unmarshal([]byte(raw), &record) != nil || record.Version != 1 || record.AccountID != kc.userID || record.UserID != userID || record.LastAttemptAt.IsZero() || record.NextAttemptAt.Before(record.LastAttemptAt) || (record.Profile == nil) != record.FetchedAt.IsZero() {
 		return memberProfileRecord{}, "", errProfileCheckpoint
 	}
-	if !record.NextAttemptAt.Equal(record.LastAttemptAt.Add(memberProfileAttemptCooldown)) && (record.Profile == nil || !record.NextAttemptAt.Equal(record.FetchedAt.Add(memberProfileFreshness))) {
+	// A pending or failed attempt waits exactly one cooldown. A stored profile's
+	// next-attempt time is unused; records from the earlier freshness policy
+	// carry a later one and remain valid.
+	if record.Profile == nil && (!record.NextAttemptAt.Equal(record.LastAttemptAt.Add(memberProfileAttemptCooldown)) || record.NextAttemptAt.After(kc.now().Add(memberProfileAttemptCooldown))) {
+		return memberProfileRecord{}, "", errProfileCheckpoint
+	}
+	if record.Profile != nil && record.NextAttemptAt.Before(record.FetchedAt) {
 		return memberProfileRecord{}, "", errProfileCheckpoint
 	}
 	if record.Profile != nil && !validMemberProfileFields(*record.Profile) {
@@ -108,7 +115,7 @@ func (kc *KakaoClient) resolveMemberProfiles(ctx context.Context, c chatMetaAPI,
 		if profile, ok := record.member(); ok {
 			results[userID] = profile
 		}
-		if record.Profile != nil && now.Before(record.FetchedAt.Add(memberProfileFreshness)) || now.Before(record.NextAttemptAt) {
+		if record.Profile != nil || now.Before(record.NextAttemptAt) {
 			continue
 		}
 		record.LastAttemptAt = now
@@ -161,7 +168,7 @@ func (kc *KakaoClient) resolveMemberProfiles(ctx context.Context, c chatMetaAPI,
 		record := records[profile.UserID]
 		record.Profile = &fields
 		record.FetchedAt = kc.now()
-		record.NextAttemptAt = record.FetchedAt.Add(memberProfileFreshness)
+		record.NextAttemptAt = record.FetchedAt
 		encoded, err := json.Marshal(record)
 		if err != nil || len(encoded) > maxMemberProfileRecord {
 			return output(), errProfileCheckpoint

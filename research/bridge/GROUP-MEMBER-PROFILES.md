@@ -183,7 +183,8 @@ acceptance for one owned regular group, not scale or room-type parity.
 ## Persistent reuse policy (2026-10-14)
 
 Ordinary nickname/avatar enrichment now consumes an account/user cache shared
-across rooms in the bridge database. Successful results stay fresh for 15 minutes;
+across rooms in the bridge database. Successful results are reused without
+expiry (until 2026-10-14 they expired after 15 minutes);
 failed or missing attempts retain a two-minute reservation across restarts.
 The earlier owned freshness experiments above predate this cooldown: immediate
 convergence on every restart is no longer promised. Partial successful profiles

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -72,7 +73,9 @@ func (b *cooldownBackend) Members(ctx context.Context, chatID int64, ids []int64
 }
 func (b *cooldownBackend) count() int { b.mu.Lock(); defer b.mu.Unlock(); return len(b.requests) }
 
-func TestMemberProfileCooldownSurvivesDatabaseReopenAndExpires(t *testing.T) {
+// The official Mac client fetches MEMBER only for users without a local
+// record (research/bridge/METADATA-TRIGGERS.md); a stored profile never expires.
+func TestMemberProfileStoredProfileSurvivesDatabaseReopenWithoutRefetch(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bridge.db")
 	br, db := newFrameworkBridge(t, frameworkOpts{path: path})
 	kc, _ := newTestClient(t, nil)
@@ -106,13 +109,13 @@ func TestMemberProfileCooldownSurvivesDatabaseReopenAndExpires(t *testing.T) {
 		now = now.Add(time.Second)
 		profiles, err := restarted.resolveMemberProfiles(ctx, backend, 4000, []int64{2000})
 		if err != nil || len(profiles) != 1 || profiles[0].Nickname != "Old" || backend.count() != 1 {
-			t.Fatal("restart/cache hit refreshed before expiration")
+			t.Fatal("restart/cache hit refetched a stored profile")
 		}
 	}
-	now = now.Add(memberProfileFreshness)
+	now = now.Add(24 * time.Hour)
 	profiles, err := restarted.resolveMemberProfiles(ctx, backend, 4000, []int64{2000})
-	if err != nil || len(profiles) != 1 || profiles[0].Nickname != "New" || backend.count() != 2 {
-		t.Fatal("expiry did not refresh once")
+	if err != nil || len(profiles) != 1 || profiles[0].Nickname != "Old" || backend.count() != 1 {
+		t.Fatalf("stored profile was refetched after a day: %d requests", backend.count())
 	}
 }
 
@@ -190,25 +193,26 @@ func TestMemberProfileCooldownConcurrentClaimsAndLateResponse(t *testing.T) {
 	}
 }
 
-func TestMemberProfileCooldownFailurePreservesStaleProfileAndAccountIsolation(t *testing.T) {
+func TestMemberProfileCooldownFailureBacksOffAndIsolatesAccounts(t *testing.T) {
 	kc, _ := newTestClient(t, nil)
 	now := time.Now().UTC()
 	kc.now = func() time.Time { return now }
 	ctx := context.Background()
-	backend := &cooldownBackend{fetch: func(context.Context, int64, []int64) ([]chatmeta.Member, error) {
-		return []chatmeta.Member{{UserID: 2000, Nickname: "Retained"}}, nil
-	}}
-	if _, err := kc.resolveMemberProfiles(ctx, backend, 3000, []int64{2000}); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(memberProfileFreshness)
-	backend.fetch = func(context.Context, int64, []int64) ([]chatmeta.Member, error) { return nil, context.DeadlineExceeded }
+	backend := &cooldownBackend{fetch: func(context.Context, int64, []int64) ([]chatmeta.Member, error) { return nil, context.DeadlineExceeded }}
 	profiles, err := kc.resolveMemberProfiles(ctx, backend, 4000, []int64{2000})
-	if !errors.Is(err, context.DeadlineExceeded) || len(profiles) != 1 || profiles[0].Nickname != "Retained" {
-		t.Fatal("failed refresh erased stale profile")
+	if !errors.Is(err, context.DeadlineExceeded) || len(profiles) != 0 {
+		t.Fatal("failed fetch invented a profile")
 	}
-	if _, err = kc.resolveMemberProfiles(ctx, backend, 5000, []int64{2000}); err != nil || backend.count() != 2 {
+	if _, err = kc.resolveMemberProfiles(ctx, backend, 5000, []int64{2000}); err != nil || backend.count() != 1 {
 		t.Fatal("failure requeued before cooldown")
+	}
+	now = now.Add(memberProfileAttemptCooldown)
+	backend.fetch = func(context.Context, int64, []int64) ([]chatmeta.Member, error) {
+		return []chatmeta.Member{{UserID: 2000, Nickname: "Retained"}}, nil
+	}
+	profiles, err = kc.resolveMemberProfiles(ctx, backend, 5000, []int64{2000})
+	if err != nil || backend.count() != 2 || len(profiles) != 1 || profiles[0].Nickname != "Retained" {
+		t.Fatal("unknown member was not retried after cooldown")
 	}
 	other := newKakaoClient(kc.login, kc.store, 1001, nil)
 	other.now = kc.now
@@ -358,5 +362,26 @@ func TestMemberProfileCooldownBoundsEncodedProfile(t *testing.T) {
 	record, _, err := kc.readMemberProfile(t.Context(), 2000)
 	if err != nil || record.Profile != nil {
 		t.Fatal("oversized result poisoned durable reservation")
+	}
+}
+
+// Records written under the earlier 15-minute freshness policy stay readable
+// and, holding a profile, are not refetched.
+func TestMemberProfileLegacyFreshnessRecordIsReused(t *testing.T) {
+	kc, _ := newTestClient(t, nil)
+	now := time.Now().UTC().Truncate(time.Second)
+	kc.now = func() time.Time { return now }
+	ctx := context.Background()
+	fetched := now.Add(-time.Hour)
+	legacy := `{"version":1,"account_id":` + strconv.FormatInt(kc.userID, 10) + `,"user_id":2000,"last_attempt_at":"` + fetched.Format(time.RFC3339) + `","next_attempt_at":"` + fetched.Add(15*time.Minute).Format(time.RFC3339) + `","fetched_at":"` + fetched.Format(time.RFC3339) + `","profile":{"nickname":"Legacy","thumbnail":"","full_image":""}}`
+	if err := kc.store.put(ctx, memberProfileKey(kc.userID, 2000), legacy); err != nil {
+		t.Fatal(err)
+	}
+	backend := &cooldownBackend{fetch: func(context.Context, int64, []int64) ([]chatmeta.Member, error) {
+		return []chatmeta.Member{{UserID: 2000, Nickname: "Refetched"}}, nil
+	}}
+	profiles, err := kc.resolveMemberProfiles(ctx, backend, 4000, []int64{2000})
+	if err != nil || len(profiles) != 1 || profiles[0].Nickname != "Legacy" || backend.count() != 0 {
+		t.Fatalf("legacy record: profiles %+v, err %v, requests %d", profiles, err, backend.count())
 	}
 }
