@@ -104,7 +104,13 @@ source requests. Cloud backup/restore remains out of scope.
       HST-BRIDGE-CACHE-009 exercised an owned cached group through the framework
       with a synthetic Matrix sink. See
       [delivery/pagination evidence](research/bridge/HISTORY-BRIDGE-PAGES.md).
-- [ ] Complete owned encrypted initial delivery and native UI/read acceptance;
+- [x] First owned cached encrypted delivery slice: HST-BRIDGE-ENC-010 delivered
+      five records through real crypto/Matrix HTTP; an accepted send lost its
+      response, then a fresh process recovered the same ID and completed the
+      window. Exact decrypted content, source order/timestamps, separate read/live
+      cursors and an offline completed replay passed. Two type-14 content gaps
+      remain; source acquisition/native UI/backward insertion were not exercised.
+- [ ] Complete the full owned encrypted initial delivery and native UI/read acceptance;
       inventory previews must not falsely prove acquired/history delivery.
 
 **Done iff:** declared clean direct/group cases match the reference's available
