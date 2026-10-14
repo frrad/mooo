@@ -116,3 +116,28 @@ func TestStoredWindowCoverageStopsBeforeDisconnectedIsland(t *testing.T) {
 		api.historyStore = reopenTestHistoryStore(t, store.dir)
 	}
 }
+
+func TestStoredWindowDoesNotCrossGapBeforeCachedSuffix(t *testing.T) {
+	api, store := windowClient(t)
+	for _, p := range []struct {
+		after, through int64
+		ids            []int64
+	}{
+		{0, 500, []int64{100, 500}}, {700, 900, []int64{800, 900}},
+	} {
+		var logs []bson.Raw
+		for _, n := range p.ids {
+			logs = append(logs, historyStoreRaw(t, n, "synthetic"))
+		}
+		if err := store.save(syncmsg.Request{ChatID: 42, Cur: p.after, Max: p.through}, syncmsg.Response{ChatLogs: logs}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		p, err := api.ReadStoredHistory(t.Context(), StoredHistoryRequest{ChatID: 42, Through: 900, Limit: 50})
+		if err != nil || !reflect.DeepEqual(windowIDs(t, p), []int64{800, 900}) || !p.HasMore || !p.CachedSuffix || p.Complete {
+			t.Fatalf("crossed gap or retired missing prefix: ids=%v more=%v complete=%v err=%v", windowIDs(t, p), p.HasMore, p.Complete, err)
+		}
+		api.historyStore = reopenTestHistoryStore(t, store.dir)
+	}
+}

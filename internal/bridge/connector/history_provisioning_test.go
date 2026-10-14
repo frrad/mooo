@@ -55,6 +55,10 @@ func (s *cachedProvisionSource) ReadHistoryPage(context.Context, int64, int64, i
 // This synthetic fixture represents a previously validated source page. Opening
 // and reading it uses production storage code; it is not official parity evidence.
 func provisioningCacheFixture(t *testing.T) string {
+	return provisioningCacheFixtureAfter(t, 0)
+}
+
+func provisioningCacheFixtureAfter(t *testing.T, after int64) string {
 	t.Helper()
 	root := t.TempDir()
 	if err := os.Chmod(root, 0700); err != nil {
@@ -83,16 +87,19 @@ func provisioningCacheFixture(t *testing.T) string {
 	if err != nil || !found {
 		t.Fatal(found, err)
 	}
-	request := syncmsg.Request{ChatID: testChatID, Cur: 0, Max: 500}
+	request := syncmsg.Request{ChatID: testChatID, Cur: after, Max: 500}
 	var logs []bson.Raw
 	for _, n := range []int64{100, 200, 300, 400, 500} {
+		if n <= after {
+			continue
+		}
 		raw, err := bson.Marshal(bson.D{{Key: "chatId", Value: testChatID}, {Key: "logId", Value: n}, {Key: "authorId", Value: testOtherID}, {Key: "sendAt", Value: int64(1000)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: fmt.Sprintf("synthetic %d", n)}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		logs = append(logs, raw)
 	}
-	digest := sha256.Sum256([]byte(fmt.Sprintf("%d/0/500", testChatID)))
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%d/%d/500", testChatID, after)))
 	page := struct {
 		Version  uint32
 		Binding  string

@@ -343,3 +343,56 @@ func TestBackwardAcquisitionStartsAtPersistedCoverageAfterRestart(t *testing.T) 
 		}
 	}
 }
+
+func TestBackwardCachedSuffixDeliversBeforeGapAndReplaysAfterRestart(t *testing.T) {
+	path := provisioningCacheFixtureAfter(t, 300)
+	kc, p, mx := pageFramework(t)
+	batch := &historyBatchMatrix{groupCreationMatrix: mx, lost: true}
+	kc.login.Bridge.Matrix = batch
+	kc.login.Bridge.Config.Backfill.Queue.BatchSize = 50
+	p.MXID = "!cached-suffix:test"
+	for attempt := 0; attempt < 2; attempt++ {
+		sdk, err := client.OpenWithOptions(path, nil, client.OpenOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		source := &cachedProvisionSource{sdk: sdk, fakeKakao: &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat", LastServerLogID: 500}}}}
+		restarted := newKakaoClient(kc.login, newBridgeStore(kc.login.Bridge.DB), testSelfID, nil)
+		restarted.client = source
+		kc.login.Client = restarted
+		warm, warmErr := restarted.FetchMessages(t.Context(), bridgev2.FetchMessagesParams{Portal: p, Count: 50, AllowSlowFetch: true})
+		if warmErr != nil || warm == nil || len(warm.Messages) != 2 || !warm.HasMore || warm.Messages[0].ID != makeMessageID(testChatID, 400) || warm.Messages[1].ID != makeMessageID(testChatID, 500) || source.acquisitions != 0 {
+			t.Fatal("slow-fetch permission bypassed warm cache or lost source order", warm, warmErr)
+		}
+		task := &database.BackfillTask{PortalKey: p.PortalKey, UserLoginID: kc.login.ID}
+		//nolint:staticcheck // Actual executor must deliver cached rows before fetching an older gap.
+		_, err = p.Internal().DoBackwardsBackfill(t.Context(), kc.login, task, nil)
+		if (attempt == 0 && err == nil) || (attempt == 1 && err != nil) {
+			t.Fatal("unexpected batch outcome", err)
+		}
+		if source.acquisitions != 0 {
+			t.Fatal("cached suffix triggered source acquisition")
+		}
+		if attempt == 1 {
+			if task.IsDone || task.Cursor != historyCursor(testChatID, 400) {
+				t.Fatal("older gap retired", task)
+			}
+			next, e := restarted.FetchMessages(t.Context(), bridgev2.FetchMessagesParams{Portal: p, Count: 50, Cursor: task.Cursor})
+			if e != nil || !next.MoreRequiresSlowFetch || !next.HasMore || len(next.Messages) != 0 || source.acquisitions != 0 {
+				t.Fatal("gap was skipped or acquired without slow demand", next, e)
+			}
+		}
+		if err = sdk.Shutdown(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if batch.attempts != 2 || len(batch.applied) != 2 {
+		t.Fatal("response-loss replay duplicated identities", batch.attempts, batch.applied)
+	}
+	for _, n := range []int64{400, 500} {
+		rows, err := kc.store.messageParts(t.Context(), p.Receiver, makeMessageID(testChatID, n))
+		if err != nil || len(rows) != 1 {
+			t.Fatal("missing confirmed mapping", n, err)
+		}
+	}
+}
