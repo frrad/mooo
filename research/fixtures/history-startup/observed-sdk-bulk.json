@@ -1,0 +1,28 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "date": "2026-10-13",
+    "client": "mooo production Go SDK; existing owned Kakao secondary device",
+    "method": "Empty private local-history clone, exact owned three-member regular group selection, one MCHATLOGS page, cache read and restart with all transports denied",
+    "doc": "research/bridge/HISTORY-STARTUP-IMPLEMENTATION.md"
+  },
+  "evidence": "HST-BULK-LIVE-008",
+  "scope": "SDK acquisition and cache only; no fresh server-device, official UI or Matrix delivery parity claim",
+  "expected": {
+    "source_bulk_responses": 1,
+    "source_sync_responses": 0,
+    "bulk_logs": 5,
+    "pending_rooms": 0,
+    "cached_events": 5,
+    "restart_network_attempts": 0,
+    "restart_identity_content_order_equal": true,
+    "delivery_read_cursors_unchanged": true,
+    "original_authorization_file_unchanged": true
+  },
+  "limits": [
+    "Pending zero describes EOF retirement, not completion of the three flows",
+    "Read watermark persistence was checked; official peer unread/read side effects were not observed",
+    "Unsupported history body projections remain gaps",
+    "One page only; multi-page retirement coverage is synthetic"
+  ]
+}

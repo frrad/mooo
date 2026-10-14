@@ -261,6 +261,23 @@ func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (
 	if err := c.Connect(ctx); err != nil {
 		return nil, bootstrapFailure{stage: "connect", err: err}
 	}
+	if kc.login != nil && kc.login.Bridge != nil {
+		if network, ok := kc.login.Bridge.Network.(*KakaoConnector); ok && network.Config.StartupHistory {
+			bulk, ok := c.(interface {
+				AcquireStartupHistory(context.Context, client.StartupHistoryOptions) (client.StartupHistoryResult, error)
+			})
+			if !ok {
+				return nil, bootstrapFailure{stage: "startup-history", err: client.ErrProtocol}
+			}
+			result, err := bulk.AcquireStartupHistory(ctx, client.StartupHistoryOptions{})
+			if err != nil {
+				return nil, bootstrapFailure{stage: "startup-history", err: err}
+			}
+			if result.Pending > 0 {
+				kc.log().Warn().Int("pending_rooms", result.Pending).Msg("Startup history acquisition stopped at its configured budget")
+			}
+		}
+	}
 	if err := kc.resumeGroupCreates(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "group-create-recovery", err: err}
 	}

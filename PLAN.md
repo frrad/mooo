@@ -37,13 +37,14 @@ source requests. Cloud backup/restore remains out of scope.
       spacing, error/non-progress cooldowns, bounded pending demand and concurrent
       request coalescing. Reservations survive profile restart and shutdown joins
       admission persistence. This is currently profile-scoped; metadata/media,
-      bulk calls and cross-profile account ownership remain to be integrated.
+      cross-profile account ownership remain to be integrated; startup bulk now
+      shares this gate.
 - [x] First acquired-store slice: full validated zero-held-count pages persist in
       a private account/device-bound store, independently of delivery. Cache reads
       reuse connected acquired prefixes and apply targeted edits/deletions; restart
       and limited delivery retain the undelivered tail. HST-CACHE-LIVE-001 verifies
       one owned four-record page with restart transports denied. This is SDK cache
-      acceptance; bulk acquisition and the three end-to-end flow gates remain open.
+      acceptance; the three end-to-end flow gates remain open.
 - [ ] Complete the durable account-scoped history store and acquisition worker, consumed
       by actual client/bridge paths. Store private content only in the operator's
       profile; preserve source identities and explicit unavailable boundaries.
@@ -62,9 +63,13 @@ source requests. Cloud backup/restore remains out of scope.
 - [ ] Complete official startup observation from empty local history to inventory,
       bulk requests, stored messages and visible results. Distinguish an empty
       local profile from a newly registered server device.
-- [ ] Implement the independent MCHATLOGS startup coordinator: eligibility against
-      persisted bulk cursor/global floor, signed numeric room order, 100 valid
-      rooms per batch and the traced EOF/partial-page retirement rules.
+- [x] First independent MCHATLOGS startup acquisition slice: persisted acquired
+      cursor/global floor, signed numeric room order, 100 valid rooms per batch,
+      traced EOF/partial-page retirement, finite budgets and shared pacing.
+      HST-BULK-LIVE-008 verifies one owned five-record group and offline restart.
+      Bridge bootstrap can opt in to acquisition; older Matrix delivery and
+      official end-to-end startup parity remain open. See
+      [implementation/evidence](research/bridge/HISTORY-STARTUP-IMPLEMENTATION.md).
 - [ ] Acquire through the shared worker/store, then deliver through the bridge;
       inventory previews must not falsely advance acquired/delivered history.
 

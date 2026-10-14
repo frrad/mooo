@@ -59,6 +59,8 @@ type Client struct {
 	readMu           sync.Mutex
 	historyAdmission *historyAdmission
 	historyStore     *historyStore
+	historyStartup   chan struct{}
+	historyStartWait int
 	gaps             gapFunc
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/continuity"
 	"github.com/frrad/mooo/internal/protocol/booking"
+	"github.com/frrad/mooo/internal/protocol/bsonfield"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/sessionlogin"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -97,6 +98,7 @@ type session struct {
 	lifecycleScheduler lifecycleScheduler
 	lifecycleStopped   bool
 	initialChatData    []bson.Raw
+	loginMinLogID      int64
 	userID             int64
 	appVersion         string
 	mediaDial          wireDialer
@@ -363,6 +365,7 @@ func connectSession(ctx context.Context, state authstate.State, config sessionCo
 		return nil, stageErr(ErrLogin, "lchatlist", err)
 	}
 	cursor.replaceInventory = resume.LastTokenID == 0 && cursor.complete
+	session.loginMinLogID = bsonfield.Int64OrZero(bson.Raw(loginReply.Body), "minLogId")
 	session.initialChatData = chatData
 	session.loginCursor = cursor
 	if !session.finishBootstrap() {
