@@ -19,6 +19,7 @@ type chatInfoOptions struct {
 	// requirePersonalMeta fails a group read whose personal room metadata is
 	// unavailable, so a refresh cannot be mistaken for a confirmed clear.
 	requirePersonalMeta bool
+	inventory           *chatmeta.ChatData
 }
 
 // chatSnapshot is everything one chat-info read fetched from the source:
@@ -31,7 +32,10 @@ type chatSnapshot struct {
 	// profiles are the MEMBER results that matched a requested identity.
 	profiles []chatmeta.Member
 	// moimMetas holds the announcement metadata of a MultiChat.
-	moimMetas []chatmeta.MoimMeta
+	moimMetas        []chatmeta.MoimMeta
+	moimKnown        bool
+	deferred         bool
+	personalRequired bool
 }
 
 // profileIDs is the set of identities the projection lists as members: the
@@ -54,6 +58,9 @@ func (kc *KakaoClient) chatInfoFromClient(ctx context.Context, portal *bridgev2.
 	if err != nil {
 		return nil, chatSnapshot{}, err
 	}
+	if opts.requirePersonalMeta && snap.data.Meta == nil {
+		info.Name, info.Avatar = nil, nil
+	}
 	return info, snap, nil
 }
 
@@ -63,11 +70,16 @@ func (kc *KakaoClient) fetchChatSnapshot(ctx context.Context, portal *bridgev2.P
 	if err != nil {
 		return chatSnapshot{}, err
 	}
-	response, err := c.ChatInfo(ctx, chatID)
-	if err != nil {
-		return chatSnapshot{}, err
+	var data chatmeta.ChatData
+	if opts.inventory != nil {
+		data = *opts.inventory
+	} else {
+		response, err := c.ChatInfo(ctx, chatID)
+		if err != nil {
+			return chatSnapshot{}, err
+		}
+		data = response.ChatData
 	}
-	data := response.ChatData
 	if data.ChatID != chatID {
 		return chatSnapshot{}, fmt.Errorf("%w: requested %d, got %d", errChatInfoMismatch, chatID, data.ChatID)
 	}
@@ -77,15 +89,14 @@ func (kc *KakaoClient) fetchChatSnapshot(ctx context.Context, portal *bridgev2.P
 	if data.LinkID > 0 {
 		return chatSnapshot{}, errUnsupportedOpenChatMetadata
 	}
+	cache, err := kc.readRoomMetadata(ctx, chatID)
+	if err != nil {
+		kc.log().Warn().Str("error_class", sourceErrorClass(err)).Msg("Room enrichment is unavailable; preserving verified identities")
+		cache = roomMetadataCache{Version: 1, AccountID: kc.userID, ChatID: chatID}
+	}
 	if data.Type == "MultiChat" {
 		if data.Meta == nil {
-			data.Meta, err = c.PersonalMeta(ctx, chatID)
-			if err != nil {
-				return chatSnapshot{}, err
-			}
-		}
-		if opts.requirePersonalMeta && data.Meta == nil {
-			return chatSnapshot{}, errors.New("connector: personal room metadata unavailable; refresh did not confirm a clear")
+			data.Meta = cache.Personal
 		}
 		data, err = kc.checkpointGroupDisplay(ctx, portal, data)
 		if err != nil {
@@ -108,13 +119,10 @@ func (kc *KakaoClient) fetchChatSnapshot(ctx context.Context, portal *bridgev2.P
 			return chatSnapshot{}, fmt.Errorf("%w: %d", errInvalidMemberRoster, userID)
 		}
 	}
-	snap := chatSnapshot{data: data, roster: append([]int64(nil), roster.MemberIDs...)}
+	snap := chatSnapshot{data: data, roster: append([]int64(nil), roster.MemberIDs...), moimMetas: cache.Boards, moimKnown: !cache.BoardsAt.IsZero(), deferred: true, personalRequired: opts.requirePersonalMeta}
 	userIDs := append([]int64(nil), snap.profileIDs()...)
-	profiles, err := kc.resolveMemberProfiles(ctx, c, chatID, userIDs)
+	profiles, err := kc.cachedMemberProfiles(ctx, userIDs)
 	if err != nil {
-		if data.Type != "MultiChat" {
-			return chatSnapshot{}, err
-		}
 		// The successfully refreshed source roster remains authoritative even
 		// when an optional profile batch fails. Keep successful earlier results
 		// and leave unresolved identities without fabricated profile fields.
@@ -123,16 +131,11 @@ func (kc *KakaoClient) fetchChatSnapshot(ctx context.Context, portal *bridgev2.P
 	}
 	snap.profiles = kc.cacheProfiles(profiles, userIDs)
 
-	if data.Type == "MultiChat" {
-		moim, err := c.MoimMeta(ctx, chatID)
-		if err != nil {
-			return chatSnapshot{}, err
-		}
-		if moim.ChatID != chatID {
-			return chatSnapshot{}, errChatInfoMismatch
-		}
-		snap.moimMetas = moim.Metas
+	kc.enqueueEnrichment(snap, cache)
+	if opts.requirePersonalMeta {
+		kc.invalidateEnrichment(ctx, chatID, refreshPersonal)
 	}
+
 	return snap, nil
 }
 
@@ -168,7 +171,7 @@ func (kc *KakaoClient) projectChatInfo(portal *bridgev2.Portal, snap chatSnapsho
 		members.Set(bridgev2.ChatMember{
 			EventSender: bridgev2.EventSender{Sender: makeUserID(profile.UserID)},
 			Membership:  event.MembershipJoin,
-			UserInfo:    userInfoForMember(profile, kc),
+			UserInfo:    kc.snapshotUserInfo(profile, snap.deferred),
 		})
 	}
 	// If MEMBER returned no profile for an ID, retain the source-supported
@@ -248,7 +251,7 @@ func (kc *KakaoClient) projectChatInfo(portal *bridgev2.Portal, snap chatSnapsho
 			info.Members.OtherUserID = otherUserID
 		}
 	}
-	if data.Type == "MultiChat" {
+	if data.Type == "MultiChat" && (snap.moimKnown || !snap.deferred) {
 		announcement, err := announcementTopicInfo(portal, snap.moimMetas)
 		if errors.Is(err, chatmeta.ErrUnsupportedAnnouncement) {
 			kc.log().Warn().Msg("Unsupported Boards announcement content; keeping current Matrix topic")
@@ -256,6 +259,13 @@ func (kc *KakaoClient) projectChatInfo(portal *bridgev2.Portal, snap chatSnapsho
 			return nil, err
 		} else {
 			info.Topic, info.ExtraUpdates = announcement.Topic, announcement.ExtraUpdates
+		}
+	}
+	if snap.deferred && info.Avatar != nil && info.Avatar.Get != nil {
+		if info.Avatar.ID == portal.AvatarID && portal.AvatarSet && portal.AvatarMXC != "" {
+			info.Avatar.MXC, info.Avatar.Hash, info.Avatar.Get = portal.AvatarMXC, portal.AvatarHash, nil
+		} else {
+			info.Avatar = nil
 		}
 	}
 	return info, nil

@@ -29,6 +29,7 @@ func TestPeriodicGroupProfileRefreshUpdatesExistingGhostWithoutMessage(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	drainMetadataRefresh(t, kc, backend)
 	ghost, err := kc.login.Bridge.GetGhostByID(ctx, makeUserID(2000))
 	if err != nil {
 		t.Fatal(err)
@@ -39,6 +40,7 @@ func TestPeriodicGroupProfileRefreshUpdatesExistingGhostWithoutMessage(t *testin
 	backend.members = []chatmeta.Member{{UserID: 2000, Nickname: "Current"}}
 	backend.membersErr = errors.New("synthetic unavailable second profile")
 	kc.refreshOneGroupProfiles(backend)
+	drainMetadataRefresh(t, kc, backend)
 	ghost, err = kc.login.Bridge.GetGhostByID(ctx, makeUserID(2000))
 	if err != nil {
 		t.Fatal(err)
@@ -55,8 +57,8 @@ func TestPeriodicGroupProfileRefreshUpdatesExistingGhostWithoutMessage(t *testin
 	}
 }
 
-func TestPeriodicGroupProfileRefreshSkipsRemovedPendingAndStopping(t *testing.T) {
-	for _, condition := range []string{"removed", "pending", "stopping"} {
+func TestPeriodicGroupProfileRefreshSkipsRemovedAndStopping(t *testing.T) {
+	for _, condition := range []string{"removed", "stopping"} {
 		t.Run(condition, func(t *testing.T) {
 			kc, backend, _ := newGroupCreationFramework(t)
 			ctx := context.Background()
@@ -87,11 +89,20 @@ func TestGroupProfilePartialFailureCannotDiscardAuthoritativeRoster(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	p.MXID = "!selected:test"
+	if err = p.Save(ctx); err != nil {
+		t.Fatal(err)
+	}
 	backend.members = []chatmeta.Member{{UserID: 2000, Nickname: "Current owned synthetic profile"}}
 	backend.membersErr = errors.New("synthetic later profile batch failure")
-	info, err := kc.GetChatInfo(ctx, p)
+	_, err = kc.GetChatInfo(ctx, p)
 	if err != nil {
 		t.Fatalf("profile failure discarded a successful authoritative roster: %v", err)
+	}
+	drainMetadataRefresh(t, kc, backend)
+	info, _, err := kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
+	if err != nil {
+		t.Fatal(err)
 	}
 	if info.Members == nil || !info.Members.IsFull || len(info.Members.MemberMap) != 3 {
 		t.Fatal("partial profiles changed authoritative membership")
@@ -226,6 +237,7 @@ func TestGroupProfileRefreshClearsKnownGhostAndPreservesUnavailableGhost(t *test
 	if !kc.handleEvent(backend, events.ChatMetaChanged{ChatID: 5000, Type: 3}) {
 		t.Fatal("profile failure blocked source roster refresh")
 	}
+	drainMetadataRefresh(t, kc, backend)
 	current, err := kc.login.Bridge.GetGhostByID(ctx, makeUserID(2000))
 	if err != nil {
 		t.Fatal(err)
@@ -242,76 +254,45 @@ func TestGroupProfileRefreshClearsKnownGhostAndPreservesUnavailableGhost(t *test
 	}
 }
 
-// A periodic refresh that fails on the connection ends the session instead of
-// reporting a membership problem. Recovery's group discovery refreshes the
-// paused group on the next session. Regression: a network outage reported
-// kakao-group-membership-pending in the lab (2026-10-11 and 2026-10-13).
-func TestPeriodicGroupProfileRefreshTransportFailureEndsSession(t *testing.T) {
-	for name, cause := range map[string]error{"closed": client.ErrClosed, "eof": io.EOF, "timeout": context.DeadlineExceeded} {
-		t.Run(name, func(t *testing.T) {
-			kc, backend, _ := newGroupCreationFramework(t)
-			harness := &testHarness{}
-			kc.sendState = harness.sendState
-			ctx := context.Background()
-			if _, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}}); err != nil {
-				t.Fatal(err)
-			}
-			backend.chatInfoErr = fmt.Errorf("client: CHATINFO request: %w", cause)
-			if !kc.refreshOneGroupProfiles(backend) {
-				t.Fatal("refresh failed on the connection but did not ask to end the session")
-			}
-			for _, state := range harness.allStates() {
-				if state.Error == stateGroupMembershipPending || state.Error == stateGroupAccessRemoved {
-					t.Fatalf("connection failure reported %s", state.Error)
-				}
-			}
-		})
+// Optional local timeouts cannot prove a lost connection; genuine transport
+// and session failures still use lifecycle recovery.
+func TestBackgroundRefreshConnectionClassification(t *testing.T) {
+	for _, cause := range []error{client.ErrClosed, client.ErrClientClosed, io.EOF} {
+		if !connectionFailure(cause) {
+			t.Fatal("genuine connection failure was suppressed")
+		}
+	}
+	for _, cause := range []error{context.DeadlineExceeded, context.Canceled, errors.New("synthetic rejection")} {
+		if connectionFailure(cause) {
+			t.Fatal("local/per-request failure ended session")
+		}
 	}
 }
 
-func TestPeriodicGroupProfileRefreshOtherFailureReportsPendingMembership(t *testing.T) {
+func TestBackgroundGroupProfileFailureLogsTraceWithoutEndingSession(t *testing.T) {
 	kc, backend, _ := newGroupCreationFramework(t)
-	harness := &testHarness{}
-	kc.sendState = harness.sendState
-	ctx := context.Background()
-	if _, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}}); err != nil {
+	if _, err := kc.CreateGroup(t.Context(), &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}}); err != nil {
 		t.Fatal(err)
 	}
-	backend.chatInfoErr = errors.New("synthetic source rejection")
-	if kc.refreshOneGroupProfiles(backend) {
-		t.Fatal("non-transport refresh failure ended the session")
-	}
-	if state := harness.lastState(); state.Error != stateGroupMembershipPending {
-		t.Fatalf("last state = %+v, want %s", state, stateGroupMembershipPending)
-	}
-}
-
-// A refresh that ends the session logs which source read failed and a fixed
-// error class, never the server's error text.
-func TestPeriodicGroupProfileRefreshFailureLogsTrace(t *testing.T) {
-	kc, backend, _ := newGroupCreationFramework(t)
-	kc.sendState = (&testHarness{}).sendState
-	ctx := context.Background()
-	if _, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}}); err != nil {
-		t.Fatal(err)
-	}
-	refreshAt := kc.now().Add(memberProfileFreshness)
-	kc.now = func() time.Time { return refreshAt }
 	var logs bytes.Buffer
 	kc.login.Log = zerolog.New(&logs)
 	backend.membersErr = fmt.Errorf("synthetic-private-detail: %w", context.DeadlineExceeded)
-	backend.moimErr = fmt.Errorf("client: GETMOMETA request: %w", context.DeadlineExceeded)
-	if !kc.refreshOneGroupProfiles(backend) {
-		t.Fatal("deadline did not end the session")
+	task, ok, _ := kc.metadataRefresh.take(time.Now())
+	if !ok || task.kind != refreshMembers {
+		t.Fatal("missing profile task")
+	}
+	result := kc.performMetadataRefresh(t.Context(), backend, task)
+	if kc.applyMetadataRefresh(backend, result) {
+		t.Fatal("local deadline ended session")
 	}
 	out := logs.String()
-	for _, want := range []string{`"error_class":"deadline_exceeded"`, `"command":"MEMBER"`, `"command":"GETMOMETA"`, `"steps":[{"command":"CHATINFO"`} {
+	for _, want := range []string{`"error_class":"deadline_exceeded"`, `"command":"MEMBER"`, `"steps":[`} {
 		if !strings.Contains(out, want) {
-			t.Errorf("log missing %s:\n%s", want, out)
+			t.Errorf("missing trace %s", want)
 		}
 	}
 	if strings.Contains(out, "synthetic-private-detail") {
-		t.Fatalf("log leaked error text:\n%s", out)
+		t.Fatal("trace leaked response text")
 	}
 }
 

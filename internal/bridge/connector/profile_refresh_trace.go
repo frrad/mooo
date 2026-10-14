@@ -130,3 +130,9 @@ func sourceErrorClass(err error) string {
 	}
 	return "other"
 }
+
+func (t *profileRefreshTrace) PersonalMetas(ctx context.Context) (map[int64]chatmeta.RoomMeta, error) {
+	return traceStep(t, ctx, "GETMCMETA", func(ctx context.Context) (map[int64]chatmeta.RoomMeta, error) {
+		return t.kakaoClient.PersonalMetas(ctx)
+	})
+}

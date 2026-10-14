@@ -84,7 +84,7 @@ func TestPartialRosterMembershipDeltasRemainExplicit(t *testing.T) {
 		t.Fatal("partial source roster was marked complete")
 	}
 	member, ok := change.MemberChanges.MemberMap[makeUserID(4000)]
-	if !ok || member.Membership != event.MembershipJoin || member.UserInfo == nil || member.UserInfo.Name == nil {
+	if !ok || member.Membership != event.MembershipJoin || member.UserInfo != nil {
 		t.Fatalf("added member delta = %+v", member)
 	}
 

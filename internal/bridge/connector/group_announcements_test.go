@@ -35,6 +35,14 @@ func TestRichAnnouncementSnapshotsReplaceAndClearTopic(t *testing.T) {
 	}
 	for _, step := range steps {
 		fake.moimResponse = chatmeta.MoimResponse{ChatID: testChatID, Metas: []chatmeta.MoimMeta{{Type: 1, UpdateRevision: step.revision, Content: step.content}}}
+		cache, err := kc.readRoomMetadata(context.Background(), testChatID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cache.Boards, cache.BoardsAt = fake.moimResponse.Metas, kc.now()
+		if err = kc.writeRoomMetadata(context.Background(), cache); err != nil {
+			t.Fatal(err)
+		}
 		info, err := kc.GetChatInfo(context.Background(), p)
 		if err != nil || info.Topic == nil || *info.Topic != step.want {
 			t.Fatalf("revision %d: topic=%v err=%v, want %q", step.revision, info.Topic, err, step.want)

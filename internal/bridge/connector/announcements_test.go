@@ -135,17 +135,25 @@ func TestGetChatInfoAnnouncementSnapshotAndUnsupportedContent(t *testing.T) {
 	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
 	kc.client = fake
 	p := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, makeUserLoginID(testSelfID))}}
+	cache, err := kc.readRoomMetadata(context.Background(), testChatID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache.Boards, cache.BoardsAt = fake.moimResponse.Metas, kc.now()
+	if err = kc.writeRoomMetadata(context.Background(), cache); err != nil {
+		t.Fatal(err)
+	}
 	info, err := kc.GetChatInfo(context.Background(), p)
 	if err != nil || info.Topic == nil || *info.Topic != "Synthetic announcement" {
 		t.Fatalf("snapshot info=%+v err=%v", info, err)
 	}
 	fake.moimResponse.Metas[0].Content = `{"type":"FUTURE","notice":true}`
+	cache.Boards = fake.moimResponse.Metas
+	if err = kc.writeRoomMetadata(context.Background(), cache); err != nil {
+		t.Fatal(err)
+	}
 	info, err = kc.GetChatInfo(context.Background(), p)
 	if err != nil || info.Topic != nil || info.Name == nil || *info.Name != "Synthetic group" {
 		t.Fatalf("unsupported announcement blocked group metadata: %+v %v", info, err)
-	}
-	fake.moimResponse.ChatID = testChatID + 1
-	if _, err := kc.GetChatInfo(context.Background(), p); !errors.Is(err, errChatInfoMismatch) {
-		t.Fatalf("mismatched snapshot accepted: %v", err)
 	}
 }

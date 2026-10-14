@@ -376,6 +376,7 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	changeServer := false
 	deliveryFailed := false
 	var terminalErr error
+	metadataResults, stopMetadata := kc.startMetadataRefresh(c)
 	profileTicker := time.NewTicker(time.Minute)
 	defer profileTicker.Stop()
 eventLoop:
@@ -383,10 +384,12 @@ eventLoop:
 		var result events.Result
 		select {
 		case <-profileTicker.C:
-			if !kickedOut && !changeServer && kc.refreshOneGroupProfiles(c) {
-				// The connection failed mid-request. Ending the session reports
-				// a disconnect, and recovery reconnects on its schedule and
-				// refreshes the group.
+			if !kickedOut && !changeServer {
+				kc.refreshOneGroupProfiles(c)
+			}
+			continue
+		case enrichment := <-metadataResults:
+			if !kickedOut && !changeServer && kc.applyMetadataRefresh(c, enrichment) {
 				break eventLoop
 			}
 			continue
@@ -430,6 +433,7 @@ eventLoop:
 			break eventLoop
 		}
 	}
+	stopMetadata()
 	kc.mu.Lock()
 	stopping := kc.stopping
 	kc.mu.Unlock()

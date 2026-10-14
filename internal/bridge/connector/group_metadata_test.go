@@ -43,7 +43,11 @@ func TestRegularGroupUsesNewerLegacyDisplayMetadata(t *testing.T) {
 		{Type: chatmeta.SharedMetaTitle, Revision: 10, Content: "Shared"},
 		{Type: chatmeta.SharedMetaProfile, Revision: 10, Content: `{"imageUrl":"https://example.invalid/shared-small.png","fullImageUrl":"https://example.invalid/shared-full.png"}`},
 	}
-	info, _, err := kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
+	info, snap, err := kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
+	if err == nil {
+		snap.deferred = false
+		info, err = kc.projectChatInfo(p, snap)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,11 +267,13 @@ func TestGroupMetadataFrameworkRetriesFailedNameAndAvatarClear(t *testing.T) {
 	}
 	matrix.failName, matrix.failAvatar = true, true
 	kc.handleEvent(backend, events.ChatMCMetaChanged{ChatID: 5000, Type: "name"})
+	drainMetadataRefresh(t, kc, backend)
 	if p.NameSet || p.AvatarSet || matrix.name != "Previous" || matrix.avatar != "mxc://test/previous" {
 		t.Fatal("failed Matrix metadata writes were marked as applied")
 	}
 	matrix.failName, matrix.failAvatar = false, false
 	kc.handleEvent(backend, events.ChatMCMetaChanged{ChatID: 5000, Type: "imagePath"})
+	drainMetadataRefresh(t, kc, backend)
 	if !p.NameSet || !p.AvatarSet || matrix.name != "Current" || matrix.avatar != "" {
 		t.Fatal("fresh resync did not retry failed name and avatar clear")
 	}
@@ -317,11 +323,13 @@ func TestPersonalMetadataReadConvergesWhenCHATINFOOmitsPersonalFields(t *testing
 		return p.Internal().HandleRemoteEvent(ctx, kc.login, remote.GetType(), remote)
 	}
 	kc.handleEvent(backend, events.ChatMCMetaChanged{ChatID: 5000, Type: "name", Content: "Delayed old name", Revision: 1})
+	drainMetadataRefresh(t, kc, backend)
 	if matrix.name != "Current personal name" {
 		t.Fatal("separate personal read did not supply current display name")
 	}
 	backend.personalMeta = &chatmeta.RoomMeta{}
 	kc.handleEvent(backend, events.ChatMCMetaChanged{ChatID: 5000, Type: "name", Content: "Current personal name", Revision: 9})
+	drainMetadataRefresh(t, kc, backend)
 	if matrix.name != "Synthetic created group" {
 		t.Fatal("confirmed personal clear did not reveal shared name")
 	}
@@ -400,7 +408,11 @@ func TestRegularGroupPersonalFullSizeAvatarFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend.chatInfo.ChatData.Meta = &chatmeta.RoomMeta{FullImageURL: "https://example.invalid/personal-full.png"}
-	info, _, err := kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
+	info, snap, err := kc.chatInfoFromClient(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
+	if err == nil {
+		snap.deferred = false
+		info, err = kc.projectChatInfo(p, snap)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,9 +440,14 @@ func TestGroupAvatarFrameworkRetainsPreviousMediaUntilRecovery(t *testing.T) {
 	backend.chatInfo.ChatData.Meta = &chatmeta.RoomMeta{ImageURL: "https://example.invalid/current.png"}
 	downloadFails := true
 	remote := kc.remoteEventFor(events.ChatMCMetaChanged{ChatID: 5000, Type: "imagePath"}).(*simplevent.ChatResync)
-	original := remote.GetChatInfoFunc
+	_ = remote.GetChatInfoFunc
 	remote.GetChatInfoFunc = func(ctx context.Context, p *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
-		info, err := original(ctx, p)
+		snap, err := kc.fetchChatSnapshot(ctx, p, backend, chatInfoOptions{regularGroupOnly: true})
+		if err != nil {
+			return nil, err
+		}
+		snap.deferred = false
+		info, err := kc.projectChatInfo(p, snap)
 		if err != nil {
 			return nil, err
 		}

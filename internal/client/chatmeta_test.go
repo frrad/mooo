@@ -417,3 +417,17 @@ func TestSessionPersonalMetaRejectsInvalidSelectionBeforeTransport(t *testing.T)
 		t.Fatal("invalid personal room selection accepted")
 	}
 }
+
+func TestClientPersonalMetasReturnsAllRoomsFromOneRequest(t *testing.T) {
+	backend := newScriptedBackend(t, false, testloco.Expect("GETMCMETA", func(raw bson.Raw) error { return requireExactKeys(raw) }, statusDocument(
+		bson.E{Key: "chatIds", Value: bson.A{int64(42), int64(43)}},
+		bson.E{Key: "metas", Value: bson.A{`{"name":"Selected"}`, `{"name":"Other"}`}},
+	)))
+	session := testMetadataSession(backend, 1)
+	c := &Client{session: session}
+	rooms, err := c.PersonalMetas(t.Context())
+	if err != nil || len(rooms) != 2 || rooms[42].Name != "Selected" || rooms[43].Name != "Other" {
+		t.Fatal("account metadata was not decoded as a shared refresh result", err)
+	}
+	waitBackends(t, backend)
+}

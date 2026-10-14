@@ -2,28 +2,16 @@ package connector
 
 import (
 	"context"
-	"errors"
-	"io"
-	"net"
 	"sort"
 	"time"
 
-	"github.com/frrad/mooo/internal/client"
-
 	"maunium.net/go/mautrix/bridgev2/database"
-	"maunium.net/go/mautrix/bridgev2/status"
 )
 
-// refreshOneGroupProfiles is bridge polling policy, not a native push mapping.
-// The event pump calls it at most once per minute, rotating through existing
-// managed groups. Fresh membership authorizes profile application; it never
-// uses cached identities to rejoin a departed member or creates a new portal.
-//
-// It reports whether the refresh failed on the connection. The caller then
-// ends the session: the refreshed group stays paused, and recovery's group
-// discovery refreshes it on the next session. Reporting a membership problem
-// for a network failure would ask the operator to repair Matrix rooms that are
-// fine, and the paused group would otherwise wait for an unrelated reconnect.
+// refreshOneGroupProfiles scans one managed room and only enqueues work: a
+// roster check, which also retries a paused group, and optional enrichment.
+// Its short context bounds local database work, never a source request. It does
+// not pause membership or end a session when optional metadata is unavailable.
 func (kc *KakaoClient) refreshOneGroupProfiles(c kakaoClient) (connectionFailed bool) {
 	if !kc.groupGate.TryLock() {
 		return false
@@ -53,7 +41,7 @@ func (kc *KakaoClient) refreshOneGroupProfiles(c kakaoClient) (connectionFailed 
 			continue
 		}
 		meta, ok := p.Metadata.(*KakaoPortalMetadata)
-		if !ok || meta == nil || meta.SourceRemoved || meta.MembershipPending {
+		if !ok || meta == nil || meta.SourceRemoved {
 			continue
 		}
 		knownRegularGroup := meta.GroupMembershipManaged
@@ -83,34 +71,13 @@ func (kc *KakaoClient) refreshOneGroupProfiles(c kakaoClient) (connectionFailed 
 	if err != nil {
 		return false
 	}
-	trace := newProfileRefreshTrace(c)
-	if err = kc.refreshGroupMembership(ctx, trace, chatID, false); err != nil {
-		// The membership path retains its durable access pause on failure.
-		// Never log a server response containing profile fields or retry here.
-		// The trace and error class carry only command names and durations.
-		if connectionFailure(err) {
-			kc.log().Warn().Str("error_class", sourceErrorClass(err)).Dur("elapsed", time.Since(trace.start)).Array("steps", trace).
-				Msg("Group profile refresh failed on the KakaoTalk connection; ending the session so recovery refreshes the group")
-			return true
-		}
-		kc.log().Warn().Str("error_class", sourceErrorClass(err)).Dur("elapsed", time.Since(trace.start)).Array("steps", trace).
-			Msg("Group profile refresh did not converge; reconnect to repair pending membership")
-		classification := stateGroupMembershipPending
-		if errors.Is(err, errSourceAccessRemoved) {
-			classification = stateGroupAccessRemoved
-		}
-		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: classification})
+	kc.metadataRefresh.offer(metadataRefreshTask{kind: refreshRoster, chatID: chatID})
+	meta := next.Metadata.(*KakaoPortalMetadata)
+	if meta.MembershipPending {
+		return false
 	}
+	kc.enqueueMemberEnrichment(chatID, meta.MembershipRoster)
+	kc.enqueueExistingRoomEnrichment(ctx, chatID, refreshPersonal, false)
+	kc.enqueueExistingRoomEnrichment(ctx, chatID, refreshBoards, false)
 	return false
-}
-
-// connectionFailure reports whether a source request failed on the
-// connection rather than being answered: the session closed, the transport
-// failed, or no reply arrived in time.
-func connectionFailure(err error) bool {
-	if errors.Is(err, client.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	var networkErr net.Error
-	return errors.As(err, &networkErr)
 }

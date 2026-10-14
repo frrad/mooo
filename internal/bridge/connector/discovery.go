@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 )
@@ -16,8 +17,12 @@ func (kc *KakaoClient) discoverGroups(ctx context.Context, c kakaoClient) error 
 		return err
 	}
 	seen := make(map[int64]struct{}, len(chats))
+	inventory := map[int64]chatmeta.ChatData{}
 	ordered := make([]int64, 0, len(chats))
 	for _, chat := range chats {
+		if inventoryDirectRoom(chat, kc.userID) {
+			kc.enqueueEnrichment(chatSnapshot{data: chat, roster: chat.DisplayUserIDs, deferred: true}, roomMetadataCache{})
+		}
 		if chat.Type != "MultiChat" || chat.LinkID != 0 {
 			continue
 		}
@@ -28,6 +33,7 @@ func (kc *KakaoClient) discoverGroups(ctx context.Context, c kakaoClient) error 
 			continue
 		}
 		seen[chat.ChatID] = struct{}{}
+		inventory[chat.ChatID] = chat
 		ordered = append(ordered, chat.ChatID)
 	}
 	// Revoke absent groups before a present room refresh can fail. The complete
@@ -36,7 +42,8 @@ func (kc *KakaoClient) discoverGroups(ctx context.Context, c kakaoClient) error 
 		return err
 	}
 	for _, chatID := range ordered {
-		if err = kc.refreshGroupMembership(ctx, c, chatID, true); err != nil {
+		data := inventory[chatID]
+		if err = kc.refreshGroupMembershipInventory(ctx, c, chatID, true, &data); err != nil {
 			return err
 		}
 	}

@@ -125,6 +125,9 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 				if err != nil {
 					return nil, err
 				}
+				if kc.enqueueExistingRoomEnrichment(ctx, evt.ChatID, refreshPersonal, true) {
+					return &bridgev2.ChatInfo{}, nil
+				}
 				info, _, err := kc.chatInfoFromClient(ctx, portal, c, chatInfoOptions{requirePersonalMeta: true})
 				return info, err
 			}
@@ -270,20 +273,21 @@ func (kc *KakaoClient) memberChanges(ctx context.Context, chatID int64, identiti
 	for _, userID := range ids {
 		members.Set(bridgev2.ChatMember{EventSender: bridgev2.EventSender{Sender: makeUserID(userID)}, Membership: event.MembershipJoin})
 	}
-	c, err := kc.metadataClient()
+	_, err := kc.metadataClient()
 	if err != nil {
 		return &bridgev2.ChatMemberList{MemberMap: members}, nil
 	}
-	profiles, err := kc.resolveMemberProfiles(ctx, c, chatID, ids)
+	profiles, err := kc.cachedMemberProfiles(ctx, ids)
 	if err != nil {
 		// Membership identities remain supported by the notice. Apply only
 		// completed or cached profiles; a later batch failure is not a clear.
 		kc.log().Warn().Str("error_class", sourceErrorClass(err)).
 			Msg("Some membership profiles are unavailable; preserving completed enrichment")
 	}
+	kc.enqueueMemberEnrichment(chatID, ids)
 	for _, profile := range kc.cacheProfiles(profiles, ids) {
 		member := members[makeUserID(profile.UserID)]
-		member.UserInfo = userInfoForMember(profile, kc)
+		member.UserInfo = kc.snapshotUserInfo(profile, true)
 		members[makeUserID(profile.UserID)] = member
 	}
 	return &bridgev2.ChatMemberList{MemberMap: members}, nil
