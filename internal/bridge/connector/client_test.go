@@ -472,7 +472,7 @@ func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
 	if _, ok := info.Members.MemberMap[makeUserID(9999)]; ok {
 		t.Fatal("metadata admitted a profile outside the requested roster")
 	}
-	if got := fake.metadataCalls; fmt.Sprint(got) != "[ChatInfo(3000) MemberList(3000,0) Members(3000,2)]" {
+	if got := fake.metadataCalls; fmt.Sprint(got) != "[ChatInfo(3000) MemberList(3000,0) Members(3000,1)]" {
 		t.Fatalf("metadata calls = %v", got)
 	}
 

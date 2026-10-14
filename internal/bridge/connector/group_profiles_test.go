@@ -18,6 +18,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"os"
 	"testing"
+	"time"
 )
 
 func TestPeriodicGroupProfileRefreshUpdatesExistingGhostWithoutMessage(t *testing.T) {
@@ -33,6 +34,8 @@ func TestPeriodicGroupProfileRefreshUpdatesExistingGhostWithoutMessage(t *testin
 		t.Fatal(err)
 	}
 	identity := ghost.Intent.GetMXID()
+	refreshAt := kc.now().Add(memberProfileFreshness)
+	kc.now = func() time.Time { return refreshAt }
 	backend.members = []chatmeta.Member{{UserID: 2000, Nickname: "Current"}}
 	backend.membersErr = errors.New("synthetic unavailable second profile")
 	kc.refreshOneGroupProfiles(backend)
@@ -292,6 +295,8 @@ func TestPeriodicGroupProfileRefreshFailureLogsTrace(t *testing.T) {
 	if _, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}}); err != nil {
 		t.Fatal(err)
 	}
+	refreshAt := kc.now().Add(memberProfileFreshness)
+	kc.now = func() time.Time { return refreshAt }
 	var logs bytes.Buffer
 	kc.login.Log = zerolog.New(&logs)
 	backend.membersErr = fmt.Errorf("synthetic-private-detail: %w", context.DeadlineExceeded)

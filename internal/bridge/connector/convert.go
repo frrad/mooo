@@ -274,9 +274,12 @@ func (kc *KakaoClient) memberChanges(ctx context.Context, chatID int64, identiti
 	if err != nil {
 		return &bridgev2.ChatMemberList{MemberMap: members}, nil
 	}
-	profiles, err := c.Members(ctx, chatID, ids)
+	profiles, err := kc.resolveMemberProfiles(ctx, c, chatID, ids)
 	if err != nil {
-		return &bridgev2.ChatMemberList{MemberMap: members}, nil
+		// Membership identities remain supported by the notice. Apply only
+		// completed or cached profiles; a later batch failure is not a clear.
+		kc.log().Warn().Str("error_class", sourceErrorClass(err)).
+			Msg("Some membership profiles are unavailable; preserving completed enrichment")
 	}
 	for _, profile := range kc.cacheProfiles(profiles, ids) {
 		member := members[makeUserID(profile.UserID)]

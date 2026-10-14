@@ -35,6 +35,7 @@ type store interface {
 	get(ctx context.Context, key string) (string, bool, error)
 	put(ctx context.Context, key, value string) error
 	putIfAbsent(ctx context.Context, key, value string) (bool, error)
+	compareAndSwap(ctx context.Context, key, previous, value string) (bool, error)
 	deleteOlderThan(ctx context.Context, prefix, stamp string) error
 }
 

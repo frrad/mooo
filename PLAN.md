@@ -979,3 +979,16 @@ confirm delivery. Unsupported Tenth/readiness/legacy tickets still fail closed.
 See [SHIP redirect evidence](research/bridge/SHIP-REDIRECT.md). Local checks and
 secret scans passed. The PR must pass required CI and report mergeable before
 the authorized squash merge.
+
+## Persistent member profile cooldown (2026-10-14)
+
+- [x] Research native persistent user reuse and profile timestamp consumers;
+      no regular MEMBER TTL established. Specify deliberate bridge policy in
+      research/bridge/PROFILE-REFRESH-COOLDOWN.md.
+- [x] Consume durable per-account/user profile freshness and attempt reservations
+      in ordinary room snapshots and membership profile resolution. Preserve
+      global request pacing, partial results, account isolation and restart reuse.
+- [x] Validate production-path cross-room/restart/concurrency/expiry/failure
+      regressions, full make check and secret scanning.
+- [x] Prepare the cooldown slice for CI-gated PR landing. The asynchronous refresh
+      worker and issue #372 deadline/recovery work remain separate.
