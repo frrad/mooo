@@ -42,21 +42,6 @@ func TestRoomCreationDoesNotWaitForMemberEnrichment(t *testing.T) {
 	}
 }
 
-func TestPeriodicProfileTickOnlyQueuesWork(t *testing.T) {
-	kc, backend, _ := newGroupCreationFramework(t)
-	if _, err := kc.CreateGroup(context.Background(), &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}}); err != nil {
-		t.Fatal(err)
-	}
-	backend.metadataCalls = nil
-	backend.chatInfoErr = context.DeadlineExceeded
-	if kc.refreshOneGroupProfiles(backend) {
-		t.Fatal("local refresh timeout requested a session teardown")
-	}
-	if len(backend.metadataCalls) != 0 {
-		t.Fatal("periodic tick performed source requests instead of queue admission")
-	}
-}
-
 // Drain the real worker's steps and the real publication path against a
 // framework bridge. This never implements an alternate enrichment algorithm.
 func drainMetadataRefresh(t *testing.T, kc *KakaoClient, c kakaoClient) {
@@ -380,32 +365,6 @@ func TestFailedMembershipRefreshRetriesWithBackoffAndUnpauses(t *testing.T) {
 	}
 	if p.Metadata.(*KakaoPortalMetadata).MembershipPending {
 		t.Fatal("membership retry left the group paused after the source roster converged")
-	}
-}
-
-func TestPeriodicProfileTickNeverReadsMEMLIST(t *testing.T) {
-	kc, backend, _ := newGroupCreationFramework(t)
-	ctx := context.Background()
-	response, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	drainMetadataRefresh(t, kc, backend)
-	for _, pending := range []bool{false, true} {
-		meta := response.Portal.Metadata.(*KakaoPortalMetadata)
-		meta.MembershipPending = pending
-		if err = response.Portal.Save(ctx); err != nil {
-			t.Fatal(err)
-		}
-		backend.metadataCalls = nil
-		kc.profileRefreshAfter = ""
-		kc.refreshOneGroupProfiles(backend)
-		drainMetadataRefresh(t, kc, backend)
-		for _, call := range backend.metadataCalls {
-			if strings.HasPrefix(call, "MemberList(") || strings.HasPrefix(call, "ChatInfo(") {
-				t.Fatalf("profile tick (pending %t) polled membership: %v", pending, backend.metadataCalls)
-			}
-		}
 	}
 }
 

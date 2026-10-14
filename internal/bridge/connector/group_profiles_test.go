@@ -21,67 +21,6 @@ import (
 	"time"
 )
 
-func TestPeriodicGroupProfileRefreshUpdatesExistingGhostWithoutMessage(t *testing.T) {
-	kc, backend, _ := newGroupCreationFramework(t)
-	ctx := context.Background()
-	backend.members = []chatmeta.Member{{UserID: 2000, Nickname: "Previous"}, {UserID: 4000, Nickname: "Retained"}}
-	response, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	drainMetadataRefresh(t, kc, backend)
-	ghost, err := kc.login.Bridge.GetGhostByID(ctx, makeUserID(2000))
-	if err != nil {
-		t.Fatal(err)
-	}
-	identity := ghost.Intent.GetMXID()
-	refreshAt := kc.now().Add(memberProfileFreshness)
-	kc.now = func() time.Time { return refreshAt }
-	backend.members = []chatmeta.Member{{UserID: 2000, Nickname: "Current"}}
-	backend.membersErr = errors.New("synthetic unavailable second profile")
-	kc.refreshOneGroupProfiles(backend)
-	drainMetadataRefresh(t, kc, backend)
-	ghost, err = kc.login.Bridge.GetGhostByID(ctx, makeUserID(2000))
-	if err != nil {
-		t.Fatal(err)
-	}
-	missing, err := kc.login.Bridge.GetGhostByID(ctx, makeUserID(4000))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ghost.Name != "Current" || ghost.Intent.GetMXID() != identity || missing.Name != "Retained" {
-		t.Fatalf("periodic refresh names %q/%q, same identity %t, cursor %q, metadata %+v", ghost.Name, missing.Name, ghost.Intent.GetMXID() == identity, kc.profileRefreshAfter, response.Portal.Metadata)
-	}
-	if backend.creates != 1 || response.Portal.MXID != "!selected:test" {
-		t.Fatal("profile refresh created or rebound a group")
-	}
-}
-
-func TestPeriodicGroupProfileRefreshSkipsRemovedAndStopping(t *testing.T) {
-	for _, condition := range []string{"removed", "stopping"} {
-		t.Run(condition, func(t *testing.T) {
-			kc, backend, _ := newGroupCreationFramework(t)
-			ctx := context.Background()
-			response, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			meta := response.Portal.Metadata.(*KakaoPortalMetadata)
-			meta.SourceRemoved = condition == "removed"
-			meta.MembershipPending = condition == "pending"
-			if err = response.Portal.Save(ctx); err != nil {
-				t.Fatal(err)
-			}
-			kc.stopping = condition == "stopping"
-			backend.metadataCalls = nil
-			kc.refreshOneGroupProfiles(backend)
-			if len(backend.metadataCalls) != 0 || kc.profileRefreshAfter != "" {
-				t.Fatal("profile poll requested source metadata outside the active access window")
-			}
-		})
-	}
-}
-
 func TestGroupProfilePartialFailureCannotDiscardAuthoritativeRoster(t *testing.T) {
 	kc, backend, _ := newGroupCreationFramework(t)
 	ctx := context.Background()

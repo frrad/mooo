@@ -47,8 +47,9 @@ connection failure and reconnected.
 - **No membership polling.** As in the official client, membership comes from
   login room data (startup discovery) and member push notices. The official
   client sends MEMLIST only from its member-list views, and the bridge never
-  polls it. The minute ticker only enqueues due profile, personal and Boards
-  enrichment.
+  polls it. There is no periodic enrichment timer either: the minute profile
+  tick was removed because the official client has none (see
+  [metadata triggers](METADATA-TRIGGERS.md)).
 - **Paused-group retry.** A group paused by a failed authoritative refresh
   (`MembershipPending`) is bridge-only safety state with no native counterpart.
   The failure itself schedules a retry with the backoff above. The retry runs
@@ -89,9 +90,9 @@ reads behind CONNECTED is a separate question.
 
 - [Metadata triggers](METADATA-TRIGGERS.md) traces every request here to its
   native trigger. The official client has no MEMBER, Boards or personal
-  metadata timer and no regular profile push, so the minute tick and the
-  15-minute freshness windows are bridge deviations. Their removal is planned
-  in `PLAN.md`. No claim is made that the worker reproduces native pacing.
+  metadata timer and no regular profile push. The minute tick is removed; the
+  15-minute freshness windows remain a bridge deviation, with their removal
+  planned in `PLAN.md`. No claim is made that the worker reproduces native pacing.
 - Personal metadata cached in a checkpoint takes precedence over a snapshot's
   inventory value. This assumes the checkpoint is the fresher of the two, which
   holds for every write path in this change.

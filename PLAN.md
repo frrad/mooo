@@ -1011,7 +1011,7 @@ background metadata request to its official Mac trigger. The official client
 never refetches a known member on a timer, and no profile push exists for
 regular members. Follow-up changes, one PR each:
 
-- [ ] Remove the minute profile tick (`group_profile_refresh.go`,
+- [x] Remove the minute profile tick (`group_profile_refresh.go`,
       `lifecycle.go` ticker). Keep the paused-group membership retry, which
       schedules itself.
 - [ ] Replace time-based freshness with native triggers. MEMBER: fetch only
