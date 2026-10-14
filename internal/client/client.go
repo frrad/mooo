@@ -17,6 +17,7 @@ import (
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/macweb"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"github.com/frrad/mooo/internal/protocol/reactions"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -74,21 +75,31 @@ type OpenOptions struct {
 	// shadow comparison is wired in only through this field.
 	PacketObserver func(loco.Packet)
 	// GapObserver, when set, receives each message that decoded to an
-	// events.MessageGap with the raw BSON it came from. Nil, the default, adds
-	// no work. Debug tooling such as the bridge's gap dump is wired in only
-	// through this field.
+	// events.MessageGap, an events.UnsupportedMessage, or a reply whose
+	// attachment is neither absent nor a sticker, with the raw BSON it came
+	// from. Nil, the default, adds no work. Debug tooling such as the bridge's
+	// gap dump is wired in only through this field.
 	GapObserver func(GapObservation)
 }
 
-// GapObservation is one message whose content failed decoding. Body is the
-// LOCO body of a push, or the bare chat log of a SYNCMSG or GETMSGS read, and
-// therefore contains private message content.
+// GapObservation is one message whose content failed decoding or has no
+// decoder yet. Body is the LOCO body of a push, or the bare chat log of a
+// SYNCMSG or GETMSGS read, and therefore contains private message content.
 type GapObservation struct {
 	// Source is the LOCO method the body arrived in.
 	Source string
-	Gap    events.MessageGap
-	Body   []byte
+	// Gap is the decoded gap, or for a message that decoded but cannot be
+	// displayed, its identity with one of the GapReasonUnsupported reasons.
+	Gap  events.MessageGap
+	Body []byte
 }
+
+// Observation reasons for messages that decoded but that mooo cannot display.
+// Their raw body is the only record of the content's shape.
+const (
+	GapReasonUnsupportedType            = "unsupported_type"
+	GapReasonUnsupportedReplyAttachment = "unsupported_reply_attachment"
+)
 
 // gapFunc reports an event to the GapObserver when it is a gap. A nil gapFunc
 // is valid and does nothing.
@@ -105,9 +116,22 @@ func newGapFunc(observer func(GapObservation)) gapFunc {
 		return nil
 	}
 	return func(source string, event events.Event, body []byte) {
-		if gap, ok := event.(events.MessageGap); ok {
-			observer(GapObservation{Source: source, Gap: gap, Body: bytes.Clone(body)})
+		var gap events.MessageGap
+		switch event := event.(type) {
+		case events.MessageGap:
+			gap = event
+		case events.UnsupportedMessage:
+			gap = events.MessageGap{ChatID: event.ChatID, LogID: event.LogID, Type: event.Type, Reason: GapReasonUnsupportedType}
+		case events.ReplyMessage:
+			if event.Attachment.Type == 0 || event.Attachment.Sticker != nil {
+				return
+			}
+			gap = events.MessageGap{ChatID: event.ChatID, LogID: event.LogID, AuthorID: event.AuthorID, SentAt: event.SentAt,
+				Type: messagetype.Reply, Reason: GapReasonUnsupportedReplyAttachment}
+		default:
+			return
 		}
+		observer(GapObservation{Source: source, Gap: gap, Body: bytes.Clone(body)})
 	}
 }
 

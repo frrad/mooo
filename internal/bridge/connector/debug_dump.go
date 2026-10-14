@@ -61,7 +61,7 @@ func newGapDumper(dir string, log zerolog.Logger, now func() time.Time) func(cli
 			log.Warn().Err(err).Int32("kakao_type", observation.Gap.Type).Msg("Could not write private gap dump")
 			return
 		}
-		log.Warn().Str("dump_file", filepath.Base(path)).Int32("kakao_type", observation.Gap.Type).
+		log.Warn().Str("dump_file", filepath.Base(path)).Int32("kakao_type", observation.Gap.Type).Str("gap_reason", observation.Gap.Reason).
 			Msg("Wrote private gap dump; it contains message content")
 	}
 }
