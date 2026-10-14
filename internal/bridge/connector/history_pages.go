@@ -151,7 +151,10 @@ func (kc *KakaoClient) FetchMessages(ctx context.Context, params bridgev2.FetchM
 		} // Startup acquisition must precede delivery.
 		acquisitionCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		position := after
+		position := page.CoveredThrough
+		if position < after || position > through {
+			return nil, client.ErrProtocol
+		}
 		for pages := 0; pages < 25 && position < through; pages++ {
 			acquired, e := c.ReadHistoryPage(acquisitionCtx, chatID, position, through, int(syncmsg.MaxPageSize))
 			if e != nil {

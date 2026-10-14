@@ -306,3 +306,40 @@ func TestFetchHistoryUnavailableWindowDoesNotAcquireOrFinishTask(t *testing.T) {
 		t.Fatal("unavailable window was retired or acquired", task, source.calls)
 	}
 }
+
+type missingTailSource struct {
+	*cachedProvisionSource
+	after []int64
+}
+
+var errMissingTailProbe = errors.New("synthetic missing-tail stop")
+
+func (s *missingTailSource) ReadHistoryPage(_ context.Context, _, after, _ int64, _ int) (client.HistoryPage, error) {
+	s.after = append(s.after, after)
+	return client.HistoryPage{}, errMissingTailProbe
+}
+
+func TestBackwardAcquisitionStartsAtPersistedCoverageAfterRestart(t *testing.T) {
+	path := provisioningCacheFixture(t) // Production store covers (0,500].
+	kc, p, mx := pageFramework(t)
+	kc.login.Bridge.Matrix = &historyBatchMatrix{groupCreationMatrix: mx}
+	for range 2 {
+		sdk, err := client.OpenWithOptions(path, nil, client.OpenOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		source := &missingTailSource{cachedProvisionSource: &cachedProvisionSource{
+			sdk:       sdk,
+			fakeKakao: &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat", LastServerLogID: 900}}},
+		}}
+		restarted := newKakaoClient(kc.login, newBridgeStore(kc.login.Bridge.DB), testSelfID, nil)
+		restarted.client = source
+		_, err = restarted.FetchMessages(t.Context(), bridgev2.FetchMessagesParams{Portal: p, Count: 50, AllowSlowFetch: true})
+		if shutdownErr := sdk.Shutdown(t.Context()); shutdownErr != nil {
+			t.Fatal(shutdownErr)
+		}
+		if !errors.Is(err, errMissingTailProbe) || !reflect.DeepEqual(source.after, []int64{500}) {
+			t.Fatalf("missing-range demand rescanned acquired prefix: after=%v err=%v", source.after, err)
+		}
+	}
+}

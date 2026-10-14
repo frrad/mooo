@@ -21,10 +21,13 @@ type StoredHistoryRequest struct {
 }
 
 type StoredHistoryPage struct {
-	Events      []events.Event
-	HasMore     bool                // More acquired rows precede the returned window.
-	Unavailable *HistoryUnavailable // Fresh exact-window observation; never acquired coverage.
-	Complete    bool                // The selected source interval is covered by connected acquired pages.
+	Events []events.Event
+	// CoveredThrough is the end of connected acquired coverage starting at
+	// request.After. Cached islands beyond a gap never advance it.
+	CoveredThrough int64
+	HasMore        bool                // More acquired rows precede the returned window.
+	Unavailable    *HistoryUnavailable // Fresh exact-window observation; never acquired coverage.
+	Complete       bool                // The selected source interval is covered by connected acquired pages.
 }
 
 // ReadStoredHistory returns the newest local rows in ascending identity order.
@@ -105,7 +108,7 @@ func (s *historyStore) window(ctx context.Context, request StoredHistoryRequest)
 		ids = append(ids, id)
 	}
 	slices.Sort(ids)
-	out := StoredHistoryPage{Complete: covered >= request.Through, HasMore: len(ids) > request.Limit}
+	out := StoredHistoryPage{CoveredThrough: covered, Complete: covered >= request.Through, HasMore: len(ids) > request.Limit}
 	if !out.Complete && len(ids) == 0 {
 		observation, err := s.unavailableLocked(syncmsg.Request{ChatID: request.ChatID, Cur: request.After, Max: request.Through})
 		if err != nil {
