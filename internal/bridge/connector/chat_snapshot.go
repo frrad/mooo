@@ -110,7 +110,7 @@ func (kc *KakaoClient) fetchChatSnapshot(ctx context.Context, portal *bridgev2.P
 	}
 	snap := chatSnapshot{data: data, roster: append([]int64(nil), roster.MemberIDs...)}
 	userIDs := append([]int64(nil), snap.profileIDs()...)
-	profiles, err := c.Members(ctx, chatID, userIDs)
+	profiles, err := kc.resolveMemberProfiles(ctx, c, chatID, userIDs)
 	if err != nil {
 		if data.Type != "MultiChat" {
 			return chatSnapshot{}, err

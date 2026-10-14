@@ -174,3 +174,14 @@ identities, and the fourteen earlier mappings were unchanged. Normal bridge
 restart retained all seventeen mappings without duplicates; A/C ciphertext
 still decrypted to exact expected text with the same SDK keys. This is observed
 acceptance for one owned regular group, not scale or room-type parity.
+
+## Persistent reuse policy (2026-10-14)
+
+Ordinary nickname/avatar enrichment now consumes an account/user cache shared
+across rooms in the bridge database. Successful results stay fresh for 15 minutes;
+failed or missing attempts retain a two-minute reservation across restarts.
+The earlier owned freshness experiments above predate this cooldown: immediate
+convergence on every restart is no longer promised. Partial successful profiles
+remain applicable to both full snapshots and membership-notice enrichment.
+See [research and policy](PROFILE-REFRESH-COOLDOWN.md). The synchronous periodic
+snapshot and issue #372's admission/deadline defect remain separate work.

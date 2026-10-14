@@ -324,3 +324,14 @@ func (s *memStore) deleteOlderThan(_ context.Context, prefix, stamp string) erro
 	}
 	return nil
 }
+
+func (s *memStore) compareAndSwap(_ context.Context, key, previous, value string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	saved, found := s.kv[key]
+	if previous == "" && found || previous != "" && (!found || saved != previous) {
+		return false, nil
+	}
+	s.kv[key] = value
+	return true, nil
+}

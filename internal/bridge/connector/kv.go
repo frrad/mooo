@@ -82,3 +82,37 @@ func (s kvStore) deleteOlderThan(ctx context.Context, prefix, stamp string) erro
 	_, err := s.db.Exec(ctx, "DELETE FROM kv_store WHERE bridge_id=$1 AND key LIKE $2 AND value < $3", s.bridgeID, prefix+"%", stamp)
 	return err
 }
+
+// compareAndSwap reserves or publishes one profile refresh without allowing
+// another process's newer record to be overwritten. Empty previous means absent.
+func (s kvStore) compareAndSwap(ctx context.Context, key, previous, value string) (bool, error) {
+	var changed bool
+	if previous == "" {
+		var err error
+		changed, err = s.putIfAbsent(ctx, key, value)
+		if err != nil {
+			return false, err
+		}
+	} else {
+		result, err := s.db.Exec(ctx, "UPDATE kv_store SET value=$1 WHERE bridge_id=$2 AND key=$3 AND value=$4", value, s.bridgeID, key, previous)
+		if err != nil {
+			return false, err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return false, err
+		}
+		changed = count == 1
+	}
+	if !changed {
+		return false, nil
+	}
+	saved, found, err := s.get(ctx, key)
+	if err != nil {
+		return false, err
+	}
+	if !found || saved != value {
+		return false, errNotDurable
+	}
+	return true, nil
+}
