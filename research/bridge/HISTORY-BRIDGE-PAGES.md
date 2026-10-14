@@ -135,9 +135,11 @@ mapping is confirmed, and the pending source window persists. A fresh SDK,
 connector, Matrix connector and SQLite reopen recover that window and retry the
 same deterministic event IDs and complete event content in the same chronological
 order. Bodies, author MXIDs and original timestamps are checked. Confirmed
-mappings match the IDs actually sent over HTTP; two attempts leave exactly two
-unique historical events. A later authenticated request returns HTTP 204 for the
-exhausted task without another local read or source acquisition.
+mappings match the IDs actually sent over HTTP; the recovered page and a second older page leave exactly four
+unique historical events across three HTTP batch attempts. Both pages retain
+ascending order, while the cursor selects the older window on the next request.
+A final authenticated request returns HTTP 204 for the exhausted task without
+another local read or source acquisition.
 
 Unauthenticated requests return 401, a logged-out login returns 403, and missing
 batch capability returns 404, all before reading history. Both successful and

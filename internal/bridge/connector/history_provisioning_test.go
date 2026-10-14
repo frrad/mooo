@@ -83,16 +83,16 @@ func provisioningCacheFixture(t *testing.T) string {
 	if err != nil || !found {
 		t.Fatal(found, err)
 	}
-	request := syncmsg.Request{ChatID: testChatID, Cur: 0, Max: 300}
+	request := syncmsg.Request{ChatID: testChatID, Cur: 0, Max: 500}
 	var logs []bson.Raw
-	for _, n := range []int64{100, 200, 300} {
+	for _, n := range []int64{100, 200, 300, 400, 500} {
 		raw, err := bson.Marshal(bson.D{{Key: "chatId", Value: testChatID}, {Key: "logId", Value: n}, {Key: "authorId", Value: testOtherID}, {Key: "sendAt", Value: int64(1000)}, {Key: "type", Value: int32(1)}, {Key: "message", Value: fmt.Sprintf("synthetic %d", n)}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		logs = append(logs, raw)
 	}
-	digest := sha256.Sum256([]byte(fmt.Sprintf("%d/0/300", testChatID)))
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%d/0/500", testChatID)))
 	page := struct {
 		Version  uint32
 		Binding  string
@@ -207,7 +207,7 @@ func TestAuthenticatedHistoryHookActualCacheAndLostBatchRestart(t *testing.T) {
 				t.Error(err)
 			}
 		})
-		source := &cachedProvisionSource{fakeKakao: &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat", LastServerLogID: 300}}}, sdk: sdk}
+		source := &cachedProvisionSource{fakeKakao: &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat", LastServerLogID: 500}}}, sdk: sdk}
 		kc.client = source
 		// Let the real provisioning login lookup retrieve this live instance.
 		// LoadUserLogin creates a stopped client, so install after framework lookup.
@@ -222,7 +222,7 @@ func TestAuthenticatedHistoryHookActualCacheAndLostBatchRestart(t *testing.T) {
 			t.Fatal(err)
 		}
 		if attempt == 0 {
-			anchor := &database.Message{ID: makeMessageID(testChatID, 300), Room: portal.PortalKey, MXID: "$anchor:test", Timestamp: kakaoTime(1000), SenderID: makeUserID(testOtherID), SenderMXID: "@kakao_2000:test", Metadata: newKakaoMessageMetadata(testChatID, 300, testOtherID, 1, "synthetic 300", 0)}
+			anchor := &database.Message{ID: makeMessageID(testChatID, 500), Room: portal.PortalKey, MXID: "$anchor:test", Timestamp: kakaoTime(1000), SenderID: makeUserID(testOtherID), SenderMXID: "@kakao_2000:test", Metadata: newKakaoMessageMetadata(testChatID, 500, testOtherID, 1, "synthetic 500", 0)}
 			if err = br.DB.Message.Insert(t.Context(), anchor); err != nil {
 				t.Fatal(err)
 			}
@@ -267,7 +267,7 @@ func TestAuthenticatedHistoryHookActualCacheAndLostBatchRestart(t *testing.T) {
 			t.Fatal("cached route source accounting", source.reads, source.acquisitions)
 		}
 		if attempt == 0 {
-			parts, err := kc.store.messageParts(t.Context(), login.ID, makeMessageID(testChatID, 100))
+			parts, err := kc.store.messageParts(t.Context(), login.ID, makeMessageID(testChatID, 300))
 			if err != nil || len(parts) != 0 {
 				t.Fatal("lost response confirmed a mapping", parts, err)
 			}
@@ -277,7 +277,7 @@ func TestAuthenticatedHistoryHookActualCacheAndLostBatchRestart(t *testing.T) {
 			}
 		}
 		if attempt == 1 {
-			for _, n := range []int64{100, 200} {
+			for _, n := range []int64{300, 400} {
 				parts, err := kc.store.messageParts(t.Context(), login.ID, makeMessageID(testChatID, n))
 				if err != nil || len(parts) != 1 {
 					t.Fatal("missing mapping", n, parts, err)
@@ -286,7 +286,16 @@ func TestAuthenticatedHistoryHookActualCacheAndLostBatchRestart(t *testing.T) {
 					t.Fatal("persisted identity differs from HTTP batch", n, parts[0].MXID)
 				}
 			}
-			if response = hit(true); response.Code != 204 || source.reads != 1 {
+			if response = hit(true); response.Code != 200 || source.reads != 2 {
+				t.Fatal("older page failed", response.Code, source.reads, response.Body.String())
+			}
+			for _, n := range []int64{100, 200} {
+				parts, err := kc.store.messageParts(t.Context(), login.ID, makeMessageID(testChatID, n))
+				if err != nil || len(parts) != 1 {
+					t.Fatal("older page mapping", n, parts, err)
+				}
+			}
+			if response = hit(true); response.Code != 204 || source.reads != 2 {
 				t.Fatal("exhausted route fetched again", response.Code, source.reads)
 			}
 		}
@@ -305,10 +314,10 @@ func TestAuthenticatedHistoryHookActualCacheAndLostBatchRestart(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if sink.batches != 2 || len(sink.events) != 2 {
+	if sink.batches != 3 || len(sink.events) != 4 {
 		t.Fatal("restart duplicates", sink.batches, len(sink.events))
 	}
-	if sink.readRequests != 0 || len(sink.sequences) != 2 || !reflect.DeepEqual(sink.sequences[0], sink.sequences[1]) {
+	if sink.readRequests != 0 || len(sink.sequences) != 3 || !reflect.DeepEqual(sink.sequences[0], sink.sequences[1]) {
 		t.Fatal("retry order/read effects", sink.sequences, sink.readRequests)
 	}
 	var ordered []string
@@ -316,8 +325,16 @@ func TestAuthenticatedHistoryHookActualCacheAndLostBatchRestart(t *testing.T) {
 		body, _ := sink.events[identity].Content.Raw["body"].(string)
 		ordered = append(ordered, body)
 	}
-	if !reflect.DeepEqual(ordered, []string{"synthetic 100", "synthetic 200"}) {
+	if !reflect.DeepEqual(ordered, []string{"synthetic 300", "synthetic 400"}) {
 		t.Fatal("history HTTP order", ordered)
+	}
+	var older []string
+	for _, identity := range sink.sequences[2] {
+		body, _ := sink.events[identity].Content.Raw["body"].(string)
+		older = append(older, body)
+	}
+	if !reflect.DeepEqual(older, []string{"synthetic 100", "synthetic 200"}) {
+		t.Fatal("older page order", older)
 	}
 	bodies := map[string]bool{}
 	for _, evt := range sink.events {
@@ -327,7 +344,7 @@ func TestAuthenticatedHistoryHookActualCacheAndLostBatchRestart(t *testing.T) {
 			t.Fatal("historical identity/timestamp", evt.ID, evt.Timestamp, evt.Sender)
 		}
 	}
-	if !reflect.DeepEqual(bodies, map[string]bool{"synthetic 100": true, "synthetic 200": true}) {
+	if !reflect.DeepEqual(bodies, map[string]bool{"synthetic 100": true, "synthetic 200": true, "synthetic 300": true, "synthetic 400": true}) {
 		t.Fatal("history body changed", bodies)
 	}
 }
