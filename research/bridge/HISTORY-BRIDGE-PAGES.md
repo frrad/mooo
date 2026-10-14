@@ -119,3 +119,38 @@ claim that all five original bodies are supported.
   batches read regardless of the connector response. No source read acknowledgement
   is issued by these fetch methods; local cursor invariance does not prove peer
   unread state or notifications.
+
+## Authenticated provisioning route checkpoint (2026-10-14)
+
+`TestAuthenticatedHistoryHookActualCacheAndLostBatchRestart` now drives the
+pinned framework's real authenticated
+`POST /_matrix/provision/v3/backfill/{roomID}` handler, actual KakaoClient
+FetchMessages, real SDK ReadStoredHistory over a synthetic private acquired-page
+fixture, SQLite selection/mapping/task state, real Matrix connector batch
+serialization, and a fault-injecting synthetic HTTP boundary. The
+inventory adapter is synthetic; no LOCO acquisition is allowed by the harness.
+
+The first batch is accepted by the sink but its response is lost. No Matrix
+mapping is confirmed, and the pending source window persists. A fresh SDK,
+connector, Matrix connector and SQLite reopen recover that window and retry the
+same deterministic event IDs and complete event content in the same chronological
+order. Bodies, author MXIDs and original timestamps are checked. Confirmed
+mappings match the IDs actually sent over HTTP; the recovered page and a second older page leave exactly four
+unique historical events across three HTTP batch attempts. Both pages retain
+ascending order, while the cursor selects the older window on the next request.
+A final authenticated request returns HTTP 204 for the exhausted task without
+another local read or source acquisition.
+
+Unauthenticated requests return 401, a logged-out login returns 403, and missing
+batch capability returns 404, all before reading history. Both successful and
+failed attempts leave source live-delivery cursors/read watermarks unchanged;
+neither explicit source ACKs nor Matrix read markers/notifications are issued.
+These effects describe this backward-delivery case, not opening/reading the room.
+
+Run with `GOFLAGS='-tags=goolm' go test -race ./internal/bridge/connector -run
+AuthenticatedHistoryHook -count=1`. This is a production-path synthetic contract
+check, not official-client parity, an owned encrypted Matrix deployment, or a
+Beeper UI observation. The fixture represents already acquired history; it does
+not prove clean login or live gap acquisition. Existing worker tests cover source
+pacing independently. Owned encrypted acceptance and a transport that supplies
+room-opening/viewing demand remain required before completing the three flows.
