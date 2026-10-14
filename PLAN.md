@@ -128,12 +128,17 @@ unnecessary requests, and restart retains the acquired/delivered boundaries.
       arithmetic or an assumed newest-N query.
 - [x] First bridgev2 FetchMessages path uses stored older messages and bounded
       shared-worker reconciliation. Backward insertion requires batch capability;
-      authenticated route and owned encrypted acceptance remain open.
+      the authenticated route has since passed the actual connector, SDK cache
+      and Matrix HTTP synthetic restart harness; owned encrypted acceptance remains open.
 - [ ] Complete stored older-history delivery with
       stable identities, chronological output and a durable pagination cursor.
       Missing history creates bounded worker demand, not an unbounded fetch loop.
-- [ ] Validate historical insertion at the Matrix boundary with a synthetic
-      server/connector harness. Standard Matrix cannot faithfully insert older
+- [x] Validate historical insertion at the Matrix HTTP boundary with a synthetic
+      server/actual connector harness. Authenticated routing, exact body/order,
+      source read/live cursor separation and accepted-then-lost response replay
+      pass after a fresh SDK/connector/database reopen. This is plaintext contract
+      evidence; owned encrypted deployment/native UI acceptance remains open.
+      Standard Matrix cannot faithfully insert older
       events merely by assigning old timestamps: report that deployment limit
       explicitly rather than silently claiming correct timeline ordering.
 

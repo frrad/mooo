@@ -46,8 +46,9 @@ type frameworkOpts struct {
 	matrix bridgev2.MatrixConnector
 	// network replaces the minimal network connector, which supplies the real
 	// connector's database metadata types.
-	network bridgev2.NetworkConnector
-	config  *bridgeconfig.BridgeConfig
+	network  bridgev2.NetworkConnector
+	config   *bridgeconfig.BridgeConfig
+	commands func(*bridgev2.Bridge) bridgev2.CommandProcessor
 }
 
 // newFrameworkBridge returns a bridgev2.Bridge over an upgraded SQLite
@@ -80,7 +81,11 @@ func newFrameworkBridge(t *testing.T, opts frameworkOpts) (*bridgev2.Bridge, *db
 	if network == nil {
 		network = &frameworkNetworkConnector{}
 	}
-	bridge := bridgev2.NewBridge(networkid.BridgeID("test"), raw, zerolog.Nop(), opts.config, matrix, network, func(*bridgev2.Bridge) bridgev2.CommandProcessor { return nil })
+	processor := opts.commands
+	if processor == nil {
+		processor = func(*bridgev2.Bridge) bridgev2.CommandProcessor { return nil }
+	}
+	bridge := bridgev2.NewBridge(networkid.BridgeID("test"), raw, zerolog.Nop(), opts.config, matrix, network, processor)
 	bridge.BackgroundCtx = context.Background()
 	if err := bridge.DB.Upgrade(ctx); err != nil {
 		t.Fatal(err)
