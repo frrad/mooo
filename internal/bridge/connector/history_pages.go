@@ -212,6 +212,32 @@ func (kc *KakaoClient) FetchMessages(ctx context.Context, params bridgev2.FetchM
 		if !ok {
 			return nil, bridgev2.ErrFailedToGetIntent
 		}
+		existing, e := kc.store.messageParts(ctx, params.Portal.Receiver, message.GetID())
+		if e != nil {
+			return nil, e
+		}
+		multipart, isMultipart := message.(expectedPartsMessage)
+		if isMultipart && len(existing) > 0 {
+			upsert, ok := message.(bridgev2.RemoteMessageUpsert)
+			if !ok {
+				return nil, client.ErrProtocol
+			}
+			res, e := upsert.HandleExisting(ctx, params.Portal, intent, existing)
+			if e != nil {
+				return nil, e
+			}
+			if !res.ContinueMessageHandling {
+				// The live converter defines whole-message mappings as well as
+				// individual parts. Confirm its satisfied mapping without fetching
+				// dependencies or expanding a Matrix-authored album into photos.
+				item := historyExpected{ID: message.GetID()}
+				for _, row := range existing {
+					item.Parts = append(item.Parts, row.PartID)
+				}
+				expected = append(expected, item)
+				continue
+			}
+		}
 		converted, e := message.ConvertMessage(ctx, params.Portal, intent)
 		if e != nil {
 			return nil, e
@@ -228,15 +254,16 @@ func (kc *KakaoClient) FetchMessages(ctx context.Context, params bridgev2.FetchM
 			seenParts[part.ID] = true
 			expectedParts.Parts = append(expectedParts.Parts, part.ID)
 		}
+		if isMultipart {
+			// HandleExisting may have omitted already mapped parts from the
+			// conversion; completion still requires the full source part set.
+			expectedParts.Parts = multipart.ExpectedPartIDs()
+		}
 		expected = append(expected, expectedParts)
 		if !kc.login.Bridge.Matrix.GetCapabilities().BatchSending {
 			if e := markMatrixTransactions(params.Portal, intent, message.GetID(), converted, true); e != nil {
 				return nil, e
 			}
-		}
-		existing, e := kc.store.messageParts(ctx, params.Portal.Receiver, message.GetID())
-		if e != nil {
-			return nil, e
 		}
 		converted.Parts = slices.DeleteFunc(converted.Parts, func(part *bridgev2.ConvertedMessagePart) bool {
 			return slices.ContainsFunc(existing, func(row *database.Message) bool { return row.PartID == part.ID })
