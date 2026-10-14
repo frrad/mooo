@@ -11,9 +11,9 @@ import (
 )
 
 // seedLastMessages shows each never-delivered direct and regular group chat
-// with the last message the login inventory already carries. The official
-// Mac client likewise stores that message at LOGINLIST and marks the older
-// interval as missing instead of fetching it. Seeding requests no history: a
+// with the last message the login inventory already carries. Inventory previews
+// are separate from the optional startup bulk acquisition/delivery path; they
+// never prove that older history was acquired. Seeding requests no history: a
 // direct room is created from inventory display data, and groups already have
 // rooms from discovery. Committing the seeded message lets later reconnects
 // catch up from it. Like catch-up, an undelivered seed ends the connection,

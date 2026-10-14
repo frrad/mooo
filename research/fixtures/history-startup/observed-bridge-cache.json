@@ -1,0 +1,25 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "date": "2026-10-14",
+    "client": "mooo production SDK and pinned mautrix framework",
+    "method": "Owned existing secondary session, verified three-owned-member group, previously acquired private cache, synthetic Matrix batch sink with lost response, fresh connector/task resume",
+    "doc": "research/bridge/HISTORY-BRIDGE-PAGES.md"
+  },
+  "evidence": "HST-BRIDGE-CACHE-009",
+  "scope": "Owned source cache through framework; downstream sink is synthetic, not a live Beeper or encrypted owned Matrix deployment",
+  "expected": {
+    "source_sync_responses": 0,
+    "source_bulk_responses": 0,
+    "matrix_batch_attempts": 2,
+    "distinct_matrix_event_identities": 5,
+    "pending_selection_restored_after_connector_restart": true,
+    "local_source_read_delivery_cursors_unchanged": true
+  },
+  "limits": [
+    "Counts/recovery do not establish all original message-body fidelity",
+    "Two existing vote-history gaps remain explicit notice projections",
+    "Peer unread effects and native UI were not observed",
+    "Owned encrypted insertion and actual HTTP pagination remain acceptance gates"
+  ]
+}

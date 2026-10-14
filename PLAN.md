@@ -77,8 +77,14 @@ source requests. Cloud backup/restore remains out of scope.
       Bridge bootstrap can opt in to acquisition; older Matrix delivery and
       official end-to-end startup parity remain open. See
       [implementation/evidence](research/bridge/HISTORY-STARTUP-IMPLEMENTATION.md).
-- [ ] Acquire through the shared worker/store, then deliver through the bridge;
-      inventory previews must not falsely advance acquired/delivered history.
+- [x] First consuming bridge slice: acquired source windows now feed framework
+      initial delivery and FetchMessages. Pending selections and per-part mappings
+      protect restart; same-second source ordering and lost sends have regressions.
+      HST-BRIDGE-CACHE-009 exercised an owned cached group through the framework
+      with a synthetic Matrix sink. See
+      [delivery/pagination evidence](research/bridge/HISTORY-BRIDGE-PAGES.md).
+- [ ] Complete owned encrypted initial delivery and native UI/read acceptance;
+      inventory previews must not falsely prove acquired/history delivery.
 
 **Done iff:** declared clean direct/group cases match the reference's available
 source identity set, order and supported content, with recorded read effects;
@@ -105,7 +111,10 @@ unnecessary requests, and restart retains the acquired/delivered boundaries.
       pages are 50 messages; this does not establish a source network page size
       or a reverse-history request. Resolve missing ranges without sparse-ID
       arithmetic or an assumed newest-N query.
-- [ ] Implement bridgev2 FetchMessages using stored older messages first, with
+- [x] First bridgev2 FetchMessages path uses stored older messages and bounded
+      shared-worker reconciliation. Backward insertion requires batch capability;
+      authenticated route and owned encrypted acceptance remain open.
+- [ ] Complete stored older-history delivery with
       stable identities, chronological output and a durable pagination cursor.
       Missing history creates bounded worker demand, not an unbounded fetch loop.
 - [ ] Validate historical insertion at the Matrix boundary with a synthetic

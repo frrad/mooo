@@ -186,7 +186,7 @@ func (kc *KakaoClient) projectChatInfo(portal *bridgev2.Portal, snap chatSnapsho
 		})
 	}
 
-	info := &bridgev2.ChatInfo{Members: &bridgev2.ChatMemberList{
+	info := &bridgev2.ChatInfo{CanBackfill: kc.historyEnabled(), Members: &bridgev2.ChatMemberList{
 		IsFull:    completeRoster,
 		MemberMap: members,
 	}}

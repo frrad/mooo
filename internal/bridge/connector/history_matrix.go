@@ -170,6 +170,21 @@ func (c *historyCrypto) Encrypt(ctx context.Context, room id.RoomID, typ event.T
 		state.set(transaction)
 		delete(content.Raw, historyPartMarker)
 	}
+	// Framework backfills do not carry RemoteEventWithContextMutation through
+	// conversion into sending. Carry the stable part transaction outside the
+	// ciphertext until the HTTP adapter strips it; never encrypt the marker.
+	transaction, _ := content.Raw[historyPartMarker].(string)
+	if transaction != "" {
+		delete(content.Raw, historyPartMarker)
+		if err := c.Crypto.Encrypt(ctx, room, typ, content); err != nil {
+			return err
+		}
+		if content.Raw == nil {
+			content.Raw = make(map[string]any)
+		}
+		content.Raw[historyPartMarker] = transaction
+		return nil
+	}
 	return c.Crypto.Encrypt(ctx, room, typ, content)
 }
 func historyTransactionID(room id.RoomID, sender id.UserID, meta *database.Message, typ event.Type) (string, error) {
@@ -198,8 +213,38 @@ func newHistoryTransport(base http.RoundTripper) *historyTransport {
 func (t *historyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	state, _ := req.Context().Value(historyDeliveryKey).(*historySendState)
 	send := strings.LastIndex(req.URL.Path, "/send/")
-	if state == nil || req.Method != http.MethodPut || !strings.Contains(req.URL.Path, "/_matrix/client/") || !strings.Contains(req.URL.Path, "/rooms/") || send < 0 {
+	if req.Method != http.MethodPut || !strings.Contains(req.URL.Path, "/_matrix/client/") || !strings.Contains(req.URL.Path, "/rooms/") || send < 0 {
 		return t.base.RoundTrip(req)
+	}
+	bodyMarked := false
+	if state == nil {
+		if req.GetBody == nil {
+			return t.base.RoundTrip(req)
+		}
+		body, err := req.GetBody()
+		if err != nil {
+			return nil, err
+		}
+		data, err := io.ReadAll(body)
+		_ = body.Close()
+		if err != nil {
+			return nil, err
+		}
+		var payload map[string]json.RawMessage
+		if json.Unmarshal(data, &payload) != nil {
+			return t.base.RoundTrip(req)
+		}
+		marker, marked := payload[historyPartMarker]
+		if !marked {
+			return t.base.RoundTrip(req)
+		}
+		var transaction string
+		if json.Unmarshal(marker, &transaction) != nil || transaction == "" {
+			return nil, errors.New("connector: historical send has an invalid part identity")
+		}
+		state = &historySendState{required: true}
+		state.set(transaction)
+		bodyMarked = true
 	}
 	suffix := req.URL.Path[send+len("/send/"):]
 	if strings.Count(suffix, "/") != 1 {
@@ -207,7 +252,7 @@ func (t *historyTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 	clone := req.Clone(req.Context())
 	transaction := state.get()
-	if strings.SplitN(suffix, "/", 2)[0] != event.EventEncrypted.Type {
+	if bodyMarked || strings.SplitN(suffix, "/", 2)[0] != event.EventEncrypted.Type {
 		if req.GetBody == nil {
 			return nil, errors.New("connector: historical plaintext send body cannot be inspected")
 		}

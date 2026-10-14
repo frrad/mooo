@@ -1,0 +1,280 @@
+package connector
+
+import (
+	"context"
+	"errors"
+	"reflect"
+	"testing"
+	"time"
+
+	"github.com/frrad/mooo/internal/client"
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
+	"github.com/frrad/mooo/internal/protocol/events"
+	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/bridgev2"
+	"maunium.net/go/mautrix/bridgev2/database"
+	"maunium.net/go/mautrix/bridgev2/networkid"
+	"maunium.net/go/mautrix/id"
+)
+
+type windowSource struct {
+	*fakeKakao
+	pages    []client.StoredHistoryPage
+	requests []client.StoredHistoryRequest
+}
+
+func (f *windowSource) ReadStoredHistory(_ context.Context, req client.StoredHistoryRequest) (client.StoredHistoryPage, error) {
+	f.requests = append(f.requests, req)
+	if len(f.pages) == 0 {
+		return client.StoredHistoryPage{}, errors.New("unexpected local read")
+	}
+	page := f.pages[0]
+	f.pages = f.pages[1:]
+	return page, nil
+}
+func pageText(id int64, body string) events.TextMessage {
+	return events.TextMessage{ChatID: testChatID, LogID: id, AuthorID: testOtherID, SentAt: 1000, Message: body}
+}
+func pageFramework(t *testing.T) (*KakaoClient, *bridgev2.Portal, *groupCreationMatrix) {
+	t.Helper()
+	kc, _, mx := newGroupCreationFramework(t)
+	kc.login.Bridge.Network = &KakaoConnector{Config: Config{StartupHistory: true}}
+	p, err := kc.login.Bridge.GetPortalByKey(t.Context(), makePortalKey(testChatID, kc.login.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return kc, p, mx
+}
+func TestHistoryCutoffPreservesSourceIDsInSameSecond(t *testing.T) {
+	kc, p, _ := pageFramework(t)
+	timestamp := time.Unix(1000, 0)
+	for _, forward := range []bool{false, true} {
+		anchor := &database.Message{Room: p.PortalKey, ID: makeMessageID(testChatID, 200), Timestamp: timestamp}
+		id := int64(100)
+		if forward {
+			id = 300
+		}
+		messages := []*bridgev2.BackfillMessage{{ID: makeMessageID(testChatID, id), Timestamp: timestamp}}
+		adaptHistoryCutoff(anchor, messages, forward)
+		//nolint:staticcheck // Exercise the pinned framework's real cutoff.
+		got := p.Internal().CutoffMessages(t.Context(), messages, false, forward, anchor)
+		if len(got) != 1 || !got[0].Timestamp.Equal(timestamp) {
+			t.Fatal("framework dropped same-second source identity or changed timestamp")
+		}
+	}
+	_ = kc
+}
+func TestFetchHistoryPendingForwardSelectionSurvivesPartialDelivery(t *testing.T) {
+	kc, p, mx := pageFramework(t)
+	page := client.StoredHistoryPage{Complete: true, Events: []events.Event{pageText(100, "first"), pageText(200, "second")}}
+	source := &windowSource{fakeKakao: &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat", LastServerLogID: 200}}}, pages: []client.StoredHistoryPage{page, page}}
+	kc.client = source
+	first, err := kc.FetchMessages(t.Context(), bridgev2.FetchMessagesParams{Portal: p, Forward: true, Count: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mx.failMessage = "second"
+	//nolint:staticcheck // Drive actual framework delivery and database writes.
+	if err = p.Internal().SendBackfill(t.Context(), kc.login, first.Messages, true, false, false, first.CompleteCallback); err == nil {
+		t.Fatal("synthetic send failure hidden")
+	}
+	anchor, err := kc.login.Bridge.DB.Message.GetFirstPortalMessage(t.Context(), p.PortalKey)
+	if err != nil || anchor == nil {
+		t.Fatal(anchor, err)
+	}
+	mx.failMessage = ""
+	restarted := newKakaoClient(kc.login, newBridgeStore(kc.login.Bridge.DB), testSelfID, nil)
+	restarted.client = source
+	next, err := restarted.FetchMessages(t.Context(), bridgev2.FetchMessagesParams{Portal: p, Forward: true, Count: 1, AnchorMessage: anchor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(next.Messages) != 1 || next.Messages[0].ID != makeMessageID(testChatID, 200) || source.requests[1].After != 0 || source.requests[1].Limit != 50 {
+		t.Fatal("restart forgot pending selection", source.requests, next)
+	}
+	//nolint:staticcheck // The adapter keeps the SDK cutoff from discarding this replay.
+	kept := p.Internal().CutoffMessages(t.Context(), next.Messages, false, true, anchor)
+	if len(kept) != 1 {
+		t.Fatal("pending selection was cut off")
+	}
+	//nolint:staticcheck // Real framework confirms the missing message.
+	if err = p.Internal().SendBackfill(t.Context(), kc.login, kept, true, false, false, next.CompleteCallback); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(mx.messageBodies, []string{"first", "second"}) {
+		t.Fatal(mx.messageBodies)
+	}
+	row, err := kc.login.Bridge.DB.Message.GetFirstPortalMessage(t.Context(), p.PortalKey)
+	if err != nil || row.ID != makeMessageID(testChatID, 100) || !row.Timestamp.Equal(time.Unix(1000, 0)) {
+		t.Fatal("comparison anchor mutated persisted identity/timestamp", row, err)
+	}
+	batch, found, err := kc.loadHistoryBatch(t.Context(), "kakao:history-batch:1000:3000:true")
+	if err != nil || !found || batch.Pending {
+		t.Fatal(batch, found, err)
+	}
+}
+func TestFetchHistoryMissingCacheDefersWithoutSourceCall(t *testing.T) {
+	kc, p, mx := pageFramework(t)
+	kc.login.Bridge.Matrix = &historyBatchMatrix{groupCreationMatrix: mx}
+	source := &windowSource{fakeKakao: &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat", LastServerLogID: 300}}}, pages: []client.StoredHistoryPage{{}}}
+	kc.client = source
+	anchor := &database.Message{Room: p.PortalKey, ID: makeMessageID(testChatID, 200), Timestamp: time.Unix(1000, 0)}
+	got, err := kc.FetchMessages(t.Context(), bridgev2.FetchMessagesParams{Portal: p, Count: 50, AnchorMessage: anchor})
+	if err != nil || !got.MoreRequiresSlowFetch || !got.HasMore || len(got.Messages) != 0 {
+		t.Fatal(got, err)
+	}
+	if len(source.calls) != 0 {
+		t.Fatal("local deferral used source")
+	}
+	if source.requests[0].Through != 200 || !source.requests[0].ExcludeThrough {
+		t.Fatal(source.requests)
+	}
+}
+func TestFetchHistoryRejectsForeignScopeAndUnsupportedThreads(t *testing.T) {
+	kc, p, _ := pageFramework(t)
+	for _, params := range []bridgev2.FetchMessagesParams{{Portal: p, Forward: true, Count: 0}, {Portal: p, Forward: true, Count: 50, ThreadRoot: "thread"}, {Portal: p, Forward: true, Count: 50, AnchorMessage: &database.Message{Room: p.PortalKey, ID: networkid.MessageID("4000:100")}}} {
+		kc.client = &windowSource{fakeKakao: &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat", LastServerLogID: 300}}}}
+		if _, err := kc.FetchMessages(t.Context(), params); err == nil {
+			t.Fatal("invalid scope accepted")
+		}
+	}
+	for _, cursor := range []networkid.PaginationCursor{"v2:3000:100", "v1:4000:100", "v1:3000:0", "v1:3000:00100"} {
+		if _, err := parseHistoryCursor(cursor, testChatID); err == nil {
+			t.Fatal("bad cursor", cursor)
+		}
+	}
+}
+
+type historyBatchMatrix struct {
+	*groupCreationMatrix
+	attempts   int
+	lost       bool
+	applied    map[id.EventID]bool
+	timestamps []int64
+}
+
+func (*historyBatchMatrix) GetCapabilities() *bridgev2.MatrixCapabilities {
+	return &bridgev2.MatrixCapabilities{BatchSending: true}
+}
+
+func (m *historyBatchMatrix) GenerateDeterministicEventID(_ id.RoomID, _ networkid.PortalKey, message networkid.MessageID, part networkid.PartID) id.EventID {
+	return id.EventID("$synthetic_" + string(message) + "_" + string(part))
+}
+func (m *historyBatchMatrix) BatchSend(_ context.Context, _ id.RoomID, req *mautrix.ReqBeeperBatchSend, _ []*bridgev2.MatrixSendExtra) (*mautrix.RespBeeperBatchSend, error) {
+	m.attempts++
+	if m.applied == nil {
+		m.applied = map[id.EventID]bool{}
+	}
+	out := &mautrix.RespBeeperBatchSend{}
+	for _, evt := range req.Events {
+		m.applied[evt.ID] = true
+		m.timestamps = append(m.timestamps, evt.Timestamp)
+		out.EventIDs = append(out.EventIDs, evt.ID)
+	}
+	if m.lost {
+		m.lost = false
+		return nil, errors.New("synthetic lost batch response")
+	}
+	return out, nil
+}
+func TestFetchHistoryRealBackwardExecutorRetriesLostBatchWithoutIdentityLoss(t *testing.T) {
+	kc, p, mx := pageFramework(t)
+	batchMatrix := &historyBatchMatrix{groupCreationMatrix: mx, lost: true}
+	kc.login.Bridge.Matrix = batchMatrix
+	anchor := &database.Message{ID: makeMessageID(testChatID, 300), PartID: "", MXID: "$anchor", Room: p.PortalKey, Timestamp: time.Unix(1000, 0), SenderID: makeUserID(testOtherID), SenderMXID: "@kakao_2000:test", Metadata: newKakaoMessageMetadata(testChatID, 300, testOtherID, 1, "anchor", 0)}
+	if err := kc.login.Bridge.DB.Message.Insert(t.Context(), anchor); err != nil {
+		t.Fatal(err)
+	}
+	page := client.StoredHistoryPage{Complete: true, HasMore: true, Events: []events.Event{pageText(100, "first"), pageText(200, "second")}}
+	source := &windowSource{fakeKakao: &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat", LastServerLogID: 300}}}, pages: []client.StoredHistoryPage{page, page}}
+	kc.client = source
+	kc.login.Bridge.Config.Backfill.Queue.BatchSize = 50
+	task := &database.BackfillTask{PortalKey: p.PortalKey, UserLoginID: kc.login.ID}
+	//nolint:staticcheck // Execute actual fetch, cutoff, batch send and persistence.
+	if _, err := p.Internal().DoBackwardsBackfill(t.Context(), kc.login, task, nil); err == nil {
+		t.Fatal("lost response hidden")
+	}
+	rows, err := kc.store.messageParts(t.Context(), p.Receiver, makeMessageID(testChatID, 100))
+	if err != nil || len(rows) != 0 {
+		t.Fatal("unconfirmed mapping committed", rows, err)
+	}
+	restarted := newKakaoClient(kc.login, newBridgeStore(kc.login.Bridge.DB), testSelfID, nil)
+	restarted.client = source
+	kc.login.Client = restarted
+	task = &database.BackfillTask{PortalKey: p.PortalKey, UserLoginID: kc.login.ID}
+	//nolint:staticcheck // A fresh connector/database task recovers the private selection.
+	if _, err = p.Internal().DoBackwardsBackfill(t.Context(), kc.login, task, nil); err != nil {
+		t.Fatal(err)
+	}
+	if batchMatrix.attempts != 2 || len(batchMatrix.applied) != 2 || task.Cursor != historyCursor(testChatID, 100) {
+		t.Fatal(batchMatrix.attempts, batchMatrix.applied, task.Cursor)
+	}
+	for _, timestamp := range batchMatrix.timestamps {
+		if timestamp != 1000000 {
+			t.Fatal("source timestamp changed", timestamp)
+		}
+	}
+	for _, position := range []int64{100, 200} {
+		rows, err = kc.store.messageParts(t.Context(), p.Receiver, makeMessageID(testChatID, position))
+		if err != nil || len(rows) != 1 {
+			t.Fatal(position, rows, err)
+		}
+	}
+}
+
+func TestFetchHistoryEmptyPortalIncludesInventoryLatest(t *testing.T) {
+	kc, p, mx := pageFramework(t)
+	kc.login.Bridge.Matrix = &historyBatchMatrix{groupCreationMatrix: mx}
+	source := &windowSource{fakeKakao: &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat", LastServerLogID: 300}}}, pages: []client.StoredHistoryPage{{Complete: true, Events: []events.Event{pageText(300, "latest")}}}}
+	kc.client = source
+	if _, err := kc.FetchMessages(t.Context(), bridgev2.FetchMessagesParams{Portal: p, Count: 50}); err != nil {
+		t.Fatal(err)
+	}
+	if source.requests[0].ExcludeThrough {
+		t.Fatal("empty portal excluded the inventory's latest identity")
+	}
+}
+
+type unconfirmedHistoryStore struct{ store }
+
+func (s unconfirmedHistoryStore) messageParts(ctx context.Context, receiver networkid.UserLoginID, message networkid.MessageID) ([]*database.Message, error) {
+	if message == makeMessageID(testChatID, 100) {
+		return nil, nil
+	}
+	return s.store.messageParts(ctx, receiver, message)
+}
+func TestFetchHistoryUnconfirmedMappingCannotFinishFrameworkTask(t *testing.T) {
+	kc, p, mx := pageFramework(t)
+	kc.login.Bridge.Matrix = &historyBatchMatrix{groupCreationMatrix: mx}
+	kc.store = unconfirmedHistoryStore{kc.store}
+	kc.login.Bridge.Config.Backfill.Queue.BatchSize = 50
+	kc.client = &windowSource{fakeKakao: &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat", LastServerLogID: 200}}}, pages: []client.StoredHistoryPage{{Complete: true, Events: []events.Event{pageText(100, "first"), pageText(200, "second")}}}}
+	task := &database.BackfillTask{PortalKey: p.PortalKey, UserLoginID: kc.login.ID}
+	//nolint:staticcheck // Framework sends successfully but the connector cannot confirm a mapping.
+	if _, err := p.Internal().DoBackwardsBackfill(t.Context(), kc.login, task, nil); err != nil {
+		t.Fatal(err)
+	}
+	if task.IsDone || task.QueueDone || task.Cursor != "" {
+		t.Fatal("unconfirmed selection became a completed framework task")
+	}
+}
+
+func TestStartupHistoryDeliveryCannotReportReadyWithPendingSelection(t *testing.T) {
+	kc, _, _ := pageFramework(t)
+	source := &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat"}}}
+	key := "kakao:history-batch:1000:3000:true"
+	batch := historyBatch{Version: 1, Forward: true, Through: 200, First: 100, Limit: 50, Pending: true}
+	if err := kc.saveHistoryBatch(t.Context(), key, batch); err != nil {
+		t.Fatal(err)
+	}
+	if err := kc.checkStartupHistoryDelivery(t.Context(), source); err == nil {
+		t.Fatal("ready with pending historical delivery")
+	}
+	batch.Pending = false
+	if err := kc.saveHistoryBatch(t.Context(), key, batch); err != nil {
+		t.Fatal(err)
+	}
+	if err := kc.checkStartupHistoryDelivery(t.Context(), source); err != nil {
+		t.Fatal(err)
+	}
+}
