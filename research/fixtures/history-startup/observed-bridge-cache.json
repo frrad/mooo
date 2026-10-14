@@ -1,7 +1,7 @@
 {
   "provenance": {
     "kind": "observed",
-    "date": "2026-10-14 UTC / 2026-10-13 PDT",
+    "date": "2026-10-14",
     "client": "mooo production SDK and pinned mautrix framework",
     "method": "Owned existing secondary session, verified three-owned-member group, previously acquired private cache, synthetic Matrix batch sink with lost response, fresh connector/task resume",
     "doc": "research/bridge/HISTORY-BRIDGE-PAGES.md"
