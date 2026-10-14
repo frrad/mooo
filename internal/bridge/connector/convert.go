@@ -280,7 +280,7 @@ func (kc *KakaoClient) memberChanges(ctx context.Context, chatID int64, identiti
 	}
 	for _, profile := range kc.cacheProfiles(profiles, ids) {
 		member := members[makeUserID(profile.UserID)]
-		member.UserInfo = userInfoForMember(profile)
+		member.UserInfo = userInfoForMember(profile, kc)
 		members[makeUserID(profile.UserID)] = member
 	}
 	return &bridgev2.ChatMemberList{MemberMap: members}, nil
@@ -365,6 +365,7 @@ func (kc *KakaoClient) messageMeta(chatID, logID, authorID, sentAt int64) simple
 	lifecycle := kc.connectionLifecycle()
 	return simplevent.EventMeta{
 		MutateContextFunc: func(ctx context.Context) context.Context {
+			ctx = context.WithValue(ctx, historyResourceOwnerKey{}, kc)
 			if lifecycle == nil {
 				return ctx
 			}
@@ -517,7 +518,9 @@ func convertPhoto(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 		gapMetadata: newKakaoMessageMetadata(p.ChatID, p.LogID, p.AuthorID, messagetype.Photo, "[photo unavailable]", 0),
 		transferErr: errPhotoTransfer,
 		download: func(ctx context.Context) (attachmentMedia, error) {
-			data, err := media.DownloadPhoto(ctx, photoHTTPClient, a)
+			data, err := historyResourceBytes(ctx, []any{"photo", a}, func(ctx context.Context) ([]byte, error) {
+				return media.DownloadPhoto(ctx, historyHTTPClient(photoHTTPClient), a)
+			})
 			info := event.FileInfo{Width: int(a.Width), Height: int(a.Height)}
 			return attachmentMedia{data: data, name: "photo." + ext, mime: mimeType, info: info}, err
 		},

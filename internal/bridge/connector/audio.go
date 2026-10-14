@@ -18,7 +18,9 @@ func convertAudio(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 		metadata:    newKakaoMessageMetadata(v.ChatID, v.LogID, v.AuthorID, messagetype.Audio, "[audio]", 0),
 		transferErr: errPhotoTransfer,
 		download: func(ctx context.Context) (attachmentMedia, error) {
-			data, err := media.DownloadAudio(ctx, photoHTTPClient, a)
+			data, err := historyResourceBytes(ctx, []any{"Audio", a}, func(ctx context.Context) ([]byte, error) {
+				return media.DownloadAudio(ctx, historyHTTPClient(photoHTTPClient), a)
+			})
 			return attachmentMedia{data: data, name: "audio.m4a", mime: "audio/mp4", info: event.FileInfo{Duration: int(a.Duration)}}, err
 		},
 	})

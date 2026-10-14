@@ -22,7 +22,9 @@ func convertFile(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.M
 		metadata:    newKakaoMessageMetadata(f.ChatID, f.LogID, f.AuthorID, messagetype.File, "[file]", 0),
 		transferErr: errFileTransfer,
 		download: func(ctx context.Context) (attachmentMedia, error) {
-			data, err := media.DownloadFile(ctx, photoHTTPClient, a)
+			data, err := historyResourceBytes(ctx, []any{"File", a}, func(ctx context.Context) ([]byte, error) {
+				return media.DownloadFile(ctx, historyHTTPClient(photoHTTPClient), a)
+			})
 			if err != nil {
 				return attachmentMedia{}, err
 			}

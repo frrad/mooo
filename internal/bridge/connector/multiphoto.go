@@ -67,7 +67,9 @@ func convertAlbum(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 			metadata:    newKakaoMessageMetadata(a.ChatID, a.LogID, a.AuthorID, messagetype.MultiPhoto, "[album]", 0),
 			transferErr: errPhotoTransfer,
 			download: func(ctx context.Context) (attachmentMedia, error) {
-				data, err := media.DownloadAlbumPhoto(ctx, photoHTTPClient, photo)
+				data, err := historyResourceBytes(ctx, []any{"AlbumPhoto", photo}, func(ctx context.Context) ([]byte, error) {
+					return media.DownloadAlbumPhoto(ctx, historyHTTPClient(photoHTTPClient), photo)
+				})
 				info := event.FileInfo{Width: int(photo.Width), Height: int(photo.Height)}
 				return attachmentMedia{data: data, name: fmt.Sprintf("photo-%d.%s", i+1, ext), mime: mimeType, info: info}, err
 			},

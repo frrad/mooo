@@ -168,7 +168,7 @@ func (kc *KakaoClient) projectChatInfo(portal *bridgev2.Portal, snap chatSnapsho
 		members.Set(bridgev2.ChatMember{
 			EventSender: bridgev2.EventSender{Sender: makeUserID(profile.UserID)},
 			Membership:  event.MembershipJoin,
-			UserInfo:    userInfoForMember(profile),
+			UserInfo:    userInfoForMember(profile, kc),
 		})
 	}
 	// If MEMBER returned no profile for an ID, retain the source-supported
@@ -224,7 +224,7 @@ func (kc *KakaoClient) projectChatInfo(portal *bridgev2.Portal, snap chatSnapsho
 			if avatarURL == "" {
 				info.Avatar = &bridgev2.Avatar{Remove: true}
 			} else {
-				info.Avatar = avatarFromURL(avatarURL)
+				info.Avatar = avatarFromURL(avatarURL, kc)
 			}
 		}
 	} else {
@@ -232,7 +232,7 @@ func (kc *KakaoClient) projectChatInfo(portal *bridgev2.Portal, snap chatSnapsho
 			info.Name = &name
 		}
 		if data.Meta != nil {
-			info.Avatar = avatarFromURL(data.Meta.ImageURL)
+			info.Avatar = avatarFromURL(data.Meta.ImageURL, kc)
 		}
 	}
 	if data.Type == "DirectChat" && completeRoster {

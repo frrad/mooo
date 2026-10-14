@@ -340,17 +340,20 @@ func retryableRecoveryError(err error) bool {
 // leave that shutdown and any retry to Disconnect.
 func (kc *KakaoClient) shutdownBootstrap(c kakaoClient, phase string, force bool) {
 	kc.mu.Lock()
-	owned := kc.cleanup == c && (force || !kc.stopping)
+	owned := kc.cleanup == c && !kc.retained.busy && (force || !kc.stopping)
+	if owned {
+		kc.retained.begin()
+	}
 	kc.mu.Unlock()
 	if !owned {
 		return
 	}
-	if err := shutdownKakaoClient(c); err != nil {
+	err := shutdownKakaoClient(c)
+	if err != nil {
 		kc.log().Err(err).Msg("Failed to clean up Kakao client " + phase)
-		return
 	}
 	kc.mu.Lock()
-	kc.release(c, nil)
+	kc.release(c, err)
 	kc.mu.Unlock()
 }
 

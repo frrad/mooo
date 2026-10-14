@@ -13,7 +13,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/networkid"
 )
 
-func avatarFromURL(raw string) *bridgev2.Avatar {
+func avatarFromURL(raw string, owners ...*KakaoClient) *bridgev2.Avatar {
 	if raw == "" {
 		return nil
 	}
@@ -25,6 +25,12 @@ func avatarFromURL(raw string) *bridgev2.Avatar {
 		}
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		return media.DownloadAvatar(ctx, http.DefaultClient, raw)
+		if len(owners) > 0 && owners[0] != nil {
+			ctx = context.WithValue(ctx, historyResourceOwnerKey{}, owners[0])
+		}
+		// A profile URL is not necessarily an immutable resource version.
+		return historyDependencyBytes(ctx, []any{"avatar", raw}, func(ctx context.Context) ([]byte, error) {
+			return media.DownloadAvatar(ctx, historyHTTPClient(http.DefaultClient), raw)
+		}, false)
 	}}
 }

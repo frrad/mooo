@@ -267,6 +267,7 @@ func TestTransientPhotoFailurePostsNoMatrixErrorNotice(t *testing.T) {
 	kc := newKakaoClient(login, newBridgeStore(login.Bridge.DB), testSelfID, nil)
 	kc.sendState = func(status.BridgeState) {}
 	fake := &fakeKakao{}
+	kc.client = fake
 	for attempt := 0; attempt < 2; attempt++ {
 		if kc.handleEvent(fake, photo) {
 			t.Fatalf("attempt %d: transient photo failure was committed", attempt)

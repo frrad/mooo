@@ -44,8 +44,9 @@ source requests. Cloud backup/restore remains out of scope.
       spacing, error/non-progress cooldowns, bounded pending demand and concurrent
       request coalescing. Reservations survive profile restart and shutdown joins
       admission persistence. Startup bulk now shares this gate; account ownership
-      and read-only LOCO dependencies landed afterward. HTTP dependencies remain
-      to be integrated.
+      and read-only LOCO dependencies landed afterward. HTTP dependency accounting
+      and validated immutable resource caching are implemented in the current
+      follow-up branch; required CI gates publication.
 - [x] First acquired-store slice: full validated zero-held-count pages persist in
       a private account/device-bound store, independently of delivery. Cache reads
       reuse connected acquired prefixes and apply targeted edits/deletions; restart
@@ -62,6 +63,13 @@ source requests. Cloud backup/restore remains out of scope.
       MEMBER/MEMLIST, room metadata/CHATONROOM and GETMSGS now share admission.
       Cross-process and production-path synthetic checks pass; no live stress
       probes. See [account scheduling](research/bridge/HISTORY-ACCOUNT-SCHEDULING.md).
+- [x] HTTP dependency slice: reaction metadata and bridge media/avatar/sticker
+      reads consume the account gate; physical redirects obey spacing and a
+      16-exchange budget. Fully validated immutable media persists in a private
+      bounded cache; restart conversion has a production-path synthetic check.
+      Mutable reaction/profile data remains uncached. Owned HTTP/encrypted
+      acceptance and viewing dispatch remain open. See
+      [HTTP dependencies](research/bridge/HISTORY-HTTP-DEPENDENCIES.md).
 - [ ] Make every acquisition entry point obey one account-wide in-flight limit,
       configurable minimum request spacing, coalescing by room/boundary, and finite
       per-demand request/time budgets. Include dependent metadata/media requests
