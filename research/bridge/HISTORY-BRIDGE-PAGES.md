@@ -154,3 +154,44 @@ Beeper UI observation. The fixture represents already acquired history; it does
 not prove clean login or live gap acquisition. Existing worker tests cover source
 pacing independently. Owned encrypted acceptance and a transport that supplies
 room-opening/viewing demand remain required before completing the three flows.
+
+## Exact unavailable-window reuse (2026-10-14)
+
+The observed HST-LIVE-001 empty old-window cases now run through the production
+acquired store and admission. Their original regression fails before the fix:
+a repeated read tries the already-closed source session instead of reusing the
+known below-floor result. Both cases still produce ErrHistoryBelowFloor and
+ErrGapUnresolved, with no message, delivery cursor or read watermark advance.
+
+A successful empty zero-held-count SYNCMSG response whose minLogId exceeds the
+selected ceiling now persists an account/device-bound unavailable observation
+for that exact room/cur/max. It is separate from positive acquired pages and
+bulk progress. `HistoryUnavailableError` carries the floor, observation time and
+retry time; `ReadStoredHistory` exposes the same observation with Complete=false.
+The bridge returns the classified error, performs no new acquisition and keeps
+the framework task unfinished. It does not turn unavailable history into EOF,
+a delivered selection, or successful startup coverage.
+
+Freshness is **five minutes from observation**, a chosen local cache policy,
+not a Kakao retention duration or an official pacing rule. Reads and restart do
+not renew it. Expiry allows the next demand through normal account admission;
+it does not start an automatic retry. Another room, cur, ceiling or positive-held-
+count ACK cannot reuse the observation. Positive acquired coverage takes
+precedence. Missing/unexplained empty responses are not negative-cached, and no
+permanent or global floor is extrapolated from one response.
+
+Private files contain only the scoped request, binding, floor and times. There
+are at most 1,024 fresh observations per profile; expired records are pruned
+on opening/saving. Invalid binding, schema, request, timestamp, filename or file
+permissions fails closed. Corrupt indexed files never silently become source
+misses. The cache does not claim that the server will never make an interval
+available later; bounded expiry permits revalidation.
+
+Race-enabled checks cover both observed projections, exact scope, real opened
+profile restart with dialing denied, unchanged freshness, expiry entering actual
+admission/session opening, positive-cache precedence, unexplained empties,
+corruption/timestamp/capacity guards, and an actual framework task remaining
+unfinished without acquisition. Cache policy is an implementation decision;
+these checks do not establish official-client timing parity. No live account
+request was used for this slice. Owned encrypted delivery and the complete
+clean-login/open/scroll acceptance gates remain open.

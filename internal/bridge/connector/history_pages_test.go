@@ -278,3 +278,31 @@ func TestStartupHistoryDeliveryCannotReportReadyWithPendingSelection(t *testing.
 		t.Fatal(err)
 	}
 }
+
+func TestFetchHistoryUnavailableWindowDoesNotAcquireOrFinishTask(t *testing.T) {
+	kc, p, mx := pageFramework(t)
+	kc.login.Bridge.Matrix = &historyBatchMatrix{groupCreationMatrix: mx}
+	observation := &client.HistoryUnavailable{MinLogID: 350, ObservedAt: time.Now(), RetryAfter: time.Now().Add(5 * time.Minute)}
+	source := &windowSource{fakeKakao: &fakeKakao{chatInventory: []chatmeta.ChatData{{ChatID: testChatID, Type: "MultiChat", LastServerLogID: 300}}}, pages: []client.StoredHistoryPage{{Unavailable: observation}, {Unavailable: observation}}}
+	kc.client = source
+	response, err := kc.FetchMessages(t.Context(), bridgev2.FetchMessagesParams{Portal: p, Count: 50, AllowSlowFetch: true})
+	var unavailable *client.HistoryUnavailableError
+	if response != nil || !errors.As(err, &unavailable) || !errors.Is(err, client.ErrHistoryBelowFloor) || !unavailable.Observation.RetryAfter.Equal(observation.RetryAfter) {
+		t.Fatal(response, err)
+	}
+	if len(source.calls) != 0 {
+		t.Fatal("known unavailable interval reacquired", source.calls)
+	}
+	if _, found, err := kc.loadHistoryBatch(t.Context(), "kakao:history-batch:1000:3000:false"); err != nil || found {
+		t.Fatal("unavailable interval became pending delivery", found, err)
+	}
+	kc.login.Bridge.Config.Backfill.Queue.BatchSize = 50
+	task := &database.BackfillTask{PortalKey: p.PortalKey, UserLoginID: kc.login.ID}
+	//nolint:staticcheck // Verify the actual framework preserves an unfinished task.
+	if _, err = p.Internal().DoBackwardsBackfill(t.Context(), kc.login, task, nil); !errors.Is(err, client.ErrHistoryBelowFloor) {
+		t.Fatal(err)
+	}
+	if task.IsDone || task.QueueDone || task.Cursor != "" || len(source.calls) != 0 {
+		t.Fatal("unavailable window was retired or acquired", task, source.calls)
+	}
+}
