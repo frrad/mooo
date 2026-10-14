@@ -1,10 +1,8 @@
 package media
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
-	"image"
 	"net/http"
 	"strings"
 	"unicode/utf8"
@@ -70,7 +68,7 @@ func DecodeMultiPhotoMessage(env chatlog.Envelope) (MultiPhotoMessage, error) {
 	var total int64
 	for i := range n {
 		p := PhotoAttachment{Key: a.Keys[i], Width: a.Widths[i], Height: a.Heights[i], Size: a.Sizes[i], Checksum: a.Checksums[i], MediaType: a.MIMEs[i], URL: a.URLs[i], ThumbnailURL: a.Thumbnails[i], ExpiresAt: a.ExpiresAt}
-		if p.Key == "" || len(p.Key) > 512 || p.Width <= 0 || p.Height <= 0 || p.Width > 4096 || p.Height > 4096 || p.Size <= 0 || p.Size > MaxImageBytes || len(p.Checksum) != 40 || (p.MediaType != "image/png" && p.MediaType != "image/jpeg" && p.MediaType != "image/jpg") || validateDownloadURL(p.URL) != nil || validateDownloadURL(p.ThumbnailURL) != nil {
+		if p.Key == "" || len(p.Key) > 512 || p.Width <= 0 || p.Height <= 0 || p.Width > 4096 || p.Height > 4096 || p.Size <= 0 || p.Size > MaxImageBytes || len(p.Checksum) != 40 || photoFormat(p.MediaType) == "" || validateDownloadURL(p.URL) != nil || validateDownloadURL(p.ThumbnailURL) != nil {
 			return MultiPhotoMessage{}, ErrInvalidMessage
 		}
 		if _, err := hex.DecodeString(p.Checksum); err != nil {
@@ -92,8 +90,8 @@ func DownloadAlbumPhoto(ctx context.Context, client *http.Client, photo PhotoAtt
 	if err != nil {
 		return nil, err
 	}
-	config, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || config.Width <= 0 || config.Height <= 0 || config.Width > 4096 || config.Height > 4096 {
+	width, height, err := photoSize(data, photoFormat(photo.MediaType))
+	if err != nil || width <= 0 || height <= 0 || width > 4096 || height > 4096 {
 		return nil, ErrInvalidAttachment
 	}
 	return data, nil

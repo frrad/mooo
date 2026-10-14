@@ -197,7 +197,7 @@ func DecodePhotoMessage(env chatlog.Envelope) (PhotoMessage, error) {
 	// owner's Android phone carry an empty cs. A present cs must be SHA-1 hex.
 	case attachment.Checksum != "" && len(attachment.Checksum) != 40:
 		return PhotoMessage{}, invalidMessage(checksumLengthReason(len(attachment.Checksum)))
-	case attachment.MediaType != "image/jpg" && attachment.MediaType != "image/jpeg" && attachment.MediaType != "image/png":
+	case photoFormat(attachment.MediaType) == "":
 		return PhotoMessage{}, invalidMessage("media_type")
 	}
 	if problem := downloadURLProblem(attachment.URL); problem != "" {
@@ -229,7 +229,8 @@ func DownloadPhoto(ctx context.Context, client *http.Client, attachment PhotoAtt
 	if attachment.Size <= 0 || attachment.Size > MaxImageBytes {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidAttachment, ErrDownload)
 	}
-	if attachment.MediaType != "image/jpg" && attachment.MediaType != "image/jpeg" && attachment.MediaType != "image/png" {
+	format := photoFormat(attachment.MediaType)
+	if format == "" {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidAttachment, ErrDownload)
 	}
 	if attachment.ExpiresAt > 0 && time.Now().UnixMilli() >= attachment.ExpiresAt {
@@ -280,8 +281,7 @@ func DownloadPhoto(ctx context.Context, client *http.Client, attachment PhotoAtt
 	if int64(len(data)) > attachment.Size {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidAttachment, ErrDownload)
 	}
-	_, format, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || (attachment.MediaType == "image/png" && format != "png") || attachment.MediaType != "image/png" && format != "jpeg" {
+	if _, _, err := photoSize(data, format); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUnsupportedImage, ErrDownload)
 	}
 	// Without a checksum, the size bound and image decoding above are the
@@ -291,6 +291,37 @@ func DownloadPhoto(ctx context.Context, client *http.Client, attachment PhotoAtt
 		return nil, fmt.Errorf("%w: %w", ErrChecksumMismatch, ErrDownload)
 	}
 	return data, nil
+}
+
+// photoFormat names the image format of an accepted Kakao photo media type,
+// or returns "" for an unsupported one. Kakao labels JPEG photos "image/jpg";
+// newer clients may send WebP.
+func photoFormat(mediaType string) string {
+	switch mediaType {
+	case "image/jpg", "image/jpeg":
+		return "jpeg"
+	case "image/png":
+		return "png"
+	case "image/webp":
+		return "webp"
+	}
+	return ""
+}
+
+// photoSize returns the canvas size of data, which must be an image in format.
+// The standard library has no WebP decoder, so WebP is checked structurally.
+func photoSize(data []byte, format string) (width, height int, err error) {
+	if format == "webp" {
+		if width, height, err = stickerWebPSize(data); err != nil {
+			return 0, 0, ErrUnsupportedImage
+		}
+		return width, height, nil
+	}
+	config, decoded, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || decoded != format {
+		return 0, 0, ErrUnsupportedImage
+	}
+	return config.Width, config.Height, nil
 }
 
 func validateDownloadURL(raw string) error {

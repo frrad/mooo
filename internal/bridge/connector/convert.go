@@ -530,8 +530,11 @@ func convertPhoto(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 // matrixPhotoType maps a validated Kakao photo media type to a file extension
 // and the registered MIME type. Kakao labels JPEG photos "image/jpg".
 func matrixPhotoType(kakaoType string) (ext, mimeType string) {
-	if kakaoType == "image/png" {
+	switch kakaoType {
+	case "image/png":
 		return "png", "image/png"
+	case "image/webp":
+		return "webp", "image/webp"
 	}
 	return "jpg", "image/jpeg"
 }
