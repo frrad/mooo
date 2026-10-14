@@ -168,7 +168,7 @@ func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*
 		_ = lease.Close()
 		return nil, err
 	}
-	admission, err := openHistoryAdmission(statePath+".history-admission", state.Credentials.UserID, options.HistoryPacing)
+	admission, err := openAccountHistoryAdmission(statePath, state.Credentials.UserID, options.HistoryPacing)
 	if err != nil {
 		_ = lease.Close()
 		return nil, err
@@ -336,6 +336,7 @@ func (c *Client) adoptSession(session *session) (*session, error) {
 		_ = session.Close()
 		return nil, ErrClientClosed
 	}
+	session.historyAdmission = c.historyAdmission
 	c.session = session
 	c.mu.Unlock()
 	return session, nil
@@ -860,6 +861,14 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		if eventDone != nil {
 			select {
 			case <-eventDone:
+			case <-ctx.Done():
+				finish()
+				return errors.Join(interruptErr, ctx.Err())
+			}
+		}
+		if c.historyAdmission != nil {
+			select {
+			case <-c.historyAdmission.stoppedDone:
 			case <-ctx.Done():
 				finish()
 				return errors.Join(interruptErr, ctx.Err())

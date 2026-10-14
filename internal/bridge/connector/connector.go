@@ -63,6 +63,7 @@ type BSONShadowConfig struct {
 func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "profile_dir")
 	helper.Copy(up.Bool, "startup_history")
+	helper.Copy(up.Str, "history_pacing", "state_directory")
 	helper.Copy(up.Str, "history_pacing", "minimum_interval")
 	helper.Copy(up.Str, "history_pacing", "error_backoff")
 	helper.Copy(up.Int, "history_pacing", "max_pending")

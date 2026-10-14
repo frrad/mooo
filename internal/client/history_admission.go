@@ -14,9 +14,12 @@ import (
 
 // HistoryPacing is operator policy, not a claimed Kakao server rate limit.
 // Zero values select conservative defaults. It applies to zero-held-count
-// SYNCMSG and startup MCHATLOGS acquisition; explicit read acknowledgements
-// have a separate path.
+// SYNCMSG, startup MCHATLOGS and read-only LOCO dependencies; explicit read
+// acknowledgements have a separate path.
 type HistoryPacing struct {
+	// StateDirectory defaults to the private profile directory. Profiles for one
+	// account in different directories must select the same private scheduling root.
+	StateDirectory  string        `yaml:"state_directory"`
 	MinimumInterval time.Duration `yaml:"minimum_interval"`
 	ErrorBackoff    time.Duration `yaml:"error_backoff"`
 	MaxPending      int           `yaml:"max_pending"`
@@ -45,9 +48,11 @@ func (p HistoryPacing) normalized() (HistoryPacing, error) {
 var ErrHistoryBusy = errors.New("client: history demand queue is full")
 
 type historyAdmissionState struct {
-	Version     uint32    `json:"version"`
-	AccountID   int64     `json:"account_id"`
-	NextAllowed time.Time `json:"next_allowed"`
+	Version        uint32    `json:"version"`
+	AccountID      int64     `json:"account_id"`
+	NextAllowed    time.Time `json:"next_allowed"`
+	LastFinishedAt time.Time `json:"last_finished_at,omitempty"`
+	LastErrorAt    time.Time `json:"last_error_at,omitempty"`
 }
 
 type historyFlight struct {
@@ -68,6 +73,11 @@ type historyAdmission struct {
 	payloadFlights map[string]*historyPayloadFlight
 	stopCtx        context.Context
 	stop           context.CancelFunc
+	shared         *historyAccountGate
+	stopped        bool
+	releaseOnce    sync.Once
+	stoppedDone    chan struct{}
+	joinedOnce     sync.Once
 }
 
 func openHistoryAdmission(path string, accountID int64, policy HistoryPacing) (*historyAdmission, error) {
@@ -76,7 +86,19 @@ func openHistoryAdmission(path string, accountID int64, policy HistoryPacing) (*
 		return nil, ErrProtocol
 	}
 	a := &historyAdmission{gate: make(chan struct{}, 1), flights: make(map[syncmsg.Request]*historyFlight), path: path, policy: policy, state: historyAdmissionState{Version: 1, AccountID: accountID}}
-	a.stopCtx, a.stop = context.WithCancel(context.Background())
+	var cancel context.CancelFunc
+	a.stopCtx, cancel = context.WithCancel(context.Background())
+	a.stoppedDone = make(chan struct{})
+	a.stop = func() {
+		cancel()
+		a.mu.Lock()
+		a.stopped = true
+		idle := a.pending == 0
+		a.mu.Unlock()
+		if idle {
+			a.finishStopped()
+		}
+	}
 	if path != "" {
 		if err = privatejson.ValidatePrivateDir(filepath.Dir(path)); err != nil {
 			return nil, err
@@ -86,7 +108,7 @@ func openHistoryAdmission(path string, accountID int64, policy HistoryPacing) (*
 			return nil, err
 		}
 		if found {
-			if state.Version != 1 || state.AccountID != accountID || state.NextAllowed.IsZero() || state.NextAllowed.After(time.Now().Add(24*time.Hour)) {
+			if !validHistoryAdmissionState(state, accountID) {
 				return nil, privatejson.ErrCorrupt
 			}
 			a.state = state
@@ -112,13 +134,11 @@ func (a *historyAdmission) run(ctx context.Context, request syncmsg.Request, fet
 	if a.stopCtx.Err() != nil {
 		return syncmsg.Response{}, ErrClientClosed
 	}
-	a.mu.Lock()
-	if a.pending >= a.policy.MaxPending {
-		a.mu.Unlock()
-		return syncmsg.Response{}, ErrHistoryBusy
+	if err := a.reserveDemand(); err != nil {
+		return syncmsg.Response{}, err
 	}
-	a.pending++
-	defer func() { a.mu.Lock(); a.pending--; a.mu.Unlock() }()
+	defer a.finishDemand()
+	a.mu.Lock()
 	if f := a.flights[request]; f != nil {
 		a.mu.Unlock()
 		select {
@@ -147,9 +167,16 @@ func (a *historyAdmission) run(ctx context.Context, request syncmsg.Request, fet
 // admission object, so it cannot silently proceed with an unrecorded cooldown.
 func (a *historyAdmission) persist(next time.Time) error {
 	a.state.NextAllowed = next
-	if a.path != "" {
-		if err := privatejson.WriteAtomic(a.path, a.state); err != nil {
+	path := a.path
+	if a.shared != nil {
+		path = a.shared.path
+	}
+	if path != "" {
+		if err := privatejson.WriteAtomic(path, a.state); err != nil {
 			a.failed = err
+			if a.shared != nil {
+				a.shared.failed = err
+			}
 			return err
 		}
 	}
@@ -172,10 +199,22 @@ func dispatchHistory[T any](a *historyAdmission, ctx context.Context, fetch func
 	case a.gate <- struct{}{}:
 	}
 	defer func() { <-a.gate }()
+	releaseAccount, err := a.acquireAccount(ctx)
+	if err != nil {
+		return zero, err
+	}
+	defer releaseAccount()
 	if a.failed != nil {
 		return zero, a.failed
 	}
-	if wait := time.Until(a.state.NextAllowed); wait > 0 {
+	allowed := a.state.NextAllowed
+	if !a.state.LastFinishedAt.IsZero() {
+		allowed = maxHistoryTime(allowed, a.state.LastFinishedAt.Add(a.policy.MinimumInterval))
+	}
+	if !a.state.LastErrorAt.IsZero() {
+		allowed = maxHistoryTime(allowed, a.state.LastErrorAt.Add(a.policy.ErrorBackoff))
+	}
+	if wait := time.Until(allowed); wait > 0 {
 		timer := time.NewTimer(wait)
 		defer timer.Stop()
 		select {
@@ -191,7 +230,8 @@ func dispatchHistory[T any](a *historyAdmission, ctx context.Context, fetch func
 	}
 	// Reserve the longer error cooldown before dispatch. A process crash or lost
 	// response must not reset admission to the shorter successful-request spacing.
-	if err := a.persist(time.Now().Add(a.policy.ErrorBackoff)); err != nil {
+	a.state.LastErrorAt = time.Now()
+	if err := a.persist(a.state.LastErrorAt.Add(a.policy.ErrorBackoff)); err != nil {
 		return zero, err
 	}
 	fetchCtx, cancel := context.WithCancel(ctx)
@@ -203,12 +243,15 @@ func dispatchHistory[T any](a *historyAdmission, ctx context.Context, fetch func
 		err = validate(response)
 	}
 	if err != nil {
-		if persistErr := a.persist(time.Now().Add(a.policy.ErrorBackoff)); persistErr != nil {
+		a.state.LastErrorAt = time.Now()
+		if persistErr := a.persist(a.state.LastErrorAt.Add(a.policy.ErrorBackoff)); persistErr != nil {
 			err = errors.Join(err, persistErr)
 		}
 		return zero, err
 	}
-	if err = a.persist(time.Now().Add(a.policy.MinimumInterval)); err != nil {
+	a.state.LastErrorAt = time.Time{}
+	a.state.LastFinishedAt = time.Now()
+	if err = a.persist(a.state.LastFinishedAt.Add(a.policy.MinimumInterval)); err != nil {
 		return zero, err
 	}
 	return response, nil
@@ -229,13 +272,11 @@ func (a *historyAdmission) exchange(ctx context.Context, key string, fetch func(
 	if a.stopCtx.Err() != nil {
 		return nil, ErrClientClosed
 	}
-	a.mu.Lock()
-	if a.pending >= a.policy.MaxPending {
-		a.mu.Unlock()
-		return nil, ErrHistoryBusy
+	if err := a.reserveDemand(); err != nil {
+		return nil, err
 	}
-	a.pending++
-	defer func() { a.mu.Lock(); a.pending--; a.mu.Unlock() }()
+	defer a.finishDemand()
+	a.mu.Lock()
 	if a.payloadFlights == nil {
 		a.payloadFlights = map[string]*historyPayloadFlight{}
 	}
@@ -261,4 +302,11 @@ func (a *historyAdmission) exchange(ctx context.Context, key string, fetch func(
 	close(f.done)
 	a.mu.Unlock()
 	return payload, err
+}
+
+func maxHistoryTime(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
 }

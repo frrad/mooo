@@ -97,6 +97,7 @@ type session struct {
 	pending            map[uint32]pendingRequest
 	lifecycleScheduler lifecycleScheduler
 	lifecycleStopped   bool
+	historyAdmission   *historyAdmission
 	initialChatData    []bson.Raw
 	loginMinLogID      int64
 	userID             int64
@@ -408,6 +409,25 @@ func call[Req interface{ MarshalBSON() ([]byte, error) }, Resp any](s *session, 
 	body, err := req.MarshalBSON()
 	if err != nil {
 		return zero, err
+	}
+	if s == nil || ctx == nil {
+		return zero, ErrProtocol
+	}
+	if s.historyAdmission != nil && pacedMetadataCommand(command) {
+		payload, err := s.historyAdmission.exchange(ctx, command+"/"+historyDigest(string(body)), func(ctx context.Context) ([]byte, error) {
+			reply, err := s.request(ctx, command, body)
+			if err != nil {
+				return nil, err
+			}
+			if _, err = decode(reply.Body); err != nil {
+				return nil, err
+			}
+			return append([]byte(nil), reply.Body...), nil
+		})
+		if err != nil {
+			return zero, err
+		}
+		return decode(payload)
 	}
 	reply, err := s.request(ctx, command, body)
 	if err != nil {

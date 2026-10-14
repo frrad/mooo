@@ -12,10 +12,13 @@ startup_history: false
 # Acquisition policy, not an advertised Kakao rate limit. Zero values select
 # these defaults. Applies to zero-held-count SYNCMSG, including catch-up and
 # explicit history. Identical concurrent requests share one source attempt.
-# Cooldowns persist in each private profile's .history-admission file.
-# Startup MCHATLOGS shares this worker. Metadata/media dependencies and ownership
-# across profiles for one account remain to be integrated.
+# Cooldowns persist in one private account record shared by profiles.
+# Startup MCHATLOGS and read-only LOCO dependencies share this worker.
+# HTTP reaction/media dependencies remain to be integrated.
 history_pacing:
+    # Empty uses profile_dir. Profiles for one account in different directories
+    # must choose the same private 0700 scheduling directory here.
+    state_directory: ""
     minimum_interval: 2s
     error_backoff: 30s
     max_pending: 32

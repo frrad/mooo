@@ -10,7 +10,13 @@ import (
 // and does not follow a positive LinkID with INFOLINK: OpenChat link
 // resolution is left to the caller.
 func (s *session) ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error) {
-	return call(s, ctx, chatmeta.ChatInfoCommand, chatmeta.ChatInfoRequest{ChatID: chatID}, chatmeta.DecodeChatInfoResponse)
+	return call(s, ctx, chatmeta.ChatInfoCommand, chatmeta.ChatInfoRequest{ChatID: chatID}, func(body []byte) (chatmeta.ChatInfoResponse, error) {
+		response, err := chatmeta.DecodeChatInfoResponse(body)
+		if err == nil && response.ChatData.ChatID != chatID {
+			return response, chatmeta.ErrInvalidResponse
+		}
+		return response, err
+	})
 }
 
 // Members resolves member profiles with MEMBER, following the official
@@ -36,7 +42,13 @@ func (s *session) Members(ctx context.Context, chatID int64, userIDs []int64) ([
 	for len(ids) > 0 {
 		batch := ids[:min(len(ids), chatmeta.MaxMemberBatch)]
 		ids = ids[len(batch):]
-		response, err := call(s, ctx, chatmeta.MemberCommand, chatmeta.MemberRequest{ChatID: chatID, MemberIDs: batch}, chatmeta.DecodeMemberResponse)
+		response, err := call(s, ctx, chatmeta.MemberCommand, chatmeta.MemberRequest{ChatID: chatID, MemberIDs: batch}, func(body []byte) (chatmeta.MemberResponse, error) {
+			response, err := chatmeta.DecodeMemberResponse(body)
+			if err == nil && response.ChatID != chatID {
+				return response, chatmeta.ErrInvalidResponse
+			}
+			return response, err
+		})
 		if err != nil {
 			return members, err
 		}
