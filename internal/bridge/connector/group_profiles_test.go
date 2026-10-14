@@ -1,15 +1,18 @@
 package connector
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
+	"github.com/rs/zerolog"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/networkid"
@@ -277,5 +280,47 @@ func TestPeriodicGroupProfileRefreshOtherFailureReportsPendingMembership(t *test
 	}
 	if state := harness.lastState(); state.Error != stateGroupMembershipPending {
 		t.Fatalf("last state = %+v, want %s", state, stateGroupMembershipPending)
+	}
+}
+
+// A refresh that ends the session logs which source read failed and a fixed
+// error class, never the server's error text.
+func TestPeriodicGroupProfileRefreshFailureLogsTrace(t *testing.T) {
+	kc, backend, _ := newGroupCreationFramework(t)
+	kc.sendState = (&testHarness{}).sendState
+	ctx := context.Background()
+	if _, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}}); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	kc.login.Log = zerolog.New(&logs)
+	backend.membersErr = fmt.Errorf("synthetic-private-detail: %w", context.DeadlineExceeded)
+	backend.moimErr = fmt.Errorf("client: GETMOMETA request: %w", context.DeadlineExceeded)
+	if !kc.refreshOneGroupProfiles(backend) {
+		t.Fatal("deadline did not end the session")
+	}
+	out := logs.String()
+	for _, want := range []string{`"error_class":"deadline_exceeded"`, `"command":"MEMBER"`, `"command":"GETMOMETA"`, `"steps":[{"command":"CHATINFO"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log missing %s:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "synthetic-private-detail") {
+		t.Fatalf("log leaked error text:\n%s", out)
+	}
+}
+
+func TestSourceErrorClass(t *testing.T) {
+	for want, err := range map[string]error{
+		"":                  nil,
+		"deadline_exceeded": fmt.Errorf("x: %w", context.DeadlineExceeded),
+		"session_closed":    client.ErrClosed,
+		"eof":               io.EOF,
+		"status_-805":       fmt.Errorf("x: %w", client.StatusError{Command: "MEMBER", Status: -805}),
+		"other":             errors.New("synthetic"),
+	} {
+		if got := sourceErrorClass(err); got != want {
+			t.Errorf("sourceErrorClass(%v) = %q, want %q", err, got, want)
+		}
 	}
 }
