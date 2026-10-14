@@ -83,3 +83,36 @@ func TestStoredWindowEmptyIsNotAcquiredCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestStoredWindowCoverageStopsBeforeDisconnectedIsland(t *testing.T) {
+	api, store := windowClient(t)
+	for _, page := range []struct {
+		after, through int64
+		ids            []int64
+	}{
+		{0, 900, []int64{100, 500}},
+		{700, 900, []int64{800, 900}},
+	} {
+		var logs []bson.Raw
+		for _, id := range page.ids {
+			logs = append(logs, historyStoreRaw(t, id, "synthetic"))
+		}
+		if err := store.save(syncmsg.Request{ChatID: 42, Cur: page.after, Max: page.through}, syncmsg.Response{ChatLogs: logs}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		for _, selection := range []struct {
+			after, through, covered int64
+			complete                bool
+		}{
+			{0, 900, 500, false}, {500, 900, 500, false}, {700, 900, 900, true}, {0, 300, 300, true},
+		} {
+			p, err := api.ReadStoredHistory(t.Context(), StoredHistoryRequest{ChatID: 42, After: selection.after, Through: selection.through, Limit: 1})
+			if err != nil || p.CoveredThrough != selection.covered || p.Complete != selection.complete {
+				t.Fatalf("coverage=%d complete=%v err=%v", p.CoveredThrough, p.Complete, err)
+			}
+		}
+		api.historyStore = reopenTestHistoryStore(t, store.dir)
+	}
+}

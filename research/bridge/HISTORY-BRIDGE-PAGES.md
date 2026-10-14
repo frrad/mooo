@@ -246,3 +246,28 @@ Standard Synapse lacks backward batch insertion, so this run does not claim
 faithful insertion before existing events. The complete three-flow goal remains
 open; acquisition, unavailable boundaries, media/replies/edits/deletions and a
 batch-capable historical deployment require their own declared acceptance cases.
+
+### Resume incomplete backward acquisition at connected coverage
+
+A 2026-10-14 production-path regression exposed a missing-range resume bug:
+when the requested interval was incomplete, the connector restarted its
+acquisition loop at the selection's lower bound, even when acquired pages
+already covered a prefix. For a sufficiently large prefix, repeatedly reading
+that cache could consume the 25-page budget before reaching any missing range.
+This is an implementation defect, not an official-client observation.
+
+The local window now reports `CoveredThrough`, the end of connected acquired
+coverage beginning at `After`, capped at `Through`. The backward slow-fetch
+loop starts there. Disconnected cached islands beyond the first gap cannot
+advance this boundary. It is recomputed from persisted immutable pages after
+restart; it is neither a Matrix delivery cursor nor a source read watermark.
+No new checkpoint or source request is needed to recover it.
+
+The regression first failed with an acquisition cursor of `0` when the actual
+SDK store covered `(0,500]` and the selected ceiling was `900`. It now requests
+from `500`, including after SDK/connector reopen. Production store tests also
+cover sparse IDs, an island beyond a gap, nonzero lower bounds, a ceiling within
+acquired coverage, and reopen. Source failure still returns without delivering
+an incomplete window. Existing 30-second/25-page bounds and account pacing
+remain in force. These are synthetic implementation regressions; full native
+flow and live backward insertion acceptance remain required.
