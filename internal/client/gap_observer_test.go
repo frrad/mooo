@@ -67,6 +67,42 @@ func TestGapObserverReceivesHistoryGapWithChatLog(t *testing.T) {
 	}
 }
 
+// A message that decodes but has no decoder for its content, as a whole or as
+// a reply attachment, is observed with its body so its shape can be studied.
+// Supported messages, including sticker replies, are not.
+func TestGapObserverReceivesUndisplayableMessages(t *testing.T) {
+	var got []GapObservation
+	gaps := newGapFunc(func(o GapObservation) { got = append(got, o) })
+	unsupported := gapTestPacket(t, gapTestChatLog(t, 101, 71, "message", "synthetic leverage"))
+	replyLog := func(logID int64, attachment string) loco.Packet {
+		log, err := bson.Marshal(bson.D{{Key: "logId", Value: logID}, {Key: "type", Value: int32(26)}, {Key: "authorId", Value: int64(8)},
+			{Key: "sendAt", Value: int32(1300)}, {Key: "message", Value: ""}, {Key: "attachment", Value: attachment}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return gapTestPacket(t, log)
+	}
+	attachmentReply := replyLog(102, `{"src_logId":99,"src_userId":7,"src_type":1,"src_message":"source","attach_only":true,"attach_type":71,"attach_content":{"synthetic":true}}`)
+	textReply := replyLog(103, `{"src_logId":99,"src_userId":7,"src_type":1,"src_message":"source"}`)
+	raw := make(chan loco.Packet, 3)
+	raw <- unsupported
+	raw <- attachmentReply
+	raw <- textReply
+	close(raw)
+	output := make(chan events.Result, 3)
+	decodeEventStreamWithTerminalStop(raw, output, nil, func(int64, int64) {}, nil, nil, gaps)
+
+	if len(got) != 2 {
+		t.Fatalf("observations = %+v, want 2", got)
+	}
+	if got[0].Gap.LogID != 101 || got[0].Gap.Type != 71 || got[0].Gap.Reason != GapReasonUnsupportedType || !bytes.Equal(got[0].Body, unsupported.Body) {
+		t.Fatalf("unsupported observation = %+v", got[0])
+	}
+	if got[1].Gap.LogID != 102 || got[1].Gap.Type != 26 || got[1].Gap.Reason != GapReasonUnsupportedReplyAttachment || !bytes.Equal(got[1].Body, attachmentReply.Body) {
+		t.Fatalf("reply observation = %+v", got[1])
+	}
+}
+
 func TestNilGapObserverAddsNoWork(t *testing.T) {
 	if newGapFunc(nil) != nil {
 		t.Fatal("nil observer produced a gap function")

@@ -66,8 +66,9 @@ the More tab. Then confirm the code the bot shows. If the code expires, send
 Group chats appear after login. A one-to-one chat appears when its first new
 message arrives. Earlier history is not brought over.
 
-To debug a "could not be displayed (malformed_payload: …)" notice or a media
-send that fails, opt in to raw dumps by setting
+To debug a "could not be displayed (malformed_payload: …)" notice, an
+"unsupported type" or "cannot be displayed (type …)" notice, or a media send
+that fails, opt in to raw dumps by setting
 `network.debug_dump_dir: /data/debug-dumps` in `data/config.yaml` and
 restarting the bridge. Each such message or reply is then also written to
 `data/debug-dumps/` on the host. The dumps contain private message content and
