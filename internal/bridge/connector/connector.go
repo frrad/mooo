@@ -108,7 +108,7 @@ func (kc *KakaoConnector) Init(bridge *bridgev2.Bridge) {
 	kc.Bridge = bridge
 	installHistoryMatrix(bridge)
 	if processor, ok := bridge.Commands.(*commands.Processor); ok {
-		processor.AddHandlers(commandReconcileGroup, commandCompleteGroupInvitations, commandGroupHistory, commandReconnect)
+		processor.AddHandlers(commandReconcileGroup, commandCompleteGroupInvitations, commandGroupHistory, commandReconnect, commandSyncReactions)
 	}
 }
 

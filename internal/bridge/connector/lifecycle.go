@@ -195,6 +195,10 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 		return
 	}
 	kc.client = c
+	if kc.reactionView != nil && kc.reactionView.cancel != nil {
+		kc.reactionView.cancel()
+	}
+	kc.reactionView = nil
 	kc.done = done
 	kc.connectedAt = kc.now()
 	kc.cleanupRetryAttempts = 0
@@ -611,6 +615,10 @@ type stopPlan struct {
 func (kc *KakaoClient) beginStop() stopPlan {
 	kc.mu.Lock()
 	defer kc.mu.Unlock()
+	if kc.reactionView != nil && kc.reactionView.cancel != nil {
+		kc.reactionView.cancel()
+	}
+	kc.reactionView = nil
 	if kc.lifecycleCancel != nil {
 		kc.lifecycleCancel()
 		kc.lifecycle, kc.lifecycleCancel = nil, nil

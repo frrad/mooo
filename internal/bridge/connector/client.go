@@ -204,6 +204,10 @@ type KakaoClient struct {
 
 	reactionNoticeMu sync.Mutex
 	reactionNotices  map[string]time.Time
+	// reactionView is the current viewing episode; lifecycle mu guards it.
+	reactionView     *reactionViewingState
+	reactionSyncBusy bool
+	reactionSyncNext time.Time
 
 	// disconnectGate admits one Disconnect at a time; mu guards its lazy
 	// creation.
@@ -295,7 +299,6 @@ func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (
 	if err := kc.catchUp(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "catch-up", err: err}
 	}
-	kc.resyncReactions(ctx, c)
 	kc.recoverReadWatermarks(ctx, c)
 	if err := kc.refreshAnnouncements(ctx); err != nil {
 		return nil, bootstrapFailure{stage: "announcements", err: err}
@@ -365,6 +368,7 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 	}
 	switch evt := evt.(type) {
 	case events.ReactionChanged:
+		kc.observeReactionRevision(evt.ChatID, evt.Revision)
 		handled, err := kc.applyReactionChange(c, evt)
 		if err != nil {
 			return kc.reportReactionFailure(evt, err)

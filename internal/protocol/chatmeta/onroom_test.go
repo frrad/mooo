@@ -1,10 +1,35 @@
 package chatmeta
 
 import (
+	"errors"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
+
+func TestChatOnRoomMetadataStopFlag(t *testing.T) {
+	for _, value := range []any{true, false, "true", int32(1), nil} {
+		body, err := bson.Marshal(bson.D{{Key: "c", Value: int64(42)}, {Key: "dlm", Value: value}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := DecodeChatOnRoomResponse(body)
+		want, valid := value.(bool)
+		if !valid {
+			if !errors.Is(err, ErrInvalidResponse) {
+				t.Fatalf("invalid dlm %T accepted", value)
+			}
+			continue
+		}
+		if err != nil || r.StopSyncLogMeta != want {
+			t.Fatalf("dlm=%v: response=%+v err=%v", value, r, err)
+		}
+	}
+	body, _ := bson.Marshal(bson.D{{Key: "c", Value: int64(42)}})
+	if r, err := DecodeChatOnRoomResponse(body); err != nil || r.StopSyncLogMeta {
+		t.Fatalf("absent flag: %+v %v", r, err)
+	}
+}
 
 func TestChatOnRoomRequestUsesMacKeysAndTypes(t *testing.T) {
 	body, err := (ChatOnRoomRequest{ChatID: 42}).MarshalBSON()
