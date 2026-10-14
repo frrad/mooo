@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -65,6 +66,7 @@ type historyStore struct {
 	mutations    map[historyTarget]historyMutation
 	failed       error
 	targets      map[historyTarget]bool
+	bulkCursors  map[int64]int64
 }
 
 func historyDigest(value string) string {
@@ -91,7 +93,7 @@ func openHistoryStore(dir string, accountID int64, deviceID string) (*historySto
 	if err := privatejson.ValidatePrivateDir(dir); err != nil {
 		return nil, err
 	}
-	s := &historyStore{dir: dir, binding: historyDigest(fmt.Sprintf("%d/%s", accountID, deviceID)), pages: make(map[string]acquiredPageRef), mutations: make(map[historyTarget]historyMutation), targets: make(map[historyTarget]bool)}
+	s := &historyStore{dir: dir, binding: historyDigest(fmt.Sprintf("%d/%s", accountID, deviceID)), pages: make(map[string]acquiredPageRef), mutations: make(map[historyTarget]historyMutation), targets: make(map[historyTarget]bool), bulkCursors: make(map[int64]int64)}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, ErrHistoryStoreCorrupt
@@ -111,6 +113,7 @@ func openHistoryStore(dir string, accountID int64, deviceID string) (*historySto
 	} else if header.Version != 1 || header.Binding != s.binding {
 		return nil, ErrHistoryStoreCorrupt
 	}
+	pageCursors := map[int64]int64{}
 	for _, entry := range entries {
 		name := entry.Name()
 		if name == "header.json" || strings.HasPrefix(name, ".") {
@@ -118,6 +121,19 @@ func openHistoryStore(dir string, accountID int64, deviceID string) (*historySto
 		}
 		path := filepath.Join(dir, name)
 		switch {
+		case name == "bulk.json":
+			progress, found, err := privatejson.Read[historyBulkProgress](path)
+			if err != nil || !found || progress.Version != 1 || progress.Binding != s.binding {
+				return nil, ErrHistoryStoreCorrupt
+			}
+			for id, cursor := range progress.Cursors {
+				if id <= 0 || cursor < 0 {
+					return nil, ErrHistoryStoreCorrupt
+				}
+			}
+			for id, cursor := range progress.Cursors {
+				s.bulkCursors[id] = max(s.bulkCursors[id], cursor)
+			}
 		case strings.HasPrefix(name, "page-"):
 			page, found, err := privatejson.Read[acquiredPage](path)
 			if err != nil || !found || page.Version != 1 || page.Binding != s.binding || name != historyPageName(page.Request) {
@@ -128,6 +144,8 @@ func openHistoryStore(dir string, accountID int64, deviceID string) (*historySto
 				return nil, ErrHistoryStoreCorrupt
 			}
 			s.pages[name] = acquiredPageRef{request: page.Request, last: last, name: name}
+			pageCursors[page.Request.ChatID] = max(pageCursors[page.Request.ChatID], last)
+			s.bulkCursors[page.Request.ChatID] = max(s.bulkCursors[page.Request.ChatID], last)
 			for _, raw := range page.Response.ChatLogs {
 				id, _ := syncmsg.LogID(raw)
 				s.targets[historyTarget{page.Request.ChatID, id}] = true
@@ -142,6 +160,11 @@ func openHistoryStore(dir string, accountID int64, deviceID string) (*historySto
 				s.targets[historyTarget{mutation.ChatID, mutation.TargetID}] = true
 			}
 		default:
+			return nil, ErrHistoryStoreCorrupt
+		}
+	}
+	for id, cursor := range s.bulkCursors {
+		if cursor > pageCursors[id] {
 			return nil, ErrHistoryStoreCorrupt
 		}
 	}
@@ -320,6 +343,7 @@ func (s *historyStore) save(req syncmsg.Request, response syncmsg.Response) erro
 		return err
 	}
 	s.pages[name] = acquiredPageRef{request: req, last: last, name: name}
+	s.bulkCursors[req.ChatID] = max(s.bulkCursors[req.ChatID], last)
 	for _, raw := range selected.ChatLogs {
 		id, _ := syncmsg.LogID(raw)
 		s.targets[historyTarget{req.ChatID, id}] = true
@@ -524,4 +548,36 @@ func (c *Client) projectAcquiredEvents(input []events.Event) ([]events.Event, er
 		output[i] = current
 	}
 	return output, nil
+}
+
+type historyBulkProgress struct {
+	Version uint32
+	Binding string
+	Cursors map[int64]int64
+}
+
+func (s *historyStore) bulkSnapshot() map[int64]int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return maps.Clone(s.bulkCursors)
+}
+func (s *historyStore) commitBulk(cursors map[int64]int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.failed != nil {
+		return s.failed
+	}
+	next := maps.Clone(s.bulkCursors)
+	for id, cursor := range cursors {
+		if id <= 0 || cursor < 0 {
+			return ErrProtocol
+		}
+		next[id] = max(next[id], cursor)
+	}
+	if err := writeHistoryObject(filepath.Join(s.dir, "bulk.json"), historyBulkProgress{Version: 1, Binding: s.binding, Cursors: next}); err != nil {
+		s.failed = err
+		return err
+	}
+	s.bulkCursors = next
+	return nil
 }

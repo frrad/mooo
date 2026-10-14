@@ -34,7 +34,8 @@ type Config struct {
 	ProfileDir string `yaml:"profile_dir"`
 
 	// HistoryPacing controls source acquisition admission, not server limits.
-	HistoryPacing client.HistoryPacing `yaml:"history_pacing"`
+	HistoryPacing  client.HistoryPacing `yaml:"history_pacing"`
+	StartupHistory bool                 `yaml:"startup_history"`
 
 	// BSONShadow optionally enables the research comparison of every incoming
 	// LOCO body against the source-compatible observed decoder. Off by default.
@@ -61,6 +62,7 @@ type BSONShadowConfig struct {
 
 func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "profile_dir")
+	helper.Copy(up.Bool, "startup_history")
 	helper.Copy(up.Str, "history_pacing", "minimum_interval")
 	helper.Copy(up.Str, "history_pacing", "error_backoff")
 	helper.Copy(up.Int, "history_pacing", "max_pending")
