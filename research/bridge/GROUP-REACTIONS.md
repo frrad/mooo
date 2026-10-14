@@ -6,6 +6,10 @@ made while the bridge is offline. Builds on
 [reaction compatibility](REACTION-COMPATIBILITY.md) and
 [replies and reactions](../replies-and-reactions.md).
 
+The 2026-10-13 static follow-up traces the [room eligibility and scheduling
+gates](REACTION-SYNC-SCHEDULING.md): the Mac excludes `PlusChat`, `MemoChat` and
+`PartnerChat`, and its open-chat timer is distinct from mooo's reconnect sweep.
+
 ## Official-client contract (macOS 26.8.0, static)
 
 Method: read-only static inspection of the authorized macOS 26.8.0 arm64

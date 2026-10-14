@@ -9,6 +9,13 @@ separately; in-progress branches are not counted as shipped features.
 
 ## Three-flow history goal and execution plan (2026-10-13)
 
+Related static research: [reaction metadata scheduling](research/bridge/REACTION-SYNC-SCHEDULING.md)
+explains the Mac room-type gate and per-open-chat timer behind issue #355.
+Follow-up: add production-path regressions and authoritative room-type gating;
+trace the chat-entry `dlm` stop flag's decoder defaults before consuming it. Decide and
+document paced eager versus demand-based bridge recovery separately. Static
+research only; no live validation or production fix is claimed.
+
 ### Goal
 
 Implement faithful KakaoTalk history behavior through the bridge for clean login,
