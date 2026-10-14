@@ -85,6 +85,38 @@ regression fixture; new owned messages must verify the fix without deleting
 already committed delivery state or claiming that the old notice was rendered
 as a poll.
 
+## Historical lifecycle cards: offline cache inspection
+
+On 2026-10-14, a read-only inspection of the owned five-record history cache
+used by HST-BRIDGE-ENC-010 identified both type-14 delivery gaps as the same
+unimplemented attachment shape. No account login, source request, Matrix send
+or native-client action occurred. The inspection decoded the stored BSON and
+attachment JSON and emitted only field names, discriminators and counts.
+
+Both attachments have `subtype: 4`, numeric `voteId`, `title`, `version` and
+`os`, with no `postId`. Their three objects, in order, are:
+
+| Object | Fields | Discriminators |
+| --- | --- | --- |
+| First | `t`, `st` | `t: 3`, `st: 6` |
+| Second | `t`, `st`, `tt` | `t: 9`, `st: 4` |
+| Third | `t`, `st`, `url` | `t: 2`, `st: 5` |
+
+There is no `its` option list. This differs from the observed creation
+snapshot (`subtype: 1`, poll object `st: 1` with options). Rejecting these cards
+does not reproduce the earlier zero-vote-ID creation bug: the current decoder
+deliberately rejects this unverified lifecycle shape.
+
+Confidence is high for the stored wire shape, but the operation and displayed
+wording remain unverified. Do not label subtype 4 as cancellation or completion
+from these discriminators alone. Next evidence must trace the official preview
+formatter and its lifecycle branch, then compare an authorized native display
+with the cached record. Record title/header rendering, whether options are
+shown or fetched, and failure behavior before adding a decoder. Until then,
+preserve message identity and the explicit gap notice; do not invent options
+or follow the navigation URL. Private text, identifiers and URLs remain outside
+tracked files.
+
 ## Repeatable owned sender
 
 `research/emu.sh send-poll a|b` takes private stdin JSON containing `peer`,

@@ -121,9 +121,12 @@ interruption resumes without refetching completed ranges or duplicate delivery.
 
 - [ ] Trace local-first rendering, CHATONROOM, missing-history reconciliation,
       dependent lookups and read effects in the official client.
-- [ ] Provide an explicit room-viewing dispatcher/fallback: the current standard
+- [ ] Establish the intended client's room-open signal: the current standard
       appservice connector never invokes the documented viewing interface.
-      Exercise its contract directly without assuming Beeper UI behavior.
+      Exercise an available contract directly without assuming Beeper UI behavior.
+      A per-room command is optional and on hold at the maintainer's request;
+      it does not prove automatic room-opening behavior. Cached delivery and
+      backfill can proceed independently of that command.
 - [ ] Return local history immediately and reconcile only missing ranges through
       the shared worker. Repeated viewing signals extend demand rather than
       authorizing repeated fetches. Preserve today's roster when replaying feeds.
