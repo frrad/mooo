@@ -299,3 +299,30 @@ same two event identities, confirm both mappings and retain the older gap.
 The next cached-only scroll defers to slow acquisition instead of reporting
 exhaustion. This establishes implementation behavior with a synthetic Matrix
 sink, not live historical insertion, native UI or Beeper routing parity.
+
+### Acquire only the first missing interval
+
+Slow backward demand now obtains its acquisition bounds from the store's
+connected coverage: `CoveredThrough` is the lower bound and `MissingThrough`
+is the first later acquired page's lower fence, capped at the selected ceiling.
+For example, after cached `(300,500]` has been paginated down to an exclusive
+anchor of `400`, the needed source request is `(0,300]`, not `(0,400]`.
+These bounds come from persisted requests and records, not guessed numeric
+message offsets or a claimed service retention rule.
+
+The connector re-reads the local window after each successful acquisition. It
+stops when that window is complete or has a usable cached suffix. It rejects
+non-progress, a returned cursor beyond the missing interval's ceiling, and
+progress that has not become connected persisted coverage. Thus crossing a gap
+can join existing pages without fetching through them again or consuming the
+budget on cached scans. The existing 25-page/30-second bounds and shared account
+admission remain unchanged; a budget or transport failure retains acquired
+pages for the next demand.
+
+The actual-store/connector regression failed first with source bounds `(0,400]`
+and now selects `(0,300]`. Production store tests join the acquired prefix to
+the suffix and return the exclusive-anchor rows in source order. Connector
+regressions check the joined result and reject overshoot/unpersisted progress
+after one acquisition call. These are synthetic source tests, not live source
+or native-flow acceptance; the next end-to-end gate must exercise bounded
+acquisition followed by actual delivery and restart.

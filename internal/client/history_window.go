@@ -25,6 +25,9 @@ type StoredHistoryPage struct {
 	// CoveredThrough is the end of connected acquired coverage starting at
 	// request.After. Cached islands beyond a gap never advance it.
 	CoveredThrough int64
+	// MissingThrough is the upper fence of the first gap after CoveredThrough.
+	// A later acquired page starts here; absent one, it is the request ceiling.
+	MissingThrough int64
 	// CachedSuffix means the returned nonempty window has connected acquired
 	// coverage through the ceiling, even when an older prefix remains missing.
 	CachedSuffix bool
@@ -127,7 +130,13 @@ func (s *historyStore) window(ctx context.Context, request StoredHistoryRequest)
 		ids = append(ids, id)
 	}
 	slices.Sort(ids)
-	out := StoredHistoryPage{CoveredThrough: covered, Complete: covered >= request.Through, HasMore: len(ids) > request.Limit}
+	missingThrough := request.Through
+	for _, ref := range s.pages {
+		if ref.request.ChatID == request.ChatID && ref.request.Cur > covered {
+			missingThrough = min(missingThrough, ref.request.Cur)
+		}
+	}
+	out := StoredHistoryPage{CoveredThrough: covered, MissingThrough: missingThrough, Complete: covered >= request.Through, HasMore: len(ids) > request.Limit}
 	out.CachedSuffix = suffixAfter < request.Through && len(ids) > 0
 	out.HasMore = out.HasMore || (out.CachedSuffix && !out.Complete)
 	if !out.Complete && len(ids) == 0 {
