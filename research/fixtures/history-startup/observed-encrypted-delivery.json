@@ -1,0 +1,38 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "date": "2026-10-14",
+    "client": "mooo 4367e5805c6b13f38360a0da05b8d47581f53d87, mautrix 40942319c433 with goolm, Synapse 1.162.0",
+    "platform": "macOS 26.6.2 arm64; Go 1.27.2; owned disposable localhost Synapse",
+    "method": "Exclusively leased existing owned secondary profile and previously acquired five-record regular-group cache; all Kakao HTTP/TLS/secure and external resource transports denied. Preserved bot crypto identity using an isolated SQLite backup, verified keys against server, created one owned encrypted test room. Withheld one accepted encrypted send response; fresh SDK/connector/Matrix/database process recovered the same pending window. Owned tester SDK decrypted retained events; third offline reopen verified no new delivery.",
+    "doc": "research/bridge/HISTORY-BRIDGE-PAGES.md"
+  },
+  "evidence": "HST-BRIDGE-ENC-010",
+  "sanitization": "Only counts, booleans and software versions are published. Profiles, IDs, keys, credentials, private message bodies, ciphertext and raw lab receipts remain outside tracked files.",
+  "expected": {
+    "source_network_dispatches": 0,
+    "initial_source_transport_attempts": 0,
+    "source_records": 5,
+    "unique_encrypted_timeline_events": 5,
+    "decrypted_events": 5,
+    "converted_content_equal_after_decryption": true,
+    "source_text_bodies_exact": 1,
+    "source_timestamps_exact": 5,
+    "source_order_equal_to_timeline": true,
+    "sender_equal_to_confirmed_mapping": true,
+    "accepted_lost_event_identity_recovered": true,
+    "conversion_unchanged_across_restart": true,
+    "source_read_and_live_cursors_unchanged": true,
+    "completed_replay_new_messages": 0,
+    "completed_replay_network_attempts": 0,
+    "bot_crypto_identity_preserved": true
+  },
+  "limits": [
+    "Source acquisition and native UI were not exercised in this run; source cache came from earlier owned acquisition evidence.",
+    "Inventory was a scoped snapshot adapter; no fresh source roster or inventory was requested.",
+    "Two existing type-14 history gaps remain notice projections; equal converted bodies do not establish their original content fidelity.",
+    "This proves encrypted forward history delivery and response-loss recovery on standard Synapse, not backward historical insertion or Beeper UI routing.",
+    "Standard Synapse lacks the batch capability required for faithful insertion before existing events.",
+    "No real Beeper, new Kakao device enrollment, cloud backup/restore or primary account was used."
+  ]
+}

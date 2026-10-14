@@ -195,3 +195,51 @@ unfinished without acquisition. Cache policy is an implementation decision;
 these checks do not establish official-client timing parity. No live account
 request was used for this slice. Owned encrypted delivery and the complete
 clean-login/open/scroll acceptance gates remain open.
+
+## Owned encrypted delivery and response-loss recovery (2026-10-14)
+
+**HST-BRIDGE-ENC-010** runs mooo `4367e580`, the pinned framework with goolm,
+and owned disposable Synapse 1.162.0 on macOS 26.6.2 arm64/Go 1.27.2.
+The [sanitized observation](../fixtures/history-startup/observed-encrypted-delivery.json)
+records counts and invariants; all account-specific artifacts remain private.
+
+The existing owned secondary profile and its acquired five-record regular-group
+cache were exclusively leased under a common scheduling root. Source TLS,
+secure-carriage, HTTP and external resource transports were denied. A scoped
+inventory snapshot adapter selected the cached room; no fresh inventory/roster
+request or source login ran. A SQLite backup preserved the existing bot's Olm
+identity, checked against server keys before crypto startup. One fresh owned
+encrypted Matrix room supplied an empty delivery target without touching the
+original bridge database or its rooms.
+
+The real FetchMessages/forward framework path converted that cache, used real
+crypto and sent over actual Matrix HTTP. The first send reached Synapse, but its
+response was deliberately withheld. Its mapping remained unconfirmed and the
+pending selection persisted. A new SDK, connector, Matrix connector and database
+process reopened the same private state and recovered the window. The previously
+accepted event kept its event ID; the complete timeline contained exactly five
+unique encrypted events in source identity order.
+
+The owned tester SDK decrypted all five events. Bodies/types matched conversion,
+senders matched confirmed mappings, and all five known source timestamps were
+preserved. One TEXT body also matched the cached raw source document directly.
+Conversion was identical across restart. Source read/live cursors stayed empty;
+source network dispatch was denied throughout. The initial receipt records zero
+source attempts. A third fresh reopen, with Matrix and
+source requests rejected, returned no new messages or network attempts.
+
+The first decryption assertion failed because the private harness omitted the
+SDK's explicit encrypted-content parsing step after fetching an event. Parsing
+and auditing the already retained ciphertext resolved that harness error; no
+message was resent to diagnose it. The offline replay guard likewise retained
+the production transaction adapter while rejecting its underlying transport.
+All probe processes and the temporary appservice listener stopped afterward.
+
+This closes the owned **cached forward delivery/encryption/restart** gate for
+this window. It does not establish fresh official startup, native room-open/read
+behavior, current roster state or Beeper gesture routing. The two existing
+type-14 gaps still render notices and remain original-content fidelity gaps.
+Standard Synapse lacks backward batch insertion, so this run does not claim
+faithful insertion before existing events. The complete three-flow goal remains
+open; acquisition, unavailable boundaries, media/replies/edits/deletions and a
+batch-capable historical deployment require their own declared acceptance cases.
