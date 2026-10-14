@@ -1038,3 +1038,39 @@ regular members. Follow-up changes, one PR each:
       only. Trace its payload consumer first.
 - [ ] Confirm the friend-sync period with an idle official Mac capture when an
       official Mac session exists without a new restricted login.
+
+## Native skew audit follow-ups (2026-10-14)
+
+[NATIVE-SKEW-AUDIT.md](research/bridge/NATIVE-SKEW-AUDIT.md) compares every
+other bridge-originated request with the official Mac client; the numbers
+below are its findings. These items exclude the native-metadata-trigger work
+above. One PR each, highest account-safety risk first:
+
+- [ ] (#2) Stop ending the source session when a membership refresh, media
+      download or GETMSGS dependency fails. Retry delivery in-process with a
+      cap; relogin only on transport failure. Regressions for all three.
+- [ ] (#3) Make `!reconcile-group` / `!complete-group-invitations` refuse when
+      there is no live session instead of opening a detached login that skips
+      the retry schedule, `-328` backoff and KICKOUT block.
+- [ ] (#1) Use bulk MCHATLOGS (≤100 rooms) as the connect catch-up path and
+      drop per-chat `SYNCMSG cnt=0` at connect. Requires an owned offline-
+      message differential for gap handling first.
+- [ ] (#4, #5) Reactions: drop the `/members` pre-read on cancel; budget and
+      coalesce the per-push `/members` lookups (or derive the actor from the
+      aggregate) and record the remainder as a deliberate deviation.
+- [ ] (#8) Debounce Matrix read receipts per chat; trace and differential-test
+      the native mark-read SYNCMSG shape before switching to it.
+- [ ] (#11, #12, #13, #14) Apply NEWMEM/DELMEM feed payloads instead of
+      CHATINFO+MEMLIST; drop the redundant reads around ADDMEM, CREATE and the
+      viewing-episode CHATINFO.
+- [ ] (#9, #10) After the metadata-trigger PRs land: skip room-avatar downloads
+      whose avatar ID is unchanged, and stop enqueueing CHATINFO on every
+      cached `GetChatInfo`.
+- [ ] (#6, #7) Trace the native recovery delay and carriage route cache
+      expiry, then cache the route across reconnects, jitter ticket attempts
+      and adopt the native delay.
+- [ ] (#18) Trace the GETMETA chain; replace CHATINFO room-info refreshes with
+      revision-gated GETMETA at login.
+- [ ] (#15, #16, #17) After the trigger rework, cap metadata/membership
+      retries, read membership once per `!history-group` command, and give
+      live inbound media its own pacing lane.
