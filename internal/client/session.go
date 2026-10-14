@@ -414,7 +414,9 @@ func call[Req interface{ MarshalBSON() ([]byte, error) }, Resp any](s *session, 
 		return zero, ErrProtocol
 	}
 	if s.historyAdmission != nil && pacedMetadataCommand(command) {
+		queued := time.Now()
 		payload, err := s.historyAdmission.exchange(ctx, command+"/"+historyDigest(string(body)), func(ctx context.Context) ([]byte, error) {
+			observeAdmission(ctx, command, queued)
 			reply, err := s.request(ctx, command, body)
 			if err != nil {
 				return nil, err

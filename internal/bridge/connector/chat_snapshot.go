@@ -118,7 +118,7 @@ func (kc *KakaoClient) fetchChatSnapshot(ctx context.Context, portal *bridgev2.P
 		// The successfully refreshed source roster remains authoritative even
 		// when an optional profile batch fails. Keep successful earlier results
 		// and leave unresolved identities without fabricated profile fields.
-		kc.log().Warn().Int("resolved_profiles", len(profiles)).Int("requested_profiles", len(userIDs)).
+		kc.log().Warn().Int("resolved_profiles", len(profiles)).Int("requested_profiles", len(userIDs)).Str("error_class", sourceErrorClass(err)).
 			Msg("Some member profiles are unavailable; preserving the source roster")
 	}
 	snap.profiles = kc.cacheProfiles(profiles, userIDs)

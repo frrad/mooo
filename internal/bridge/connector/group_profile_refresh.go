@@ -83,14 +83,18 @@ func (kc *KakaoClient) refreshOneGroupProfiles(c kakaoClient) (connectionFailed 
 	if err != nil {
 		return false
 	}
-	if err = kc.refreshGroupMembership(ctx, c, chatID, false); err != nil {
+	trace := newProfileRefreshTrace(c)
+	if err = kc.refreshGroupMembership(ctx, trace, chatID, false); err != nil {
 		// The membership path retains its durable access pause on failure.
 		// Never log a server response containing profile fields or retry here.
+		// The trace and error class carry only command names and durations.
 		if connectionFailure(err) {
-			kc.log().Warn().Msg("Group profile refresh failed on the KakaoTalk connection; ending the session so recovery refreshes the group")
+			kc.log().Warn().Str("error_class", sourceErrorClass(err)).Dur("elapsed", time.Since(trace.start)).Array("steps", trace).
+				Msg("Group profile refresh failed on the KakaoTalk connection; ending the session so recovery refreshes the group")
 			return true
 		}
-		kc.log().Warn().Msg("Group profile refresh did not converge; reconnect to repair pending membership")
+		kc.log().Warn().Str("error_class", sourceErrorClass(err)).Dur("elapsed", time.Since(trace.start)).Array("steps", trace).
+			Msg("Group profile refresh did not converge; reconnect to repair pending membership")
 		classification := stateGroupMembershipPending
 		if errors.Is(err, errSourceAccessRemoved) {
 			classification = stateGroupAccessRemoved

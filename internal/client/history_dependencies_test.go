@@ -108,3 +108,27 @@ func TestHistoryStoppedDependencyCannotReleaseProfileEarly(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The admission observer reports how long a paced metadata command waited for
+// account spacing before it was sent.
+func TestAdmissionObserverReportsPacedWait(t *testing.T) {
+	root := accountRoot(t)
+	policy := HistoryPacing{MinimumInterval: 80 * time.Millisecond, ErrorBackoff: 100 * time.Millisecond}
+	c := accountProfile(t, root, "metadata", 1000, policy)
+	info := statusDocument(bson.E{Key: "chatInfo", Value: bson.D{{Key: "c", Value: int64(42)}, {Key: "t", Value: "MultiChat"}}})
+	backend := newScriptedBackend(t, false, testloco.Expect("CHATINFO", nil, info), testloco.Expect("CHATINFO", nil, info))
+	attachDependencyPeer(t, c, backend)
+	if _, err := c.ChatInfo(t.Context(), 42); err != nil {
+		t.Fatal(err)
+	}
+	var command string
+	var wait time.Duration
+	ctx := WithAdmissionObserver(t.Context(), func(c string, d time.Duration) { command, wait = c, d })
+	if _, err := c.ChatInfo(ctx, 42); err != nil {
+		t.Fatal(err)
+	}
+	if command != "CHATINFO" || wait < policy.MinimumInterval/2 {
+		t.Fatalf("observed %q wait %v, want CHATINFO near %v", command, wait, policy.MinimumInterval)
+	}
+	waitBackends(t, backend)
+}
