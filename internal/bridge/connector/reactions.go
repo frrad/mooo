@@ -162,6 +162,7 @@ func (kc *KakaoClient) HandleMatrixReaction(ctx context.Context, msg *bridgev2.M
 	if _, err = api.React(ctx, request); err != nil {
 		return nil, classifyReactionFailure(errReactionMutation, err)
 	}
+	kc.requestViewedReactionRefresh(request.ChatID)
 	kc.removeReplacedLegacyReactions(ctx, msg)
 	return nil, nil
 }
@@ -253,6 +254,7 @@ func (kc *KakaoClient) HandleMatrixReactionRemove(ctx context.Context, msg *brid
 	if _, err = api.React(lookupCtx, reactions.Request{ChatID: chatID, LogID: logID, Type: reactions.Cancel}); err != nil {
 		return classifyReactionFailure(errReactionMutation, err)
 	}
+	kc.requestViewedReactionRefresh(chatID)
 	return nil
 }
 
@@ -399,7 +401,11 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 // applied revision. A lookup error is returned for the caller's policy: a
 // live push reports it, a resync keeps its cursor.
 func (kc *KakaoClient) applyReactionChange(c kakaoClient, reaction events.ReactionChanged) (bool, error) {
-	remote, err := kc.reactionRemote(context.Background(), c, reaction)
+	return kc.applyReactionChangeContext(context.Background(), c, reaction)
+}
+
+func (kc *KakaoClient) applyReactionChangeContext(ctx context.Context, c kakaoClient, reaction events.ReactionChanged) (bool, error) {
+	remote, err := kc.reactionRemote(ctx, c, reaction)
 	if err != nil {
 		return false, err
 	}
@@ -408,7 +414,7 @@ func (kc *KakaoClient) applyReactionChange(c kakaoClient, reaction events.Reacti
 	}
 	remotes := []bridgev2.RemoteEvent{remote}
 	if syncEvent, ok := remote.(*kakaoReactionSync); ok {
-		remotes, err = kc.reactionDeliveryEvents(context.Background(), syncEvent)
+		remotes, err = kc.reactionDeliveryEvents(ctx, syncEvent)
 		if err != nil {
 			if errors.Is(err, errReactionTargetMissing) {
 				kc.log().Debug().Msg("Kakao reaction target is not bridged; leaving revision for replay")
@@ -420,6 +426,9 @@ func (kc *KakaoClient) applyReactionChange(c kakaoClient, reaction events.Reacti
 	}
 	allIgnored := true
 	for _, delivery := range remotes {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
 		result := kc.queue(delivery)
 		if !committable(result) {
 			kc.log().Warn().Err(result.Error).Msg("Kakao reaction update was not confirmed as bridged")
@@ -429,19 +438,22 @@ func (kc *KakaoClient) applyReactionChange(c kakaoClient, reaction events.Reacti
 			allIgnored = false
 		}
 		if syncEvent, ok := delivery.(*simplevent.Reaction); ok && syncEvent.Type == bridgev2.RemoteEventReactionRemove {
-			row, queryErr := kc.store.reaction(context.Background(), kc.login.ID, syncEvent.TargetMessage, syncEvent.Sender.Sender, syncEvent.EmojiID)
+			row, queryErr := kc.store.reaction(ctx, kc.login.ID, syncEvent.TargetMessage, syncEvent.Sender.Sender, syncEvent.EmojiID)
 			if queryErr != nil || row != nil {
 				kc.log().Warn().Err(queryErr).Msg("Kakao reaction removal was not confirmed in the database")
 				return false, nil
 			}
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	if len(remotes) == 0 || !allIgnored {
 		appliedRevision := reaction.Revision
 		if syncEvent, ok := remote.(*kakaoReactionSync); ok {
 			appliedRevision = syncEvent.AppliedRevision
 		}
-		if err := kc.persistReactionRevision(context.Background(), reaction, appliedRevision); err != nil {
+		if err := kc.persistReactionRevision(ctx, reaction, appliedRevision); err != nil {
 			kc.log().Warn().Msg("Kakao reaction revision could not be persisted")
 			return false, nil
 		}

@@ -11,10 +11,16 @@ separately; in-progress branches are not counted as shipped features.
 
 Related static research: [reaction metadata scheduling](research/bridge/REACTION-SYNC-SCHEDULING.md)
 explains the Mac room-type gate and per-open-chat timer behind issue #355.
-Follow-up: add production-path regressions and authoritative room-type gating;
-trace the chat-entry `dlm` stop flag's decoder defaults before consuming it. Decide and
-document paced eager versus demand-based bridge recovery separately. Static
-research only; no live validation or production fix is claimed.
+The follow-up branch implements production-path regressions, authoritative
+room-type and `dlm` gating, and conservative explicit viewing demand with
+ten-second admission, coalescing and bounded cancellation. Decoder defaults
+remain an explicit implementation choice. Standard Matrix appservices lack a
+viewing signal and no longer perform eager offline reaction recovery. The
+implementation also supplies explicit per-room `!kakao sync-reactions` recovery
+through those same gates, with no all-chats option. Hold the
+implementation PR for the maintainer's real-world test; no live acceptance or
+merge is authorized yet. Research and synthetic coverage are not full Mac
+runtime parity.
 
 ### Goal
 

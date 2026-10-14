@@ -33,6 +33,8 @@ type ChatOnRoomResponse struct {
 	Token      int64
 	LastLogID  int64
 	Watermarks map[int64]int64
+	// StopSyncLogMeta is the Mac chat-entry metadata-sync gate (wire dlm).
+	StopSyncLogMeta bool
 }
 
 func DecodeChatOnRoomResponse(body []byte) (ChatOnRoomResponse, error) {
@@ -48,6 +50,12 @@ func DecodeChatOnRoomResponse(body []byte) (ChatOnRoomResponse, error) {
 	}
 	if r.Full, _, err = fields.Bool(raw, "f"); err != nil {
 		return r, ErrInvalidResponse
+	}
+	if value, lookupErr := raw.LookupErr("dlm"); lookupErr == nil {
+		if value.Type != bson.TypeBoolean {
+			return r, ErrInvalidResponse
+		}
+		r.StopSyncLogMeta = value.Boolean()
 	}
 	if r.Token, _, err = fields.Int64(raw, "o"); err != nil || r.Token < 0 {
 		return r, ErrInvalidResponse

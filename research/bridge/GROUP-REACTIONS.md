@@ -66,16 +66,23 @@ and the reconnect → chat-entry link for an already-open window.
 
 Each change was preceded by a failing production-path test.
 
-- **Offline reaction recovery.** The bridge had no recovery for reactions
-  changed while it was away; they were lost until the next live change to the
-  same message. After catch-up on every connection, each bridged chat now pages
-  `sync-meta` from a per-chat cursor stored in the bridge key-value store
-  (starting at the oldest bridged message's log ID), sends each meta through the
-  live reaction path and its revision guards, skips metas for unbridged
-  messages, and advances the cursor only after a page is fully applied. Lookup
-  or delivery failures keep the cursor for the next connection and never block
-  message delivery; the live-push failure policy (bounded notice, no replay) is
-  unchanged.
+- **Offline reaction recovery.** The original reconnect-wide sweep recovered
+  missed changes but requested unsupported business-channel metadata (#355).
+  The proposed replacement uses explicit room-viewing heartbeats: the first
+  eligible tick after ten seconds pages `sync-meta` from the durable per-chat
+  cursor (starting at the oldest bridged log). Further requests require known
+  newer metadata, a successful own reaction, or unfinished/failed work.
+  Only `DirectChat`, `MultiChat`, `OD`, and `OM` are eligible; the chat-entry
+  `dlm` stop flag also disables sync. Lookup and delivery failures retain the
+  cursor. This proposal has synthetic coverage, with owned acceptance pending;
+  the live-push failure policy remains unchanged.
+- **Explicit recovery.** In a standard Matrix appservice deployment, run
+  `!kakao sync-reactions` in the selected Kakao room (use the configured command
+  prefix if different). It checks only that room and uses the same type/entry
+  gates and durable cursor. There is no all-rooms option. Explicit requests may
+  run immediately but share the login's ten-second admission cooldown and
+  single in-flight budget. A longer backlog requires another explicit command;
+  failures retain progress and report a bounded error.
 - **Quick-reaction emoji.** Android's quick reactions reached Matrix as their
   Korean labels. The six observed mini items now use the same emoji as the
   outbound legacy table (❤️ 👍 ✅ 😆 😮 😢); stored identities remain
@@ -88,13 +95,20 @@ Each change was preceded by a failing production-path test.
 
 ### Deliberate deviations
 
-- mooo resyncs every bridged chat on each connection; the Mac syncs only open
-  chats on a timer. It sends `max=cur` and `cnt=0` because it keeps no local
-  meta rows.
+- The proposed viewing policy consumes framework heartbeats rather than a Mac
+  window timer. A 15-second heartbeat lapse expires the episode on the next
+  signal; an explicit switch cancels in-flight requests. Each admitted run is
+  limited to 15 seconds and ten pages, retaining continuation demand afterward.
+  Standard Matrix appservices provide no viewing callback, so reconnect alone
+  no longer recovers offline reactions there. mooo sends `max=cur` and `cnt=0`
+  because it keeps no local meta rows.
 - Mini metas are reconciled through the existing detail lookup rather than the
   Mac's `/rx/logmetas` batch fetch.
 
 ## Owned encrypted acceptance
+
+These 2026-10-10 observations exercised the former reconnect-wide policy.
+They do not validate the proposed viewing-driven scheduler.
 
 Method: a fresh build of this branch with the original B secondary profile in
 the existing owned encrypted A/B/C regular group. Every native reaction, Matrix

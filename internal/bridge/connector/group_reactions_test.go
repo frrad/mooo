@@ -6,14 +6,26 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/event"
 
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/reactions"
 )
+
+func TestReactionResyncSkipsBusinessChannel(t *testing.T) {
+	kc, portal, _, _ := newFrameworkReactionFixture(t, &recordingIntent{})
+	backend := &fakeKakao{chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: testChatID, Type: "PlusChat"}}}
+	kc.client = backend
+	_ = openReactionView(kc, portal)
+	if len(backend.reactionCursors) != 0 {
+		t.Fatalf("business channel requested reaction metadata: %v", backend.reactionCursors)
+	}
+}
 
 // Android's quick reactions arrive as mini items labelled in Korean. Matrix
 // receives the same emoji the outbound legacy table uses, while the stored
@@ -120,17 +132,17 @@ func syncedMeta(t *testing.T, logID, revision int64, content string) json.RawMes
 }
 
 // Reaction changes made while the bridge was offline are recovered on the
-// next connection from the server's metadata resync, starting at the oldest
+// next explicit viewing episode from the server's metadata resync, starting at the oldest
 // bridged message, and the per-chat cursor advances only after the page is
 // applied. Metas for unbridged messages are skipped.
-func TestReconnectResyncsReactionsChangedWhileOffline(t *testing.T) {
+func TestDemandResyncsReactionsChangedWhileOffline(t *testing.T) {
 	ctx := context.Background()
 	intent := &recordingIntent{}
 	kc, portal, login, old := newFrameworkReactionFixture(t, intent)
 	if err := kc.login.Bridge.DB.Reaction.Delete(ctx, old); err != nil {
 		t.Fatal(err)
 	}
-	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
+	backend := &reactionTestBackend{fakeKakao: reactionViewingBackend(), members: reactions.MembersResponse{
 		Revision: 500,
 		Members:  map[reactions.Type][]int64{reactions.Like: {testOtherID}},
 		Fields:   map[string]json.RawMessage{"2": []byte(`[2000]`)},
@@ -144,7 +156,9 @@ func TestReconnectResyncsReactionsChangedWhileOffline(t *testing.T) {
 	kc.queue = func(evt bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		return (*bridgev2.PortalInternals)(portal).HandleRemoteEvent(ctx, login, evt.GetType(), evt)
 	}
-	kc.resyncReactions(ctx, backend)
+	if requested, err := kc.syncRoomReactions(ctx, portal); err != nil || !requested {
+		t.Fatalf("explicit room demand: requested=%v err=%v", requested, err)
+	}
 	if len(backend.reactionCursors) != 1 || backend.reactionCursors[0] != 99 {
 		t.Fatalf("first resync cursors = %v, want the oldest bridged log 99", backend.reactionCursors)
 	}
@@ -152,16 +166,16 @@ func TestReconnectResyncsReactionsChangedWhileOffline(t *testing.T) {
 	if err != nil || row == nil {
 		t.Fatalf("offline reaction not recovered: row=%#v err=%v", row, err)
 	}
-	// The next connection resumes after the applied page.
-	kc.resyncReactions(ctx, backend)
+	// The next viewing episode resumes after the applied page.
+	_ = openReactionView(kc, portal)
 	if len(backend.reactionCursors) != 2 || backend.reactionCursors[1] != 501 {
 		t.Fatalf("second resync cursors = %v, want 501", backend.reactionCursors)
 	}
-	// A failed resync leaves the cursor for the next connection.
+	// A failed resync leaves the cursor for the next viewing episode.
 	backend.reactionSyncErr = errors.New("synthetic resync failure")
-	kc.resyncReactions(ctx, backend)
+	_ = openReactionView(kc, portal)
 	backend.reactionSyncErr = nil
-	kc.resyncReactions(ctx, backend)
+	_ = openReactionView(kc, portal)
 	if got := backend.reactionCursors[len(backend.reactionCursors)-1]; got != 501 {
 		t.Fatalf("cursor after failure = %d, want 501", got)
 	}
@@ -171,7 +185,7 @@ func TestResyncFailureInReactionApplyKeepsCursor(t *testing.T) {
 	ctx := context.Background()
 	intent := &recordingIntent{}
 	kc, portal, login, _ := newFrameworkReactionFixture(t, intent)
-	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, err: errors.New("synthetic members failure")}
+	backend := &reactionTestBackend{fakeKakao: reactionViewingBackend(), err: errors.New("synthetic members failure")}
 	backend.reactionPages = []reactions.SyncMetaPage{{Items: []json.RawMessage{syncedMeta(t, 99, 600, `{"2":1}`)}, Last: true}}
 	kc.client = backend
 	login.Client = kc
@@ -182,9 +196,30 @@ func TestResyncFailureInReactionApplyKeepsCursor(t *testing.T) {
 		}
 		return (*bridgev2.PortalInternals)(portal).HandleRemoteEvent(ctx, login, evt.GetType(), evt)
 	}
-	kc.resyncReactions(ctx, backend)
-	kc.resyncReactions(ctx, backend)
+	_ = openReactionView(kc, portal)
+	_ = openReactionView(kc, portal)
 	if len(backend.reactionCursors) != 2 || backend.reactionCursors[1] != 99 {
 		t.Fatalf("cursors = %v, want unchanged 99 after a failed apply", backend.reactionCursors)
 	}
+}
+
+// Drive the real viewing callback with synthetic heartbeats, without sleeping.
+func openReactionView(kc *KakaoClient, portal *bridgev2.Portal) error {
+	base := kc.now().Add(time.Minute)
+	kc.now = func() time.Time { return base }
+	if err := kc.HandleMatrixViewingChat(context.Background(), nil); err != nil {
+		return err
+	}
+	msg := &bridgev2.MatrixViewingChat{Portal: portal}
+	for range 3 {
+		if err := kc.HandleMatrixViewingChat(context.Background(), msg); err != nil {
+			return err
+		}
+		base = base.Add(5 * time.Second)
+	}
+	return nil
+}
+
+func reactionViewingBackend() *fakeKakao {
+	return &fakeKakao{chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: testChatID, Type: "MultiChat"}}, chatOnRoom: map[int64]chatmeta.ChatOnRoomResponse{testChatID: {ChatID: testChatID}}}
 }

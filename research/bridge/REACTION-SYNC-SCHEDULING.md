@@ -122,3 +122,57 @@ need explicit pacing, coalescing and account-wide budgets, while a demand-based
 policy needs reliable room-view/history hooks and a documented recovery delay.
 Neither policy should be described as exact Mac scheduling parity. This
 research changes no production behavior and leaves #355 open.
+
+## Proposed implementation, awaiting owned acceptance
+
+The follow-up removes `resyncReactions` from connection bootstrap. The shared
+page/delivery/cursor path is retained behind `HandleMatrixViewingChat`:
+
+- A view starts from an explicit framework signal for a portal belonging to
+  this login. Repeated heartbeats admit the first request after ten seconds.
+  There is no background timer or inferred activity from typing/read receipts.
+- A fresh `CHATINFO` identifies the raw room type once per viewing episode.
+  Unknown types fail closed instead of using the Mac enum converter's fallback.
+  Incompatible types make neither `CHATONROOM` nor metadata HTTP requests.
+- An eligible view obtains `CHATONROOM` once and respects `dlm`. The decoder
+  accepts a boolean when the field is present, rejects null/string/numeric
+  values and retains false for an absent optional field. That absent-value
+  compatibility decision is not claimed as executed Mac parity.
+- After a completed first pass, unchanged heartbeats do not poll empty pages.
+  Live metadata revisions and successful own reaction changes can create new
+  demand. A concurrent own reaction cannot be lost when an older sync completes.
+- One sync can run per login. Each run has a 15-second deadline and ten-page
+  budget; requests coalesce, and longer work retains its durable cursor and
+  continues on a later tick. A switch or disconnect cancels metadata and detail
+  lookups. A heartbeat gap of at least 15 seconds starts a fresh episode on the
+  next signal. Cursor read/write errors fail closed rather than marking demand
+  satisfied.
+
+The framework explicitly states that its standard Matrix appservice connector
+does not call the viewing API; Matrix defines no standard open-room signal.
+Consequently that deployment loses eager offline reaction recovery, while live
+push delivery continues. Exact window lifecycle, local meta-table `max`/`cnt`,
+own-reaction immediate refetch and unbounded Mac continuation remain deliberate
+differences. The proposed scheduler has synthetic production-path tests; no
+real client/account test has been run. Hold the implementation PR for the
+maintainer's live test before merge.
+
+For standard appservices, `!kakao sync-reactions` is explicit operator demand
+for the current portal and selected owned login. It shares the viewing/type/
+entry/page/cursor path but can admit its first run immediately; it rechecks
+capability each time. Both entry points share one in-flight slot and a
+ten-second per-login admission cooldown. There is no all-chats argument or
+automatic command retry. This is an intentional bridge recovery control, not
+an inferred window-open signal. It does not send source read acknowledgements
+or advance message delivery cursors. Matrix reaction acknowledgements still
+use the framework's existing queue; the source deadline alone is not proof of
+a wall-clock bound on every downstream Matrix operation.
+
+Owned acceptance is on hold. When the maintainer authorizes it, verify that
+reconnecting makes no metadata HTTP sweep, business-channel command/view demand
+makes no metadata HTTP request, and explicit supported-room demand recovers a
+known offline reaction once. Repeat the command after its cooldown to confirm
+stable identities and cursor reuse. Check stop-flag exclusion and cancel/error
+cursor retention where available; unavailable client viewing signals are a
+reported gap, not simulated official-client evidence. Do not run these checks
+until the maintainer releases the hold.
