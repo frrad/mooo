@@ -1003,3 +1003,38 @@ the authorized squash merge.
       membership isolation, failures, account pacing and restart.
 - [x] Run owned-account end-to-end room/enrichment/traffic/restart acceptance, full
       make check and secret scans; publish sanitized results and squash merge after CI.
+
+## Native metadata triggers (2026-10-14)
+
+[METADATA-TRIGGERS.md](research/bridge/METADATA-TRIGGERS.md) traces every
+background metadata request to its official Mac trigger. The official client
+never refetches a known member on a timer, and no profile push exists for
+regular members. Follow-up changes, one PR each:
+
+- [ ] Remove the minute profile tick (`group_profile_refresh.go`,
+      `lifecycle.go` ticker). Keep the paused-group membership retry, which
+      schedules itself.
+- [ ] Replace time-based freshness with native triggers. MEMBER: fetch only
+      members with no stored profile (new roster entries, NEWMEM invitees and
+      unknown message authors). GETMOMETA: fetch from the CHATONROOM response
+      revisions on Matrix viewing, and apply CHGMOMETAS payloads directly.
+      GETMCMETA: fetch only when the login-list `mcmRevision` exceeds the stored
+      revision, and apply CHGMCMETA payloads. Drop the 15-minute freshness
+      windows; keep the 2-minute attempt reservation as failure backoff.
+- [ ] Add MEMBER for a message author with no stored profile or an empty
+      nickname, matching native message conversion.
+- [ ] Remove the startup CHATONROOM sweep (`recoverReadWatermarks`). Native
+      sends CHATONROOM only on chat open and, on reconnect, for open chat
+      windows. Derive read watermarks from login chat data, or fetch them on
+      the Matrix viewing heartbeat.
+- [ ] Remove the startup MEMLIST per group. Native has no background roster
+      read: it learns members from login chat data, membership pushes and the
+      CHATONROOM member IDs (`a`) on chat open. Fetch the roster when a portal
+      is first created, then keep it from pushes; refetch it on the Matrix
+      viewing heartbeat with CHATONROOM. If a bridged room still needs a roster
+      without a viewer, document that as a deviation with a named trigger.
+- [ ] Decide whether to implement HTTP friend sync (native 60 s timer, 600 s
+      gate). It is the only native periodic profile source and covers friends
+      only. Trace its payload consumer first.
+- [ ] Confirm the friend-sync period with an idle official Mac capture when an
+      official Mac session exists without a new restricted login.
