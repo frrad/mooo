@@ -4,14 +4,13 @@ import (
 	"context"
 
 	"github.com/frrad/mooo/internal/continuity"
-	"github.com/frrad/mooo/internal/protocol/booking"
 	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/sessionlogin"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// This file holds the CHECKIN dial order and the LOGINLIST/LCHATLIST page
-// synchronization that connectSession drives.
+// This file holds the LOGINLIST/LCHATLIST page synchronization that
+// connectSession drives.
 
 type loginCursor struct {
 	chatData         map[int64]bson.Raw
@@ -24,41 +23,6 @@ type loginCursor struct {
 	// mcmRevision is the LOGINLIST page's personal-metadata revision.
 	mcmRevision *int32
 	pages       int
-}
-
-// checkin tries each CHECKIN host and port in the official dial order and
-// returns the first accepted reply. When every attempt fails it reports the
-// last failure, tagged "checkin dial" or "checkin".
-func checkin(ctx context.Context, hosts []string, ports []int, body []byte, dialers sessionDialers) (loco.Packet, *wireConn, error) {
-	failure := errBootstrap
-	attempt := func(dial wireDialer, host string, port int) (loco.Packet, *wireConn, bool) {
-		wire, err := dial(ctx, host, port)
-		if err != nil {
-			failure = stageErr(errBootstrap, "checkin dial", err)
-			return loco.Packet{}, nil, false
-		}
-		reply, _, requestErr := wire.request(1, booking.CheckinCommand, body)
-		_ = wire.close()
-		status, statusErr := loco.Status(reply)
-		if cause := replyFailure(booking.CheckinCommand, requestErr, statusErr, status); cause != nil {
-			failure = stageErr(errBootstrap, "checkin", cause)
-			return loco.Packet{}, nil, false
-		}
-		return reply, wire, true
-	}
-	for _, host := range hosts {
-		for _, port := range append([]int{443}, ports...) {
-			if reply, wire, ok := attempt(dialers.tls, host, port); ok {
-				return reply, wire, nil
-			}
-		}
-		for _, port := range append(append([]int(nil), ports...), 995) {
-			if reply, wire, ok := attempt(dialers.secure, host, port); ok {
-				return reply, wire, nil
-			}
-		}
-	}
-	return loco.Packet{}, nil, failure
 }
 
 // replyFailure returns the first reason a single-reply exchange failed: the
