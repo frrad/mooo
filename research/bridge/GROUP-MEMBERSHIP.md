@@ -79,6 +79,48 @@ event exactly. Required CI and squash merge remain pending. No separate forced
 administrator-removal experiment was performed; its decoded removal path has
 synthetic production coverage and first-party tracing, not observed parity.
 
+## Feed application (2026-10-14)
+
+Static tracing of the official Mac 26.8.0 NEWMEM and DELMEM manager consumers
+resolved their request predicates ([chat metadata](../chat-metadata.md)
+"Membership push follow-ups"). For a stored room, DELMEM sends nothing and
+removes the leaver locally; NEWMEM sends only `MEMBER` for its invitees.
+`CHATINFO` is reserved for an unknown room or a feed that invites the account
+itself. No membership push path reads `MEMLIST`.
+
+The bridge now follows this for a managed group whose last verified roster is
+stored (managed, not pending, not removed, bound). A NEWMEM or DELMEM push, or
+the equivalent type-zero catch-up feed, is applied to the stored roster: add
+the invitees or remove the leaver. The result goes through the same pause,
+Matrix convergence and read-back verification as a full refresh, and the
+checkpoint stores the new roster. No source request is sent synchronously.
+Every invitee is queued for `MEMBER`, also one whose profile is already stored,
+subject to the per-user attempt cooldown. A replayed feed that the roster
+already reflects changes nothing.
+
+A full roster read (`CHATINFO` + `MEMLIST`) remains for a group without a
+verified roster (new, paused, removed or unmanaged), for a feed naming the
+account itself, and for a feed with no usable member ID. The earlier rule that
+every notice selects a fresh full roster, so a delayed notice cannot overwrite
+a newer one, is replaced by ordered application: pushes and catch-up feeds are
+applied in log order, as the official client applies them. Two consequences
+are accepted:
+
+- A paused group re-read at connect and then replayed from its committed
+  position passes through intermediate rosters before reaching the current
+  one. Only the final state is verified before forwarding resumes.
+- An unnamed group's display name, derived from display-member nicknames, is
+  not recomputed on a feed. The next login inventory updates it.
+
+Owned acceptance, 2026-10-15 (provenance `observed`): the bridge, logged in as
+lab account B with a private packet observer recording inbound methods only,
+ran in an existing three-member managed group. C left in the official Android
+client: B received one `DELMEM` and sent no request; the stored roster dropped
+to two members, C's ghost left the Matrix room and forwarding stayed ready. A
+then invited C back: B received one `NEWMEM` and sent exactly one `MEMBER`
+(no `CHATINFO`, no `MEMLIST`); C's ghost rejoined and the stored roster
+returned to three members.
+
 ## Corrected wire-to-model boundary
 
 A controlled owned-account leave on 2026-10-09 exposed an acceptance failure:

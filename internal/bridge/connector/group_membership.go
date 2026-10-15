@@ -54,9 +54,23 @@ func (kc *KakaoClient) refreshGroupMembershipInventory(ctx context.Context, c ka
 func (kc *KakaoClient) refreshGroupMembershipFrom(ctx context.Context, c kakaoClient, chatID int64, create bool, opts chatInfoOptions) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	p, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(chatID, kc.login.ID))
+	p, err := kc.pauseGroupMembership(ctx, chatID)
 	if err != nil {
 		return err
+	}
+	info, snap, err := kc.chatInfoFromClient(ctx, p, c, opts)
+	if err != nil {
+		return err
+	}
+	return kc.convergeGroupMembership(ctx, p, info, snap.roster, create, kc.historyEnabled())
+}
+
+// pauseGroupMembership blocks forwarding and persists the pause before any
+// source or Matrix work, so a failed or interrupted change stays paused.
+func (kc *KakaoClient) pauseGroupMembership(ctx context.Context, chatID int64) (*bridgev2.Portal, error) {
+	p, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(chatID, kc.login.ID))
+	if err != nil {
+		return nil, err
 	}
 	kc.cacheMu.Lock()
 	if kc.sourceBlocked == nil {
@@ -64,16 +78,21 @@ func (kc *KakaoClient) refreshGroupMembershipFrom(ctx context.Context, c kakaoCl
 	}
 	kc.sourceBlocked[chatID] = errMembershipPending
 	kc.cacheMu.Unlock()
-	// Persist the pause before source or Matrix work, including a failed refresh.
 	if err = kc.saveMembershipCheckpoint(ctx, p, true, nil); err != nil {
-		return err
+		return nil, err
 	}
-	info, snap, err := kc.chatInfoFromClient(ctx, p, c, opts)
+	return p, nil
+}
+
+// convergeGroupMembership applies a source roster to Matrix and clears the
+// pause only after verifying that Matrix membership matches it.
+func (kc *KakaoClient) convergeGroupMembership(ctx context.Context, p *bridgev2.Portal, info *bridgev2.ChatInfo, roster []int64, create, backfill bool) error {
+	chatID, err := parseChatID(p.ID)
 	if err != nil {
 		return err
 	}
 	expected := map[networkid.UserID]bool{}
-	for _, member := range snap.roster {
+	for _, member := range roster {
 		user := makeUserID(member)
 		if member <= 0 || expected[user] {
 			return errInvalidMemberRoster
@@ -86,10 +105,10 @@ func (kc *KakaoClient) refreshGroupMembershipFrom(ctx context.Context, c kakaoCl
 		}
 		return errSourceAccessRemoved
 	}
-	if kc.rosterMatches(snap, expected, false) != nil {
+	if kc.rosterMatches(chatSnapshot{roster: roster}, expected, false) != nil {
 		return errInvalidMemberRoster
 	}
-	if err = kc.saveMembershipCheckpoint(ctx, p, true, snap.roster); err != nil {
+	if err = kc.saveMembershipCheckpoint(ctx, p, true, roster); err != nil {
 		return err
 	}
 	key := p.PortalKey
@@ -99,7 +118,7 @@ func (kc *KakaoClient) refreshGroupMembershipFrom(ctx context.Context, c kakaoCl
 		}
 		return info, nil
 	}}
-	if kc.historyEnabled() {
+	if backfill {
 		resync.CheckNeedsBackfillFunc = func(context.Context, *database.Message) (bool, error) { return true, nil }
 	}
 	if !committable(kc.queue(resync)) {
@@ -132,7 +151,7 @@ func (kc *KakaoClient) refreshGroupMembershipFrom(ctx context.Context, c kakaoCl
 			return errMembershipPending
 		}
 	}
-	if err = kc.saveMembershipCheckpoint(ctx, p, false, snap.roster); err != nil {
+	if err = kc.saveMembershipCheckpoint(ctx, p, false, roster); err != nil {
 		return err
 	}
 	kc.cacheMu.Lock()
@@ -141,7 +160,71 @@ func (kc *KakaoClient) refreshGroupMembershipFrom(ctx context.Context, c kakaoCl
 	return nil
 }
 
+// membershipFeed is the member delta carried by a NEWMEM or DELMEM notice, or
+// by the equivalent catch-up feed.
+type membershipFeed struct {
+	invitees []int64
+	leaver   int64
+}
+
+// feedRoster applies a feed to the group's stored verified roster, as the
+// official client's NEWMEM and DELMEM consumers apply it to the stored room.
+// It reports false when the feed cannot be applied locally: the group has no
+// verified roster, or the feed names the account itself or an invalid ID.
+// The official client sends CHATINFO for an unknown room or a self invite;
+// the bridge reads the full roster in those cases.
+func (kc *KakaoClient) feedRoster(ctx context.Context, chatID int64, feed membershipFeed) ([]int64, bool) {
+	stored := kc.verifiedRoster(ctx, chatID)
+	if len(stored) == 0 {
+		return nil, false
+	}
+	if feed.leaver != 0 {
+		if feed.leaver < 0 || feed.leaver == kc.userID || len(feed.invitees) != 0 {
+			return nil, false
+		}
+		return slices.DeleteFunc(stored, func(userID int64) bool { return userID == feed.leaver }), true
+	}
+	if len(feed.invitees) == 0 {
+		return nil, false
+	}
+	for _, userID := range feed.invitees {
+		if userID <= 0 || userID == kc.userID {
+			return nil, false
+		}
+		if !slices.Contains(stored, userID) {
+			stored = append(stored, userID)
+		}
+	}
+	return stored, true
+}
+
+// applyMembershipFeed converges Matrix with a roster derived from a feed. It
+// sends no request itself; invitees get MEMBER through the enrichment queue,
+// as the official client sends MEMBER for NEWMEM invitees.
+func (kc *KakaoClient) applyMembershipFeed(ctx context.Context, chatID int64, roster []int64, invitees []int64) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	p, err := kc.pauseGroupMembership(ctx, chatID)
+	if err != nil {
+		return err
+	}
+	snap := chatSnapshot{data: chatmeta.ChatData{ChatID: chatID, Type: "MultiChat"}, roster: roster, deferred: true}
+	if snap.profiles, err = kc.cachedMemberProfiles(ctx, roster); err != nil {
+		kc.log().Warn().Str("error_class", sourceErrorClass(err)).Msg("Stored member profiles are unavailable; preserving the source roster")
+	}
+	info := &bridgev2.ChatInfo{CanBackfill: kc.historyEnabled(), Members: kc.projectMembers(snap)}
+	if err = kc.convergeGroupMembership(ctx, p, info, roster, false, false); err != nil {
+		return err
+	}
+	kc.rememberFeedRoster(chatID, roster, invitees)
+	return nil
+}
+
 func (kc *KakaoClient) managedMembershipEvent(ctx context.Context, c kakaoClient, chatID int64, create bool) (bool, bool) {
+	return kc.managedMembershipChange(ctx, c, chatID, create, nil)
+}
+
+func (kc *KakaoClient) managedMembershipChange(ctx context.Context, c kakaoClient, chatID int64, create bool, feed *membershipFeed) (bool, bool) {
 	p, err := kc.store.portalByKey(ctx, makePortalKey(chatID, kc.login.ID))
 	if err != nil {
 		return true, false
@@ -149,7 +232,16 @@ func (kc *KakaoClient) managedMembershipEvent(ctx context.Context, c kakaoClient
 	if p != nil && p.RoomType == database.RoomTypeDM {
 		return false, false
 	}
-	err = kc.refreshGroupMembership(ctx, c, chatID, create)
+	var roster []int64
+	applicable := false
+	if feed != nil {
+		roster, applicable = kc.feedRoster(ctx, chatID, *feed)
+	}
+	if applicable {
+		err = kc.applyMembershipFeed(ctx, chatID, roster, feed.invitees)
+	} else {
+		err = kc.refreshGroupMembership(ctx, c, chatID, create)
+	}
 	if err != nil {
 		if !errors.Is(err, errSourceAccessRemoved) {
 			kc.scheduleMembershipRetry(chatID, 1)
@@ -161,15 +253,18 @@ func (kc *KakaoClient) managedMembershipEvent(ctx context.Context, c kakaoClient
 	return true, err == nil
 }
 
-// handleMembershipEvent refreshes managed group membership for a member
-// change. It reports whether the event was consumed and, if so, whether it
-// succeeded.
+// handleMembershipEvent applies a member change to managed group membership.
+// It reports whether the event was consumed and, if so, whether it succeeded.
 func (kc *KakaoClient) handleMembershipEvent(ctx context.Context, c kakaoClient, evt events.Event) (handled, success bool) {
 	switch notice := evt.(type) {
 	case events.MemberAdded:
-		return kc.managedMembershipEvent(ctx, c, notice.ChatID, true)
+		feed := membershipFeed{invitees: []int64{}}
+		for _, member := range notice.Members {
+			feed.invitees = append(feed.invitees, member.UserID)
+		}
+		return kc.managedMembershipChange(ctx, c, notice.ChatID, true, &feed)
 	case events.MemberRemoved:
-		return kc.managedMembershipEvent(ctx, c, notice.ChatID, false)
+		return kc.managedMembershipChange(ctx, c, notice.ChatID, false, &membershipFeed{leaver: notice.UserID})
 	}
 	return false, false
 }

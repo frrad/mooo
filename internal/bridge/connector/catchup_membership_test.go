@@ -54,9 +54,10 @@ func TestReconnectWithoutMembershipFeedsReadsNoRoster(t *testing.T) {
 }
 
 // Observed 2026-10-14: an offline leave or invite reaches catch-up as a type-0
-// membership feed. It takes the same authoritative path as a DELMEM/NEWMEM push
-// and is committed, so the next reconnect does not replay it.
-func TestCatchUpMembershipFeedRefreshesRosterAndCommits(t *testing.T) {
+// membership feed. Like a DELMEM/NEWMEM push it is applied to the stored
+// roster without a roster read, and is committed, so the next reconnect does
+// not replay it.
+func TestCatchUpMembershipFeedAppliesStoredRosterAndCommits(t *testing.T) {
 	for _, feed := range []events.Event{
 		events.MemberRemoved{ChatID: 5000, LogID: 200, UserID: 4000},
 		events.MemberAdded{ChatID: 5000, LogID: 200, Members: []events.MemberIdentity{{UserID: 4000}}},
@@ -68,8 +69,10 @@ func TestCatchUpMembershipFeedRefreshesRosterAndCommits(t *testing.T) {
 			if _, err := kc.connectAndSubscribe(t.Context(), backend); err != nil {
 				t.Fatal(err)
 			}
-			if n := rosterReads(backend); n != 1 {
-				t.Fatalf("membership feed roster reads = %d, want 1", n)
+			for _, call := range sourceCalls(backend) {
+				if strings.HasPrefix(call, "MemberList(") || strings.HasPrefix(call, "ChatInfo(") {
+					t.Fatalf("membership feed read the room: %v", sourceCalls(backend))
+				}
 			}
 			committed := false
 			for _, evt := range backend.commits {

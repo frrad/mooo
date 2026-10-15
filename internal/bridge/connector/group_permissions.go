@@ -109,11 +109,12 @@ func (kc *KakaoClient) HandleMute(context.Context, *bridgev2.MatrixMute) error {
 }
 
 // refreshMembershipAsync must not run in the portal event loop: the roster
-// refresh queues a resync into that same portal and waits for it.
-func (kc *KakaoClient) refreshMembershipAsync(c kakaoClient, chatID int64) {
+// change queues a resync into that same portal and waits for it. A nil feed
+// re-reads the source roster.
+func (kc *KakaoClient) refreshMembershipAsync(c kakaoClient, chatID int64, feed *membershipFeed) {
 	go func() {
 		kc.groupGate.Lock()
 		defer kc.groupGate.Unlock()
-		kc.managedMembershipEvent(context.Background(), c, chatID, false)
+		kc.managedMembershipChange(context.Background(), c, chatID, false, feed)
 	}()
 }
