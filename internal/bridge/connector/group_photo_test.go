@@ -104,7 +104,8 @@ func runDisconnectDuringPhotoTransfer(t *testing.T, stage string) {
 		openMu.Lock()
 		defer openMu.Unlock()
 		opens++
-		return fake, nil
+		// Like the real client, Shutdown closes the session's event stream.
+		return &closingFake{fakeKakao: fake}, nil
 	})
 	kc.sendState = func(status.BridgeState) {}
 	kc.queue = login.QueueRemoteEvent

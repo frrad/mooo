@@ -33,6 +33,9 @@ func (kc *KakaoClient) sendReadyState() {
 		}
 	}
 	kc.cacheMu.Unlock()
+	if classification == "" && kc.pausedDeliveries.Load() > 0 {
+		classification = stateChatDeliveryPaused
+	}
 	if classification != "" {
 		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: classification})
 	} else {

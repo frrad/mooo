@@ -377,10 +377,34 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	deliveryFailed := false
 	var terminalErr error
 	metadataResults, stopMetadata := kc.startMetadataRefresh(c)
+	// heldTimer wakes the pump for the earliest held-chat retry.
+	var heldTimer *time.Timer
+	defer func() {
+		if heldTimer != nil {
+			heldTimer.Stop()
+		}
+	}()
 eventLoop:
 	for {
 		var result events.Result
+		var heldRetry <-chan time.Time
+		if heldTimer != nil {
+			heldTimer.Stop()
+			heldTimer = nil
+		}
+		if due, ok := kc.nextHeldRetry(); ok && !kickedOut && !changeServer {
+			heldTimer = time.NewTimer(time.Until(due))
+			heldRetry = heldTimer.C
+		}
 		select {
+		case now := <-heldRetry:
+			kc.retryDueHolds(c, now)
+			continue
+		case <-kc.deliveryResume:
+			if !kickedOut && !changeServer {
+				kc.resumeHeld(c, 0)
+			}
+			continue
 		case enrichment := <-metadataResults:
 			if !kickedOut && !changeServer && kc.applyMetadataRefresh(c, enrichment) {
 				break eventLoop
@@ -417,9 +441,8 @@ eventLoop:
 		if _, ok := result.Event.(events.ChangeServer); ok {
 			changeServer = true
 		}
-		if !kc.handleEvent(c, result.Event) && !kickedOut && !changeServer {
-			// Continuing would strand the first uncommitted event while later
-			// deliveries could reach Matrix out of order. Release this session
+		if !kc.deliver(c, result.Event) && !kickedOut && !changeServer {
+			// A failed event of no chat cannot be held. Release this session
 			// and let bounded connector recovery replay from durable progress.
 			// Outbound mutations are never replayed by this path.
 			deliveryFailed = true
@@ -799,17 +822,46 @@ func (kc *KakaoClient) metadataClient() (kakaoClient, error) {
 	return nil, bridgev2.ErrNotLoggedIn
 }
 
+var (
+	errDetachedKickedOut    = errors.New("connector: KakaoTalk signed this device out; log out of the bridge and log in again instead")
+	errDetachedRetryPending = errors.New("connector: a reconnect is scheduled, possibly waiting out a rate limit; wait for the bridge state to report it, then run this command again")
+)
+
 // openDetached opens a temporary profile client outside the connection
 // lifecycle. It refuses while a session is connecting, connected, stopping or
 // still retaining an owner, since the profile lease admits one owner.
+//
+// A detached client logs in, so it passes the same gates as the supervisor's
+// Connect: no login after KICKOUT, and none while a retry is scheduled, in
+// this process or restored from the login's metadata, since that retry may be
+// waiting out a -328 rate limit. The reconciliation commands still need it
+// when no gate applies, because an unresolved group creation fails every
+// bootstrap until it is reconciled. The login is recorded in the persisted
+// schedule like any other.
 func (kc *KakaoClient) openDetached() (kakaoClient, error) {
+	if _, kicked := kc.kickedOut(); kicked {
+		return nil, errDetachedKickedOut
+	}
+	if kc.persistedRetryPending() {
+		return nil, errDetachedRetryPending
+	}
 	kc.mu.Lock()
 	busy := kc.stopping || kc.connecting || kc.cleanup != nil
+	pending := kc.retry.running()
+	attempt := kc.recoveryTry
 	kc.mu.Unlock()
+	if pending {
+		return nil, errDetachedRetryPending
+	}
 	if busy || kc.open == nil {
 		return nil, errors.New("connector: profile cleanup or connection is still in progress")
 	}
-	return kc.open()
+	c, err := kc.open()
+	if err != nil {
+		return nil, err
+	}
+	kc.recordLoginAttempt(attempt, kc.now())
+	return c, nil
 }
 
 // releaseDetached shuts down a client from openDetached. When shutdown fails

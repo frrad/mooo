@@ -125,13 +125,18 @@ func (kc *KakaoClient) handleReactionDemand(ctx context.Context, msg *bridgev2.M
 	disabled := false
 	err := kc.checkSourceAccess(requestCtx, chatID)
 	if err == nil && !initialized {
-		info, lookupErr := c.ChatInfo(requestCtx, chatID)
-		err = lookupErr
-		if err == nil && info.ChatData.ChatID != chatID {
-			err = errChatInfoMismatch
+		roomType, known := kc.localRoomType(requestCtx, c, chatID)
+		if !known {
+			// A room absent from local chat data is the native CHATINFO case.
+			info, lookupErr := c.ChatInfo(requestCtx, chatID)
+			err = lookupErr
+			if err == nil && info.ChatData.ChatID != chatID {
+				err = errChatInfoMismatch
+			}
+			roomType = info.ChatData.Type
 		}
 		if err == nil {
-			switch info.ChatData.Type {
+			switch roomType {
 			case "DirectChat", "MultiChat", "OD", "OM":
 				room, entryErr := c.ChatOnRoom(requestCtx, chatID)
 				err = entryErr
@@ -142,7 +147,7 @@ func (kc *KakaoClient) handleReactionDemand(ctx context.Context, msg *bridgev2.M
 				if err == nil {
 					kc.applyChatOnRoomWatermarks(chatID, room)
 				}
-				if err == nil && info.ChatData.Type == "MultiChat" {
+				if err == nil && roomType == "MultiChat" {
 					kc.boardsRevisionDemand(requestCtx, chatID, room.MoimRevisions)
 				}
 			default:
@@ -276,4 +281,29 @@ func (kc *KakaoClient) resyncChatReactions(ctx context.Context, c kakaoClient, p
 		cur = next
 	}
 	return errReactionSyncBudget
+}
+
+// localRoomType returns a chat's type from local chat data, as the official
+// client has it from the login chat list when it opens a chat: the room's
+// remembered snapshot (which also covers groups created since login), then
+// the completed login inventory. It reports false when neither has the chat.
+func (kc *KakaoClient) localRoomType(ctx context.Context, c kakaoClient, chatID int64) (string, bool) {
+	if q := kc.metadataRefresh; q != nil {
+		q.mu.Lock()
+		task, ok := q.snapshots[chatID]
+		q.mu.Unlock()
+		if ok && task.snapshot.data.Type != "" {
+			return task.snapshot.data.Type, true
+		}
+	}
+	chats, err := c.ListChats(ctx)
+	if err != nil {
+		return "", false
+	}
+	for _, chat := range chats {
+		if chat.ChatID == chatID && chat.Type != "" {
+			return chat.Type, true
+		}
+	}
+	return "", false
 }

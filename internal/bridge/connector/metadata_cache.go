@@ -112,8 +112,10 @@ func (kc *KakaoClient) cachedMemberProfiles(ctx context.Context, ids []int64) ([
 
 // Existing rooms can publish their verified base snapshot immediately. Only
 // authoritative membership reconciliation replaces a roster; ordinary metadata
-// demand queues enrichment and carries no membership changes.
-func (kc *KakaoClient) cachedChatInfo(ctx context.Context, p *bridgev2.Portal) (*bridgev2.ChatInfo, bool, error) {
+// demand queues enrichment and carries no membership changes. refreshRoom
+// also queues CHATINFO; only a native trigger (a CHGCHATST or CHGMETA resync)
+// asks for it, as the official client never sends CHATINFO on a cached read.
+func (kc *KakaoClient) cachedChatInfo(ctx context.Context, p *bridgev2.Portal, refreshRoom bool) (*bridgev2.ChatInfo, bool, error) {
 	if p.MXID == "" {
 		return nil, false, nil
 	}
@@ -157,8 +159,10 @@ func (kc *KakaoClient) cachedChatInfo(ctx context.Context, p *bridgev2.Portal) (
 		return nil, true, err
 	}
 	info.Members = nil
-	task.kind = refreshRoomInfo
-	q.offer(task)
+	if refreshRoom {
+		task.kind = refreshRoomInfo
+		q.offer(task)
+	}
 	kc.enqueueExistingRoomEnrichment(ctx, chatID, refreshPersonal, false)
 	kc.enqueueExistingRoomEnrichment(ctx, chatID, refreshBoards, false)
 	return info, true, nil

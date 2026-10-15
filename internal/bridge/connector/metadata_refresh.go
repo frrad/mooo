@@ -35,6 +35,19 @@ const maxMetadataRefreshJobs = 1024
 // persistent failure costs at most one request per maxMetadataRetryDelay.
 const maxMetadataRetryDelay = time.Hour
 
+// maxMetadataRetries bounds the retries of a failed optional read: member
+// profiles, personal metadata, Boards and room info. The official client
+// does not retry them at all; it clears its in-flight state on failure and
+// refetches on the next native trigger (research/bridge/NATIVE-SKEW-AUDIT.md
+// finding 15). The bridge keeps a few spaced retries (2, 4 and 8 minutes) so
+// a brief outage does not leave a ghost or room unenriched until that
+// trigger, then drops the task; the trigger enqueues it again.
+//
+// A paused group's retryMembership is not bounded: the group forwards
+// nothing until its roster converges, so the bridge needs it to function. It
+// still backs off to one attempt per maxMetadataRetryDelay.
+const maxMetadataRetries = 3
+
 type metadataRefreshTask struct {
 	kind     metadataRefreshKind
 	chatID   int64
@@ -414,14 +427,8 @@ func (kc *KakaoClient) performMetadataRefresh(ctx context.Context, c kakaoClient
 		if !personalKnown {
 			info.Name, info.Avatar = nil, nil
 		}
-		if info.Avatar != nil && !info.Avatar.Remove {
-			uri, hash, uploadErr := info.Avatar.Reupload(ctx, kc.login.Bridge.Bot, p.AvatarHash, p.AvatarMXC)
-			if uploadErr != nil {
-				result.err = uploadErr
-				info.Avatar = nil
-			} else {
-				info.Avatar.MXC, info.Avatar.Hash, info.Avatar.Get = uri, hash, nil
-			}
+		if err = kc.resolveRoomAvatar(ctx, p, info); err != nil {
+			result.err = err
 		}
 		result.info = info
 	case refreshBoards:
@@ -472,14 +479,8 @@ func (kc *KakaoClient) performMetadataRefresh(ctx context.Context, c kakaoClient
 		if cache.Personal == nil && task.snapshot.data.Meta == nil && task.snapshot.personalRequired {
 			info.Name, info.Avatar = nil, nil
 		}
-		if info.Avatar != nil && !info.Avatar.Remove {
-			uri, hash, uploadErr := info.Avatar.Reupload(ctx, kc.login.Bridge.Bot, p.AvatarHash, p.AvatarMXC)
-			if uploadErr != nil {
-				result.err = uploadErr
-				info.Avatar = nil
-			} else {
-				info.Avatar.MXC, info.Avatar.Hash, info.Avatar.Get = uri, hash, nil
-			}
+		if err = kc.resolveRoomAvatar(ctx, p, info); err != nil {
+			result.err = err
 		}
 		result.info = info
 	case retryMembership:
@@ -499,6 +500,27 @@ func (kc *KakaoClient) performMetadataRefresh(ctx context.Context, c kakaoClient
 		result.reconcile = meta.MembershipPending
 	}
 	return result
+}
+
+// resolveRoomAvatar uploads a refreshed room avatar to Matrix. An avatar
+// whose ID (the source URL hash) matches the portal's applied avatar reuses
+// the stored media without downloading it again; the official client shows
+// room images from its local image cache. A failed upload drops the avatar.
+func (kc *KakaoClient) resolveRoomAvatar(ctx context.Context, p *bridgev2.Portal, info *bridgev2.ChatInfo) error {
+	if info.Avatar == nil || info.Avatar.Remove {
+		return nil
+	}
+	if info.Avatar.ID == p.AvatarID && p.AvatarSet && p.AvatarMXC != "" {
+		info.Avatar.MXC, info.Avatar.Hash, info.Avatar.Get = p.AvatarMXC, p.AvatarHash, nil
+		return nil
+	}
+	uri, hash, err := info.Avatar.Reupload(ctx, kc.login.Bridge.Bot, p.AvatarHash, p.AvatarMXC)
+	if err != nil {
+		info.Avatar = nil
+		return err
+	}
+	info.Avatar.MXC, info.Avatar.Hash, info.Avatar.Get = uri, hash, nil
+	return nil
 }
 
 // scheduleMembershipRetry queues a paused group's refresh after backoff.
@@ -522,8 +544,12 @@ func (kc *KakaoClient) applyMetadataRefresh(c kakaoClient, result metadataRefres
 		}
 		retry := result.task
 		retry.attempts++
-		retry.notBefore = time.Now().Add(metadataRetryDelay(retry.attempts))
-		kc.metadataRefresh.offer(retry)
+		if retry.kind == retryMembership || retry.attempts <= maxMetadataRetries {
+			retry.notBefore = time.Now().Add(metadataRetryDelay(retry.attempts))
+			kc.metadataRefresh.offer(retry)
+		} else {
+			kc.log().Info().Uint8("refresh_kind", uint8(retry.kind)).Int("attempts", retry.attempts).Msg("Background metadata refresh abandoned until its next trigger")
+		}
 	}
 	if result.reconcile {
 		// The same authoritative path a membership notice takes. It keeps
@@ -532,6 +558,9 @@ func (kc *KakaoClient) applyMetadataRefresh(c kakaoClient, result metadataRefres
 		defer cancel()
 		if _, ok := kc.managedMembershipEvent(ctx, c, result.task.chatID, false); !ok {
 			kc.scheduleMembershipRetry(result.task.chatID, result.task.attempts+1)
+		} else {
+			// Delivery held behind the paused membership can resume.
+			kc.resumeHeld(c, result.task.chatID)
 		}
 		return false
 	}

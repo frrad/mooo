@@ -90,7 +90,7 @@ func TestStoredBoardsAreNotRefetchedByAge(t *testing.T) {
 	kc, backend, portal, _ := newBoardsGroup(t)
 	later := kc.now().Add(24 * time.Hour)
 	kc.now = func() time.Time { return later }
-	if _, _, err := kc.cachedChatInfo(t.Context(), portal); err != nil {
+	if _, _, err := kc.cachedChatInfo(t.Context(), portal, false); err != nil {
 		t.Fatal(err)
 	}
 	snap := kc.metadataRefresh.rooms()[0].snapshot

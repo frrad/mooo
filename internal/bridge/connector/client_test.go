@@ -50,6 +50,8 @@ type catchUpResult struct {
 }
 
 type fakeKakao struct {
+	// fetchFailures fails that many GETMSGS reads before serving results.
+	fetchFailures      int
 	undeliveredTargets []syncmsg.Target
 	mcmRevision        *int32
 	chatInventory      []chatmeta.ChatData
@@ -1728,9 +1730,15 @@ func (f *fakeKakao) ChatOnRoom(_ context.Context, chatID int64) (chatmeta.ChatOn
 
 // GetMessages serves the configured GETMSGS results in order.
 func (f *fakeKakao) GetMessages(_ context.Context, chatID int64, logIDs []int64) ([]events.Event, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.fetchRequests = append(f.fetchRequests, append([]int64{chatID}, logIDs...))
 	if f.fetchErr != nil {
 		return nil, f.fetchErr
+	}
+	if f.fetchFailures > 0 {
+		f.fetchFailures--
+		return nil, client.StatusError{Status: -500}
 	}
 	if len(f.fetchResults) == 0 {
 		return nil, nil
