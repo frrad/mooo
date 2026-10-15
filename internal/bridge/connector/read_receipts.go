@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"time"
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/bridgev2"
@@ -14,6 +13,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/simplevent"
 
 	"github.com/frrad/mooo/internal/client"
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 )
 
@@ -51,6 +51,10 @@ func (kc *KakaoClient) readReceiptEvent(ctx context.Context, notice events.ReadS
 // position, so a failure is logged and dropped rather than replayed; it never
 // stops the event loop.
 func (kc *KakaoClient) handleReadState(notice events.ReadStateChanged) bool {
+	// Live notices and viewing recovery run on different goroutines; the
+	// forward-only check and its write must not interleave.
+	kc.readStateMu.Lock()
+	defer kc.readStateMu.Unlock()
 	ctx := context.Background()
 	stored := kc.memberReadWatermark(ctx, notice.ChatID, notice.UserID)
 	if notice.Watermark <= stored {
@@ -180,39 +184,18 @@ func classifyReadReceiptFailure(cause error) error {
 	}
 }
 
-// recoverReadWatermarks bridges member reads that happened while the bridge
-// was away. Read notices are live-only; CHATONROOM returns every active
+// applyChatOnRoomWatermarks bridges member reads that happened while the room
+// was not viewed. Read notices are live-only; CHATONROOM, sent when the room is
+// viewed as the official client does on chat entry, returns every active
 // member's watermark and, in owned observation, acknowledged nothing. Each
-// watermark passes the same forward-only guard as a live notice. Failures
-// are logged and never block the connection.
-func (kc *KakaoClient) recoverReadWatermarks(ctx context.Context, c chatMetaAPI) {
-	portals, err := kc.store.portalsWithMXID(ctx)
-	if err != nil {
-		kc.log().Warn().Err(err).Msg("Could not list portals for read recovery")
-		return
+// watermark passes the same forward-only guard as a live notice.
+func (kc *KakaoClient) applyChatOnRoomWatermarks(chatID int64, room chatmeta.ChatOnRoomResponse) {
+	members := make([]int64, 0, len(room.Watermarks))
+	for member := range room.Watermarks {
+		members = append(members, member)
 	}
-	for _, portal := range portals {
-		if portal.Receiver != kc.login.ID {
-			continue
-		}
-		chatID, err := parseChatID(portal.ID)
-		if err != nil || chatID <= 0 || kc.checkSourceAccess(ctx, chatID) != nil {
-			continue
-		}
-		requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		room, err := c.ChatOnRoom(requestCtx, chatID)
-		cancel()
-		if err != nil || room.ChatID != chatID {
-			kc.log().Warn().Int64("kakao_chat_id", chatID).Msg("Read watermark recovery skipped for chat")
-			continue
-		}
-		members := make([]int64, 0, len(room.Watermarks))
-		for member := range room.Watermarks {
-			members = append(members, member)
-		}
-		sort.Slice(members, func(i, j int) bool { return members[i] < members[j] })
-		for _, member := range members {
-			kc.handleReadState(events.ReadStateChanged{ChatID: chatID, UserID: member, Watermark: room.Watermarks[member]})
-		}
+	sort.Slice(members, func(i, j int) bool { return members[i] < members[j] })
+	for _, member := range members {
+		kc.handleReadState(events.ReadStateChanged{ChatID: chatID, UserID: member, Watermark: room.Watermarks[member]})
 	}
 }

@@ -1023,7 +1023,7 @@ regular members. Follow-up changes, one PR each:
       windows; keep the 2-minute attempt reservation as failure backoff.
 - [x] Add MEMBER for a message author with no stored profile or an empty
       nickname, matching native message conversion.
-- [ ] Remove the startup CHATONROOM sweep (`recoverReadWatermarks`). Native
+- [x] Remove the startup CHATONROOM sweep (`recoverReadWatermarks`). Native
       sends CHATONROOM only on chat open and, on reconnect, for open chat
       windows. Derive read watermarks from login chat data, or fetch them on
       the Matrix viewing heartbeat.
@@ -1033,6 +1033,17 @@ regular members. Follow-up changes, one PR each:
       is first created, then keep it from pushes; refetch it on the Matrix
       viewing heartbeat with CHATONROOM. If a bridged room still needs a roster
       without a viewer, document that as a deviation with a named trigger.
+      **Blocked (2026-10-14), maintainer decision needed.** The startup MEMLIST
+      is currently the bridge's only source for joins and leaves that happened
+      while it was offline. Catch-up decodes offline chat logs as MSG, so their
+      type-0 membership feeds (feedType 1 invite, 2 leave) never become
+      membership events, and LOGINLIST chat data carries only a member count
+      and display members. The Mac client needs no roster without a window;
+      Matrix rooms show membership at all times. Options: (a) apply
+      catch-up's type-0 membership feeds the way NEWMEM/DELMEM pushes are
+      applied, keeping MEMLIST only for rooms whose catch-up interval was not
+      recovered; (b) keep the startup MEMLIST as a documented deviation named
+      "reconnect roster check".
 - [ ] Decide whether to implement HTTP friend sync (native 60 s timer, 600 s
       gate). It is the only native periodic profile source and covers friends
       only. Trace its payload consumer first.

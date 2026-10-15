@@ -201,6 +201,8 @@ type KakaoClient struct {
 	// login inventory data while their last message is seeded.
 	inventoryRooms  map[int64]chatmeta.ChatData
 	metadataRefresh *metadataRefreshQueue
+	// readStateMu serializes member read-watermark updates.
+	readStateMu sync.Mutex
 
 	reactionNoticeMu sync.Mutex
 	reactionNotices  map[string]time.Time
@@ -302,7 +304,6 @@ func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (
 	if err := kc.catchUp(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "catch-up", err: err}
 	}
-	kc.recoverReadWatermarks(ctx, c)
 	stream, err := c.Events(ctx)
 	if err != nil {
 		return nil, bootstrapFailure{stage: "events", err: err}

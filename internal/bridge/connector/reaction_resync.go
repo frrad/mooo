@@ -139,6 +139,9 @@ func (kc *KakaoClient) handleReactionDemand(ctx context.Context, msg *bridgev2.M
 					err = errChatInfoMismatch
 				}
 				disabled = room.StopSyncLogMeta
+				if err == nil {
+					kc.applyChatOnRoomWatermarks(chatID, room)
+				}
 				if err == nil && info.ChatData.Type == "MultiChat" {
 					kc.boardsRevisionDemand(requestCtx, chatID, room.MoimRevisions)
 				}

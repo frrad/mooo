@@ -2,9 +2,9 @@ package connector
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
@@ -44,16 +44,30 @@ func TestMemberReadReceiptsNeverMoveBackwards(t *testing.T) {
 	}
 }
 
-// Members who read while the bridge was offline are recovered on the next
-// connection from CHATONROOM's watermarks, forward-only per member.
-func TestReconnectRecoversMemberReadWatermarks(t *testing.T) {
+// Members who read while the bridge was offline are recovered when the room
+// is next viewed, from CHATONROOM's watermarks, forward-only per member. The
+// official client sends CHATONROOM on chat entry, never as a connect sweep
+// (research/bridge/METADATA-TRIGGERS.md).
+func TestViewingRecoversMemberReadWatermarks(t *testing.T) {
 	f := newReadReceiptFramework(t)
 	first := f.bridgeText(t, 100)
 	second := f.bridgeText(t, 102)
-	backend := &fakeKakao{chatOnRoom: map[int64]chatmeta.ChatOnRoomResponse{
+	backend := &fakeKakao{chatInfo: chatmeta.ChatInfoResponse{ChatData: chatmeta.ChatData{ChatID: testChatID, Type: "DirectChat"}}, chatOnRoom: map[int64]chatmeta.ChatOnRoomResponse{
 		testChatID: {ChatID: testChatID, Full: true, Watermarks: map[int64]int64{testOtherID: 102, testSelfID: 100}},
 	}}
-	f.kc.recoverReadWatermarks(context.Background(), backend)
+	f.kc.client = backend
+	portal, err := f.bridge.GetExistingPortalByKey(context.Background(), makePortalKey(testChatID, f.login.ID))
+	if err != nil || portal == nil {
+		t.Fatalf("portal: %v", err)
+	}
+	view := func() {
+		t.Helper()
+		f.kc.mu.Lock()
+		f.kc.reactionView, f.kc.reactionSyncNext = nil, time.Time{}
+		f.kc.mu.Unlock()
+		_, _ = f.kc.syncRoomReactions(context.Background(), portal)
+	}
+	view()
 	if len(backend.chatOnRoomCalls) != 1 || backend.chatOnRoomCalls[0] != testChatID {
 		t.Fatalf("CHATONROOM calls = %v", backend.chatOnRoomCalls)
 	}
@@ -65,11 +79,8 @@ func TestReconnectRecoversMemberReadWatermarks(t *testing.T) {
 	}
 	// A later snapshot with a lower watermark never moves a member back.
 	backend.chatOnRoom[testChatID] = chatmeta.ChatOnRoomResponse{ChatID: testChatID, Full: true, Watermarks: map[int64]int64{testOtherID: 100}}
-	f.kc.recoverReadWatermarks(context.Background(), backend)
+	view()
 	if got := f.matrix.ghost.markedEvents(); len(got) != 1 {
 		t.Fatalf("lower snapshot moved a member back: %v", got)
 	}
-	// A failed request is skipped without blocking the connection.
-	backend.chatOnRoomErr = errors.New("synthetic chat-on failure")
-	f.kc.recoverReadWatermarks(context.Background(), backend)
 }
