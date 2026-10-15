@@ -120,6 +120,7 @@ type countingGroupCreateClient struct {
 	creates       int
 	createErr     error
 	createHook    func()
+	createRoom    bson.Raw
 	invites       int
 	inviteErr     error
 	inviteWarning string
@@ -140,5 +141,5 @@ func (c *countingGroupCreateClient) CreateChat(context.Context, chat.CreateReque
 	if c.createHook != nil {
 		c.createHook()
 	}
-	return chat.CreateResponse{ChatID: 5000}, c.createErr
+	return chat.CreateResponse{ChatID: 5000, ChatRoom: c.createRoom}, c.createErr
 }

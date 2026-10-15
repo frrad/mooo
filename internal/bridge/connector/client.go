@@ -601,15 +601,17 @@ func (kc *KakaoClient) IsThisUser(ctx context.Context, userID networkid.UserID) 
 // profile APIs are deliberately called only once per request; the bridge does
 // not invent names or avatars when Kakao omits them.
 func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
-	return kc.getChatInfo(ctx, portal, false)
+	return kc.getChatInfo(ctx, portal, false, false)
 }
 
-func (kc *KakaoClient) getChatInfo(ctx context.Context, portal *bridgev2.Portal, regularGroupOnly bool) (*bridgev2.ChatInfo, error) {
+// getChatInfo serves chat info for a portal. refreshRoom marks a native
+// CHATINFO trigger, which also refreshes a cached room's info.
+func (kc *KakaoClient) getChatInfo(ctx context.Context, portal *bridgev2.Portal, regularGroupOnly, refreshRoom bool) (*bridgev2.ChatInfo, error) {
 	if portal == nil {
 		return nil, errChatInfoMismatch
 	}
 	if !regularGroupOnly {
-		if info, found, err := kc.cachedChatInfo(ctx, portal); found || err != nil {
+		if info, found, err := kc.cachedChatInfo(ctx, portal, refreshRoom); found || err != nil {
 			return info, err
 		}
 	}

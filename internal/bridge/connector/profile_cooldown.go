@@ -192,3 +192,36 @@ func (kc *KakaoClient) resolveMemberProfiles(ctx context.Context, c chatMetaAPI,
 	}
 	return output(), fetchErr
 }
+
+// storeMemberProfiles records profiles a source reply carried in full, such as
+// a CREATE reply's room members, as if MEMBER had returned them. A record
+// changed concurrently is left to its writer.
+func (kc *KakaoClient) storeMemberProfiles(ctx context.Context, members []chatmeta.Member) error {
+	for _, profile := range members {
+		if profile.UserID <= 0 || profile.UserID == kc.userID {
+			continue
+		}
+		fields := memberProfileFields{Nickname: profile.Nickname, Thumbnail: profile.ProfileImageURL, FullImage: profile.FullProfileImageURL}
+		if !validMemberProfileFields(fields) {
+			return errProfileCheckpoint
+		}
+		record, raw, err := kc.readMemberProfile(ctx, profile.UserID)
+		if err != nil {
+			return err
+		}
+		record.Profile = &fields
+		record.FetchedAt = kc.now()
+		record.LastAttemptAt, record.NextAttemptAt = record.FetchedAt, record.FetchedAt
+		if fields.Nickname == "" {
+			record.NextAttemptAt = record.FetchedAt.Add(memberProfileAttemptCooldown)
+		}
+		encoded, err := json.Marshal(record)
+		if err != nil || len(encoded) > maxMemberProfileRecord {
+			return errProfileCheckpoint
+		}
+		if _, err = kc.store.compareAndSwap(ctx, memberProfileKey(kc.userID, profile.UserID), raw, string(encoded)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
