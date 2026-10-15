@@ -57,6 +57,12 @@ activation, not once per message. Because the request is deferred, its
 failure is logged with the categories below instead of being returned to the
 framework.
 
+Owned acceptance (2026-10-15, B bridge, A/B/C group): A sent two messages and
+the Matrix tester sent read receipts for both. Their EDUs reached the bridge
+within 0.1 s, and one `MarkRead` went out 3 s later. On A, both messages
+dropped to one unread member (only C), so the single acknowledgement of the
+later position covered both messages.
+
 ### Request
 
 `MarkRead` sends one `SYNCMSG` `[watermark-1, watermark]` with `cnt=1`, and
