@@ -8,16 +8,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/rs/zerolog"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"maunium.net/go/mautrix/bridgev2"
+	"maunium.net/go/mautrix/bridgev2/networkid"
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/reactions"
 )
 
 func TestGapDumpIsOffByDefault(t *testing.T) {
@@ -140,5 +143,116 @@ func TestMediaReplyFailureLogsShapeAndDumpsOnlyWhenEnabled(t *testing.T) {
 		if dump.Command != "SHIP" || dump.Reason != "vh_missing" || dump.BodyHex != hex.EncodeToString(body) {
 			t.Fatalf("dump = %+v", dump)
 		}
+	}
+}
+
+// A live reaction push whose members read is older than the push is logged
+// with the failed stage and revisions, and, only when debug_dump_dir is set,
+// dumped once with the raw members response.
+func TestReactionFailureLogsStageAndDumpsOnlyWhenEnabled(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
+			Revision: 2,
+			Members:  map[reactions.Type][]int64{reactions.Heart: {42}},
+			Fields:   map[string]json.RawMessage{"revision": []byte(`2`), "1": []byte(`[42]`)},
+		}}
+		kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
+		kc.client = backend
+		spacedReactionClock(kc)
+		var logs bytes.Buffer
+		kc.login.Log = zerolog.New(&logs)
+		dir := t.TempDir()
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if enabled {
+			kc.debugDumpDir = dir
+		}
+		change := events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 9}
+		for range 2 {
+			if !kc.handleEvent(backend, change) {
+				t.Fatal("reaction failure notice was not handled")
+			}
+		}
+
+		var first map[string]any
+		if err := json.Unmarshal(bytes.SplitN(logs.Bytes(), []byte("\n"), 2)[0], &first); err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]any{"level": "warn", "message": "Kakao reaction change could not be applied",
+			"reaction_stage": "members_revision", "revision": float64(9), "stored_revision": float64(0),
+			"members_revision": float64(2), "kakao_log_id": float64(99), "error_class": "revision"}
+		for key, value := range want {
+			if first[key] != value {
+				t.Fatalf("log field %s = %v, want %v (%v)", key, first[key], value, first)
+			}
+		}
+
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !enabled {
+			if len(entries) != 0 || bytes.Contains(logs.Bytes(), []byte("dump_file")) {
+				t.Fatalf("disabled dump wrote %v: %s", entries, logs.String())
+			}
+			continue
+		}
+		if len(entries) != 1 {
+			t.Fatalf("dump files = %v, want one for a repeated failure", entries)
+		}
+		path := filepath.Join(dir, entries[0].Name())
+		info, err := os.Stat(path)
+		if err != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("dump mode = %v, err = %v", info.Mode(), err)
+		}
+		var file reactionDumpFile
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, &file); err != nil {
+			t.Fatal(err)
+		}
+		if file.Stage != "members_revision" || file.Error != errReactionRevision.Error() || file.Change.Revision != 9 || file.StoredRevision != 0 || !bytes.Equal(compactJSON(t, file.MembersFields["1"]), []byte("[42]")) {
+			t.Fatalf("dump = %+v", file)
+		}
+		if bytes.Contains(logs.Bytes(), []byte("[42]")) || bytes.Contains(logs.Bytes(), []byte(errReactionRevision.Error())) || !bytes.Contains(logs.Bytes(), []byte(entries[0].Name())) {
+			t.Fatalf("log leaks members or omits the dump file: %s", logs.String())
+		}
+	}
+}
+
+func compactJSON(t *testing.T, raw json.RawMessage) []byte {
+	t.Helper()
+	var out bytes.Buffer
+	if err := json.Compact(&out, raw); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
+}
+
+// A lookup error wrapped with its stage still selects the unsupported notice.
+func TestWrappedUnsupportedReactionKeepsUnsupportedNotice(t *testing.T) {
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
+		Revision: 4,
+		Fields:   map[string]json.RawMessage{"revision": []byte(`4`), "1": []byte(`"not a list"`)},
+	}}
+	kc, harness := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
+	kc.client = backend
+	var logs bytes.Buffer
+	kc.login.Log = zerolog.New(&logs)
+	if !kc.handleEvent(backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 4}) {
+		t.Fatal("reaction failure notice was not handled")
+	}
+	if len(harness.queued) != 1 {
+		t.Fatalf("queued = %d, want one notice", len(harness.queued))
+	}
+	notice, ok := harness.queued[0].(interface{ GetID() networkid.MessageID })
+	if !ok || !strings.HasSuffix(string(notice.GetID()), ":unsupported") {
+		t.Fatalf("notice = %#v", harness.queued[0])
+	}
+	if !bytes.Contains(logs.Bytes(), []byte(`"reaction_stage":"members_roster"`)) || !bytes.Contains(logs.Bytes(), []byte(`"error_class":"unsupported"`)) {
+		t.Fatalf("log = %s", logs.String())
 	}
 }
