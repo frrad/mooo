@@ -198,7 +198,8 @@ func (kc *KakaoClient) enqueueEnrichment(snap chatSnapshot, cache roomMetadataCa
 		task.kind = refreshPersonal
 		kc.metadataRefresh.offer(task)
 	}
-	if cache.BoardsAt.IsZero() || !now.Before(cache.BoardsAt.Add(roomMetadataFreshness)) {
+	// Boards are read once; afterwards pushes and chat-entry revisions drive them.
+	if cache.BoardsAt.IsZero() {
 		task.kind = refreshBoards
 		kc.metadataRefresh.offer(task)
 	}
@@ -412,7 +413,7 @@ func (kc *KakaoClient) performMetadataRefresh(ctx context.Context, c kakaoClient
 			result.err = err
 			break
 		}
-		if cache.BoardsAt.IsZero() || !kc.now().Before(cache.BoardsAt.Add(roomMetadataFreshness)) {
+		if cache.BoardsAt.IsZero() {
 			moim, err := c.MoimMeta(ctx, task.chatID)
 			if err != nil {
 				result.err, result.sourceErr = err, err
@@ -621,11 +622,12 @@ func (kc *KakaoClient) enqueueExistingRoomEnrichment(ctx context.Context, chatID
 	if err != nil {
 		return false
 	}
-	fetched := cache.PersonalAt
+	due := cache.PersonalAt.IsZero() || !kc.now().Before(cache.PersonalAt.Add(roomMetadataFreshness))
 	if kind == refreshBoards {
-		fetched = cache.BoardsAt
+		// Stored Boards are reprojected, never reread by age.
+		due = true
 	}
-	if fetched.IsZero() || !kc.now().Before(fetched.Add(roomMetadataFreshness)) {
+	if due {
 		task.kind = kind
 		q.offer(task)
 	}

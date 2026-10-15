@@ -1,7 +1,9 @@
 package chatmeta
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -35,6 +37,10 @@ type ChatOnRoomResponse struct {
 	Watermarks map[int64]int64
 	// StopSyncLogMeta is the Mac chat-entry metadata-sync gate (wire dlm).
 	StopSyncLogMeta bool
+	// MoimRevisions maps a Boards type to its current update revision (wire
+	// mr, a JSON object string). The Mac client fetches GETMOMETA for types
+	// whose revision differs from its stored Boards.
+	MoimRevisions map[int32]int64
 }
 
 func DecodeChatOnRoomResponse(body []byte) (ChatOnRoomResponse, error) {
@@ -56,6 +62,9 @@ func DecodeChatOnRoomResponse(body []byte) (ChatOnRoomResponse, error) {
 			return r, ErrInvalidResponse
 		}
 		r.StopSyncLogMeta = value.Boolean()
+	}
+	if r.MoimRevisions, err = decodeMoimRevisions(raw); err != nil {
+		return r, err
 	}
 	if r.Token, _, err = fields.Int64(raw, "o"); err != nil || r.Token < 0 {
 		return r, ErrInvalidResponse
@@ -82,4 +91,28 @@ func DecodeChatOnRoomResponse(body []byte) (ChatOnRoomResponse, error) {
 		r.Watermarks[member] = watermarks[i]
 	}
 	return r, nil
+}
+
+func decodeMoimRevisions(raw bson.Raw) (map[int32]int64, error) {
+	value, err := raw.LookupErr("mr")
+	if err != nil {
+		return nil, nil
+	}
+	text, ok := value.StringValueOK()
+	if !ok || len(text) > 1<<16 {
+		return nil, fmt.Errorf("%w: chat-on boards revisions", ErrInvalidResponse)
+	}
+	var decoded map[string]int64
+	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
+		return nil, fmt.Errorf("%w: chat-on boards revisions", ErrInvalidResponse)
+	}
+	out := make(map[int32]int64, len(decoded))
+	for key, revision := range decoded {
+		kind, err := strconv.ParseInt(key, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("%w: chat-on boards revisions", ErrInvalidResponse)
+		}
+		out[int32(kind)] = revision
+	}
+	return out, nil
 }

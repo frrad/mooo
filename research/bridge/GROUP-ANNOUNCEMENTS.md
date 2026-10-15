@@ -85,7 +85,7 @@ homeserver's room state; messages with the tester device.
 
 | Case | Result |
 |---|---|
-| Offline: A posted an IMAGE announcement, then a POLL announcement; bridge reconnect | topic set to the poll title (the newest announcement) |
+| Offline: A posted an IMAGE announcement, then a POLL announcement; bridge reconnect (before 2026-10-14; reconnect no longer rereads Boards, viewing the room does) | topic set to the poll title (the newest announcement) |
 | Restart | topic unchanged |
 | A announced an existing text (confirming replacement) | topic replaced with that text; the announcement post bridged as a text post |
 | A posted an IMAGE announcement online (confirming replacement) | topic replaced with its text; post bridged as text plus "[1 photo]" |

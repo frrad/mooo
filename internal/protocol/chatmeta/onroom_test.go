@@ -74,3 +74,29 @@ func TestDecodeChatOnRoomPairsWatermarksWithActiveMembers(t *testing.T) {
 		t.Fatalf("response without watermarks = %+v %v", r, err)
 	}
 }
+
+// Observed 2026-10-14: CHATONROOM `mr` is a JSON string mapping a Boards type
+// to its update revision, e.g. {"1":<revision>} or {}.
+func TestDecodeChatOnRoomBoardsRevisions(t *testing.T) {
+	body, _ := bson.Marshal(bson.D{{Key: "c", Value: int64(42)}, {Key: "mr", Value: `{"1":117416503670140441}`}})
+	r, err := DecodeChatOnRoomResponse(body)
+	if err != nil || len(r.MoimRevisions) != 1 || r.MoimRevisions[MoimMetaNotice] != 117416503670140441 {
+		t.Fatalf("revisions = %+v %v", r.MoimRevisions, err)
+	}
+	for _, mr := range []any{`{}`, nil} {
+		doc := bson.D{{Key: "c", Value: int64(42)}}
+		if mr != nil {
+			doc = append(doc, bson.E{Key: "mr", Value: mr})
+		}
+		body, _ = bson.Marshal(doc)
+		if r, err = DecodeChatOnRoomResponse(body); err != nil || len(r.MoimRevisions) != 0 {
+			t.Fatalf("empty revisions = %+v %v", r.MoimRevisions, err)
+		}
+	}
+	for _, bad := range []any{int64(1), `{"x":1}`, `{"1":"2"}`, `[1]`} {
+		body, _ = bson.Marshal(bson.D{{Key: "c", Value: int64(42)}, {Key: "mr", Value: bad}})
+		if _, err = DecodeChatOnRoomResponse(body); err == nil {
+			t.Fatalf("malformed revisions %v accepted", bad)
+		}
+	}
+}

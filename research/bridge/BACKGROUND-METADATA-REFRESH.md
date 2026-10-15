@@ -57,9 +57,10 @@ connection failure and reconnected.
   converges. A missed leave notice is corrected at the next reconnect's discovery.
 - **Freshness.** Profiles keep the per-user policy from
   [PROFILE-REFRESH-COOLDOWN.md](PROFILE-REFRESH-COOLDOWN.md): a stored profile
-  is never refetched. Personal and Boards
-  checkpoints are fresh for 15 minutes and are invalidated by the corresponding
-  push notices.
+  is never refetched. Boards are read once per
+  room, then follow CHGMOMETAS payloads and the viewed room's CHATONROOM
+  revisions. Personal checkpoints are fresh for 15 minutes and are invalidated
+  by CHGMCMETA.
 
 ## Owned-account acceptance (2026-10-14)
 

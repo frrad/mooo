@@ -459,8 +459,13 @@ view invalidation, and all error/UI branches remain static-trace gaps; no full
 official-client parity claim is made.
 
 The implementation requests only Moim type 1 for regular MultiChat rooms.
-CHGMOMETAS is a typed refresh signal; a fresh GETMOMETA snapshot selects the
-current announcement rather than a possibly delayed push payload. The selected
+Since 2026-10-14 the bridge follows the official client: GETMOMETA runs once
+for a room without stored Boards, and when a viewed room's CHATONROOM Boards
+revisions differ from the stored ones. A CHGMOMETAS payload is merged into the
+stored Boards without a read: a revision of zero or less deletes the type, and
+only a newer revision replaces it (see
+[metadata triggers](bridge/METADATA-TRIGGERS.md)). Earlier, every CHGMOMETAS
+triggered a fresh GETMOMETA. The selected
 highest updateRevision is checkpointed in portal metadata, separately from
 message cursors and shared metadata. Older revisions cannot change the topic.
 Equal revisions can retry a failed Matrix state write, while the framework
