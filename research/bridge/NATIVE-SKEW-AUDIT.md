@@ -80,14 +80,15 @@ Risk:
 
 ## Evidence gaps that block fixes
 
-- Native recovery delay and cap (finding 7). This is a floating-point argument
-  at the reschedule block, so it needs instruction-level ABI reading.
-- Carriage route cache expiry interval and its owner (finding 6).
+- Native recovery delay and cap (finding 7): resolved in
+  [CONNECT-TRAFFIC](CONNECT-TRAFFIC.md) (0.1 s, fixed 10 s, 600 s watchdog).
+- Carriage route cache expiry interval and its owner (finding 6): resolved in
+  [CONNECT-TRAFFIC](CONNECT-TRAFFIC.md) (CHECKIN `cacheExpire`, uptime-based).
 - The GETMETA chain (finding 18).
 - Native outbound typing, leave and media auto-download triggers (findings 19–21).
 - Whether a native-shaped mark-read `SYNCMSG` is safe for the bridge's store
   (finding 8). This needs an owned differential.
-- MCHATLOGS gap semantics when used as the only catch-up (finding 1). This
-  needs an owned offline-message differential.
+- MCHATLOGS gap semantics when used as the only catch-up (finding 1):
+  resolved by the owned differential in [CONNECT-TRAFFIC](CONNECT-TRAFFIC.md).
 - No idle official Mac capture exists to confirm the overall background request
   mix. See [METADATA-TRIGGERS](METADATA-TRIGGERS.md) "Gaps".

@@ -1,0 +1,418 @@
+{
+ "provenance": {
+  "kind": "observed",
+  "client": "Clean-room Go LOCO probe on the existing owned secondary (B) profile; Mac 26.8.0-derived request models",
+  "date": "2026-10-15",
+  "method": "Owned A/B/C rooms only. Bridge stopped; 3 texts from A in one group and 2 from C in another; one more text from A after the probe login. One login; raw MCHATLOGS/SYNCMSG with two seconds between requests; no retry, no commit, no read acknowledgement. Native bulk retirement loop applied by the probe.",
+  "doc": "research/bridge/CONNECT-TRAFFIC.md"
+ },
+ "evidence": [
+  "CT-LIVE-001",
+  "CT-LIVE-002",
+  "CT-LIVE-003",
+  "CT-LIVE-004"
+ ],
+ "sanitization": "Chat IDs replaced by synthetic 5001..5007 in ascending real-ID order. Log identities replaced by \"chat:index\" where index is the ascending position among every identity seen for that room (sparse; not arithmetic). Bodies, authors, tokens and account IDs omitted.",
+ "rooms": [
+  {
+   "chatId": 5001,
+   "type": "DirectChat",
+   "committed": "5001:309",
+   "login_ceiling": "5001:309",
+   "ceiling_below_minLogId": false,
+   "committed_below_minLogId": false,
+   "behind": false
+  },
+  {
+   "chatId": 5002,
+   "type": "MultiChat",
+   "committed": "5002:0",
+   "login_ceiling": "5002:0",
+   "ceiling_below_minLogId": true,
+   "committed_below_minLogId": true,
+   "behind": false
+  },
+  {
+   "chatId": 5003,
+   "type": "MultiChat",
+   "committed": "5003:5",
+   "login_ceiling": "5003:8",
+   "ceiling_below_minLogId": false,
+   "committed_below_minLogId": false,
+   "behind": true
+  },
+  {
+   "chatId": 5004,
+   "type": "MultiChat",
+   "committed": "5004:0",
+   "login_ceiling": "5004:0",
+   "ceiling_below_minLogId": true,
+   "committed_below_minLogId": true,
+   "behind": false
+  },
+  {
+   "chatId": 5005,
+   "type": "MultiChat",
+   "committed": "5005:0",
+   "login_ceiling": "5005:0",
+   "ceiling_below_minLogId": true,
+   "committed_below_minLogId": true,
+   "behind": false
+  },
+  {
+   "chatId": 5006,
+   "type": "MultiChat",
+   "committed": "5006:0",
+   "login_ceiling": "5006:2",
+   "ceiling_below_minLogId": false,
+   "committed_below_minLogId": true,
+   "behind": true
+  },
+  {
+   "chatId": 5007,
+   "type": "MultiChat",
+   "committed": "5007:2",
+   "login_ceiling": "5007:2",
+   "ceiling_below_minLogId": false,
+   "committed_below_minLogId": false,
+   "behind": false
+  }
+ ],
+ "exchanges": [
+  {
+   "method": "MCHATLOGS",
+   "request": {
+    "chatIds": [
+     5003,
+     5006
+    ],
+    "sinces": [
+     "5003:5",
+     "5006:0"
+    ]
+   },
+   "eof": true,
+   "total_logs": 6,
+   "runs": [
+    {
+     "chatId": 5003,
+     "first": "5003:6",
+     "last": "5003:9",
+     "logs": 4,
+     "prev_chain_contiguous": true,
+     "first_prev": "5003:5",
+     "beyond_login_ceiling": 1
+    },
+    {
+     "chatId": 5006,
+     "first": "5006:1",
+     "last": "5006:2",
+     "logs": 2,
+     "prev_chain_contiguous": true,
+     "first_prev": "5006:0",
+     "beyond_login_ceiling": 0
+    }
+   ]
+  },
+  {
+   "method": "SYNCMSG",
+   "request": {
+    "chatId": 5003,
+    "cur": "5003:5",
+    "max": "5003:8",
+    "cnt": 0
+   },
+   "isOK": false,
+   "total_logs": 4,
+   "runs": [
+    {
+     "chatId": 5003,
+     "first": "5003:6",
+     "last": "5003:9",
+     "logs": 4,
+     "prev_chain_contiguous": true,
+     "first_prev": "5003:5",
+     "beyond_login_ceiling": 1
+    }
+   ]
+  },
+  {
+   "method": "SYNCMSG",
+   "request": {
+    "chatId": 5006,
+    "cur": "5006:0",
+    "max": "5006:2",
+    "cnt": 0
+   },
+   "isOK": false,
+   "total_logs": 1,
+   "runs": [
+    {
+     "chatId": 5006,
+     "first": "5006:1",
+     "last": "5006:1",
+     "logs": 1,
+     "prev_chain_contiguous": true,
+     "first_prev": "5006:0",
+     "beyond_login_ceiling": 0
+    }
+   ]
+  },
+  {
+   "method": "SYNCMSG",
+   "request": {
+    "chatId": 5006,
+    "cur": "5006:1",
+    "max": "5006:2",
+    "cnt": 0
+   },
+   "isOK": false,
+   "total_logs": 1,
+   "runs": [
+    {
+     "chatId": 5006,
+     "first": "5006:2",
+     "last": "5006:2",
+     "logs": 1,
+     "prev_chain_contiguous": true,
+     "first_prev": "5006:1",
+     "beyond_login_ceiling": 0
+    }
+   ]
+  },
+  {
+   "method": "MCHATLOGS",
+   "request": {
+    "chatIds": [
+     5001,
+     5002,
+     5003,
+     5004,
+     5005,
+     5006,
+     5007
+    ],
+    "sinces": [
+     "zero",
+     "zero",
+     "zero",
+     "zero",
+     "zero",
+     "zero",
+     "zero"
+    ]
+   },
+   "eof": false,
+   "total_logs": 80,
+   "runs": [
+    {
+     "chatId": 5001,
+     "first": "5001:0",
+     "last": "5001:79",
+     "logs": 80,
+     "prev_chain_contiguous": true,
+     "first_prev": "unseen",
+     "beyond_login_ceiling": 0
+    }
+   ]
+  },
+  {
+   "method": "MCHATLOGS",
+   "request": {
+    "chatIds": [
+     5001,
+     5002,
+     5003,
+     5004,
+     5005,
+     5006,
+     5007
+    ],
+    "sinces": [
+     "5001:79",
+     "zero",
+     "zero",
+     "zero",
+     "zero",
+     "zero",
+     "zero"
+    ]
+   },
+   "eof": false,
+   "total_logs": 80,
+   "runs": [
+    {
+     "chatId": 5001,
+     "first": "5001:80",
+     "last": "5001:159",
+     "logs": 80,
+     "prev_chain_contiguous": true,
+     "first_prev": "5001:79",
+     "beyond_login_ceiling": 0
+    }
+   ]
+  },
+  {
+   "method": "MCHATLOGS",
+   "request": {
+    "chatIds": [
+     5001,
+     5002,
+     5003,
+     5004,
+     5005,
+     5006,
+     5007
+    ],
+    "sinces": [
+     "5001:159",
+     "zero",
+     "zero",
+     "zero",
+     "zero",
+     "zero",
+     "zero"
+    ]
+   },
+   "eof": false,
+   "total_logs": 80,
+   "runs": [
+    {
+     "chatId": 5001,
+     "first": "5001:160",
+     "last": "5001:239",
+     "logs": 80,
+     "prev_chain_contiguous": true,
+     "first_prev": "5001:159",
+     "beyond_login_ceiling": 0
+    }
+   ]
+  },
+  {
+   "method": "MCHATLOGS",
+   "request": {
+    "chatIds": [
+     5001,
+     5002,
+     5003,
+     5004,
+     5005,
+     5006,
+     5007
+    ],
+    "sinces": [
+     "5001:239",
+     "zero",
+     "zero",
+     "zero",
+     "zero",
+     "zero",
+     "zero"
+    ]
+   },
+   "eof": false,
+   "total_logs": 80,
+   "runs": [
+    {
+     "chatId": 5001,
+     "first": "5001:240",
+     "last": "5001:309",
+     "logs": 70,
+     "prev_chain_contiguous": true,
+     "first_prev": "5001:239",
+     "beyond_login_ceiling": 0
+    },
+    {
+     "chatId": 5003,
+     "first": "5003:0",
+     "last": "5003:9",
+     "logs": 10,
+     "prev_chain_contiguous": true,
+     "first_prev": "unseen",
+     "beyond_login_ceiling": 1
+    }
+   ]
+  },
+  {
+   "method": "MCHATLOGS",
+   "request": {
+    "chatIds": [
+     5003,
+     5004,
+     5005,
+     5006,
+     5007
+    ],
+    "sinces": [
+     "5003:9",
+     "zero",
+     "zero",
+     "zero",
+     "zero"
+    ]
+   },
+   "eof": true,
+   "total_logs": 5,
+   "runs": [
+    {
+     "chatId": 5006,
+     "first": "5006:1",
+     "last": "5006:2",
+     "logs": 2,
+     "prev_chain_contiguous": true,
+     "first_prev": "5006:0",
+     "beyond_login_ceiling": 0
+    },
+    {
+     "chatId": 5007,
+     "first": "5007:0",
+     "last": "5007:2",
+     "logs": 3,
+     "prev_chain_contiguous": true,
+     "first_prev": "unseen",
+     "beyond_login_ceiling": 0
+    }
+   ]
+  },
+  {
+   "method": "MCHATLOGS",
+   "request": {
+    "chatIds": [
+     5007
+    ],
+    "sinces": [
+     "5007:2"
+    ]
+   },
+   "eof": true,
+   "total_logs": 0,
+   "runs": []
+  },
+  {
+   "method": "MCHATLOGS",
+   "request": {
+    "chatIds": [
+     5001,
+     5002,
+     5003,
+     5004,
+     5005,
+     5006,
+     5007
+    ],
+    "sinces": [
+     "5001:309",
+     "zero",
+     "5003:9",
+     "zero",
+     "zero",
+     "5006:2",
+     "5007:2"
+    ]
+   },
+   "eof": true,
+   "total_logs": 0,
+   "runs": []
+  }
+ ]
+}

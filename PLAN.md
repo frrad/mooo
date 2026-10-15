@@ -1053,8 +1053,12 @@ above. One PR each, highest account-safety risk first:
       there is no live session instead of opening a detached login that skips
       the retry schedule, `-328` backoff and KICKOUT block.
 - [ ] (#1) Use bulk MCHATLOGS (≤100 rooms) as the connect catch-up path and
-      drop per-chat `SYNCMSG cnt=0` at connect. Requires an owned offline-
-      message differential for gap handling first.
+      drop per-chat `SYNCMSG cnt=0` at connect. Differential done
+      (CT-LIVE-001..004); implement the spec in
+      [CONNECT-TRAFFIC.md](research/bridge/CONNECT-TRAFFIC.md#implementation-spec):
+      80-log batch cap, `prevId` contiguity, boundary-room retention, gaps for
+      floor rooms, no-progress stop, page cap. Merge with `startup_history` so
+      a connect sends one MCHATLOGS chain.
 - [ ] (#4, #5) Reactions: drop the `/members` pre-read on cancel; budget and
       coalesce the per-push `/members` lookups (or derive the actor from the
       aggregate) and record the remainder as a deliberate deviation.
@@ -1066,9 +1070,19 @@ above. One PR each, highest account-safety risk first:
 - [ ] (#9, #10) After the metadata-trigger PRs land: skip room-avatar downloads
       whose avatar ID is unchanged, and stop enqueueing CHATINFO on every
       cached `GetChatInfo`.
-- [ ] (#6, #7) Trace the native recovery delay and carriage route cache
-      expiry, then cache the route across reconnects, jitter ticket attempts
-      and adopt the native delay.
+- [ ] (#6) Persist GETCONF and send it only when none is stored or the stored
+      ticket pool is exhausted; cache the CHECKIN route for `cacheExpire`
+      (monotonic, 3600 s observed); invalidate on CHANGESVR, KICKOUT, expiry
+      and cached-route dial failure; walk the ticket pool with native equal
+      jitter (cap 32 s). Spec: [CONNECT-TRAFFIC.md](research/bridge/CONNECT-TRAFFIC.md#finding-6-getconf-checkin-and-the-route-cache).
+- [ ] (#7) Replace the 5/10/20/40/60 s ladder with the native episode: first
+      attempt at 0.1 s, fixed 10 s retries, 600 s watchdog, reset on success.
+      After 600 s keep the 15-minute tier (deviation: native logs out). Keep the
+      `-328` ladder and `-950` rule; ignore `bgReconnItv` (no native consumer).
+      Spec: [CONNECT-TRAFFIC.md](research/bridge/CONNECT-TRAFFIC.md#finding-7-reconnect-schedule).
+- [ ] Trace native `login:completion:` status handling (-328, -950) before
+      the recovery completion, the more-settings `locoConfRevision` trigger,
+      and the reachability-change recovery trigger.
 - [ ] (#18) Trace the GETMETA chain; replace CHATINFO room-info refreshes with
       revision-gated GETMETA at login.
 - [ ] (#15, #16, #17) After the trigger rework, cap metadata/membership

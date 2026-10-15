@@ -211,6 +211,10 @@ be nonempty and the port positive. Failure of that exact cached endpoint clears 
 before fallback. Cache lifetime uses elapsed system uptime and the configured
 expiry interval; expiry returns through booking/check-in.
 
+The in-memory route, its CHECKIN `cacheExpire` lifetime, the persisted
+last-route variant and the GETCONF revision gate are detailed in
+[bridge/CONNECT-TRAFFIC.md](../bridge/CONNECT-TRAFFIC.md#finding-6-getconf-checkin-and-the-route-cache).
+
 Booking suppresses concurrent attempts and makes at most three observed attempts,
 with jitter capped at eight seconds. Ticket retries advance through the address
 pool with jitter capped at 32 seconds. Address-pool exhaustion terminates the
