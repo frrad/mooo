@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -28,6 +29,10 @@ const (
 	// backoff, never polled: the official client reads MEMLIST only from its
 	// member-list views and learns membership from login deltas and notices.
 	retryMembership
+	// refreshRoomMetas reads the shared chat metas of the groups whose login
+	// chat-data metaMaxRevision exceeds their applied meta revision, as the
+	// official client sends GETMETAS after the last LCHATLIST page.
+	refreshRoomMetas
 )
 const maxMetadataRefreshJobs = 1024
 
@@ -66,7 +71,7 @@ type metadataRefreshTask struct {
 // versioned reports whether the task belongs to one remembered room snapshot.
 // Account personal metadata and roster checks do not.
 func (t metadataRefreshTask) versioned() bool {
-	return t.kind != refreshPersonal && t.kind != retryMembership
+	return t.kind != refreshPersonal && t.kind != retryMembership && t.kind != refreshRoomMetas
 }
 
 func metadataRetryDelay(attempts int) time.Duration {
@@ -483,6 +488,8 @@ func (kc *KakaoClient) performMetadataRefresh(ctx context.Context, c kakaoClient
 			result.err = err
 		}
 		result.info = info
+	case refreshRoomMetas:
+		result.err, result.sourceErr = kc.readRoomMetas(ctx, c, task.ids)
 	case retryMembership:
 		p, err := kc.store.portalByKey(ctx, makePortalKey(task.chatID, kc.login.ID))
 		if err != nil {
@@ -500,6 +507,74 @@ func (kc *KakaoClient) performMetadataRefresh(ctx context.Context, c kakaoClient
 		result.reconcile = meta.MembershipPending
 	}
 	return result
+}
+
+// readRoomMetas sends GETMETAS for chatIDs in batches of
+// chatmeta.MaxGetMetasBatch, one after another, and stops at the first failed
+// batch, as the official client does. Each returned room's metas are merged
+// into its display checkpoint (newer revision per type) and the room is
+// reprojected. It returns the first error and, separately, a source error.
+func (kc *KakaoClient) readRoomMetas(ctx context.Context, c kakaoClient, chatIDs []int64) (error, error) {
+	var firstErr error
+	for len(chatIDs) > 0 {
+		batch := chatIDs[:min(len(chatIDs), chatmeta.MaxGetMetasBatch)]
+		chatIDs = chatIDs[len(batch):]
+		sets, err := c.GetMetas(ctx, batch)
+		if err != nil {
+			return err, err
+		}
+		for _, set := range sets {
+			if !slices.Contains(batch, set.ChatID) {
+				continue
+			}
+			p, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(set.ChatID, kc.login.ID))
+			if err == nil && p.MXID == "" {
+				continue
+			}
+			if err == nil {
+				_, err = kc.checkpointGroupDisplay(ctx, p, chatmeta.ChatData{ChatID: set.ChatID, Type: "MultiChat", ChatMetas: set.Metas})
+			}
+			if err != nil {
+				firstErr = cmp.Or(firstErr, err)
+				continue
+			}
+			q := kc.metadataRefresh
+			q.mu.Lock()
+			task, ok := q.snapshots[set.ChatID]
+			q.mu.Unlock()
+			if ok {
+				task.kind = refreshBoards // Reproject the merged checkpoint.
+				q.offer(task)
+			}
+		}
+	}
+	return firstErr, nil
+}
+
+// loginMetasDemand queues GETMETAS for the inventory groups whose chat-data
+// metaMaxRevision exceeds the bridge's applied meta revision.
+func (kc *KakaoClient) loginMetasDemand(ctx context.Context, inventory []chatmeta.ChatData) {
+	var due []int64
+	for _, chat := range inventory {
+		if chat.MetaMaxRevision <= 0 {
+			continue
+		}
+		p, err := kc.store.portalByKey(ctx, makePortalKey(chat.ChatID, kc.login.ID))
+		if err != nil || p == nil || p.MXID == "" {
+			continue
+		}
+		applied, err := kc.appliedMetaRevision(ctx, p)
+		if err != nil {
+			kc.log().Warn().Str("error_class", sourceErrorClass(err)).Msg("Room meta revision is unreadable; skipping its login read")
+			continue
+		}
+		if chat.MetaMaxRevision > applied {
+			due = append(due, chat.ChatID)
+		}
+	}
+	if len(due) > 0 {
+		kc.metadataRefresh.offer(metadataRefreshTask{kind: refreshRoomMetas, ids: due})
+	}
 }
 
 // resolveRoomAvatar uploads a refreshed room avatar to Matrix. An avatar
@@ -544,10 +619,14 @@ func (kc *KakaoClient) applyMetadataRefresh(c kakaoClient, result metadataRefres
 		}
 		retry := result.task
 		retry.attempts++
-		if retry.kind == retryMembership || retry.attempts <= maxMetadataRetries {
+		switch {
+		case retry.kind == refreshRoomMetas:
+			// The official client drops a failed GETMETAS batch and the rest
+			// of its demand; the next login compares revisions again.
+		case retry.kind == retryMembership || retry.attempts <= maxMetadataRetries:
 			retry.notBefore = time.Now().Add(metadataRetryDelay(retry.attempts))
 			kc.metadataRefresh.offer(retry)
-		} else {
+		default:
 			kc.log().Info().Uint8("refresh_kind", uint8(retry.kind)).Int("attempts", retry.attempts).Msg("Background metadata refresh abandoned until its next trigger")
 		}
 	}
