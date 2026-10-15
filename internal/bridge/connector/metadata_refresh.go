@@ -575,6 +575,7 @@ func (kc *KakaoClient) loginMetasDemand(ctx context.Context, inventory []chatmet
 	if len(due) > 0 {
 		kc.metadataRefresh.offer(metadataRefreshTask{kind: refreshRoomMetas, ids: due})
 	}
+}
 
 // resolveRoomAvatar uploads a refreshed room avatar to Matrix. An avatar
 // whose ID (the source URL hash) matches the portal's applied avatar reuses
