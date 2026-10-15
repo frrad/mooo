@@ -85,6 +85,7 @@ type reactionAPI interface {
 type historyAPI interface {
 	AcquireHistoryBytes(context.Context, string, func(context.Context) ([]byte, error)) ([]byte, error)
 	AcquireHistoryResource(context.Context, string, func(context.Context) ([]byte, error)) ([]byte, error)
+	AcquireLiveMedia(context.Context, string, func(context.Context) ([]byte, error)) ([]byte, error)
 	ReadHistoryPage(ctx context.Context, chatID, after, through int64, limit int) (client.HistoryPage, error)
 	GetMessages(ctx context.Context, chatID int64, logIDs []int64) ([]events.Event, error)
 	InitialSyncTargets(ctx context.Context) ([]syncmsg.Target, error)
