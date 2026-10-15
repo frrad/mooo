@@ -259,15 +259,15 @@ var (
 
 func newKakaoClient(login *bridgev2.UserLogin, st store, userID int64, open func() (kakaoClient, error)) *KakaoClient {
 	kc := &KakaoClient{
-		login:           login,
-		store:           st,
-		userID:          userID,
-		open:            open,
-		queue:           login.QueueRemoteEvent,
-		profiles:        make(map[int64]chatmeta.Member),
-		metadataRefresh: newMetadataRefreshQueue(),
-		reactionNotices: make(map[string]time.Time),
-		holds:           newDeliveryHolds(),
+		login:               login,
+		store:               st,
+		userID:              userID,
+		open:                open,
+		queue:               login.QueueRemoteEvent,
+		profiles:            make(map[int64]chatmeta.Member),
+		metadataRefresh:     newMetadataRefreshQueue(),
+		reactionNotices:     make(map[string]time.Time),
+		holds:               newDeliveryHolds(),
 		deliveryRetryDelays: heldChatRetryDelays,
 		deliveryResume:      make(chan struct{}, 1),
 	}
