@@ -666,11 +666,15 @@ func TestMatrixReactionSendAndStaleRemoveAreBounded(t *testing.T) {
 	if len(backend.requests) != 1 || backend.requests[0].Type != reactions.Heart {
 		t.Fatalf("requests = %#v", backend.requests)
 	}
+	// The framework stores the accepted reaction after HandleMatrixReaction.
+	heart := &database.Reaction{Room: portal.PortalKey, MessageID: target.ID, SenderID: makeUserID(testSelfID), EmojiID: "kakao:legacy:1", MXID: "$heart"}
+	store := kc.store.(*memStore)
+	store.reactions = append(store.reactions, heart)
 	remove := &bridgev2.MatrixReactionRemove{
 		MatrixEventBase: bridgev2.MatrixEventBase[*event.RedactionEventContent]{
 			Event: &event.Event{Sender: kc.login.UserMXID}, Portal: portal,
 		},
-		TargetReaction: &database.Reaction{MessageID: target.ID, SenderID: makeUserID(testSelfID), EmojiID: "kakao:legacy:1"},
+		TargetReaction: heart,
 	}
 	if err := kc.HandleMatrixReactionRemove(context.Background(), remove); err != nil {
 		t.Fatal(err)
@@ -678,12 +682,77 @@ func TestMatrixReactionSendAndStaleRemoveAreBounded(t *testing.T) {
 	if len(backend.requests) != 2 || backend.requests[1].Type != reactions.Cancel {
 		t.Fatalf("cancel requests = %#v", backend.requests)
 	}
-	backend.members.Members = map[reactions.Type][]int64{reactions.Like: {testSelfID}}
+	// Native cancels from its stored own pick and reads no members first.
+	if backend.memberCalls != 0 {
+		t.Fatalf("members reads before cancel = %d, want 0", backend.memberCalls)
+	}
+	// A Kakao push replaced the stored own pick with Like before the delayed
+	// Matrix redaction of the heart arrived: the cancel would remove Like.
+	store.reactions = []*database.Reaction{{Room: portal.PortalKey, MessageID: target.ID, SenderID: makeUserID(testSelfID), EmojiID: "kakao:legacy:2", MXID: "$like"}}
 	if err := kc.HandleMatrixReactionRemove(context.Background(), remove); err != nil {
 		t.Fatal(err)
 	}
 	if len(backend.requests) != 2 {
 		t.Fatalf("stale remove canceled replacement: %#v", backend.requests)
+	}
+	if backend.memberCalls != 0 {
+		t.Fatalf("members reads for stale remove = %d, want 0", backend.memberCalls)
+	}
+}
+
+func TestMatrixReactionRemoveOfMiniCancelsOnlyStoredLegacyPick(t *testing.T) {
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
+	kc.login.UserMXID = id.UserID("@self:test")
+	kc.client = backend
+	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, kc.login.ID)}}
+	messageID := makeMessageID(testChatID, 99)
+	mini := &database.Reaction{Room: portal.PortalKey, MessageID: messageID, SenderID: makeUserID(testSelfID), EmojiID: "kakao:mini:1200509_029", Emoji: "❤️", MXID: "$mini"}
+	store := kc.store.(*memStore)
+	store.reactions = append(store.reactions, mini)
+	remove := &bridgev2.MatrixReactionRemove{
+		MatrixEventBase: bridgev2.MatrixEventBase[*event.RedactionEventContent]{Event: &event.Event{Sender: kc.login.UserMXID}, Portal: portal},
+		TargetReaction:  mini,
+	}
+	if err := kc.HandleMatrixReactionRemove(context.Background(), remove); err != nil {
+		t.Fatal(err)
+	}
+	if len(backend.requests) != 0 {
+		t.Fatalf("mini-only redaction sent %#v; this account has no legacy pick to cancel", backend.requests)
+	}
+	store.reactions = append(store.reactions, &database.Reaction{Room: portal.PortalKey, MessageID: messageID, SenderID: makeUserID(testSelfID), EmojiID: "kakao:legacy:1", MXID: "$heart"})
+	if err := kc.HandleMatrixReactionRemove(context.Background(), remove); err != nil {
+		t.Fatal(err)
+	}
+	if len(backend.requests) != 1 || backend.requests[0].Type != reactions.Cancel {
+		t.Fatalf("requests = %#v, want one cancel of the stored legacy heart", backend.requests)
+	}
+	if backend.memberCalls != 0 {
+		t.Fatalf("members reads = %d, want 0", backend.memberCalls)
+	}
+}
+
+func TestMatrixReactionRemoveRefusesConflictingStoredLegacyPicks(t *testing.T) {
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}}
+	kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
+	kc.login.UserMXID = id.UserID("@self:test")
+	kc.client = backend
+	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, kc.login.ID)}}
+	messageID := makeMessageID(testChatID, 99)
+	heart := &database.Reaction{Room: portal.PortalKey, MessageID: messageID, SenderID: makeUserID(testSelfID), EmojiID: "kakao:legacy:1", MXID: "$heart"}
+	like := &database.Reaction{Room: portal.PortalKey, MessageID: messageID, SenderID: makeUserID(testSelfID), EmojiID: "kakao:legacy:2", MXID: "$like"}
+	store := kc.store.(*memStore)
+	store.reactions = append(store.reactions, heart, like)
+	remove := &bridgev2.MatrixReactionRemove{
+		MatrixEventBase: bridgev2.MatrixEventBase[*event.RedactionEventContent]{Event: &event.Event{Sender: kc.login.UserMXID}, Portal: portal},
+		TargetReaction:  heart,
+	}
+	err := kc.HandleMatrixReactionRemove(context.Background(), remove)
+	if !errors.Is(err, errReactionLookup) {
+		t.Fatalf("error = %v, want stored-pick lookup failure", err)
+	}
+	if len(backend.requests) != 0 || backend.memberCalls != 0 {
+		t.Fatalf("requests/member reads = %d/%d, want 0/0", len(backend.requests), backend.memberCalls)
 	}
 }
 
@@ -767,25 +836,26 @@ func TestMatrixReactionMutationErrorCategoriesAreRedacted(t *testing.T) {
 	}
 }
 
-func TestMatrixReactionRemoveLookupFailureIsDistinctAndDoesNotMutate(t *testing.T) {
+func TestMatrixReactionRemoveSendsOnlyTheCancel(t *testing.T) {
+	// A failing members endpoint must not matter: native cancels from its
+	// stored own pick without a members read.
 	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, err: errors.New("lookup https://example.invalid token=secret")}
 	kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
 	kc.login.UserMXID = id.UserID("@self:test")
 	kc.client = backend
 	portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, kc.login.ID)}}
+	heart := &database.Reaction{Room: portal.PortalKey, MessageID: makeMessageID(testChatID, 99), SenderID: makeUserID(testSelfID), EmojiID: "kakao:legacy:1", MXID: "$heart"}
+	store := kc.store.(*memStore)
+	store.reactions = append(store.reactions, heart)
 	remove := &bridgev2.MatrixReactionRemove{
 		MatrixEventBase: bridgev2.MatrixEventBase[*event.RedactionEventContent]{Event: &event.Event{Sender: kc.login.UserMXID}, Portal: portal},
-		TargetReaction:  &database.Reaction{MessageID: makeMessageID(testChatID, 99), SenderID: makeUserID(testSelfID), EmojiID: "kakao:legacy:1"},
+		TargetReaction:  heart,
 	}
-	err := kc.HandleMatrixReactionRemove(context.Background(), remove)
-	if !errors.Is(err, errReactionLookup) || !errors.Is(err, reactions.ErrLookupFailed) {
-		t.Fatalf("error = %v, want distinct lookup category", err)
+	if err := kc.HandleMatrixReactionRemove(context.Background(), remove); err != nil {
+		t.Fatal(err)
 	}
-	if len(backend.requests) != 0 {
-		t.Fatalf("mutation requests after lookup failure = %d, want 0", len(backend.requests))
-	}
-	if strings.Contains(fmt.Sprintf("%#v", err), "token=secret") {
-		t.Fatalf("lookup error leaked backend detail: %#v", err)
+	if backend.memberCalls != 0 || len(backend.requests) != 1 || backend.requests[0].Type != reactions.Cancel {
+		t.Fatalf("member reads/mutations = %d/%#v, want 0/one cancel", backend.memberCalls, backend.requests)
 	}
 }
 
@@ -811,16 +881,19 @@ func TestMatrixReactionRemoveMutationCategoriesAreSingleAttempt(t *testing.T) {
 			kc.login.UserMXID = id.UserID("@self:test")
 			kc.client = backend
 			portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, kc.login.ID)}}
+			heart := &database.Reaction{Room: portal.PortalKey, MessageID: makeMessageID(testChatID, 99), SenderID: makeUserID(testSelfID), EmojiID: "kakao:legacy:1", MXID: "$heart"}
+			store := kc.store.(*memStore)
+			store.reactions = append(store.reactions, heart)
 			remove := &bridgev2.MatrixReactionRemove{
 				MatrixEventBase: bridgev2.MatrixEventBase[*event.RedactionEventContent]{Event: &event.Event{Sender: kc.login.UserMXID}, Portal: portal},
-				TargetReaction:  &database.Reaction{MessageID: makeMessageID(testChatID, 99), SenderID: makeUserID(testSelfID), EmojiID: "kakao:legacy:1"},
+				TargetReaction:  heart,
 			}
 			err := kc.HandleMatrixReactionRemove(context.Background(), remove)
 			if !errors.Is(err, errReactionMutation) || !errors.Is(err, tc.category) || !errors.Is(err, tc.reason) {
 				t.Fatalf("error = %v, want mutation/category/reason", err)
 			}
-			if backend.memberCalls != 1 || len(backend.requests) != 1 || backend.requests[0].Type != reactions.Cancel {
-				t.Fatalf("lookup/mutation counts = %d/%d, want 1/1", backend.memberCalls, len(backend.requests))
+			if backend.memberCalls != 0 || len(backend.requests) != 1 || backend.requests[0].Type != reactions.Cancel {
+				t.Fatalf("lookup/mutation counts = %d/%d, want 0/1", backend.memberCalls, len(backend.requests))
 			}
 		})
 	}
