@@ -197,7 +197,7 @@ func (kc *KakaoClient) enqueueEnrichment(snap chatSnapshot, cache roomMetadataCa
 	task := kc.metadataRefresh.remember(snap)
 	task.kind = refreshMembers
 	kc.metadataRefresh.offer(task)
-	if snap.data.Type == "DirectChat" && snap.data.Meta != nil && snap.data.Meta.ImageURL != "" || snap.data.Type == "MultiChat" && len(snap.data.ChatMetas) == 0 && snap.data.Meta == nil {
+	if snap.data.Type == "DirectChat" && snap.data.Meta != nil && snap.data.Meta.ImageURL != "" || snap.data.Type == "MultiChat" && len(snap.data.ChatMetas) == 0 && snap.data.Meta == nil && !snap.metasComplete {
 		task.kind = refreshRoomInfo
 		kc.metadataRefresh.offer(task)
 	}

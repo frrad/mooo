@@ -92,18 +92,25 @@ and permissions are checked again before binding, and source/binding work has a
 30-second context bound.
 
 Binding reads follow the official success path (finding 13 of the
-[native skew audit](NATIVE-SKEW-AUDIT.md), 2026-10-15). The official client
-upserts the room from the reply's `chatRoom` and opens it, and opening sends
-`CHATONROOM`, whose full reply lists every active member. When the reply's
-`chatRoom` decodes as the created regular group, binding takes the room data
-from it and the roster from one `CHATONROOM`; profiles come from the
-enrichment queue (`MEMBER` only for unknown members, as for the `CHATONROOM`
-unknown members natively). No `CHATINFO` or `MEMLIST` is sent. A `CHATONROOM`
-that fails or is not full falls back to `MEMLIST`. A creation resumed after a
-restart or reconciled by command has no reply, so it keeps `CHATINFO` and
-`MEMLIST`. Whether the live `chatRoom` uses the chat-data wire keys is
-verified by the owned run below; the decoder accepts both the short and long
-chat-data keys.
+[native skew audit](NATIVE-SKEW-AUDIT.md), 2026-10-15). The reply's `chatRoom`
+is the room model (`LocoChatRoom`), not the chat-data model: its name mapping
+is `c` chatId, `t` type, `a` activeMemberIds, `m` members, `mi` memberIds,
+`cbi` chatBotMemberIds, `w` watermarks, `l` lastLogId, `r` metaRevisions,
+`mr` moimMetaRevisions, `olu` openLinkUser, `otk` openLinkToken and `ti`
+typingTimeInterval, and it also declares `metas`. The same model with short
+keys answers `CHATONROOM`. One owned CREATE reply (2026-10-15, field names and
+types only) used the property names: `chatId`, `members` (profile objects),
+`activeMemberIds`, `watermarks`, `type`, `metas`, `lastLogId`,
+`newMessageCount`, `o`, `ii` and null `lastMessage`, `lastUpdatedAt`,
+`pushAlert`, `metaRevisions` and `pct`. The official success block upserts the
+room from it in full-data mode.
+
+When the reply decodes as the created regular group with active member IDs,
+binding takes the roster from `activeMemberIds`, the room metas from `metas`
+and the member profiles from `members`, which are stored as MEMBER results.
+No `CHATINFO`, `MEMLIST`, `MEMBER` or room-info read follows. A reply without
+active members falls back to `CHATINFO` and `MEMLIST`, as a creation resumed
+after a restart or reconciled by command does.
 
 Creation is serialized with incoming event admission. Startup resumes confirmed
 unbound attempts before inventory discovery; an uncertain attempt fails admission

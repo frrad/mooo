@@ -181,7 +181,7 @@ func (kc *KakaoClient) CreateGroup(ctx context.Context, params *bridgev2.GroupCr
 		return nil, err
 	}
 	attempt, exists := meta.GroupCreates[string(params.RoomID)]
-	var created *chatmeta.ChatData
+	var created *chatmeta.ChatRoom
 	if exists {
 		if attempt.Fingerprint != fingerprint {
 			return nil, errors.New("connector: this room already has a different group creation attempt")
@@ -222,7 +222,7 @@ func (kc *KakaoClient) CreateGroup(ctx context.Context, params *bridgev2.GroupCr
 		if err = kc.saveGroupAttempt(ctx, params.RoomID, attempt); err != nil {
 			return nil, errGroupCreateUnresolved
 		}
-		created = createdChatData(response)
+		created = createdRoom(response)
 	}
 	result, bindErr := kc.bindCreatedGroup(ctx, c, params.RoomID, attempt, created)
 	if bindErr != nil {
@@ -316,11 +316,11 @@ func (kc *KakaoClient) validateGroupRoom(ctx context.Context, params *bridgev2.G
 }
 
 // bindCreatedGroup binds a confirmed source group to its Matrix room. With the
-// CREATE reply's room data it follows the official client, which upserts the
-// room from that reply and opens it: a full CHATONROOM supplies the roster.
-// Otherwise (a resumed creation, or an unusable reply) it reads CHATINFO, and
-// MEMLIST replaces a CHATONROOM that is not a full member list.
-func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room id.RoomID, attempt groupCreateAttempt, created *chatmeta.ChatData) (*bridgev2.CreateChatResponse, error) {
+// CREATE reply's room it follows the official client, which upserts the room,
+// its active members and their profiles from that reply in full-data mode:
+// no source read is needed. Otherwise (a resumed or reconciled creation, or an
+// unusable reply) it reads CHATINFO and MEMLIST.
+func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room id.RoomID, attempt groupCreateAttempt, created *chatmeta.ChatRoom) (*bridgev2.CreateChatResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	key := makePortalKey(attempt.ChatID, kc.login.ID)
@@ -337,8 +337,12 @@ func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room
 	}
 	opts := chatInfoOptions{regularGroupOnly: true}
 	if created != nil {
-		opts.inventory = created
-		opts.storedRoster = kc.openedRoster(ctx, c, attempt.ChatID)
+		opts.inventory = &chatmeta.ChatData{ChatID: created.ChatID, Type: created.Type, ChatMetas: created.Metas, ActiveMemberCount: int32(len(created.ActiveMemberIDs))}
+		opts.storedRoster = slices.Sorted(slices.Values(created.ActiveMemberIDs))
+		opts.metasComplete = true
+		if err = kc.storeMemberProfiles(ctx, created.Members); err != nil {
+			kc.log().Warn().Str("error_class", sourceErrorClass(err)).Msg("Created group member profiles were not stored; enrichment will read them")
+		}
 	}
 	info, snap, err := kc.chatInfoFromClient(ctx, portal, c, opts)
 	if err != nil {
@@ -394,32 +398,17 @@ func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room
 	return &bridgev2.CreateChatResponse{PortalKey: key, Portal: portal, PortalInfo: info}, nil
 }
 
-// createdChatData decodes the room a CREATE reply returned, or returns nil
-// when it does not describe the created regular group.
-func createdChatData(response chat.CreateResponse) *chatmeta.ChatData {
+// createdRoom decodes the room a CREATE reply returned, or returns nil when
+// it is not the created regular group with its active member list.
+func createdRoom(response chat.CreateResponse) *chatmeta.ChatRoom {
 	if len(response.ChatRoom) == 0 {
 		return nil
 	}
-	data, err := chatmeta.DecodeChatData(response.ChatRoom)
-	if err != nil || data.ChatID != response.ChatID || data.Type != "MultiChat" || data.LinkID != 0 {
+	room, err := chatmeta.DecodeChatRoom(response.ChatRoom)
+	if err != nil || room.ChatID != response.ChatID || room.Type != "MultiChat" || len(room.ActiveMemberIDs) == 0 {
 		return nil
 	}
-	return &data
-}
-
-// openedRoster sends the CHATONROOM the official client sends when it opens a
-// chat and returns its member list when the reply is full, else nil.
-func (kc *KakaoClient) openedRoster(ctx context.Context, c kakaoClient, chatID int64) []int64 {
-	room, err := c.ChatOnRoom(ctx, chatID)
-	if err != nil || room.ChatID != chatID || !room.Full || len(room.Watermarks) == 0 {
-		return nil
-	}
-	roster := make([]int64, 0, len(room.Watermarks))
-	for userID := range room.Watermarks {
-		roster = append(roster, userID)
-	}
-	slices.Sort(roster)
-	return roster
+	return &room
 }
 
 // creationSourceRoster checks source identities independently of the framework's
