@@ -49,6 +49,7 @@ type sessionAPI interface {
 type chatMetaAPI interface {
 	ListChats(ctx context.Context) ([]chatmeta.ChatData, error)
 	ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error)
+	GetMetas(ctx context.Context, chatIDs []int64) ([]chatmeta.ChatMetaSet, error)
 	PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.RoomMeta, error)
 	PersonalMetas(ctx context.Context) (map[int64]chatmeta.RoomMeta, error)
 	PersonalMetaRevision(ctx context.Context) (int32, bool, error)
