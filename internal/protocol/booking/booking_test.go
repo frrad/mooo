@@ -222,3 +222,26 @@ func mustMarshal(t *testing.T, doc bson.D) []byte {
 	}
 	return body
 }
+
+func TestDecodeCheckinCacheExpire(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body bson.D
+		want time.Duration
+	}{
+		{name: "observed int32 seconds", body: bson.D{{Key: "cacheExpire", Value: int32(3600)}}, want: time.Hour},
+		{name: "int64 seconds", body: bson.D{{Key: "cacheExpire", Value: int64(120)}}, want: 2 * time.Minute},
+		{name: "absent means no reuse", body: bson.D{{Key: "host", Value: "carriage.invalid"}}, want: 0},
+		{name: "zero means no reuse", body: bson.D{{Key: "cacheExpire", Value: int32(0)}}, want: 0},
+		{name: "negative means no reuse", body: bson.D{{Key: "cacheExpire", Value: int32(-5)}}, want: 0},
+		{name: "wrong type means no reuse", body: bson.D{{Key: "cacheExpire", Value: "3600"}}, want: 0},
+	} {
+		body, err := bson.Marshal(tc.body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := DecodeCheckinCacheExpire(body); got != tc.want {
+			t.Errorf("%s: DecodeCheckinCacheExpire = %s, want %s", tc.name, got, tc.want)
+		}
+	}
+}

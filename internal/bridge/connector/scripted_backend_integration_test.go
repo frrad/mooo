@@ -224,9 +224,11 @@ func TestScriptedBackendAutomaticRecoveryReleasesLeaseBeforeReopen(t *testing.T)
 	}
 	kc.Disconnect()
 	waitBackends(t, firstBackends)
-	for i, backend := range secondBackends {
+	// The recovery reuses the GETCONF reply the first login stored, so the
+	// second booking backend is never dialed.
+	for i, backend := range secondBackends[1:] {
 		if backendErr := backend.Wait(2 * time.Second); backendErr != nil {
-			t.Fatalf("second backend %d: %v", i, backendErr)
+			t.Fatalf("second backend %d: %v", i+1, backendErr)
 		}
 	}
 }

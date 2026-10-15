@@ -236,6 +236,12 @@ type sessionConfig struct {
 	resume  continuity.Checkpoint
 	dialers sessionDialers
 	ping    pingSessionOptions
+	// booking persists the GETCONF reply; nil sends GETCONF on every
+	// connect. route is the profile's cached carriage route and ticket
+	// cursor; nil keeps none. clock defaults to real time.
+	booking bookingStore
+	route   *carriageRoute
+	clock   routeClock
 }
 
 // realtimePingOptions is the production keepalive policy.
@@ -260,33 +266,19 @@ func connectSession(ctx context.Context, state authstate.State, config sessionCo
 	if err != nil {
 		return nil, stageErr(errBootstrap, "device uuid", err)
 	}
+	route, clock := config.route, config.clock
+	if route == nil {
+		route = &carriageRoute{}
+	}
+	if clock.now == nil {
+		clock = realtimeRouteClock()
+	}
 	bookingBody, err := (booking.GetConfRequest{
 		MCCMNC: "99999", Model: state.Identity.Metadata.DeviceModel, OS: "mac", UserID: state.Credentials.UserID,
 	}).MarshalBSON()
 	if err != nil {
 		return nil, stageErr(errBootstrap, "getconf request", err)
 	}
-	bookingWire, err := dialers.tls(ctx, booking.Host, 443)
-	if err != nil {
-		return nil, stageErr(errBootstrap, "getconf dial", err)
-	}
-	bookingReply, _, err := bookingWire.request(1, booking.GetConfCommand, bookingBody)
-	_ = bookingWire.close()
-	bookingStatus, statusErr := loco.Status(bookingReply)
-	if cause := replyFailure(booking.GetConfCommand, err, statusErr, bookingStatus); cause != nil {
-		return nil, stageErr(errBootstrap, "getconf", cause)
-	}
-	hosts, ports, err := booking.DecodeBookingTargets(bookingReply.Body)
-	if err != nil {
-		return nil, stageErr(errBootstrap, "getconf", err)
-	}
-	if pingOptions.serverInterval {
-		pingOptions.interval = booking.DecodeForegroundPingInterval(bookingReply.Body)
-	}
-	if pingOptions.serverHeaderTimeout {
-		pingOptions.headerTimeout = booking.DecodeReceiveHeaderTimeout(bookingReply.Body)
-	}
-
 	checkinBody, err := (booking.CheckinRequest{
 		UserID: state.Credentials.UserID, OS: "mac", NType: 0, AppVer: state.Identity.Metadata.AppVersion,
 		MCCMNC: "99999", Lang: "en", CountryISO: "US", UseSub: true,
@@ -294,17 +286,43 @@ func connectSession(ctx context.Context, state authstate.State, config sessionCo
 	if err != nil {
 		return nil, stageErr(errBootstrap, "checkin request", err)
 	}
-	checkinReply, _, err := checkin(ctx, hosts, ports, checkinBody, dialers)
+	// Like the Mac client, reuse the stored GETCONF reply and send GETCONF
+	// only when none is stored.
+	var bookingReply []byte
+	stored := false
+	if config.booking != nil {
+		bookingReply, stored = config.booking.load()
+	}
+	if !stored {
+		if bookingReply, err = getConf(ctx, bookingBody, dialers, config.booking, clock); err != nil {
+			return nil, err
+		}
+	}
+	hosts, ports, err := booking.DecodeBookingTargets(bookingReply)
+	if err != nil {
+		return nil, stageErr(errBootstrap, "getconf", err)
+	}
+	carriage, err := dialCarriage(ctx, route, ticketPool(hosts, ports), checkinBody, dialers, clock)
+	if err != nil && stored && errors.Is(err, errTicketPoolExhausted) {
+		// The stored pool may be stale. The bridge has no more-settings
+		// revision to say so, so a failed walk over the stored pool is
+		// its trigger to book again (a deliberate deviation).
+		if bookingReply, err = getConf(ctx, bookingBody, dialers, config.booking, clock); err != nil {
+			return nil, err
+		}
+		if hosts, ports, err = booking.DecodeBookingTargets(bookingReply); err != nil {
+			return nil, stageErr(errBootstrap, "getconf", err)
+		}
+		carriage, err = dialCarriage(ctx, route, ticketPool(hosts, ports), checkinBody, dialers, clock)
+	}
 	if err != nil {
 		return nil, err
 	}
-	carriageHost, carriagePort, err := booking.DecodeCheckinEndpoint(checkinReply.Body)
-	if err != nil {
-		return nil, stageErr(errBootstrap, "checkin", err)
+	if pingOptions.serverInterval {
+		pingOptions.interval = booking.DecodeForegroundPingInterval(bookingReply)
 	}
-	carriage, err := dialers.secure(ctx, carriageHost, carriagePort)
-	if err != nil {
-		return nil, stageErr(errBootstrap, "carriage dial", err)
+	if pingOptions.serverHeaderTimeout {
+		pingOptions.headerTimeout = booking.DecodeReceiveHeaderTimeout(bookingReply)
 	}
 	if pingOptions.timeout <= 0 {
 		pingOptions.timeout = defaultPingRequestTimeout
