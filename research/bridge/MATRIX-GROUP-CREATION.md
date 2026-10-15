@@ -91,6 +91,20 @@ uses the framework room-ID update and an explicit database save. Room membership
 and permissions are checked again before binding, and source/binding work has a
 30-second context bound.
 
+Binding reads follow the official success path (finding 13 of the
+[native skew audit](NATIVE-SKEW-AUDIT.md), 2026-10-15). The official client
+upserts the room from the reply's `chatRoom` and opens it, and opening sends
+`CHATONROOM`, whose full reply lists every active member. When the reply's
+`chatRoom` decodes as the created regular group, binding takes the room data
+from it and the roster from one `CHATONROOM`; profiles come from the
+enrichment queue (`MEMBER` only for unknown members, as for the `CHATONROOM`
+unknown members natively). No `CHATINFO` or `MEMLIST` is sent. A `CHATONROOM`
+that fails or is not full falls back to `MEMLIST`. A creation resumed after a
+restart or reconciled by command has no reply, so it keeps `CHATINFO` and
+`MEMLIST`. Whether the live `chatRoom` uses the chat-data wire keys is
+verified by the owned run below; the decoder accepts both the short and long
+chat-data keys.
+
 Creation is serialized with incoming event admission. Startup resumes confirmed
 unbound attempts before inventory discovery; an uncertain attempt fails admission
 with an actionable state. Pending attempts deliberately stop incoming admission

@@ -13,6 +13,7 @@ import (
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
@@ -180,6 +181,7 @@ func (kc *KakaoClient) CreateGroup(ctx context.Context, params *bridgev2.GroupCr
 		return nil, err
 	}
 	attempt, exists := meta.GroupCreates[string(params.RoomID)]
+	var created *chatmeta.ChatData
 	if exists {
 		if attempt.Fingerprint != fingerprint {
 			return nil, errors.New("connector: this room already has a different group creation attempt")
@@ -220,8 +222,9 @@ func (kc *KakaoClient) CreateGroup(ctx context.Context, params *bridgev2.GroupCr
 		if err = kc.saveGroupAttempt(ctx, params.RoomID, attempt); err != nil {
 			return nil, errGroupCreateUnresolved
 		}
+		created = createdChatData(response)
 	}
-	result, bindErr := kc.bindCreatedGroup(ctx, c, params.RoomID, attempt)
+	result, bindErr := kc.bindCreatedGroup(ctx, c, params.RoomID, attempt, created)
 	if bindErr != nil {
 		return nil, fmt.Errorf("connector: source group %d is confirmed; binding remains pending and CREATE will not be repeated: %w", attempt.ChatID, bindErr)
 	}
@@ -312,7 +315,12 @@ func (kc *KakaoClient) validateGroupRoom(ctx context.Context, params *bridgev2.G
 	return nil
 }
 
-func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room id.RoomID, attempt groupCreateAttempt) (*bridgev2.CreateChatResponse, error) {
+// bindCreatedGroup binds a confirmed source group to its Matrix room. With the
+// CREATE reply's room data it follows the official client, which upserts the
+// room from that reply and opens it: a full CHATONROOM supplies the roster.
+// Otherwise (a resumed creation, or an unusable reply) it reads CHATINFO, and
+// MEMLIST replaces a CHATONROOM that is not a full member list.
+func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room id.RoomID, attempt groupCreateAttempt, created *chatmeta.ChatData) (*bridgev2.CreateChatResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	key := makePortalKey(attempt.ChatID, kc.login.ID)
@@ -327,7 +335,12 @@ func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room
 	if err != nil {
 		return nil, err
 	}
-	info, snap, err := kc.chatInfoFromClient(ctx, portal, c, chatInfoOptions{regularGroupOnly: true})
+	opts := chatInfoOptions{regularGroupOnly: true}
+	if created != nil {
+		opts.inventory = created
+		opts.storedRoster = kc.openedRoster(ctx, c, attempt.ChatID)
+	}
+	info, snap, err := kc.chatInfoFromClient(ctx, portal, c, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -381,6 +394,34 @@ func (kc *KakaoClient) bindCreatedGroup(ctx context.Context, c kakaoClient, room
 	return &bridgev2.CreateChatResponse{PortalKey: key, Portal: portal, PortalInfo: info}, nil
 }
 
+// createdChatData decodes the room a CREATE reply returned, or returns nil
+// when it does not describe the created regular group.
+func createdChatData(response chat.CreateResponse) *chatmeta.ChatData {
+	if len(response.ChatRoom) == 0 {
+		return nil
+	}
+	data, err := chatmeta.DecodeChatData(response.ChatRoom)
+	if err != nil || data.ChatID != response.ChatID || data.Type != "MultiChat" || data.LinkID != 0 {
+		return nil
+	}
+	return &data
+}
+
+// openedRoster sends the CHATONROOM the official client sends when it opens a
+// chat and returns its member list when the reply is full, else nil.
+func (kc *KakaoClient) openedRoster(ctx context.Context, c kakaoClient, chatID int64) []int64 {
+	room, err := c.ChatOnRoom(ctx, chatID)
+	if err != nil || room.ChatID != chatID || !room.Full || len(room.Watermarks) == 0 {
+		return nil
+	}
+	roster := make([]int64, 0, len(room.Watermarks))
+	for userID := range room.Watermarks {
+		roster = append(roster, userID)
+	}
+	slices.Sort(roster)
+	return roster
+}
+
 // creationSourceRoster checks source identities independently of the framework's
 // member map, which includes the local account even when MEMLIST omits it.
 func (kc *KakaoClient) creationSourceRoster(roster []int64, participants []int64) (map[int64]bool, error) {
@@ -418,7 +459,7 @@ func (kc *KakaoClient) resumeGroupCreates(ctx context.Context, c kakaoClient) er
 		if attempt.ChatID == 0 {
 			return permanentAdmissionError{err: errGroupCreateUnresolved}
 		}
-		if _, err = kc.bindCreatedGroup(ctx, c, id.RoomID(room), attempt); err != nil {
+		if _, err = kc.bindCreatedGroup(ctx, c, id.RoomID(room), attempt, nil); err != nil {
 			return err
 		}
 	}

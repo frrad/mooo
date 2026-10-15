@@ -158,7 +158,7 @@ func (kc *KakaoClient) reconcileGroup(ctx context.Context, room id.RoomID, chatI
 	if err = kc.saveGroupAttempt(ctx, room, attempt); err != nil {
 		return nil, err
 	}
-	return kc.bindCreatedGroup(ctx, c, room, attempt)
+	return kc.bindCreatedGroup(ctx, c, room, attempt, nil)
 }
 
 var commandCompleteGroupInvitations = &commands.FullHandler{

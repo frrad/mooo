@@ -20,9 +20,10 @@ type chatInfoOptions struct {
 	// unavailable, so a refresh cannot be mistaken for a confirmed clear.
 	requirePersonalMeta bool
 	inventory           *chatmeta.ChatData
-	// storedRoster replaces MEMLIST with a roster the bridge already verified.
-	// Reconnect discovery uses it for managed groups, whose later changes
-	// arrive as membership feeds through pushes and catch-up.
+	// storedRoster replaces MEMLIST with a roster from another source.
+	// Reconnect discovery passes a managed group's verified roster, whose later
+	// changes arrive as membership feeds through pushes and catch-up; group
+	// creation passes the full CHATONROOM member list.
 	storedRoster []int64
 }
 
