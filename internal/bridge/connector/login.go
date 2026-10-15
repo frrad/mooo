@@ -34,9 +34,6 @@ type UserLoginMetadata struct {
 	// KickedOut is set when the source signed this device out. It blocks
 	// reconnecting until the login is removed and a new one is created.
 	KickedOut *kickoutRecord `json:"kicked_out,omitempty"`
-	// Reconnect is the reconnect schedule, so that a restart waits out a
-	// pending backoff instead of logging in at once.
-	Reconnect *reconnectRecord `json:"reconnect,omitempty"`
 }
 
 const (

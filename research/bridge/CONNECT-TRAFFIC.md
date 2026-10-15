@@ -360,40 +360,29 @@ reopen reusing the persisted GETCONF.
   renewal cap. -445 and renewal results -998/-999 log out. -305 counts as
   success but never completes recovery, so the watchdog logs out.
 
-### Implementation spec
+### Implementation (2026-10-15, maintainer decision: full native parity)
 
-Replace the ordinary-failure ladder in `internal/bridge/connector/lifecycle.go`
-(5/10/20/40/60 s, then 15 min):
+Implemented in `internal/bridge/connector` (`recovery_schedule.go`,
+`lifecycle.go`) and `internal/client` (renewal loop). The details are in the
+[reconnect design](../bridge-reconnect-design.md).
 
-1. **Episode start** on session loss: first attempt after ~0.1 s (treat as
-   immediate). This includes the bootstrap transport failures that are
-   retryable today.
-2. **Failed attempt**: retry every 10 s, fixed. With finding #6 in place, most
-   of these attempts send no GETCONF or CHECKIN. A dial failure counts as a
-   failed attempt; the bridge has no reachability monitor to wait on.
-3. **Episode watchdog**: 600 s after the episode's first attempt with no
-   successful login, the native client gives up. The bridge must not stop
-   permanently: an unattended service has no user or wake event to restart it.
-   **Deviation:** at 600 s, report `kakao-recovery-stalled` (as today) and
-   continue on the existing 15-minute retry. Keep the process-restart
-   persistence of the pending retry.
-4. **Reset**: start a new episode after any successful login, as native does.
-   This replaces the 5-minute stability rule. Keep one guard: a session that
-   ends within 60 s of its successful login, more than 3 times in a row, joins
-   the 15-minute tier. Native has no such guard, so record it as a deviation
-   against CHANGESVR/close loops.
-5. **Keep as bridge policy** (deviations; see
-   [RECOVERY-TRACE](RECOVERY-TRACE.md#finding-7-reconnect-schedule)): the
-   `-328` ladder (60/120/240/480/900 s), although native retries -328 every
-   10 s; the single `-950` renewal, although native renews without a cap; and
-   the terminal KICKOUT/credential rules from the
-   [reconnect design](../bridge-reconnect-design.md). A -328 reply must never
-   fall back to the 10 s cadence.
+1. **Episode start** on session loss: first attempt after 0.1 s. The first
+   connect is an episode's first attempt.
+2. **Failed attempt**: every failure retries after a fixed 10 s, including
+   LOGINLIST `-328`, `-310` and other status errors, and a transport failure
+   during LOGINLIST ([RECOVERY-TRACE](RECOVERY-TRACE.md) RT-STATIC-006). `-950`
+   renews and resends LOGINLIST at once with no renewal limit (RT-STATIC-002).
+   A failed renewal retries after 10 s.
+3. **Native logouts** stop recovery at once: LOGINLIST `-445` and renewal
+   results `-998`/`-999` (RT-STATIC-003/004).
+4. **Watchdog**: 600 s after the episode's first attempt with no completed
+   login. Native logs out locally. The bridge's equivalent is to stop without
+   touching credentials, report `kakao-recovery-stopped`, and wait for the
+   operator's reconnect command or a restart. `-305` connects but does not
+   complete the episode, so the watchdog fires (RT-STATIC-005).
+5. **Reset**: a completed login ends the episode. No short-session guard and
+   no persisted schedule; a restart starts a fresh episode.
 6. Do **not** read `bgReconnItv`.
-
-Tests: lifecycle tests on an injected clock for the 0.1 s / 10 s cadence, the
-600 s transition to 15-minute retries, reset after a successful login, the
-short-session guard, -328 isolation and restart persistence.
 
 ## Remaining gaps
 

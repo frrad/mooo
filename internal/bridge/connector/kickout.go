@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -71,4 +72,24 @@ func (kc *KakaoClient) recordKickout(record kickoutRecord) {
 	kc.saveLoginMetadata("kickout", func(meta *UserLoginMetadata) {
 		meta.KickedOut = &record
 	})
+}
+
+const loginSaveTimeout = 5 * time.Second
+
+// saveLoginMetadata applies update to the login's metadata and saves it. A
+// failed save is logged; the in-memory state still applies to this process.
+func (kc *KakaoClient) saveLoginMetadata(what string, update func(*UserLoginMetadata)) {
+	kc.metaMu.Lock()
+	defer kc.metaMu.Unlock()
+	meta, ok := kc.login.Metadata.(*UserLoginMetadata)
+	if !ok {
+		kc.log().Error().Str("record", what).Msg("Cannot save login state: login has no Kakao metadata")
+		return
+	}
+	update(meta)
+	ctx, cancel := context.WithTimeout(context.Background(), loginSaveTimeout)
+	defer cancel()
+	if err := kc.saveLogin(ctx); err != nil {
+		kc.log().Err(err).Str("record", what).Msg("Failed to save login state; a restart would not see it")
+	}
 }

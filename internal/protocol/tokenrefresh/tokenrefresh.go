@@ -26,6 +26,16 @@ var (
 	ErrRejected        = errors.New("tokenrefresh: rejected")
 )
 
+// RejectedError is a renewal reply whose status is not 0. It matches
+// ErrRejected.
+type RejectedError struct {
+	Status int64
+}
+
+func (e RejectedError) Error() string { return fmt.Sprintf("%v: status %d", ErrRejected, e.Status) }
+
+func (e RejectedError) Is(target error) bool { return target == ErrRejected }
+
 type Request struct {
 	RefreshToken string
 }
@@ -92,7 +102,7 @@ func DecodeResponse(body []byte) (Rotation, error) {
 			return Rotation{}, ErrInvalidResponse
 		}
 		if status != 0 {
-			return Rotation{}, fmt.Errorf("%w: status %d", ErrRejected, status)
+			return Rotation{}, RejectedError{Status: status}
 		}
 	}
 	rotation := Rotation{}

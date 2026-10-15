@@ -51,14 +51,14 @@ func TestReconciliationRefusesDetachedLoginAfterKickout(t *testing.T) {
 	}
 }
 
-// A scheduled retry may be waiting out a -328 rate limit; logging in from an
-// operator command would skip it.
+// A detached login while a recovery episode runs would add a login the
+// native client never sends.
 func TestReconciliationRefusesDetachedLoginWhileRetryIsScheduled(t *testing.T) {
 	kc, backend, room, opens := newStoppedUnresolvedCreate(t)
 	kc.wait = func(ctx context.Context, _ time.Duration) error { <-ctx.Done(); return ctx.Err() }
 	kc.mu.Lock()
 	kc.generation = 1
-	kc.startRetryLocked(1, rateLimitedRecoveryDelays[0])
+	kc.startRetryLocked(1, episodeRetryDelay)
 	kc.mu.Unlock()
 	t.Cleanup(kc.Disconnect)
 
@@ -71,36 +71,47 @@ func TestReconciliationRefusesDetachedLoginWhileRetryIsScheduled(t *testing.T) {
 	}
 }
 
-// A restart restores a pending retry from the login's metadata before its
-// first Connect; the detached login honors it too.
-func TestReconciliationRefusesDetachedLoginBeforePersistedRetry(t *testing.T) {
+func TestReconciliationRefusesDetachedLoginDuringEpisode(t *testing.T) {
 	kc, backend, room, opens := newStoppedUnresolvedCreate(t)
-	kc.login.Metadata.(*UserLoginMetadata).Reconnect = &reconnectRecord{Attempt: 3, NotBefore: time.Now().Add(time.Minute).UnixMilli()}
+	kc.mu.Lock()
+	kc.schedule.begin(time.Now())
+	kc.mu.Unlock()
 
 	_, err := kc.ReconcileGroup(context.Background(), room, 5000)
 	if !errors.Is(err, errDetachedRetryPending) {
-		t.Fatalf("ReconcileGroup before a persisted retry = %v, want errDetachedRetryPending", err)
+		t.Fatalf("ReconcileGroup during an episode = %v, want errDetachedRetryPending", err)
 	}
 	if *opens != 0 || len(backend.calls) != 0 {
-		t.Fatalf("detached login before a persisted retry: opens=%d calls=%v", *opens, backend.calls)
+		t.Fatalf("detached login during an episode: opens=%d calls=%v", *opens, backend.calls)
+	}
+}
+
+// After the episode watchdog stopped recovery, only the operator's reconnect
+// command may log in again.
+func TestReconciliationRefusesDetachedLoginAfterRecoveryStopped(t *testing.T) {
+	kc, backend, room, opens := newStoppedUnresolvedCreate(t)
+	kc.mu.Lock()
+	kc.schedule = recoverySchedule{gaveUp: true}
+	kc.mu.Unlock()
+
+	_, err := kc.ReconcileGroup(context.Background(), room, 5000)
+	if !errors.Is(err, errDetachedRecoveryStopped) {
+		t.Fatalf("ReconcileGroup after recovery stopped = %v, want errDetachedRecoveryStopped", err)
+	}
+	if *opens != 0 || len(backend.calls) != 0 {
+		t.Fatalf("detached login after recovery stopped: opens=%d calls=%v", *opens, backend.calls)
 	}
 }
 
 // When no gate applies the detached login proceeds, because the unresolved
-// creation blocks every bootstrap, and it is recorded in the persisted
-// schedule like any other login.
-func TestReconciliationDetachedLoginIsRecordedInSchedule(t *testing.T) {
+// creation blocks every bootstrap.
+func TestReconciliationDetachedLoginProceedsWithoutGate(t *testing.T) {
 	kc, backend, room, opens := newStoppedUnresolvedCreate(t)
-	before := time.Now().UnixMilli()
 
 	if _, err := kc.ReconcileGroup(context.Background(), room, 5000); err != nil {
 		t.Fatal(err)
 	}
-	record := kc.login.Metadata.(*UserLoginMetadata).Reconnect
 	if *opens != 1 || backend.closeCalls != 1 {
 		t.Fatalf("opens=%d closes=%d, want one released detached owner", *opens, backend.closeCalls)
-	}
-	if record == nil || record.LoginAt < before || record.NotBefore != 0 {
-		t.Fatalf("detached login was not recorded in the reconnect schedule: %+v", record)
 	}
 }

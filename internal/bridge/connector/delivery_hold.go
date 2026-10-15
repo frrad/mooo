@@ -26,8 +26,8 @@ import (
 // chat's cursor past an undelivered event. A genuine transport failure still
 // ends the session, because the source stream closes.
 //
-// A held chat is retried on the ordinary recovery schedule. When those
-// attempts are exhausted the chat is paused and the bridge reports
+// A held chat is retried after heldChatRetryDelays. When those attempts are
+// exhausted the chat is paused and the bridge reports
 // stateChatDeliveryPaused; it is not retried on a timer again. A chat whose
 // source access is paused (unconverged membership or removal) is not retried
 // on a timer at all, because its retry cannot succeed before that state
@@ -41,6 +41,10 @@ import (
 // maxHeldEvents bounds one held chat's buffer. Later positioned events are
 // dropped uncommitted and read again by catch-up when the chat resumes.
 const maxHeldEvents = 1024
+
+// heldChatRetryDelays are the in-session retries of a held chat. They are
+// the bridge's own policy; no native path retries a failed delivery.
+var heldChatRetryDelays = []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 60 * time.Second}
 
 const stateChatDeliveryPaused status.BridgeStateErrorCode = "kakao-chat-delivery-paused"
 

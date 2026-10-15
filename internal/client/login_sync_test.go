@@ -8,6 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/frrad/mooo/internal/continuity"
+	"github.com/frrad/mooo/internal/protocol/sessionlogin"
 	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 )
 
@@ -198,6 +199,10 @@ func TestScriptedBackendLoginAlreadyCurrentDoesNotPageOrAdvanceGlobalCursor(t *t
 	}
 	if session.loginCursor.lastTokenID != nil || session.loginCursor.lbk != nil {
 		t.Fatalf("already-current response advanced global cursor: %#v", session.loginCursor)
+	}
+	// A delta-only login does not complete a recovery episode.
+	if session.loginStatus != sessionlogin.StatusLoginListDeltaOnly || (&Client{session: session}).LoginCompleted() {
+		t.Fatalf("delta-only login status = %d, completed = %v", session.loginStatus, (&Client{session: session}).LoginCompleted())
 	}
 	_ = session.Close()
 	waitBackends(t, backends...)

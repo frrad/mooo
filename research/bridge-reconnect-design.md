@@ -1,8 +1,8 @@
 # Bridge reconnect policy
 
-This document records the connector policy implemented for bridge recovery. It
-is a bridge continuity choice, not a claim about KakaoTalk official-client
-parity.
+This document records the connector policy implemented for bridge recovery.
+The reconnect schedule matches the official Mac client; the other parts are
+bridge continuity choices, noted as such.
 
 The protocol client remains a single-session owner. The connector supervisor
 owns generation, cancellation, recovery timers, and bridge state. When a live
@@ -12,42 +12,51 @@ This ordering preserves the profile lease and prevents two sessions from
 sharing a profile. An explicit disconnect cancels an active bootstrap and
 pending timer, increments the generation, and waits for the cleanup owner.
 
-Recovery from a retryable failure never gives up (2026-10-11). The first
-five attempts after an outage follow a fast schedule: ordinary failures wait
-5, 10, 20, 40 and 60 seconds, and a known `LOGINLIST -328` rate limit waits
-60, 120, 240, 480 and 900 seconds. After that, the bridge reports
-`UNKNOWN_ERROR` `kakao-recovery-stalled` once and keeps retrying every 15
-minutes. The first connect retries on the same schedule, so a network outage
-at startup no longer leaves the bridge down until a restart. A network failure
-during bootstrap (the GETCONF and CHECKIN dials and requests, before LOGINLIST
-sends any credentials) is retryable. Until 2026-10-13 the client hid its cause,
-so a DNS failure right after a lab Mac woke from sleep stopped the bridge for
-good. A transport failure during LOGINLIST itself is still classified only as
-a login failure and is not retried.
+Since 2026-10-15 recovery is the official Mac client's recovery episode
+([CONNECT-TRAFFIC finding #7](bridge/CONNECT-TRAFFIC.md#finding-7-reconnect-schedule),
+[RECOVERY-TRACE](bridge/RECOVERY-TRACE.md)); the maintainer chose full native
+parity for it. A session loss starts an episode whose first attempt runs
+after 0.1 s. Every failed attempt retries after a fixed 10 s, with no growth,
+no jitter and no status-specific ladder. That includes network and bootstrap
+failures, a transport failure during LOGINLIST, every LOGINLIST status error
+(including `-328` and `-310`), and a failed token renewal. On `-950` the
+client renews the token and resends LOGINLIST at once, with no renewal
+limit, as native does. A completed login ends the episode, so the next loss
+starts a fresh one. The first connect is an episode's first attempt too.
 
-The schedule restarts only after a session has stayed connected for five
-minutes. A session that ends sooner, for example by repeated `CHANGESVR` or a
-close right after login, keeps advancing it, so the bridge cannot log in every
-few seconds forever.
+The episode has a 600 s watchdog from its first attempt. No retry is
+scheduled at or after it. When it fires with no completed login, the native
+client logs out locally and waits for the user. The bridge's equivalent is
+to stop: it closes any pending attempt or incomplete session, leaves the
+credentials and profile untouched, reports `UNKNOWN_ERROR`
+`kakao-recovery-stopped`, and waits. Only the operator's reconnect command or
+a process restart starts a new episode. About 60 attempts in 10 minutes is
+therefore the most one outage causes.
 
-The schedule survives a process restart (2026-10-11). The login's metadata
-records when each login attempt began, its attempt number, and the time a
-scheduled retry may log in. On its first `Connect`, a freshly loaded login
-waits out a pending retry. If the previous process logged in less than five
-minutes before it ended, the restart counts as a short session: the attempt
-number advances and the bridge waits for that attempt's delay, measured
-from the previous login. It reports `TRANSIENT_DISCONNECT`
-`kakao-reconnect-scheduled` while it waits. A supervisor that restarts a
-crashing bridge therefore follows the same 5 s to 15 minute schedule
-instead of logging in on every restart. A restart more than five minutes
-after the last login connects at once. Later `Connect` calls in the same
-process keep the in-memory schedule.
+Native logs out at once, so the bridge stops at once, without retrying,
+after `LOGINLIST -445` and after a token renewal that KakaoTalk ends with
+`-998` or `-999` (`client.ErrSignedOut`). A delta-only login (`LOGINLIST
+-305`) connects but, as in the native client, does not complete the episode:
+the watchdog still fires and stops the session. KICKOUT stays terminal and
+persisted.
 
-These do not retry: profile-open or lease failures, `ErrLogin`, credential
-renewal failures, unknown `LOGINLIST` status errors, a second `-950`, and
-source-side catch-up failures. Outbound Matrix sends fail while disconnected
-and are never queued for implicit resend. An accepted write whose response is
-lost remains ambiguous and is sent only once.
+No schedule survives a process restart: native keeps none, so a restart
+starts a fresh episode. The earlier persisted backoff, the 5/10/20/40/60 s
+ladder, the 15-minute tier, the `-328` ladder and the short-session guard are
+gone. The guard was a bridge invention against `CHANGESVR` or close-right-
+after-login loops that were never observed; native reconnects after each such
+session too. A detached reconciliation login (#391) is refused while an
+episode runs and after the watchdog stopped recovery, until the operator
+reconnects.
+
+`GETCONF` `wifi.bgReconnItv` is not read: the Mac client stores it but never
+uses it. The bridge has no reachability monitor. Its 10 s retry stands in
+for the native trigger that resumes recovery when the network returns.
+
+These do not retry: profile-open or lease failures, the native logouts above,
+and source-side catch-up failures. Outbound Matrix sends fail while
+disconnected and are never queued for implicit resend. An accepted write
+whose response is lost remains ambiguous and is sent only once.
 
 Catch-up still runs before live subscription. An event that cannot be
 delivered holds its chat (below) instead of aborting bootstrap; a source-side
@@ -73,8 +82,9 @@ catch-up when the chat resumes). Other chats keep flowing: commits are per
 chat, so no chat's cursor passes an undelivered event. A catch-up or seeded
 event that fails holds its chat the same way, and the session goes live.
 
-- **Retry:** the held chat is retried in the live session on the ordinary
-  schedule (5, 10, 20, 40, 60 s), with no relogin.
+- **Retry:** the held chat is retried in the live session after
+  delays of 5, 10, 20, 40 and 60 s (the reconnect ladder before 2026-10-15),
+  with no relogin.
 - **Cap:** after those five retries the chat is paused. It is not retried on a
   timer again, and the bridge reports `UNKNOWN_ERROR`
   `kakao-chat-delivery-paused`.

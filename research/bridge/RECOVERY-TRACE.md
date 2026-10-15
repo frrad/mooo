@@ -32,21 +32,18 @@ no live experiment was run for this document.
 
 ### Finding #7 (reconnect schedule)
 
-- **-328 is an ordinary failure natively.** It gets the 10 s cadence inside
-  the 600 s episode. The bridge's 60/120/240/480/900 s ladder is therefore a
-  deliberate deviation, not a stand-in for untraced native behavior. It
-  protects an account that the server has told to back off, at the cost of a
-  slower recovery than native.
-- **-950 renews without a cap natively** and resends LOGINLIST at once. The
-  bridge renews once per connect, then logs in again with the rotated token,
-  and fails closed on a second -950. The cap is a deviation that bounds a
-  renewal loop.
-- **Terminal statuses.** Native logs out on -445 and on renewal results -998
-  and -999. The bridge does not retry an unknown LOGINLIST status or a failed
-  renewal, which matches stopping. It does not distinguish -998 from -999.
-- **-305.** Native accepts it as success but stalls recovery until the
-  watchdog logs out. The bridge accepts it and goes live. The native stall
-  looks unintended; the bridge does not copy it.
+The maintainer chose full native parity (2026-10-15), implemented as
+described in [CONNECT-TRAFFIC](CONNECT-TRAFFIC.md#implementation-2026-10-15-maintainer-decision-full-native-parity):
+
+- **-328** is an ordinary failure with the 10 s cadence; the bridge's
+  earlier 60–900 s ladder is gone.
+- **-950** renews without a cap and resends LOGINLIST at once; the earlier
+  one-renewal cap is gone. A failed renewal retries after 10 s.
+- **Native logouts** (-445, renewal -998/-999) stop recovery at once.
+- **-305** connects but leaves the episode open, so the watchdog fires.
+- **Watchdog**: where native logs out locally, the bridge stops, reports
+  `kakao-recovery-stopped`, and waits for the operator's reconnect command
+  or a restart.
 - **Reachability.** Native has a second trigger: regained reachability
   continues the running episode at once (0.1 s), and lost reachability logs
   out after 10 s. An attempt that returned early on an unreachable network
