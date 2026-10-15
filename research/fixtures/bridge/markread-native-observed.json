@@ -4,7 +4,7 @@
     "client": "KakaoTalk server via the owned Mac-class secondary profile; native request rules from static KakaoTalk for Mac 26.8.0 arm64",
     "date": "2026-10-15",
     "method": "Owned A/B/C regular-group differential (markread-8b): A's official Android client sent synthetic texts, the Matrix tester's read receipt drove the bridge's MarkRead, and A's per-message unread counts were read before and after each request. Server responses are the observed status, isOK and returned log positions; log IDs are replaced with small synthetic values that keep their order. Requests are the ones the bridge sent and the server answered as listed.",
-    "doc": "research/bridge/read-receipt-policy.md#native-mark-read-shape"
+    "doc": "research/bridge/read-receipt-policy.md"
   },
   "server_rule": "isOK=true, and the chat is marked read through max, exactly when cnt is at least the number of logs in (cur, max]; otherwise the response returns the logs, isOK=false, and nothing is marked read.",
   "cases": [
