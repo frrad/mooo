@@ -1090,9 +1090,10 @@ above. One PR each, highest account-safety risk first:
       After 600 s keep the 15-minute tier (deviation: native logs out). Keep the
       `-328` ladder and `-950` rule; ignore `bgReconnItv` (no native consumer).
       Spec: [CONNECT-TRAFFIC.md](research/bridge/CONNECT-TRAFFIC.md#finding-7-reconnect-schedule).
-- [ ] Trace native `login:completion:` status handling (-328, -950) before
+- [x] Trace native `login:completion:` status handling (-328, -950) before
       the recovery completion, the more-settings `locoConfRevision` trigger,
-      and the reachability-change recovery trigger.
+      and the reachability-change recovery trigger:
+      [RECOVERY-TRACE.md](research/bridge/RECOVERY-TRACE.md).
 - [x] (#18) Trace the GETMETAS chain; send revision-gated GETMETAS at login
       instead of discovery room-info CHATINFO.
 - [x] (#15) Cap background metadata retries: optional reads (MEMBER,
