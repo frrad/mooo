@@ -143,7 +143,10 @@ subscription and its ordering guarantees.
    `CatchUp` does now. Logs past the ceiling also arrive on the live stream; the
    next login covers anything missed. Advance the request cursor to the highest
    returned `logId` even past the ceiling, so the next page does not repeat it.
-   Deliver in room order, then log order, through `handleEvent`, as today.
+   Deliver in room order, then log order, through the per-chat delivery path
+   used today. Since #389 that path holds a failed chat's remaining events for
+   in-process retry instead of aborting; bulk catch-up must hand each room's
+   remainder to that hold the same way, without affecting other rooms.
 6. **Retirement.**
    - `eof=true`: retire all requested rooms.
    - `eof=false` with logs: retire requested rooms with ID < the last log's
