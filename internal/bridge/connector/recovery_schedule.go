@@ -73,7 +73,7 @@ func (s *recoverySchedule) failed(err error, now time.Time) (delay time.Duration
 	switch {
 	case errors.As(err, &statusErr) && statusErr.Status == -328:
 		s.rateLimited++
-		if s.rateLimited <= len(rateLimitedRecoveryDelays) {
+		if !s.slow && s.rateLimited <= len(rateLimitedRecoveryDelays) {
 			delay = rateLimitedRecoveryDelays[s.rateLimited-1]
 		} else {
 			s.slow = true

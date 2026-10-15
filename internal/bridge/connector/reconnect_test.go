@@ -271,10 +271,10 @@ func TestFirstConnectTransportFailureRetries(t *testing.T) {
 	})
 	kc.wait = func(context.Context, time.Duration) error { return nil }
 	kc.Connect(context.Background())
-	waitFor(t, func() bool { return opens.Load() == 2 && kc.IsLoggedIn() })
-	if harness.lastState().StateEvent != status.StateConnected {
-		t.Fatalf("final state = %+v, want CONNECTED", harness.lastState())
-	}
+	// The CONNECTED state follows the session install that IsLoggedIn sees.
+	waitFor(t, func() bool {
+		return opens.Load() == 2 && kc.IsLoggedIn() && harness.lastState().StateEvent == status.StateConnected
+	})
 	close(connected.stream)
 	kc.Disconnect()
 }

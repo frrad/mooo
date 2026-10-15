@@ -110,7 +110,10 @@ func TestRecoveryEpisodeRetriesEveryTenSecondsUntilWatchdog(t *testing.T) {
 	kc.Connect(context.Background())
 	clock.Advance(time.Hour)
 	close(first.stream)
-	waitFor(t, func() bool { return opens.Load() == 64 && kc.IsLoggedIn() })
+	// The CONNECTED state follows the session install that IsLoggedIn sees.
+	waitFor(t, func() bool {
+		return opens.Load() == 64 && kc.IsLoggedIn() && harness.lastState().StateEvent == status.StateConnected
+	})
 
 	// 62 failed attempts. Attempt k runs 10(k-1) s into the episode, so
 	// attempts 1..59 wait 10 s. Attempt 60 would retry at 600 s, the
@@ -120,9 +123,6 @@ func TestRecoveryEpisodeRetriesEveryTenSecondsUntilWatchdog(t *testing.T) {
 	assertDelays(t, clock.Delays(), want)
 	if stalls := countStalledStates(t, harness); stalls != 1 {
 		t.Fatalf("stalled states = %d, want exactly 1 when the watchdog passes", stalls)
-	}
-	if harness.lastState().StateEvent != status.StateConnected {
-		t.Fatalf("final state = %+v, want CONNECTED", harness.lastState())
 	}
 	close(recovered.stream)
 	kc.Disconnect()
@@ -263,6 +263,32 @@ func TestRateLimitedRecoveryKeepsItsLadder(t *testing.T) {
 	if stalls := countStalledStates(t, harness); stalls != 1 {
 		t.Fatalf("stalled states = %d, want 1", stalls)
 	}
+	close(connected.stream)
+	kc.Disconnect()
+}
+
+// Past the watchdog a -328 waits on the slow tier, not its shorter ladder.
+func TestRateLimitedRecoveryPastWatchdogStaysSlow(t *testing.T) {
+	clock := newSteppedClock()
+	limited := client.StatusError{Command: "LOGINLIST", Status: -328}
+	connected := &fakeKakao{stream: make(chan events.Result)}
+	var opens atomic.Int32
+	kc, _ := newTestClient(t, func() (kakaoClient, error) {
+		switch n := opens.Add(1); {
+		case n <= 60:
+			return &fakeKakao{connectErr: io.EOF}, nil
+		case n == 61:
+			return &fakeKakao{connectErr: limited}, nil
+		default:
+			return connected, nil
+		}
+	})
+	kc.now = clock.Now
+	kc.wait = clock.Wait
+	kc.Connect(context.Background())
+	waitFor(t, func() bool { return opens.Load() == 62 && kc.IsLoggedIn() })
+	want := append(repeatDelay(10*time.Second, 59), 15*time.Minute, 15*time.Minute)
+	assertDelays(t, clock.Delays(), want)
 	close(connected.stream)
 	kc.Disconnect()
 }
