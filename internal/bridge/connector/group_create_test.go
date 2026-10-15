@@ -3,13 +3,15 @@ package connector
 import (
 	"context"
 	"errors"
-	"github.com/frrad/mooo/internal/protocol/chat"
-	"maunium.net/go/mautrix/bridgev2/database"
 	"testing"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"maunium.net/go/mautrix/bridgev2"
+	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/id"
+
+	"github.com/frrad/mooo/internal/protocol/chat"
 )
 
 func TestGroupCreationValidationBeforeMutation(t *testing.T) {
@@ -121,6 +123,7 @@ type countingGroupCreateClient struct {
 	invites       int
 	inviteErr     error
 	inviteWarning string
+	inviteLog     bson.Raw
 	inviteHook    func(chat.AddMembersRequest)
 }
 
@@ -129,7 +132,7 @@ func (c *countingGroupCreateClient) AddMembers(_ context.Context, r chat.AddMemb
 	if c.inviteHook != nil {
 		c.inviteHook(r)
 	}
-	return chat.AddMembersResponse{Warning: c.inviteWarning}, c.inviteErr
+	return chat.AddMembersResponse{ChatLog: c.inviteLog, Warning: c.inviteWarning}, c.inviteErr
 }
 
 func (c *countingGroupCreateClient) CreateChat(context.Context, chat.CreateRequest) (chat.CreateResponse, error) {

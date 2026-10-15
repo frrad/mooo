@@ -187,9 +187,10 @@ type KakaoClient struct {
 	saveLogin func(context.Context) error
 	// reserveOutbound defaults to the bridge's durable store.
 	reserveOutbound func(context.Context, id.EventID) (bool, error)
-	// refreshMembership re-reads a group's source roster outside the portal
-	// event loop that delivered a Matrix change.
-	refreshMembership func(kakaoClient, int64)
+	// refreshMembership applies a membership feed, or with a nil feed re-reads
+	// a group's source roster, outside the portal event loop that delivered a
+	// Matrix change.
+	refreshMembership func(kakaoClient, int64, *membershipFeed)
 
 	groupGate   sync.Mutex
 	displayGate sync.Mutex
