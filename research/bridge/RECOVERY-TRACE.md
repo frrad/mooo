@@ -26,6 +26,7 @@ no live experiment was run for this document.
 | RT-STATIC-009 | `BCLocoClient` observes reachability with `clientNetworkReachabilityChanged:`. When logged in and not asleep, it cancels a pending delayed logout. Reachable: it calls `sleep` when the system monitor allows sleeping, otherwise `wakeup`. Unreachable: it schedules a connection logout after 10.0 s. | static | High |
 | RT-STATIC-010 | `wakeup`, when the manager status is not 25, cancels and reschedules `recoverLocoLogin:` with the current cursor after 0.1 s. It does not call `resetAndRecoverLocoLogin`, so it neither logs out first nor advances the cursor: it continues the running episode and its watchdog. At status 25 it only updates the sleep status if needed. | static | High |
 | RT-STATIC-011 | `resetAndRecoverLocoLogin` has exactly two callers: the manager-status delegate (25 → 26) and `clientSystemSleepStatusChanged:`. `recoverLocoLogin:` is scheduled only by `wakeup`, the reset routine, the 10 s reschedule, and a failed sleep-status update; `didRecoverLocoLogin:` only cancels it. No Swift caller exists. | static | Medium-high: a selector built from a string at runtime is not excluded |
+| RT-STATIC-012 | The CHECKIN ticket pool is built from GETCONF `wifi.ports` and `ticket.lsl` only when both are nonempty: for each port, every host, with no de-duplication and no other ports. Every address is dialed over TLS with fallback disabled. The ticket cursor indexes this pool and survives a successful CHECKIN and a new GETCONF. A failed connect or CHECKIN waits `jitteredBackoff(cursor + 1, 32 s)` and tries the next address in the same login; at the end of the pool (the walk does not wrap) the cursor resets to 0 and the login fails. An empty pool falls back to a built-in default that was not decoded. | static | High; the default pool is a gap |
 
 ## Consequences for the specs
 
@@ -55,7 +56,12 @@ no live experiment was run for this document.
 
 ### Finding #6 (GETCONF and route cache)
 
-No contradiction. The revision that gates GETCONF comes from the
+The ticket walk (RT-STATIC-012) refines the spec: the pool is port-major and
+TLS only, and the walk starts at the kept cursor, not at address 0. mooo's
+earlier walk (per host: TLS on 443 and each port, then the secure transport on
+each port and 995, with no delay) did not match.
+
+No contradiction otherwise. The revision that gates GETCONF comes from the
 more-settings request (RT-STATIC-007/008), which the bridge does not send. A
 revision bump takes effect only at the next login even natively. The
 bridge's substitute trigger (book again when the stored ticket pool is
@@ -68,3 +74,4 @@ exhausted) stays a documented deviation.
 - The server-side meaning of -305, -445, -998 and -999.
 - UI and HTTP-error callers of the more-settings request.
 - Which entry reaches the persisted last-route branch at carriage connect.
+- The built-in default ticket pool used when GETCONF supplies none.

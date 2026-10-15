@@ -153,6 +153,10 @@ Bootstrap follows the Mac client's booking and route cache
   moves the ticket cursor to the next address; KICKOUT and expiry drop it.
   A failed dial to the cached route drops it and checks in again in the same
   attempt (deviation: native keeps it until expiry).
-- The CHECKIN walk tries the first address at once and waits the native equal
-  jitter (capped at 32 s) before each later one. An exhausted walk is a
-  retryable failure; the reconnect schedule owns the next attempt.
+- The CHECKIN pool is the Mac client's: for each GETCONF `wifi` port, every
+  `ticket.lsl` host, over TLS only
+  ([RECOVERY-TRACE](bridge/RECOVERY-TRACE.md) RT-STATIC-012). The walk starts
+  at the address that last served CHECKIN, tries it at once, and waits the
+  native equal jitter (by address index, capped at 32 s) before each later
+  address. Reaching the end of the pool resets the cursor and fails the
+  attempt as retryable; the reconnect schedule owns the next attempt.
