@@ -1085,11 +1085,12 @@ above. One PR each, highest account-safety risk first:
       (monotonic, 3600 s observed); invalidate on CHANGESVR, KICKOUT, expiry
       and cached-route dial failure; walk the ticket pool with native equal
       jitter (cap 32 s). Spec: [CONNECT-TRAFFIC.md](research/bridge/CONNECT-TRAFFIC.md#finding-6-getconf-checkin-and-the-route-cache).
-- [ ] (#7) Replace the 5/10/20/40/60 s ladder with the native episode: first
-      attempt at 0.1 s, fixed 10 s retries, 600 s watchdog, reset on success.
-      After 600 s keep the 15-minute tier (deviation: native logs out). Keep the
-      `-328` ladder and `-950` rule; ignore `bgReconnItv` (no native consumer).
-      Spec: [CONNECT-TRAFFIC.md](research/bridge/CONNECT-TRAFFIC.md#finding-7-reconnect-schedule).
+- [x] (#7) Replace the 5/10/20/40/60 s ladder with the native episode
+      (maintainer decision: full native parity): first attempt at 0.1 s,
+      every failure (including `-328`) retried every 10 s, uncapped `-950`
+      renewal, and at the 600 s watchdog a stop with `kakao-recovery-stopped`
+      until the operator reconnects. No persisted schedule; ignore
+      `bgReconnItv`. Spec: [CONNECT-TRAFFIC.md](research/bridge/CONNECT-TRAFFIC.md#finding-7-reconnect-schedule).
 - [x] Trace native `login:completion:` status handling (-328, -950) before
       the recovery completion, the more-settings `locoConfRevision` trigger,
       and the reachability-change recovery trigger:
