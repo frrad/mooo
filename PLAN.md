@@ -1066,7 +1066,8 @@ above. One PR each, highest account-safety risk first:
       instead of CHATINFO+MEMLIST; MEMBER for every invitee.
 - [x] (#12) Drop CHATINFO+MEMLIST around ADDMEM; apply the reply's invitation
       log to the stored roster and send MEMBER for the invitee.
-- [ ] (#13) Drop the redundant reads after CREATE.
+- [x] (#13) Bind a created group from the CREATE reply's full-data room
+      instead of CHATINFO+MEMLIST+MEMBER.
 - [x] (#14) Drop the viewing-episode CHATINFO before CHATONROOM.
 - [x] (#9, #10) Skip room-avatar downloads whose avatar ID is unchanged, and
       stop enqueueing CHATINFO on every cached `GetChatInfo`.
