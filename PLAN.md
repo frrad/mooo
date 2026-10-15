@@ -1081,7 +1081,7 @@ above. One PR each, highest account-safety risk first:
 - [x] (#14) Drop the viewing-episode CHATINFO before CHATONROOM.
 - [x] (#9, #10) Skip room-avatar downloads whose avatar ID is unchanged, and
       stop enqueueing CHATINFO on every cached `GetChatInfo`.
-- [ ] (#6) Persist GETCONF and send it only when none is stored or the stored
+- [x] (#6) Persist GETCONF and send it only when none is stored or the stored
       ticket pool is exhausted; cache the CHECKIN route for `cacheExpire`
       (monotonic, 3600 s observed); invalidate on CHANGESVR, KICKOUT, expiry
       and cached-route dial failure; walk the ticket pool with native equal

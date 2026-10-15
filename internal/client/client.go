@@ -34,17 +34,21 @@ var errCommitOrder = errors.New("client: event commit is not the next delivered 
 // must make an explicit lifecycle decision so an ambiguous mutation is not
 // repeated.
 type Client struct {
-	mu               sync.Mutex
-	connectActive    bool
-	connectDone      chan struct{}
-	shutdownActive   bool
-	shutdownDone     chan struct{}
-	state            authstate.State
-	store            *authstate.Store
-	checkpoint       *continuity.Store
-	http             macweb.Doer
-	session          *session
-	cleanupSession   *session
+	mu             sync.Mutex
+	connectActive  bool
+	connectDone    chan struct{}
+	shutdownActive bool
+	shutdownDone   chan struct{}
+	state          authstate.State
+	store          *authstate.Store
+	checkpoint     *continuity.Store
+	http           macweb.Doer
+	session        *session
+	cleanupSession *session
+	// route is the profile's shared carriage route; CHANGESVR and KICKOUT
+	// invalidate it. bookingPath stores the profile's GETCONF reply.
+	route            *carriageRoute
+	bookingPath      string
 	closed           bool
 	renewalAttempted bool
 	dial             func(context.Context, authstate.State) (*session, error)
@@ -194,8 +198,10 @@ func OpenWithOptions(statePath string, doer macweb.Doer, options OpenOptions) (*
 	client.checkpoint = checkpoint
 	client.gaps = newGapFunc(options.GapObserver)
 	resume := options.loginResume(checkpoint.Snapshot())
+	client.route = routeFor(statePath)
+	client.bookingPath = statePath + ".getconf"
 	client.dial = func(ctx context.Context, state authstate.State) (*session, error) {
-		return connectSession(ctx, state, sessionConfig{resume: resume, dialers: productionSessionDialers().observed(options.PacketObserver), ping: realtimePingOptions()})
+		return connectSession(ctx, state, client.sessionConfig(resume, productionSessionDialers().observed(options.PacketObserver)))
 	}
 	return client, nil
 }
@@ -404,7 +410,7 @@ func (c *Client) Events(ctx context.Context) (<-chan events.Result, error) {
 	c.mu.Unlock()
 	go func() {
 		defer close(done)
-		decodeEventStreamWithTerminalStop(raw, stream, checkpoint, c.queueCommit, c.interruptTerminal, stop, c.gaps, c.observeHistoryPacket)
+		decodeEventStreamWithTerminalStop(raw, stream, checkpoint, c.queueCommit, c.interruptTerminal, stop, c.gaps, c.observeHistoryPacket, c.observeRouteChange)
 	}()
 	return stream, nil
 }
@@ -921,4 +927,28 @@ func (o OpenOptions) loginResume(resume continuity.Checkpoint) continuity.Checkp
 		resume.LastTokenID = 0
 	}
 	return resume
+}
+
+// sessionConfig is the production bootstrap configuration of a profile
+// client: its persisted GETCONF reply and shared carriage route.
+func (c *Client) sessionConfig(resume continuity.Checkpoint, dialers sessionDialers) sessionConfig {
+	return sessionConfig{
+		resume: resume, dialers: dialers, ping: realtimePingOptions(),
+		booking: fileBookingStore{path: c.bookingPath}, route: c.route, clock: realtimeRouteClock(),
+	}
+}
+
+// observeRouteChange drops the cached carriage route on CHANGESVR, which
+// also moves the ticket cursor on, and on KICKOUT.
+func (c *Client) observeRouteChange(_ loco.Packet, event events.Event) error {
+	if c.route == nil {
+		return nil
+	}
+	switch event.(type) {
+	case events.ChangeServer:
+		c.route.changeServer()
+	case events.Kickout:
+		c.route.clear()
+	}
+	return nil
 }

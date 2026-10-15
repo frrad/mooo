@@ -187,3 +187,27 @@ func DecodeCheckinEndpoint(body []byte) (string, int, error) {
 	}
 	return hostValue.StringValue(), port, nil
 }
+
+// DecodeCheckinCacheExpire reads cacheExpire, integer seconds, from a CHECKIN
+// reply: how long the Mac client reuses the returned carriage route without
+// another CHECKIN. An absent, non-integer or non-positive value returns 0,
+// which means the route is not reused.
+func DecodeCheckinCacheExpire(body []byte) time.Duration {
+	value, err := bson.Raw(body).LookupErr("cacheExpire")
+	if err != nil {
+		return 0
+	}
+	var seconds int64
+	switch value.Type {
+	case bson.TypeInt32:
+		seconds = int64(value.Int32())
+	case bson.TypeInt64:
+		seconds = value.Int64()
+	default:
+		return 0
+	}
+	if seconds <= 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
