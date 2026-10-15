@@ -106,7 +106,7 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 	case events.ChatStatusChanged:
 		return kc.chatResync(evt.ChatID, 0, evt.PlusUserID)
 	case events.ChatMoimMetaChanged:
-		return kc.announcementResync(evt.ChatID)
+		return kc.announcementResync(evt)
 	case events.ChatMCMetaChanged:
 		if evt.Type == "name" || evt.Type == "imagePath" {
 			// Refresh the connected profile instead of applying potentially
