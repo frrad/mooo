@@ -293,10 +293,19 @@ greater than the stored one. That update is shared with the `CHGMETA` push
 consumer. Type 14 instead goes through the open-link bot-command update, and
 type 21 also refreshes the chatbot members.
 
+**Owned observation, 2026-10-15** (provenance `observed`; bridge as lab
+account B, private packet observer recording methods, key names, revision
+numbers and meta types only). The login chat data carried `mmr` for 9 of 11
+chats (large, log-ID-scale values; 0 for the rest). With no applied revisions
+stored, the bridge sent one `GETMETAS` for the 9 bridged groups after
+discovery. The reply had status 0 and keys `mss`, `status`; it held 9 sets,
+each with one type-3 (title) meta. The next login sent no `GETMETAS`.
+
 **Gaps.** The notice-meta merge helper is not traced field by field. The
 single-room `GETMETA` (`chatId`, `types`) path exists but has no login caller
-in this trace. Live encoding is checked only by the owned run recorded in the
-bridge documentation.
+in this trace. No live offline rename was observed: the owned Android client's
+room-name edit may set only the personal name, which arrives as `CHGMCMETA`.
+The merge of a newer title into Matrix is covered by a production-path test.
 
 ## Membership push follow-ups
 
