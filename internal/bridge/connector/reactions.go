@@ -332,6 +332,18 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 	if change.Revision <= stored {
 		return nil, nil
 	}
+	// A waiting trailing read will see this change; derive nothing on top of
+	// the state it is about to replace.
+	if coalesce && kc.reactionLookupPending(change) && kc.coalesceReactionLookup(change) {
+		return nil, errReactionLookupDeferred
+	}
+	derived, err := kc.deriveLegacyReactions(ctx, c, change, stored)
+	if err != nil {
+		return nil, err
+	}
+	if derived != nil {
+		return derived, nil
+	}
 	if coalesce && kc.coalesceReactionLookup(change) {
 		return nil, errReactionLookupDeferred
 	}
@@ -470,6 +482,7 @@ func (kc *KakaoClient) applyReaction(ctx context.Context, c kakaoClient, reactio
 			kc.log().Warn().Msg("Kakao reaction revision could not be persisted")
 			return false, nil
 		}
+		kc.confirmLegacyReactions(c, reaction, appliedRevision)
 	}
 	return true, nil
 }

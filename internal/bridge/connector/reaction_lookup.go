@@ -82,6 +82,15 @@ func (kc *KakaoClient) takeReactionLookups(change events.ReactionChanged) bool {
 	return kc.reactionBudget.take(kc.now(), cost)
 }
 
+// reactionLookupPending reports whether a trailing read is already waiting
+// for this change's message.
+func (kc *KakaoClient) reactionLookupPending(change events.ReactionChanged) bool {
+	kc.reactionLookupMu.Lock()
+	defer kc.reactionLookupMu.Unlock()
+	w := kc.reactionLookups[reactionLookupKey{change.ChatID, change.LogID, change.MetadataType}]
+	return w != nil && w.pending != nil
+}
+
 // coalesceReactionLookup admits a live push's read, or folds the push into
 // the message's trailing read when one was admitted within the window. It
 // reports whether the push was deferred.

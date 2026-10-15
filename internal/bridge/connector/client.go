@@ -218,8 +218,11 @@ type KakaoClient struct {
 	// from the event loop, trailing reads and viewing resync.
 	reactionLookupMu sync.Mutex
 	reactionLookups  map[reactionLookupKey]*reactionLookupWindow
-	reactionBudget   reactionLookupBudget
-	reactionApplyMu  sync.Mutex
+	// reactionConfirmed records messages whose stored legacy roster a read
+	// or derivation on the current session established.
+	reactionConfirmed map[reactionLookupKey]reactionConfirmation
+	reactionBudget    reactionLookupBudget
+	reactionApplyMu   sync.Mutex
 	// reactionView is the current viewing episode; lifecycle mu guards it.
 	reactionView     *reactionViewingState
 	reactionSyncBusy bool

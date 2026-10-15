@@ -1057,9 +1057,9 @@ above. One PR each, highest account-safety risk first:
       message differential for gap handling first.
 - [x] (#5) Reactions: drop the `/members` pre-read on cancel; cancel from the
       stored own pick.
-- [ ] (#4) Reactions: budget and coalesce the per-push `/members` lookups (or
-      derive the actor from the aggregate) and record the remainder as a
-      deliberate deviation.
+- [x] (#4) Reactions: derive the own pick and single-actor deltas from the
+      push, coalesce and budget the remaining `/members` reads, and record the
+      remainder as a deliberate deviation (REACTION-LOOKUP-BUDGET.md).
 - [x] (#8a) Debounce Matrix read receipts per chat (3 s window, latest
       position, flushed on Disconnect).
 - [ ] (#8b) Trace and differential-test the native mark-read SYNCMSG shape
