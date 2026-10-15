@@ -205,7 +205,7 @@ func TestMatrixReadReceiptSendsOneMarkReadAndCheckpointSuppressesRepeat(t *testi
 	statePath := newIntegrationProfile(t)
 	var requests []syncRequest
 	kc, backends := connectScriptedReadReceiptClient(t, statePath,
-		syncCaptureStep(&requests, bson.D{{Key: "status", Value: int32(0)}, {Key: "chatLogs", Value: bson.A{}}}),
+		syncCaptureStep(&requests, bson.D{{Key: "status", Value: int32(0)}, {Key: "chatLogs", Value: bson.A{}}, {Key: "isOK", Value: true}}),
 		testloco.HoldOpen(),
 	)
 	timers := captureReadAckTimers(kc)
@@ -476,5 +476,53 @@ func TestDisconnectFlushesPendingReadAcknowledgement(t *testing.T) {
 	timers.fireAll()
 	if got := fake.markReads(); len(got) != 1 {
 		t.Fatalf("MarkRead after stopped timer = %v, want one", got)
+	}
+}
+
+func TestHeldMessagesCountsStoredLogsFromTheFrameworkDatabase(t *testing.T) {
+	kc, _, br := newFrameworkTestClient(t, nil)
+	ctx := context.Background()
+	key := makePortalKey(testChatID, kc.login.ID)
+	insert := func(logID, second int64, part networkid.PartID) {
+		t.Helper()
+		if err := br.DB.Message.Insert(ctx, &database.Message{
+			BridgeID: br.ID, ID: makeMessageID(testChatID, logID), PartID: part,
+			MXID: id.EventID(fmt.Sprintf("$log-%d-%s", logID, part)), Room: key,
+			SenderID: makeUserID(testOtherID), Timestamp: time.Unix(1_800_000_000+second, 0),
+			Metadata: &KakaoMessageMetadata{},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert(10, 1, "")
+	insert(11, 1, "")
+	insert(12, 2, "a")
+	insert(12, 2, "b")
+	insert(14, 3, "")
+	insert(15, 4, "")
+	held := kc.heldMessages(testChatID)
+
+	for _, test := range []struct {
+		name        string
+		after, upTo int64
+		limit       int
+		wantMax     int64
+		wantCount   int
+	}{
+		{name: "after an acknowledged log sharing its second", after: 10, upTo: 14, limit: 300, wantMax: 14, wantCount: 3},
+		{name: "never acknowledged", after: 0, upTo: 14, limit: 300, wantMax: 14, wantCount: 4},
+		{name: "after a log that was never bridged", after: 13, upTo: 15, limit: 300, wantMax: 15, wantCount: 2},
+		{name: "capped to the oldest held logs", after: 0, upTo: 15, limit: 2, wantMax: 11, wantCount: 2},
+		{name: "receipt target never bridged", after: 10, upTo: 13, limit: 300, wantMax: 0, wantCount: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			gotMax, gotCount, err := held(ctx, test.after, test.upTo, test.limit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotMax != test.wantMax || gotCount != test.wantCount {
+				t.Fatalf("held(%d, %d] = max %d count %d, want max %d count %d", test.after, test.upTo, gotMax, gotCount, test.wantMax, test.wantCount)
+			}
+		})
 	}
 }

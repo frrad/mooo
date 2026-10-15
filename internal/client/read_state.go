@@ -17,16 +17,17 @@ const readSyncHeldCap = 300
 type HeldMessages func(ctx context.Context, after, upTo int64, limit int) (maxLogID int64, count int, err error)
 
 // MarkRead acknowledges a chat as read through watermark with the official
-// client's single-room sync shape: cur is the last acknowledged position (the
-// analogue of its lastSyncLogId), and max and cnt describe the messages held
-// after it, capped at 300. When held reports nothing, max is the watermark and
-// cnt is zero. Each successful response persists its max, and a capped request
-// continues from there until the watermark is reached, so a restarted client
-// does not send an acknowledged position again. Catch-up SYNCMSG pages never
-// write this checkpoint. Calls for one checkpoint are serialized per Client so
-// the check/request/commit sequence is atomic; the profile lease ensures that
-// only one Client owns a profile across processes. A failure is returned
-// without retrying.
+// client's single-room sync shape: cur is the last synced position (the
+// analogue of its lastSyncLogId, zero for a chat never acknowledged), and max
+// and cnt describe the oldest messages held after it, capped at 300. When held
+// reports nothing, max is the watermark and cnt is zero. A response with isOK
+// persists its max, and a capped request continues from there; one without
+// isOK persists only the highest returned log and continues from it if it
+// moved. A restarted client therefore does not send a synced position again.
+// Catch-up SYNCMSG pages never write this checkpoint. Calls for one checkpoint
+// are serialized per Client so the check/request/commit sequence is atomic; the
+// profile lease ensures that only one Client owns a profile across processes.
+// A failure is returned without retrying.
 func (c *Client) MarkRead(ctx context.Context, chatID, watermark int64, held HeldMessages) (syncmsg.Response, error) {
 	if c == nil || ctx == nil || held == nil {
 		return syncmsg.Response{}, ErrProtocol
@@ -67,15 +68,27 @@ func (c *Client) MarkRead(ctx context.Context, chatID, watermark int64, held Hel
 		if err != nil {
 			return syncmsg.Response{}, err
 		}
-		if checkpoint != nil {
-			if _, err := checkpoint.CommitReadWatermark(chatID, maxLogID); err != nil {
+		// The official callback records isOK=true as synced through the
+		// request maximum. Otherwise it records only the highest returned
+		// log, and syncs again when that moved its position.
+		synced, again := maxLogID, count >= readSyncHeldCap
+		if !response.IsOK {
+			synced, again = cur, false
+			if n := len(response.ChatLogs); n > 0 {
+				if last, err := syncmsg.LogID(response.ChatLogs[n-1]); err == nil && last > cur {
+					synced, again = min(last, maxLogID), true
+				}
+			}
+		}
+		if synced > cur && checkpoint != nil {
+			if _, err := checkpoint.CommitReadWatermark(chatID, synced); err != nil {
 				return syncmsg.Response{}, err
 			}
 		}
-		if count < readSyncHeldCap {
+		if !again {
 			break
 		}
-		cur = maxLogID
+		cur = synced
 	}
 	return response, nil
 }

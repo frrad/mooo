@@ -111,6 +111,47 @@ func TestClientMarkReadContinuesWhileHeldCountIsCapped(t *testing.T) {
 	}
 }
 
+func TestClientMarkReadNotOKRaisesToReturnedLogAndContinues(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitReadWatermark(42, 90); err != nil {
+		t.Fatal(err)
+	}
+	first := testloco.Expect("SYNCMSG", nil, statusDocument(
+		bson.E{Key: "chatLogs", Value: bson.A{bson.D{{Key: "logId", Value: int64(94)}}}},
+		bson.E{Key: "isOK", Value: false},
+	))
+	backend := newScriptedBackend(t, false, first, syncShapeStep(42, 94, 99, 2))
+	api := testContinuityClient(t, checkpoint, backend)
+	var queries [][3]int64
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldFixed([]int64{93, 95, 99}, &queries)); err != nil {
+		t.Fatal(err)
+	}
+	waitBackends(t, backend)
+	if want := [][3]int64{{90, 99, 300}, {94, 99, 300}}; fmt.Sprint(queries) != fmt.Sprint(want) {
+		t.Fatalf("held queries = %v, want %v", queries, want)
+	}
+	if got := checkpoint.ReadWatermark(42); got != 99 {
+		t.Fatalf("watermark = %d, want 99", got)
+	}
+}
+
+func TestClientMarkReadNotOKWithoutLogsKeepsPosition(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitReadWatermark(42, 90); err != nil {
+		t.Fatal(err)
+	}
+	backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", nil, statusDocument(bson.E{Key: "isOK", Value: false})))
+	api := testContinuityClient(t, checkpoint, backend)
+	var queries [][3]int64
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldFixed([]int64{93, 99}, &queries)); err != nil {
+		t.Fatal(err)
+	}
+	waitBackends(t, backend)
+	if got := checkpoint.ReadWatermark(42); got != 90 {
+		t.Fatalf("watermark = %d, want unchanged 90", got)
+	}
+}
+
 func TestClientMarkReadWithoutHeldMessagesAcknowledgesPositionWithZeroCount(t *testing.T) {
 	checkpoint := testCheckpoint(t)
 	if _, err := checkpoint.CommitReadWatermark(42, 90); err != nil {
@@ -177,7 +218,7 @@ func TestClientMarkReadRejectsInvalidInput(t *testing.T) {
 func TestClientMarkReadCommitsOnlyAfterSuccess(t *testing.T) {
 	checkpoint := testCheckpoint(t)
 	backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", nil, statusDocument(
-		bson.E{Key: "chatLogs", Value: bson.A{}},
+		bson.E{Key: "chatLogs", Value: bson.A{}}, bson.E{Key: "isOK", Value: true},
 	)))
 	api := testContinuityClient(t, checkpoint, backend)
 	response, err := api.MarkRead(context.Background(), 42, 99, heldNone)
@@ -206,7 +247,7 @@ func TestClientMarkReadSerializesDuplicateWatermarks(t *testing.T) {
 		requests++
 		close(firstRequest)
 		<-allowFirstResponse
-		return server.WriteBSON(request.Header.PacketID, "SYNCMSG", statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}}))
+		return server.WriteBSON(request.Header.PacketID, "SYNCMSG", statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}}, bson.E{Key: "isOK", Value: true}))
 	})
 	api := testContinuityClient(t, checkpoint, backend)
 	errs := make(chan error, 2)
@@ -363,7 +404,7 @@ func TestClientSyncMessagesCatchUpDoesNotSuppressLaterMarkRead(t *testing.T) {
 	}
 	backend := newScriptedBackend(t, false,
 		testloco.Expect("SYNCMSG", recordCount, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})),
-		testloco.Expect("SYNCMSG", recordCount, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})),
+		testloco.Expect("SYNCMSG", recordCount, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}}, bson.E{Key: "isOK", Value: true})),
 	)
 	api := testContinuityClient(t, checkpoint, backend)
 	// Catch-up declares zero held messages. Whether that marks the interval
