@@ -135,3 +135,24 @@ code meanings. Those values are therefore explicit bridge policy in this
 implementation and should not be cited as protocol observations. Keepalive
 watchdogs and a durable bounded-gap/poison-message policy remain separate
 follow-up work.
+
+### Routing between logins (2026-10-15)
+
+Bootstrap follows the Mac client's booking and route cache
+([CONNECT-TRAFFIC finding #6](bridge/CONNECT-TRAFFIC.md#finding-6-getconf-checkin-and-the-route-cache)):
+
+- **GETCONF** is persisted beside the profile (`<profile>.getconf`, mode
+  0600) and reused across reconnects and restarts. It is sent only when no
+  readable reply is stored, or when every address of the stored ticket pool
+  failed CHECKIN in this attempt (deviation: native refreshes from a
+  more-settings revision the bridge does not fetch). A booking makes at most
+  three attempts, waiting the native equal jitter capped at 8 s.
+- **CHECKIN** returns the carriage route and `cacheExpire` (3600 s observed).
+  The route is cached in process memory per profile, on monotonic time, so a
+  reconnect within that time sends only LOGINLIST. CHANGESVR drops it and
+  moves the ticket cursor to the next address; KICKOUT and expiry drop it.
+  A failed dial to the cached route drops it and checks in again in the same
+  attempt (deviation: native keeps it until expiry).
+- The CHECKIN walk tries the first address at once and waits the native equal
+  jitter (capped at 32 s) before each later one. An exhausted walk is a
+  retryable failure; the reconnect schedule owns the next attempt.
