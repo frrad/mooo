@@ -79,11 +79,13 @@ Each change was preceded by a failing production-path test.
   member's highest bridged watermark per chat in its key-value store and
   ignores anything at or below it, including after a restart.
 - **Offline read recovery.** Reads made while the bridge was away were lost.
-  After catch-up and reaction resync on every connection, the bridge sends one
-  `CHATONROOM` per bridged chat and passes each active member's watermark
+  When a Matrix client views a room (the viewing heartbeat, once per viewing
+  episode), the bridge sends `CHATONROOM` for it and passes each active
+  member's watermark. Until 2026-10-14 it instead sent one `CHATONROOM` per
+  bridged chat on every connection; that sweep has no native counterpart
+  ([metadata triggers](METADATA-TRIGGERS.md)) and was removed. Each watermark goes
   through the same forward-only path; the account's own watermark becomes the
-  Matrix user's receipt as before. Failures are logged and never block the
-  connection. `CHATONROOM` is sent only as this read-only snapshot request;
+  Matrix user's receipt as before. Failures never block the viewing demand. `CHATONROOM` is sent only as this read-only snapshot request;
   the client sends no read acknowledgement with it.
 
 Catch-up continues to use `cnt=0` and records no read acknowledgement
@@ -92,8 +94,9 @@ open; the bridge acknowledges only on a Matrix read receipt.
 
 ### Deliberate deviations
 
-- mooo sends `CHATONROOM` for every bridged chat on each connection; the Mac
-  sends it when a chat window opens. mooo keeps no room token, so each request
+- mooo sends `CHATONROOM` when a Matrix client views a room, the closest
+  Matrix moment to the Mac's chat-window open. Plain Synapse clients send no
+  viewing heartbeat, so offline reads stay unrecovered there. mooo keeps no room token, so each request
   sends token zero and receives a full snapshot.
 - A full snapshot never lowers a bridged receipt in mooo; the Mac's full
   response can lower a stored watermark.

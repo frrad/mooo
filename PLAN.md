@@ -1023,7 +1023,7 @@ regular members. Follow-up changes, one PR each:
       windows; keep the 2-minute attempt reservation as failure backoff.
 - [x] Add MEMBER for a message author with no stored profile or an empty
       nickname, matching native message conversion.
-- [ ] Remove the startup CHATONROOM sweep (`recoverReadWatermarks`). Native
+- [x] Remove the startup CHATONROOM sweep (`recoverReadWatermarks`). Native
       sends CHATONROOM only on chat open and, on reconnect, for open chat
       windows. Derive read watermarks from login chat data, or fetch them on
       the Matrix viewing heartbeat.
