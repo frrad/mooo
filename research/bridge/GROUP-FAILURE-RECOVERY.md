@@ -142,9 +142,9 @@ only because Matrix returned while the SDK was still retrying one request. A
 production regression with three source sessions reproduced the stop. An
 unconfirmed Matrix delivery during catch-up now uses the same bounded recovery
 budget as the live pause and reports `kakao-delivery-paused`; source-side
-catch-up failures remain terminal. Since 2026-10-11, recovery no longer stops
-after five attempts (about two minutes plus SDK retry time). It reports
-`kakao-recovery-stalled` and keeps retrying every 15 minutes
+catch-up failures remain terminal. Since 2026-10-15, recovery follows the
+native episode: 10 s retries for up to 600 s, then `kakao-recovery-stopped`
+until the operator reconnects
 ([reconnect policy](../bridge-reconnect-design.md)).
 
 ## Outbound sends

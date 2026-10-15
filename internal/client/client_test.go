@@ -97,7 +97,10 @@ func TestClientConnectRenewsOnceOnExpiredToken(t *testing.T) {
 	}
 }
 
-func TestClientConnectDoesNotRepeatFailedRenewal(t *testing.T) {
+// renewalTestClient is a Client over a fresh profile whose renewal requests
+// answer with body and whose dials return the next of results.
+func renewalTestClient(t *testing.T, body string, results ...error) (*Client, *authstate.Store, *int, *int) {
+	t.Helper()
 	root := t.TempDir()
 	if err := setPrivateDir(root); err != nil {
 		t.Fatal(err)
@@ -117,10 +120,10 @@ func TestClientConnectDoesNotRepeatFailedRenewal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requests := 0
+	requests, dials := new(int), new(int)
 	doer := friendDoerFunc(func(*http.Request) (*http.Response, error) {
-		requests++
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"access_token":"incomplete"}`))}, nil
+		*requests++
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
 	})
 	client, err := newClient(state, doer)
 	if err != nil {
@@ -128,23 +131,65 @@ func TestClientConnectDoesNotRepeatFailedRenewal(t *testing.T) {
 	}
 	client.store = store
 	client.dial = func(context.Context, authstate.State) (*session, error) {
-		return nil, StatusError{Command: "LOGINLIST", Status: -950}
+		*dials++
+		if *dials > len(results) || results[*dials-1] == nil {
+			return &session{}, nil
+		}
+		return nil, results[*dials-1]
+	}
+	return client, store, requests, dials
+}
+
+// A failed renewal leaves the stored credentials alone and fails the attempt
+// as retryable; like the official client, the next attempt renews again.
+func TestClientConnectFailedRenewalRetriesNextAttempt(t *testing.T) {
+	expired := StatusError{Command: "LOGINLIST", Status: -950}
+	client, store, requests, _ := renewalTestClient(t, `{"access_token":"incomplete"}`, expired, expired)
+	before, err := store.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Connect(t.Context()); !errors.Is(err, ErrCredentialRenewal) || errors.Is(err, ErrSignedOut) {
+		t.Fatalf("first Connect error = %v, want a retryable ErrCredentialRenewal", err)
 	}
 	if err := client.Connect(t.Context()); !errors.Is(err, ErrCredentialRenewal) {
-		t.Fatalf("first Connect error = %v, want ErrCredentialRenewal", err)
+		t.Fatalf("second Connect error = %v, want ErrCredentialRenewal", err)
 	}
-	if err := client.Connect(t.Context()); err == nil {
-		t.Fatal("second Connect unexpectedly succeeded")
-	}
-	if requests != 1 {
-		t.Fatalf("renewal request count = %d, want 1", requests)
+	if *requests != 2 {
+		t.Fatalf("renewal request count = %d, want one per attempt (2)", *requests)
 	}
 	persisted, err := store.Snapshot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if persisted.Credentials.AccessToken != old.AccessToken || string(persisted.Credentials.AutoLoginMaterial) != string(old.AutoLoginMaterial) {
+	if persisted.Credentials.AccessToken != before.Credentials.AccessToken || string(persisted.Credentials.AutoLoginMaterial) != string(before.Credentials.AutoLoginMaterial) {
 		t.Fatal("failed renewal modified persisted credentials")
+	}
+}
+
+// The official client renews on every -950 and resends LOGINLIST at once,
+// with no renewal limit (RECOVERY-TRACE RT-STATIC-002).
+func TestClientConnectRenewsOnEveryExpiredToken(t *testing.T) {
+	expired := StatusError{Command: "LOGINLIST", Status: -950}
+	client, _, requests, dials := renewalTestClient(t, `{"access_token":"new-access","refresh_token":"new-refresh","token_type":"bearer"}`, expired, expired, expired, nil)
+	if err := client.Connect(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if *requests != 3 || *dials != 4 {
+		t.Fatalf("renewals=%d dials=%d, want 3 and 4", *requests, *dials)
+	}
+}
+
+// A renewal that KakaoTalk ends with -998 or -999 is the native logout.
+func TestClientConnectRenewalSignOutIsTerminal(t *testing.T) {
+	for _, status := range []string{"-998", "-999"} {
+		client, _, requests, dials := renewalTestClient(t, `{"status":`+status+`}`, StatusError{Command: "LOGINLIST", Status: -950})
+		if err := client.Connect(t.Context()); !errors.Is(err, ErrSignedOut) {
+			t.Fatalf("renewal status %s: Connect error = %v, want ErrSignedOut", status, err)
+		}
+		if *requests != 1 || *dials != 1 {
+			t.Fatalf("renewal status %s: renewals=%d dials=%d, want 1 and 1", status, *requests, *dials)
+		}
 	}
 }
 

@@ -17,7 +17,7 @@ func TestOperatorReconnectRestartsAStoppedLogin(t *testing.T) {
 	var opens atomic.Int32
 	kc, _ := newTestClient(t, func() (kakaoClient, error) {
 		if opens.Add(1) == 1 {
-			return &fakeKakao{connectErr: client.ErrLogin}, nil
+			return &fakeKakao{connectErr: client.StatusError{Command: "LOGINLIST", Status: -445}}, nil
 		}
 		return connected, nil
 	})

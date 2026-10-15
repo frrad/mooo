@@ -102,21 +102,15 @@ The compose example restarts the bridge unless you stopped it
 (`restart: unless-stopped`). This is safe because the bridge, not the
 supervisor, decides when to log in to KakaoTalk:
 
-- Inside one process the bridge reconnects on its own, on the official Mac
-  client's schedule. After a dropped connection it tries again at once, then
-  every 10 seconds. If nothing succeeds within 10 minutes it reports
-  `kakao-recovery-stalled` and keeps trying every 15 minutes. A device-limit
-  refusal (`LOGINLIST -328`) instead waits 1, 2, 4, 8 and 15 minutes. A dead
-  connection is usually noticed within one to three minutes, by the periodic
-  group refresh or the keepalive ping.
-- Sessions that end within a minute of logging in, more than three times in
-  a row, reconnect only every 15 minutes, so a server that keeps closing the
-  session cannot cause a login every few seconds.
-- The reconnect schedule is saved with the login. A restarted process first
-  waits out a pending retry. A restart within a minute of the last login, for
-  example in a crash loop, counts as such a short session: after three of
-  them the bridge waits 15 minutes instead of logging in on every restart.
-  While waiting it reports `kakao-reconnect-scheduled`.
+- The bridge reconnects on its own, on the official Mac client's schedule.
+  After a dropped connection it tries again at once, then every 10 seconds,
+  whatever the failure. If nothing succeeds within 10 minutes it stops,
+  reports `kakao-recovery-stopped` and waits: send the reconnect command, or
+  restart the bridge. A dead connection is usually noticed within one to
+  three minutes, by the periodic group refresh or the keepalive ping.
+- Each process start begins a fresh reconnect schedule, as the official
+  client does. A supervisor that restarts a crashing bridge therefore logs
+  in once per restart; rely on its own restart backoff.
 - A KICKOUT is saved and blocks every later connect, including after a
   restart, until you log out of the bridge and log in again.
 - Some stops wait for you instead of retrying: a rejected login, an

@@ -36,6 +36,9 @@ import (
 // sessionAPI owns the connection and the live event stream.
 type sessionAPI interface {
 	Connect(ctx context.Context) error
+	// LoginCompleted reports whether the connected login completes a
+	// recovery episode; a delta-only LOGINLIST (-305) does not.
+	LoginCompleted() bool
 	Events(ctx context.Context) (<-chan events.Result, error)
 	CommitEvent(event events.Event) error
 	UndeliveredTargets(ctx context.Context) ([]syncmsg.Target, error)
@@ -125,8 +128,7 @@ const (
 	stateUnidentifiableMsg     status.BridgeStateErrorCode = "kakao-unidentifiable-message"
 	stateKickedOut             status.BridgeStateErrorCode = "kakao-kicked-out"
 	stateChangeServer          status.BridgeStateErrorCode = "kakao-change-server"
-	stateRecoveryStalled       status.BridgeStateErrorCode = "kakao-recovery-stalled"
-	stateReconnectScheduled    status.BridgeStateErrorCode = "kakao-reconnect-scheduled"
+	stateRecoveryStopped       status.BridgeStateErrorCode = "kakao-recovery-stopped"
 )
 
 var errUnsupportedOpenChatMetadata = errors.New("connector: OpenChat metadata is not supported")
@@ -159,7 +161,7 @@ func init() {
 		stateUnidentifiableMsg:     "Kakao delivered a message whose identity could not be established safely. Review the bridge logs, then send the reconnect command once the cause is dealt with.",
 		stateKickedOut:             "KakaoTalk ended this device's session.",
 		stateChangeServer:          "KakaoTalk requested a server change. The bridge is reconnecting.",
-		stateReconnectScheduled:    "The bridge restarted during a reconnect backoff and will reconnect when it ends.",
+		stateRecoveryStopped:       "KakaoTalk is disconnected: reconnecting failed for 10 minutes and the bridge stopped trying. Send the reconnect command or restart the bridge.",
 	})
 }
 
@@ -247,9 +249,6 @@ type KakaoClient struct {
 	// metaMu serializes changes to the login's metadata with their saves.
 	// It may be taken while mu is held, never the other way around.
 	metaMu sync.Mutex
-	// scheduleRestored is set once the first Connect has read the persisted
-	// reconnect schedule; metaMu guards it.
-	scheduleRestored bool
 	connLifecycle
 }
 
@@ -276,6 +275,7 @@ func newKakaoClient(login *bridgev2.UserLogin, st store, userID int64, open func
 	kc.metadataRefresh.dropped = func() { kc.log().Warn().Msg("Background metadata queue is full; deferring refresh") }
 	kc.now = time.Now
 	kc.afterFunc = func(delay time.Duration, fire func()) stopper { return time.AfterFunc(delay, fire) }
+	kc.watchdogAfter = func(delay time.Duration, fire func()) stopper { return time.AfterFunc(delay, fire) }
 	kc.reserveOutbound = kc.reserveOutboundKV
 	kc.refreshMembership = kc.refreshMembershipAsync
 	kc.sendState = func(state status.BridgeState) { kc.stateQueue().Send(state) }

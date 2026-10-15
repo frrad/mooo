@@ -45,9 +45,8 @@ func protocolErr(command, field string) error {
 // and the cause. A bootstrap cause stays reachable through errors.Is and
 // errors.As: bootstrap runs before LOGINLIST and sends no credentials, so the
 // connector may retry a network failure there. A login cause is formatted
-// with %v, not %w, so a login failure is classified only as ErrLogin: a
-// transport error during a request that carried credentials must not look
-// retryable. Causes come from net, tls, bson, loco framing and the
+// with %v, not %w, so a login failure is classified only as ErrLogin, which
+// the connector retries on the recovery cadence like any login failure. Causes come from net, tls, bson, loco framing and the
 // booking/sessionlogin decoders, none of which include request bodies or
 // credentials.
 func stageErr(sentinel error, stage string, cause error) error {
@@ -100,6 +99,9 @@ type session struct {
 	historyAdmission   *historyAdmission
 	initialChatData    []bson.Raw
 	loginMinLogID      int64
+	// loginStatus is the accepted LOGINLIST status: 0, or -305 for a
+	// delta-only login.
+	loginStatus int32
 	userID             int64
 	appVersion         string
 	mediaDial          wireDialer
@@ -367,6 +369,7 @@ func connectSession(ctx context.Context, state authstate.State, config sessionCo
 	}
 	cursor.replaceInventory = resume.LastTokenID == 0 && cursor.complete
 	session.loginMinLogID = bsonfield.Int64OrZero(bson.Raw(loginReply.Body), "minLogId")
+	session.loginStatus = status
 	session.initialChatData = chatData
 	session.loginCursor = cursor
 	if !session.finishBootstrap() {

@@ -283,7 +283,7 @@ func TestFirstConnectLoginRejectionDoesNotRetry(t *testing.T) {
 	var opens atomic.Int32
 	kc, harness := newTestClient(t, func() (kakaoClient, error) {
 		opens.Add(1)
-		return &fakeKakao{connectErr: client.ErrLogin}, nil
+		return &fakeKakao{connectErr: client.StatusError{Command: "LOGINLIST", Status: -445}}, nil
 	})
 	kc.wait = func(context.Context, time.Duration) error {
 		t.Error("login rejection scheduled a retry")
@@ -404,29 +404,33 @@ func TestChangeServerCleansUpAndReopens(t *testing.T) {
 	kc.Disconnect()
 }
 
-func TestRecoveryPolicyRejectsTerminalAndUnknownFailures(t *testing.T) {
-	if retryableRecoveryError(client.ErrLogin) {
-		t.Fatal("login rejection must not retry")
-	}
-	if retryableRecoveryError(client.ErrCredentialRenewal) {
-		t.Fatal("credential renewal failure must not retry")
-	}
-	if retryableRecoveryError(client.StatusError{Command: "LOGINLIST", Status: -950}) {
-		t.Fatal("second -950 must not retry")
-	}
-	if retryableRecoveryError(client.StatusError{Command: "LOGINLIST", Status: -321}) {
-		t.Fatal("unknown LOGINLIST status must not retry")
-	}
-	if !retryableRecoveryError(client.StatusError{Command: "LOGINLIST", Status: -328}) {
-		t.Fatal("-328 must retry with bounded delay")
-	}
-	for _, err := range []error{errors.New("catch up chat: delivery failed"), client.ErrProtocol, errors.New("matrix conversion failed")} {
-		if retryableRecoveryError(err) {
-			t.Fatalf("non-transport bootstrap failure %v must not retry", err)
+// As in the official client, every login failure retries except the ones
+// after which it logs out (RECOVERY-TRACE RT-STATIC-003/004/006).
+func TestRecoveryPolicyRetriesLoginFailuresLikeNative(t *testing.T) {
+	for _, err := range []error{
+		client.ErrLogin,
+		client.ErrCredentialRenewal,
+		client.StatusError{Command: "LOGINLIST", Status: -328},
+		client.StatusError{Command: "LOGINLIST", Status: -310},
+		client.StatusError{Command: "LOGINLIST", Status: -321},
+		client.StatusError{Command: "LOGINLIST", Status: -950},
+		io.EOF,
+		client.ErrClosed,
+	} {
+		if !retryableRecoveryError(err) {
+			t.Errorf("%v must retry on the episode cadence", err)
 		}
 	}
-	if !retryableRecoveryError(io.EOF) || !retryableRecoveryError(client.ErrClosed) {
-		t.Fatal("transport/session closure must retry")
+	for _, err := range []error{
+		client.StatusError{Command: "LOGINLIST", Status: -445},
+		errors.Join(client.ErrCredentialRenewal, client.ErrSignedOut),
+		errors.New("catch up chat: delivery failed"),
+		client.ErrProtocol,
+		errors.New("matrix conversion failed"),
+	} {
+		if retryableRecoveryError(err) {
+			t.Errorf("%v must not retry", err)
+		}
 	}
 }
 

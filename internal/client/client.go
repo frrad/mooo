@@ -19,6 +19,8 @@ import (
 	"github.com/frrad/mooo/internal/protocol/media"
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"github.com/frrad/mooo/internal/protocol/reactions"
+	"github.com/frrad/mooo/internal/protocol/sessionlogin"
+	"github.com/frrad/mooo/internal/protocol/tokenrefresh"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -46,7 +48,6 @@ type Client struct {
 	session          *session
 	cleanupSession   *session
 	closed           bool
-	renewalAttempted bool
 	dial             func(context.Context, authstate.State) (*session, error)
 	lease            *profileLease
 	eventStream      chan events.Result
@@ -275,45 +276,53 @@ func (c *Client) ensureSession(ctx context.Context) (*session, error) {
 	}
 }
 
+// ErrSignedOut marks a token renewal that KakaoTalk ended with status -998
+// or -999. The official client logs out after either.
+var ErrSignedOut = errors.New("client: KakaoTalk ended the login during token renewal")
+
 // connect dials and adopts one Session for ensureSession, which owns the
-// connectActive gate. A -950 dial status renews stored credentials at most
-// once per Client and dials again.
+// connectActive gate. Like the official client, a -950 dial status renews
+// the stored credentials and dials again at once, with no renewal limit;
+// ctx bounds the loop.
 func (c *Client) connect(ctx context.Context) (*session, error) {
-	c.mu.Lock()
-	state, dial := c.state, c.dial
-	c.mu.Unlock()
-	session, err := dial(ctx, state)
-	if err == nil {
-		return c.adoptSession(session)
-	}
-	var status StatusError
-	c.mu.Lock()
-	store, renewalAttempted, closed := c.store, c.renewalAttempted, c.closed
-	c.mu.Unlock()
-	if closed {
-		return nil, ErrClientClosed
-	}
-	if store == nil || renewalAttempted || !errors.As(err, &status) || status.Status != -950 {
-		return nil, err
-	}
-	c.mu.Lock()
-	c.renewalAttempted = true
-	c.mu.Unlock()
-	if renewErr := c.renewCredentials(ctx); renewErr != nil {
-		return nil, errors.Join(ErrCredentialRenewal, renewErr)
-	}
-	c.mu.Lock()
-	if c.closed {
+	for {
+		c.mu.Lock()
+		state, dial, store := c.state, c.dial, c.store
 		c.mu.Unlock()
-		return nil, ErrClientClosed
+		session, err := dial(ctx, state)
+		if err == nil {
+			return c.adoptSession(session)
+		}
+		c.mu.Lock()
+		closed := c.closed
+		c.mu.Unlock()
+		if closed {
+			return nil, ErrClientClosed
+		}
+		var status StatusError
+		if store == nil || !errors.As(err, &status) || status.Status != -950 {
+			return nil, err
+		}
+		if renewErr := c.renewCredentials(ctx); renewErr != nil {
+			var rejected tokenrefresh.RejectedError
+			if errors.As(renewErr, &rejected) && (rejected.Status == -998 || rejected.Status == -999) {
+				return nil, errors.Join(ErrCredentialRenewal, ErrSignedOut, renewErr)
+			}
+			return nil, errors.Join(ErrCredentialRenewal, renewErr)
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
-	state, dial = c.state, c.dial
-	c.mu.Unlock()
-	session, err = dial(ctx, state)
-	if err != nil {
-		return nil, err
-	}
-	return c.adoptSession(session)
+}
+
+// LoginCompleted reports whether the connected session's login completes a
+// recovery episode. The official client accepts a delta-only LOGINLIST
+// (-305) but never completes recovery after it.
+func (c *Client) LoginCompleted() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.session != nil && c.session.loginStatus != sessionlogin.StatusLoginListDeltaOnly
 }
 
 // adoptSession installs a freshly dialed Session's login cursor into the

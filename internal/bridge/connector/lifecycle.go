@@ -3,7 +3,6 @@ package connector
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -45,10 +44,12 @@ type connLifecycle struct {
 	lifecycle       context.Context
 	lifecycleCancel context.CancelFunc
 	// retry waits out a recovery backoff and then reconnects; schedule is
-	// the reconnect schedule that chooses the backoff. Recovery from a
-	// retryable failure is never abandoned.
-	retry    worker
-	schedule recoverySchedule
+	// the recovery episode that chooses the backoff, and watchdog its armed
+	// 600 s timer.
+	retry         worker
+	schedule      recoverySchedule
+	watchdog      stopper
+	watchdogAfter func(time.Duration, func()) stopper
 	// connectedAt is when the current session connected.
 	connectedAt time.Time
 	// cleanupRetry is the single delayed retry of a timed-out owner cleanup;
@@ -62,7 +63,6 @@ type connLifecycle struct {
 }
 
 func (kc *KakaoClient) Connect(ctx context.Context) {
-	restartWait, restartSchedule, restored := kc.restoredSchedule()
 	kc.mu.Lock()
 	if kc.client != nil || kc.cleanup != nil || kc.connecting {
 		kc.mu.Unlock()
@@ -82,18 +82,11 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	}
 	kc.generation++
 	generation := kc.generation
-	if restored {
-		kc.schedule = restartSchedule
-	}
-	if restartWait > 0 {
-		// The previous process left a backoff pending, or ended soon after
-		// logging in. Logging in at once would let a restarting supervisor
-		// bypass the recovery schedule.
-		kc.startRetryLocked(generation, restartWait)
-		kc.mu.Unlock()
-		kc.sendState(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateReconnectScheduled, Message: fmt.Sprintf("Reconnecting to KakaoTalk in %s after a restart", restartWait.Round(time.Second))})
-		return
-	}
+	// An explicit Connect (the bridge starting, or the operator's reconnect
+	// command) starts a fresh episode, as the native client does after a
+	// restart or a new login. No schedule survives the process.
+	kc.stopWatchdogLocked()
+	kc.schedule = recoverySchedule{}
 	kc.connecting = true
 	kc.connectingGeneration = generation
 	connectCtx, cancel := context.WithCancel(ctx)
@@ -145,11 +138,10 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	// client whose subscription has not returned yet.
 	kc.mu.Lock()
 	kc.retain(c)
-	now := kc.now()
-	kc.schedule.begin(now)
-	schedule := kc.schedule
+	if now := kc.now(); kc.schedule.begin(now) {
+		kc.armWatchdogLocked(generation, kc.schedule.watchdogDelay(now))
+	}
 	kc.mu.Unlock()
-	kc.recordLoginAttempt(schedule, now)
 	stream, err := kc.connectAndSubscribe(ctx, c)
 	if err != nil {
 		kc.shutdownBootstrap(c, "after connect failure", false)
@@ -163,14 +155,19 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 			report(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupCreateUnresolved})
 		case isUnidentifiableMessageError(err):
 			report(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateUnidentifiableMsg})
-		case retryableRecoveryError(err) && kc.retryAfter(err, generation):
+		case kc.retryAfter(err, generation):
 			// The first connect retries too: a network outage at startup must
 			// not leave the bridge down until a restart.
-			if errors.Is(err, errDeliveryNotConfirmed) && !kc.recoveryStalled() {
+			if errors.Is(err, errDeliveryNotConfirmed) {
 				report(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateDeliveryPaused})
 			}
 		default:
 			report(status.BridgeState{StateEvent: status.StateTransientDisconnect, Error: stateConnectFailed})
+		}
+		if !retryableRecoveryError(err) {
+			// Recovery stops here and waits for the operator, as after the
+			// native logout, so the episode ends.
+			kc.endEpisode(generation)
 		}
 		return
 	}
@@ -188,7 +185,10 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	kc.reactionView = nil
 	kc.done = done
 	kc.connectedAt = kc.now()
-	kc.schedule.succeeded()
+	if c.LoginCompleted() {
+		kc.schedule.succeeded()
+		kc.stopWatchdogLocked()
+	}
 	kc.cleanupRetryAttempts = 0
 	kc.mu.Unlock()
 	kc.sendReadyState()
@@ -225,34 +225,72 @@ func (kc *KakaoClient) retryAfter(err error, generation uint64) bool {
 		return false
 	}
 	return kc.scheduleRecovery(generation, func(schedule *recoverySchedule, now time.Time) (time.Duration, bool) {
-		return schedule.failed(err, now)
+		return schedule.failed(now)
 	})
 }
 
 // scheduleRecovery starts the next recovery attempt for generation after the
-// delay that next chooses from the schedule. It reports false when the
+// delay that next chooses from the schedule. When next declines, no attempt
+// is scheduled and the episode's watchdog ends it. It reports false when the
 // generation is no longer current.
-func (kc *KakaoClient) scheduleRecovery(generation uint64, next func(*recoverySchedule, time.Time) (delay time.Duration, enteredSlow bool)) bool {
-	// The stalled state is published after the lifecycle mutex is released.
-	stalled := false
-	defer func() {
-		if stalled {
-			kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateRecoveryStalled, Message: "Reconnecting to KakaoTalk keeps failing; still retrying every 15 minutes"})
-		}
-	}()
+func (kc *KakaoClient) scheduleRecovery(generation uint64, next func(*recoverySchedule, time.Time) (time.Duration, bool)) bool {
 	kc.mu.Lock()
+	defer kc.mu.Unlock()
 	if kc.stopping || kc.generation != generation {
-		kc.mu.Unlock()
 		return false
 	}
-	now := kc.now()
-	delay, enteredSlow := next(&kc.schedule, now)
-	stalled = enteredSlow
-	schedule := kc.schedule
-	kc.startRetryLocked(generation, delay)
-	kc.mu.Unlock()
-	kc.recordScheduledRetry(schedule, now.Add(delay))
+	if delay, ok := next(&kc.schedule, kc.now()); ok {
+		kc.startRetryLocked(generation, delay)
+	}
 	return true
+}
+
+// armWatchdogLocked arms the episode watchdog for generation. The caller
+// holds mu.
+func (kc *KakaoClient) armWatchdogLocked(generation uint64, delay time.Duration) {
+	kc.stopWatchdogLocked()
+	var timer stopper
+	timer = kc.watchdogAfter(delay, func() { kc.episodeExpired(generation, timer) })
+	kc.watchdog = timer
+}
+
+// endEpisode ends generation's recovery episode without a completed login.
+func (kc *KakaoClient) endEpisode(generation uint64) {
+	kc.mu.Lock()
+	defer kc.mu.Unlock()
+	if kc.generation == generation {
+		kc.schedule.succeeded()
+		kc.stopWatchdogLocked()
+	}
+}
+
+func (kc *KakaoClient) stopWatchdogLocked() {
+	if kc.watchdog != nil {
+		kc.watchdog.Stop()
+		kc.watchdog = nil
+	}
+}
+
+// episodeExpired ends a recovery episode that reached its watchdog without
+// a completed login. The native client logs out locally here; the bridge
+// stops instead, closing any pending attempt and any session whose login
+// did not complete, and waits for the operator's reconnect command or a
+// process restart. Credentials and the profile are left untouched.
+func (kc *KakaoClient) episodeExpired(generation uint64, timer stopper) {
+	kc.mu.Lock()
+	if kc.watchdog != timer || kc.stopping || kc.generation != generation || !kc.schedule.active() {
+		kc.mu.Unlock()
+		return
+	}
+	kc.watchdog = nil
+	attempts := kc.schedule.attempt
+	kc.mu.Unlock()
+	kc.log().Warn().Int("failed_attempts", attempts).Msg("Kakao recovery episode reached its watchdog; stopping until reconnect")
+	kc.Disconnect()
+	kc.mu.Lock()
+	kc.schedule = recoverySchedule{gaveUp: true}
+	kc.mu.Unlock()
+	kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateRecoveryStopped, Message: "Reconnecting to KakaoTalk failed for 10 minutes; the bridge stopped trying. Send the reconnect command or restart the bridge."})
 }
 
 // startRetryLocked waits out delay and then reconnects for generation. The
@@ -285,19 +323,18 @@ func (kc *KakaoClient) startRetryLocked(generation uint64, delay time.Duration) 
 	})
 }
 
-// recoveryStalled reports whether recovery has left the episode schedule.
-func (kc *KakaoClient) recoveryStalled() bool {
-	kc.mu.Lock()
-	defer kc.mu.Unlock()
-	return kc.schedule.slow
-}
-
 // errDeliveryNotConfirmed marks a catch-up stopped because Matrix did not
 // confirm an event; its source progress is retained for replay.
 var errDeliveryNotConfirmed = errors.New("connector: delivery not confirmed")
 
+// retryableRecoveryError reports whether a failed attempt retries on the
+// episode cadence. As in the official client, every login failure does,
+// including LOGINLIST statuses such as -328 and -310, a transport failure
+// during LOGINLIST, and a failed token renewal, except those after which the
+// native client logs out: LOGINLIST -445 and a renewal that KakaoTalk ends
+// (client.ErrSignedOut).
 func retryableRecoveryError(err error) bool {
-	if err == nil || errors.Is(err, client.ErrLogin) || errors.Is(err, client.ErrCredentialRenewal) {
+	if err == nil || errors.Is(err, client.ErrSignedOut) {
 		return false
 	}
 	var bootstrapErr bootstrapFailure
@@ -311,7 +348,10 @@ func retryableRecoveryError(err error) bool {
 	}
 	var statusErr client.StatusError
 	if errors.As(err, &statusErr) {
-		return statusErr.Status == -328
+		return !(statusErr.Command == "LOGINLIST" && statusErr.Status == -445)
+	}
+	if errors.Is(err, client.ErrLogin) || errors.Is(err, client.ErrCredentialRenewal) {
+		return true
 	}
 	if errors.Is(err, client.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 		return true
@@ -465,7 +505,6 @@ func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generatio
 		return
 	}
 	stopping := kc.stopping
-	lasted := kc.now().Sub(kc.connectedAt)
 	kc.client = nil
 	kc.done = nil
 	if !stopping {
@@ -481,10 +520,11 @@ func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generatio
 	kc.release(c, shutdownErr)
 	canRecover := shutdownErr == nil && !kc.stopping && kc.generation == generation
 	kc.mu.Unlock()
-	// The session loss starts a new recovery episode.
+	// The session loss starts a recovery episode, or continues one whose
+	// login never completed.
 	recoverSession := func() {
-		kc.scheduleRecovery(generation, func(schedule *recoverySchedule, _ time.Time) (time.Duration, bool) {
-			return schedule.sessionEnded(lasted)
+		kc.scheduleRecovery(generation, func(*recoverySchedule, time.Time) (time.Duration, bool) {
+			return firstRecoveryDelay, true
 		})
 	}
 	if kickedOut || terminalErr != nil {
@@ -810,7 +850,8 @@ func (kc *KakaoClient) metadataClient() (kakaoClient, error) {
 
 var (
 	errDetachedKickedOut    = errors.New("connector: KakaoTalk signed this device out; log out of the bridge and log in again instead")
-	errDetachedRetryPending = errors.New("connector: a reconnect is scheduled, possibly waiting out a rate limit; wait for the bridge state to report it, then run this command again")
+	errDetachedRetryPending    = errors.New("connector: the bridge is reconnecting to KakaoTalk; wait for the bridge state to report the outcome, then run this command again")
+	errDetachedRecoveryStopped = errors.New("connector: reconnecting to KakaoTalk failed and the bridge stopped trying; send the reconnect command first")
 )
 
 // openDetached opens a temporary profile client outside the connection
@@ -818,24 +859,23 @@ var (
 // still retaining an owner, since the profile lease admits one owner.
 //
 // A detached client logs in, so it passes the same gates as the supervisor's
-// Connect: no login after KICKOUT, and none while a retry is scheduled, in
-// this process or restored from the login's metadata, since that retry may be
-// waiting out a -328 rate limit. The reconciliation commands still need it
-// when no gate applies, because an unresolved group creation fails every
-// bootstrap until it is reconciled. The login is recorded in the persisted
-// schedule like any other.
+// recovery: no login after KICKOUT, none while a recovery episode is running,
+// and none after the episode watchdog stopped recovery until the operator
+// reconnects. The reconciliation commands still need it when no gate applies,
+// because an unresolved group creation fails every bootstrap until it is
+// reconciled; such a failure ends the episode.
 func (kc *KakaoClient) openDetached() (kakaoClient, error) {
 	if _, kicked := kc.kickedOut(); kicked {
 		return nil, errDetachedKickedOut
 	}
-	if kc.persistedRetryPending() {
-		return nil, errDetachedRetryPending
-	}
 	kc.mu.Lock()
 	busy := kc.stopping || kc.connecting || kc.cleanup != nil
-	pending := kc.retry.running()
-	schedule := kc.schedule
+	pending := kc.retry.running() || kc.schedule.active()
+	gaveUp := kc.schedule.gaveUp
 	kc.mu.Unlock()
+	if gaveUp {
+		return nil, errDetachedRecoveryStopped
+	}
 	if pending {
 		return nil, errDetachedRetryPending
 	}
@@ -846,7 +886,6 @@ func (kc *KakaoClient) openDetached() (kakaoClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	kc.recordLoginAttempt(schedule, kc.now())
 	return c, nil
 }
 

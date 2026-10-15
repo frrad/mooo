@@ -1,107 +1,69 @@
 package connector
 
 import (
-	"errors"
 	"time"
-
-	"github.com/frrad/mooo/internal/client"
 )
 
-// The reconnect schedule follows the official Mac client's recovery episode
-// (research/bridge/CONNECT-TRAFFIC.md, finding #7): the first attempt after a
-// session loss runs at once, a failed attempt retries after a fixed delay, and
-// an episode without a successful login ends at a watchdog. The native client
-// logs out at the watchdog; an unattended bridge instead reports a stalled
-// state and keeps retrying every slowRecoveryDelay.
+// The reconnect schedule is the official Mac client's recovery episode
+// (research/bridge/CONNECT-TRAFFIC.md, finding #7, and RECOVERY-TRACE.md): the
+// first attempt after a session loss runs after 0.1 s, a failed attempt of
+// any kind retries after a fixed 10 s, and an episode without a successful
+// login ends at a 600 s watchdog. The native client then logs out locally
+// and waits for the user. The bridge stops retrying and waits for the
+// operator's reconnect command or a process restart instead.
 const (
-	firstRecoveryDelay   = 100 * time.Millisecond
-	episodeRetryDelay    = 10 * time.Second
-	episodeWatchdog      = 600 * time.Second
-	slowRecoveryDelay    = 15 * time.Minute
-	shortSessionDuration = 60 * time.Second
-	// maxShortSessions is how many sessions in a row may end within
-	// shortSessionDuration of their login before reconnects join the slow
-	// tier. The native client has no such guard; it stops CHANGESVR or
-	// close-after-login loops from logging in every few seconds forever.
-	maxShortSessions = 3
+	firstRecoveryDelay = 100 * time.Millisecond
+	episodeRetryDelay  = 10 * time.Second
+	episodeWatchdog    = 600 * time.Second
 )
 
-// rateLimitedRecoveryDelays is the bridge's own backoff for consecutive
-// LOGINLIST -328 replies in one episode. Retrying a temporary device limit at
-// the episode cadence would only repeat the refusal.
-var rateLimitedRecoveryDelays = [...]time.Duration{60 * time.Second, 120 * time.Second, 240 * time.Second, 480 * time.Second, 900 * time.Second}
-
-// recoverySchedule is the reconnect schedule state. An episode starts with
-// its first login attempt and ends with a successful login.
+// recoverySchedule is the state of the current recovery episode. An episode
+// starts with its first login attempt and ends with a completed login or
+// with the watchdog.
 type recoverySchedule struct {
 	// episodeAt is when the episode's first attempt began; zero when no
 	// episode is running.
 	episodeAt time.Time
 	// attempt counts the attempts that failed in this episode.
 	attempt int
-	// rateLimited counts the -328 replies in this episode.
-	rateLimited int
-	// shortSessions counts the consecutive sessions that ended within
-	// shortSessionDuration of their login.
-	shortSessions int
-	// slow is set once the episode has left the episode cadence.
-	slow bool
+	// gaveUp is set when the watchdog ended an episode; only an explicit
+	// Connect clears it.
+	gaveUp bool
 }
 
-// begin marks the start of a login attempt at now.
-func (s *recoverySchedule) begin(now time.Time) {
-	if s.episodeAt.IsZero() {
-		s.episodeAt = now
+// begin marks the start of a login attempt at now. It reports whether the
+// attempt starts a new episode, whose watchdog the caller arms.
+func (s *recoverySchedule) begin(now time.Time) bool {
+	if !s.episodeAt.IsZero() {
+		return false
 	}
+	s.episodeAt = now
+	s.attempt = 0
+	return true
 }
 
-// succeeded ends the episode after a successful login.
+// active reports whether an episode is running.
+func (s *recoverySchedule) active() bool { return !s.episodeAt.IsZero() }
+
+// succeeded ends the episode after a completed login.
 func (s *recoverySchedule) succeeded() {
 	s.episodeAt = time.Time{}
 	s.attempt = 0
-	s.rateLimited = 0
-	s.slow = false
 }
 
-// failed records a failed attempt at now and returns the delay before the
-// next one, and whether this failure moved the episode to the slow tier.
-func (s *recoverySchedule) failed(err error, now time.Time) (delay time.Duration, enteredSlow bool) {
+// failed records a failed attempt at now. It returns the delay before the
+// next attempt, or false when that attempt would run at or after the
+// watchdog, which then ends the episode.
+func (s *recoverySchedule) failed(now time.Time) (time.Duration, bool) {
 	s.begin(now)
 	s.attempt++
-	wasSlow := s.slow
-	var statusErr client.StatusError
-	switch {
-	case errors.As(err, &statusErr) && statusErr.Status == -328:
-		s.rateLimited++
-		if !s.slow && s.rateLimited <= len(rateLimitedRecoveryDelays) {
-			delay = rateLimitedRecoveryDelays[s.rateLimited-1]
-		} else {
-			s.slow = true
-			delay = slowRecoveryDelay
-		}
-	case !s.slow && now.Add(episodeRetryDelay).Before(s.episodeAt.Add(episodeWatchdog)):
-		delay = episodeRetryDelay
-	default:
-		// The next attempt would run after the native watchdog.
-		s.slow = true
-		delay = slowRecoveryDelay
+	if !now.Add(episodeRetryDelay).Before(s.episodeAt.Add(episodeWatchdog)) {
+		return 0, false
 	}
-	return delay, s.slow && !wasSlow
+	return episodeRetryDelay, true
 }
 
-// sessionEnded starts a new episode after a session that lasted the given
-// time. It returns the delay before the episode's first attempt, and whether
-// this session moved reconnects to the slow tier.
-func (s *recoverySchedule) sessionEnded(lasted time.Duration) (delay time.Duration, enteredSlow bool) {
-	if lasted < shortSessionDuration {
-		s.shortSessions++
-	} else {
-		s.shortSessions = 0
-	}
-	s.succeeded()
-	if s.shortSessions > maxShortSessions {
-		s.slow = true
-		return slowRecoveryDelay, s.shortSessions == maxShortSessions+1
-	}
-	return firstRecoveryDelay, false
+// watchdogDelay is how long after now the episode's watchdog fires.
+func (s *recoverySchedule) watchdogDelay(now time.Time) time.Duration {
+	return max(s.episodeAt.Add(episodeWatchdog).Sub(now), 0)
 }

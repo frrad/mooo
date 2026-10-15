@@ -96,6 +96,11 @@ and `71f23e5` (#331). Configuration, database, profile, logs and receipts
 stayed in the private lab. Every start, stop, kill and firewall change was
 recorded before it ran.
 
+The reconnect schedule in the crash-loop, outage and restart runs below was
+replaced on 2026-10-15 by the native recovery episode
+([reconnect policy](../bridge-reconnect-design.md)); those runs record the
+earlier behavior.
+
 - **Crash loop (native).** The bridge was killed with SIGKILL about 2.7 s
   after each login began and restarted at once. The first restart, 43 s after
   a stable login, connected at once. The next waited until the previous login
