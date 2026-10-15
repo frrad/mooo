@@ -72,12 +72,6 @@ func (b *routeBackends) dialers() sessionDialers {
 			if dead {
 				return nil, refused
 			}
-			if host != "carriage-a.invalid" && host != "carriage-b.invalid" {
-				// A CHECKIN address on the secure transport.
-				return clientWire(newScriptedBackend(b.t, true, testloco.Expect("CHECKIN", nil, statusDocument(
-					bson.E{Key: "host", Value: "carriage-a.invalid"}, bson.E{Key: "port", Value: int32(995)},
-				)))), nil
-			}
 			return clientWire(newScriptedBackend(b.t, true,
 				testloco.Expect("LOGINLIST", nil, statusDocument(bson.E{Key: "chatDatas", Value: bson.A{}}, bson.E{Key: "eof", Value: true})),
 				testloco.HoldOpen(),
@@ -252,6 +246,7 @@ func TestConnectSessionCachedRouteDialFailureFallsThroughToCheckin(t *testing.T)
 // CHECKIN to the next ticket address.
 func TestRouteChangeServerAndKickoutInvalidate(t *testing.T) {
 	backends := newRouteBackends(t)
+	backends.checkinHosts = []string{"checkin-a.invalid", "checkin-b.invalid"}
 	store := &memoryBooking{}
 	route := &carriageRoute{}
 	clock := newTestRouteClock()
@@ -267,9 +262,8 @@ func TestRouteChangeServerAndKickoutInvalidate(t *testing.T) {
 	if err := connectRoute(t, backends, store, route, clock); err != nil {
 		t.Fatal(err)
 	}
-	// Address 1 of the pool is TLS on the GETCONF port; the walk starts
-	// there at once.
-	assertDials(t, "after CHANGESVR", backends.take(), "tls checkin-a.invalid:443", "secure carriage-a.invalid:995")
+	// The walk starts at once at the second ticket address.
+	assertDials(t, "after CHANGESVR", backends.take(), "tls checkin-b.invalid:443", "secure carriage-a.invalid:995")
 	route.mu.Lock()
 	cursor := route.cursor
 	route.mu.Unlock()
@@ -285,9 +279,10 @@ func TestRouteChangeServerAndKickoutInvalidate(t *testing.T) {
 	}
 }
 
-// The CHECKIN walk tries the first address at once and waits the native
-// equal jitter, capped at 32 s, before each later address. When the stored
-// pool is exhausted the client books again once and walks the new pool.
+// The CHECKIN pool is port-major and TLS only. The walk tries its first
+// address at once and waits the native equal jitter, by address index and
+// capped at 32 s, before each later one. When the stored pool is exhausted
+// the client books again once and walks the new pool.
 func TestCheckinWalkJitterAndStalePoolRebook(t *testing.T) {
 	backends := newRouteBackends(t)
 	backends.checkinHosts = []string{"checkin-a.invalid", "checkin-b.invalid", "checkin-c.invalid"}
@@ -308,29 +303,66 @@ func TestCheckinWalkJitterAndStalePoolRebook(t *testing.T) {
 	if err := connectRoute(t, backends, store, route, clock); err != nil {
 		t.Fatal(err)
 	}
-	dials := backends.take()
-	// 3 hosts x 4 addresses fail, then GETCONF, then the new pool's first.
-	if len(dials) != 12+3 || dials[12] != "tls booking-loco.kakao.com:443" || dials[13] != "tls checkin-d.invalid:443" {
-		t.Fatalf("dials = %q", dials)
-	}
-	want := []time.Duration{
-		500 * time.Millisecond, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second,
-		32 * time.Second, 32 * time.Second, 32 * time.Second, 32 * time.Second, 32 * time.Second, 32 * time.Second,
-	}
+	assertDials(t, "stale pool", backends.take(),
+		"tls checkin-a.invalid:443", "tls checkin-b.invalid:443", "tls checkin-c.invalid:443",
+		"tls booking-loco.kakao.com:443", "tls checkin-d.invalid:443", "secure carriage-a.invalid:995")
 	clock.mu.Lock()
 	sleeps := append([]time.Duration(nil), clock.sleeps...)
 	clock.mu.Unlock()
-	if len(sleeps) != len(want) {
-		t.Fatalf("CHECKIN backoffs = %v, want %v", sleeps, want)
-	}
-	for i := range want {
-		if sleeps[i] != want[i] {
-			t.Fatalf("CHECKIN backoffs = %v, want %v", sleeps, want)
-		}
+	if len(sleeps) != 2 || sleeps[0] != 500*time.Millisecond || sleeps[1] != 2*time.Second {
+		t.Fatalf("CHECKIN backoffs = %v, want [500ms 2s]", sleeps)
 	}
 	if store.saves != 2 {
 		t.Fatalf("GETCONF saves = %d, want 2", store.saves)
 	}
+}
+
+func TestTicketPoolIsPortMajor(t *testing.T) {
+	got := ticketPool([]string{"h0", "h1"}, []int{5223, 443})
+	want := []ticketAddress{{"h0", 5223}, {"h1", 5223}, {"h0", 443}, {"h1", 443}}
+	if len(got) != len(want) {
+		t.Fatalf("pool = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("pool = %v, want %v", got, want)
+		}
+	}
+}
+
+// The walk starts at the address that last served CHECKIN and stops at the
+// end of the pool; an exhausted walk starts again at the first address.
+func TestCheckinWalkKeepsCursorUntilExhausted(t *testing.T) {
+	backends := newRouteBackends(t)
+	backends.checkinHosts = []string{"checkin-a.invalid", "checkin-b.invalid", "checkin-c.invalid"}
+	backends.cacheExpire = 0
+	store := &memoryBooking{}
+	route := &carriageRoute{}
+	clock := newTestRouteClock()
+	backends.dead["checkin-a.invalid"] = true
+	if err := connectRoute(t, backends, store, route, clock); err != nil {
+		t.Fatal(err)
+	}
+	assertDials(t, "first", backends.take(), "tls booking-loco.kakao.com:443", "tls checkin-a.invalid:443", "tls checkin-b.invalid:443", "secure carriage-a.invalid:995")
+
+	backends.dead["checkin-a.invalid"] = false
+	if err := connectRoute(t, backends, store, route, clock); err != nil {
+		t.Fatal(err)
+	}
+	assertDials(t, "kept cursor", backends.take(), "tls checkin-b.invalid:443", "secure carriage-a.invalid:995")
+
+	backends.dead["checkin-b.invalid"] = true
+	backends.dead["checkin-c.invalid"] = true
+	backends.dead[booking.Host] = true
+	if err := connectRoute(t, backends, store, route, clock); err == nil {
+		t.Fatal("connect succeeded with every remaining address dead")
+	}
+	backends.take()
+	backends.dead[booking.Host] = false
+	if err := connectRoute(t, backends, store, route, clock); err != nil {
+		t.Fatal(err)
+	}
+	assertDials(t, "after exhaustion", backends.take(), "tls checkin-a.invalid:443", "secure carriage-a.invalid:995")
 }
 
 // Booking makes at most three attempts, waiting the native equal jitter

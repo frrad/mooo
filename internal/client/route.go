@@ -63,7 +63,8 @@ type carriageRoute struct {
 	expire    time.Duration
 	checkedAt time.Time
 	// cursor is the ticket address that the next CHECKIN walk starts at,
-	// in a pool of addresses entries.
+	// in a pool of addresses entries. It stays on the address that last
+	// served CHECKIN.
 	cursor    int
 	addresses int
 }
@@ -122,12 +123,18 @@ func (r *carriageRoute) changeServer() {
 	}
 }
 
+func (r *carriageRoute) resetCursor() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cursor = 0
+}
+
 // walkStart records the pool about to be walked and returns the address the
 // walk starts at.
 func (r *carriageRoute) walkStart(addresses int) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.addresses != addresses || r.cursor >= addresses {
+	if r.cursor >= addresses {
 		r.cursor = 0
 	}
 	r.addresses = addresses
@@ -180,56 +187,47 @@ func jitteredBackoff(n int, limit time.Duration, intN func(int) int) time.Durati
 	return half + time.Duration(intN(int(half/time.Second)+1))*time.Second
 }
 
-// ticketAddress is one CHECKIN candidate: a transport and an endpoint.
+// ticketAddress is one CHECKIN endpoint, always dialed over TLS.
 type ticketAddress struct {
-	secure bool
-	host   string
-	port   int
+	host string
+	port int
 }
 
-// ticketPool lists the CHECKIN candidates in the official dial order: for
-// each host, TLS on 443 and the GETCONF ports, then the secure transport on
-// the GETCONF ports and 995.
+// ticketPool lists the CHECKIN addresses in the Mac client's order: for each
+// GETCONF wifi port, every ticket host. The Mac client adds no other ports
+// and has no secure-transport fallback for CHECKIN.
 func ticketPool(hosts []string, ports []int) []ticketAddress {
 	var pool []ticketAddress
-	for _, host := range hosts {
-		for _, port := range append([]int{443}, ports...) {
+	for _, port := range ports {
+		for _, host := range hosts {
 			pool = append(pool, ticketAddress{host: host, port: port})
-		}
-		for _, port := range append(append([]int(nil), ports...), 995) {
-			pool = append(pool, ticketAddress{secure: true, host: host, port: port})
 		}
 	}
 	return pool
 }
 
-// errTicketPoolExhausted marks a CHECKIN walk in which every address failed.
+// errTicketPoolExhausted marks a CHECKIN walk that reached the end of the
+// pool without an accepted reply.
 var errTicketPoolExhausted = errors.New("client: every ticket address failed")
 
-// checkin walks the ticket pool once, starting at start and wrapping around.
-// The first address is tried at once; the address at walk position n waits
-// jitteredBackoff(n, 32 s) first. It returns the accepted reply and the pool
-// index that served it. When every address fails it reports the last
-// failure, tagged "checkin dial" or "checkin", joined with
-// errTicketPoolExhausted.
+// checkin walks the ticket pool from start to its end, as the Mac client
+// does. The first address is tried at once; the address at index n waits
+// jitteredBackoff(n, 32 s) first. It returns the accepted reply and the index
+// that served it. When the walk reaches the end it reports the last failure,
+// tagged "checkin dial" or "checkin", joined with errTicketPoolExhausted.
 func checkin(ctx context.Context, pool []ticketAddress, start int, body []byte, dialers sessionDialers, clock routeClock) (loco.Packet, int, error) {
 	failure := errBootstrap
 	if start < 0 || start >= len(pool) {
 		start = 0
 	}
-	for n := range pool {
-		if n > 0 {
-			if err := clock.sleep(ctx, jitteredBackoff(n, ticketBackoffCap, clock.intN)); err != nil {
+	for index := start; index < len(pool); index++ {
+		if index > start {
+			if err := clock.sleep(ctx, jitteredBackoff(index, ticketBackoffCap, clock.intN)); err != nil {
 				return loco.Packet{}, 0, stageErr(errBootstrap, "checkin", err)
 			}
 		}
-		index := (start + n) % len(pool)
 		address := pool[index]
-		dial := dialers.tls
-		if address.secure {
-			dial = dialers.secure
-		}
-		wire, err := dial(ctx, address.host, address.port)
+		wire, err := dialers.tls(ctx, address.host, address.port)
 		if err != nil {
 			failure = stageErr(errBootstrap, "checkin dial", err)
 			continue
@@ -303,6 +301,8 @@ func dialCarriage(ctx context.Context, route *carriageRoute, pool []ticketAddres
 	}
 	reply, index, err := checkin(ctx, pool, route.walkStart(len(pool)), checkinBody, dialers, clock)
 	if err != nil {
+		// An exhausted walk starts again at the first address.
+		route.resetCursor()
 		return nil, err
 	}
 	host, port, err := booking.DecodeCheckinEndpoint(reply.Body)
