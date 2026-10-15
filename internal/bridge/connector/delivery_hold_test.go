@@ -221,14 +221,15 @@ func TestEditFetchFailureRetriesWithoutRelogin(t *testing.T) {
 	}
 }
 
-// Trigger 3: the roster read of a membership notice. The failure pauses the
-// group and schedules its membership retry; the held chat waits for that
-// retry instead of re-reading the roster on its own timer, and resumes once
-// membership converges.
+// Trigger 3: the roster read of a membership notice. A feed the stored roster
+// absorbs needs no read; one it cannot (here a self invite) still reads the
+// roster. The failure pauses the group and schedules its membership retry;
+// the held chat waits for that retry instead of re-reading the roster on its
+// own timer, and resumes once membership converges.
 func TestMembershipRefreshFailureHoldsChatUntilMembershipConverges(t *testing.T) {
 	kc, backend := newManagedGroupReconnect(t)
 	kc.deliveryRetryDelays = []time.Duration{time.Millisecond}
-	feed := events.MemberRemoved{ChatID: 5000, LogID: 200, UserID: 4000}
+	feed := events.MemberAdded{ChatID: 5000, LogID: 200, Members: []events.MemberIdentity{{UserID: kc.userID}}}
 	later := events.TextMessage{ChatID: 5000, LogID: 201, AuthorID: 2000, Message: "after the leave"}
 	backend.mu.Lock()
 	backend.resumeTargets = []syncmsg.Target{{ChatID: 5000, MaxLogID: 201}}
