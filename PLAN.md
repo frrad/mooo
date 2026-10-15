@@ -1062,8 +1062,11 @@ above. One PR each, highest account-safety risk first:
 - [ ] (#4) Reactions: budget and coalesce the per-push `/members` lookups (or
       derive the actor from the aggregate) and record the remainder as a
       deliberate deviation.
-- [ ] (#8) Debounce Matrix read receipts per chat; trace and differential-test
-      the native mark-read SYNCMSG shape before switching to it.
+- [x] (#8a) Debounce Matrix read receipts per chat (3 s window, latest
+      position, flushed on Disconnect).
+- [ ] (#8b) Differential-test the native mark-read SYNCMSG shape before
+      switching to it; needs a lastSyncLogId analogue and a held count
+      (read-receipt-policy.md "Native mark-read shape").
 - [x] (#11) Apply NEWMEM/DELMEM feed payloads to the stored verified roster
       instead of CHATINFO+MEMLIST; MEMBER for every invitee.
 - [x] (#12) Drop CHATINFO+MEMLIST around ADDMEM; apply the reply's invitation

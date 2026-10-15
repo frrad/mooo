@@ -562,6 +562,7 @@ func (kc *KakaoClient) Disconnect() {
 		return
 	}
 	defer leave()
+	kc.flushReadAcks(ctx)
 	stop := kc.beginStop()
 	joinWorkers := func() { join(ctx, stop.retryDone, stop.cleanupRetryDone) }
 	c := stop.owner
