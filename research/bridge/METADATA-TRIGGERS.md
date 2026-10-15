@@ -47,7 +47,7 @@ Classification:
 | GETMETA (shared room meta) | After the last LCHATLIST page, for rooms whose chat data `mmr` exceeds the stored room revision | a | Not sent; CHATINFO is used instead | Out of scope here; see gaps |
 | GETMCMETA | After the last LCHATLIST page, only when the login-list `mcmRevision` exceeds the locally stored revision. Also driven by the CHGMCMETA push consumer, which merges the push payload | a, b | Queue task: snapshot without personal meta (15-min freshness), CHGMCMETA (forced), minute tick | **Deviation**: replace the time gate with the login-list revision gate; drop from the tick |
 | CHATINFO | NEWMEM; SYNCJOIN; MSG for a room the client does not know; HINT for an unknown room; notification click; deep-link scheme handlers; VoIP and scheduled-message UI | b, c | Portal creation/resync, CHGCHATST/CHGMETA resync, NEWMEM/DELMEM, invites, backfill, group create, room-info queue task | Push-driven uses match; no native timer exists |
-| MEMLIST | `doChatMemberList` ← `getChatMemberList` ← member-list views (join-option and multi-profile designation views) only | c | Startup discovery (one per group), every snapshot, Matrix invite | **Deviation** at startup; see below |
+| MEMLIST | `doChatMemberList` ← `getChatMemberList` ← member-list views (join-option and multi-profile designation views) only | c | Every new group's first snapshot; a membership notice or catch-up membership feed (event-driven, same path); a Matrix invite; fallback for a managed group whose catch-up interval was not recovered | Deviation only on events and fallbacks: no reconnect sweep since 2026-10-15 |
 | MEMBER | NEWMEM invitees; a message whose author has no local user record or an empty nickname (message conversion, any source: push, SYNCMSG, MCHATLOGS); CHATONROOM response `unknownMemberIds` and missing access permits (chat open); MEMLIST unknown IDs (member list); ADDMEM/JOINLINK completions; CHGMETA chatbot list; PlusChat display-member creation | b, c | Snapshot enqueue, NEWMEM/DELMEM, **minute tick** (15-min per-user freshness) | **Deviation**: native has no time-based MEMBER; the tick and freshness window are bridge-invented |
 | GETMOMETA | CHATONROOM completion when the response carries Boards revisions (`doGetMoimMeta` compares them), and OpenChat JOINLINK | c | Every snapshot, every reconnect (15-min freshness), CHGMOMETAS (forced), minute tick | **Deviation**: native merges the CHGMOMETAS payload and never polls |
 | CHATONROOM | The response carries member IDs (`a`), read watermarks (`w`) and Boards revisions. Sent on opening a chat window (`FCChattingController chatOnRoom:`: create, join, rejoin, open Plus chat, first send), voice/face call setup; on reconnect (`locoClientDidRecover`) only for **currently open** chat windows | c, a | Startup sweep over every bridged portal; Matrix viewing heartbeat; reaction-sync command | **Deviation**: the startup sweep has no native counterpart; the viewing heartbeat matches chat open |
@@ -156,3 +156,37 @@ Mapping each native trigger to the bridge:
 - **GETMETA** (shared room meta, revision-gated at login) is the native path for
   room names and images. The bridge uses CHATINFO instead; that substitution is
   outside this document.
+
+## Offline membership through catch-up (2026-10-15)
+
+Owned observation, Android 26.8.2 primaries with the bridge (lab account B)
+stopped. Lab account C left a three-member group, then A re-invited C. On
+restart, the group's LOGINLIST entry had `ll` past the committed cursor but no
+`l` (last chat log). A private probe running the client's catch-up up to `ll`
+without committing returned the membership changes as type-0 chat logs:
+
+| Change | feedType | Message keys | Chat-log fields |
+| --- | --- | --- | --- |
+| Leave | 2 | `member` {`userId`, `nickName`}, `kicked`, `hidden`, `memorial` | `logId`, `prevId`, `authorId`, `sendAt` |
+| Invite | 1 | `inviter` {`userId`, `nickName`}, `members` [{`userId`, `nickName`}], `byLink` | same |
+
+These are the shapes the NEWMEM/DELMEM push decoder already reads. The bridge
+previously decoded them as gaps and never caught up a chat with only `ll`, so
+the startup MEMLIST was its only source for offline membership. Now:
+
+- A login chat entry without `l` targets catch-up at `ll`, as the Mac client
+  marks a loss from `lastServerLogId` in that case.
+- Feed types 1 and 2 decode as `MemberAdded`/`MemberRemoved`, positioned at
+  their log, and take the push path (authoritative refresh and Matrix
+  convergence). The applied feed is committed.
+- Reconnect discovery uses a managed group's stored verified roster instead of
+  MEMLIST. MEMLIST remains for a new group, and as the fallback when catch-up
+  reports an unrecovered gap or the profile never delivered from the chat.
+
+Live acceptance with this change. Two offline leave/invite cycles were
+pending, and the previous build's startup MEMLIST had already removed C from
+the Matrix room. The restart caught the group up with SYNCMSG and applied four
+membership feeds, each with one CHATINFO + MEMLIST, as a push would. It sent
+no roster read for the other five groups, and C rejoined the Matrix room. A
+further plain restart sent only LOGINLIST before connecting: no SYNCMSG and no
+MEMLIST.

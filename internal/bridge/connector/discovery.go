@@ -43,11 +43,29 @@ func (kc *KakaoClient) discoverGroups(ctx context.Context, c kakaoClient) error 
 	}
 	for _, chatID := range ordered {
 		data := inventory[chatID]
-		if err = kc.refreshGroupMembershipInventory(ctx, c, chatID, true, &data); err != nil {
+		opts := chatInfoOptions{regularGroupOnly: true, inventory: &data, storedRoster: kc.verifiedRoster(ctx, chatID)}
+		if err = kc.refreshGroupMembershipFrom(ctx, c, chatID, true, opts); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// verifiedRoster returns a managed group's last verified roster, or nil when
+// the group must read MEMLIST: it is new, paused, or unmanaged. The official
+// client reads no roster in the background; offline membership changes reach
+// the bridge as feeds in catch-up, and an unrecovered catch-up interval falls
+// back to MEMLIST (research/bridge/METADATA-TRIGGERS.md).
+func (kc *KakaoClient) verifiedRoster(ctx context.Context, chatID int64) []int64 {
+	p, err := kc.store.portalByKey(ctx, makePortalKey(chatID, kc.login.ID))
+	if err != nil || p == nil || p.MXID == "" {
+		return nil
+	}
+	meta, ok := p.Metadata.(*KakaoPortalMetadata)
+	if !ok || meta == nil || !meta.GroupMembershipManaged || meta.MembershipPending || meta.SourceRemoved {
+		return nil
+	}
+	return append([]int64(nil), meta.MembershipRoster...)
 }
 
 // Validate creation metadata before setting CreatePortal: bridgev2 may fall back

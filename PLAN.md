@@ -1027,23 +1027,12 @@ regular members. Follow-up changes, one PR each:
       sends CHATONROOM only on chat open and, on reconnect, for open chat
       windows. Derive read watermarks from login chat data, or fetch them on
       the Matrix viewing heartbeat.
-- [ ] Remove the startup MEMLIST per group. Native has no background roster
-      read: it learns members from login chat data, membership pushes and the
-      CHATONROOM member IDs (`a`) on chat open. Fetch the roster when a portal
-      is first created, then keep it from pushes; refetch it on the Matrix
-      viewing heartbeat with CHATONROOM. If a bridged room still needs a roster
-      without a viewer, document that as a deviation with a named trigger.
-      **Blocked (2026-10-14), maintainer decision needed.** The startup MEMLIST
-      is currently the bridge's only source for joins and leaves that happened
-      while it was offline. Catch-up decodes offline chat logs as MSG, so their
-      type-0 membership feeds (feedType 1 invite, 2 leave) never become
-      membership events, and LOGINLIST chat data carries only a member count
-      and display members. The Mac client needs no roster without a window;
-      Matrix rooms show membership at all times. Options: (a) apply
-      catch-up's type-0 membership feeds the way NEWMEM/DELMEM pushes are
-      applied, keeping MEMLIST only for rooms whose catch-up interval was not
-      recovered; (b) keep the startup MEMLIST as a documented deviation named
-      "reconnect roster check".
+- [x] Remove the startup MEMLIST per group. The maintainer chose option (a):
+      catch-up's type-0 membership feeds (observed 2026-10-14) now apply
+      through the NEWMEM/DELMEM path, a chat whose login entry has only `ll`
+      is caught up, and MEMLIST runs at reconnect only for a new group or as
+      the fallback for a managed group whose catch-up interval was not
+      recovered (gap, or a chat this profile never delivered from).
 - [ ] Decide whether to implement HTTP friend sync (native 60 s timer, 600 s
       gate). It is the only native periodic profile source and covers friends
       only. Trace its payload consumer first.

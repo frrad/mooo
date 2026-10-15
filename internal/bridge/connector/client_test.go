@@ -50,74 +50,75 @@ type catchUpResult struct {
 }
 
 type fakeKakao struct {
-	mcmRevision       *int32
-	chatInventory     []chatmeta.ChatData
-	chatInventoryErr  error
-	mu                sync.Mutex
-	connectErr        error
-	resumeTargets     []syncmsg.Target
-	resumeErr         error
-	catchUps          map[int64]catchUpResult
-	calls             []string
-	stream            chan events.Result
-	commits           []events.Event
-	sends             []sentText
-	replies           []sentReply
-	sendResp          chat.WriteResponse
-	sendErr           error
-	marks             [][2]int64
-	imageResp         media.SendResult
-	imageErr          error
-	imageData         []byte
-	imageCaption      string
-	imageCalls        int
-	uploads           []media.Upload
-	uploadResp        media.SendResult
-	uploadErr         error
-	albums            []sentAlbum
-	albumResp         chat.WriteResponse
-	albumErr          error
-	modifies          []chat.ModifyRequest
-	modifyRevision    int64
-	modifyErr         error
-	deletes           []chat.DeleteRequest
-	deleteErr         error
-	invites           []chat.AddMembersRequest
-	inviteResp        chat.AddMembersResponse
-	inviteErr         error
-	closeCalls        int
-	shutdownCalls     int
-	shutdownFailures  int
-	shutdownWait      <-chan struct{}
-	shutdownEntered   chan struct{}
-	shutdownEnterOnce sync.Once
-	eventsEntered     chan struct{}
-	eventsRelease     <-chan struct{}
-	eventsEnterOnce   sync.Once
-	catchupEntered    chan struct{}
-	catchupRelease    <-chan struct{}
-	catchupEnterOnce  sync.Once
-	chatInfo          chatmeta.ChatInfoResponse
-	chatInfoErr       error
-	personalMeta      *chatmeta.RoomMeta
-	personalMetaErr   error
-	members           []chatmeta.Member
-	membersErr        error
-	memberList        chatmeta.MemberListResponse
-	memberListErr     error
-	metadataCalls     []string
-	moimResponse      chatmeta.MoimResponse
-	moimErr           error
-	chatOnRoom        map[int64]chatmeta.ChatOnRoomResponse
-	chatOnRoomCalls   []int64
-	chatOnRoomErr     error
-	fetchResults      [][]events.Event
-	fetchRequests     [][]int64
-	fetchErr          error
-	reactionPages     []reactions.SyncMetaPage
-	reactionCursors   []int64
-	reactionSyncErr   error
-	seedDelivered     map[int64]bool
+	undeliveredTargets []syncmsg.Target
+	mcmRevision        *int32
+	chatInventory      []chatmeta.ChatData
+	chatInventoryErr   error
+	mu                 sync.Mutex
+	connectErr         error
+	resumeTargets      []syncmsg.Target
+	resumeErr          error
+	catchUps           map[int64]catchUpResult
+	calls              []string
+	stream             chan events.Result
+	commits            []events.Event
+	sends              []sentText
+	replies            []sentReply
+	sendResp           chat.WriteResponse
+	sendErr            error
+	marks              [][2]int64
+	imageResp          media.SendResult
+	imageErr           error
+	imageData          []byte
+	imageCaption       string
+	imageCalls         int
+	uploads            []media.Upload
+	uploadResp         media.SendResult
+	uploadErr          error
+	albums             []sentAlbum
+	albumResp          chat.WriteResponse
+	albumErr           error
+	modifies           []chat.ModifyRequest
+	modifyRevision     int64
+	modifyErr          error
+	deletes            []chat.DeleteRequest
+	deleteErr          error
+	invites            []chat.AddMembersRequest
+	inviteResp         chat.AddMembersResponse
+	inviteErr          error
+	closeCalls         int
+	shutdownCalls      int
+	shutdownFailures   int
+	shutdownWait       <-chan struct{}
+	shutdownEntered    chan struct{}
+	shutdownEnterOnce  sync.Once
+	eventsEntered      chan struct{}
+	eventsRelease      <-chan struct{}
+	eventsEnterOnce    sync.Once
+	catchupEntered     chan struct{}
+	catchupRelease     <-chan struct{}
+	catchupEnterOnce   sync.Once
+	chatInfo           chatmeta.ChatInfoResponse
+	chatInfoErr        error
+	personalMeta       *chatmeta.RoomMeta
+	personalMetaErr    error
+	members            []chatmeta.Member
+	membersErr         error
+	memberList         chatmeta.MemberListResponse
+	memberListErr      error
+	metadataCalls      []string
+	moimResponse       chatmeta.MoimResponse
+	moimErr            error
+	chatOnRoom         map[int64]chatmeta.ChatOnRoomResponse
+	chatOnRoomCalls    []int64
+	chatOnRoomErr      error
+	fetchResults       [][]events.Event
+	fetchRequests      [][]int64
+	fetchErr           error
+	reactionPages      []reactions.SyncMetaPage
+	reactionCursors    []int64
+	reactionSyncErr    error
+	seedDelivered      map[int64]bool
 
 	catchupHoldUntilRelease bool
 }
@@ -189,6 +190,12 @@ func (f *fakeKakao) ResumeTargets(ctx context.Context) ([]syncmsg.Target, error)
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, "ResumeTargets")
 	return f.resumeTargets, f.resumeErr
+}
+
+func (f *fakeKakao) UndeliveredTargets(context.Context) ([]syncmsg.Target, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.undeliveredTargets, nil
 }
 
 func (f *fakeKakao) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error) {

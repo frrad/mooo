@@ -159,6 +159,30 @@ func (c *Client) ResumeTargets(ctx context.Context) ([]syncmsg.Target, error) {
 	return result, nil
 }
 
+// UndeliveredTargets lists login chats with server logs that this profile
+// never delivered from, so catch-up does not cover them (their history is
+// backfill). A membership change in such a chat is not recovered by catch-up.
+func (c *Client) UndeliveredTargets(ctx context.Context) ([]syncmsg.Target, error) {
+	targets, err := c.InitialSyncTargets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	checkpoint := c.checkpoint
+	c.mu.Unlock()
+	if checkpoint == nil {
+		return nil, ErrProtocol
+	}
+	state := checkpoint.Snapshot()
+	result := make([]syncmsg.Target, 0)
+	for _, target := range targets {
+		if target.MaxLogID > 0 && state.CommittedMax(target.ChatID) == 0 && state.FirstDeliveryStart(target.ChatID) == 0 {
+			result = append(result, target)
+		}
+	}
+	return result, nil
+}
+
 // SeedLastMessage admits the last message that the login inventory already
 // carries for a chat this profile has never delivered, so a fresh login can
 // show every chat's latest message without requesting history. It returns nil
@@ -270,7 +294,7 @@ func (c *Client) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events
 			}
 			// Membership-only observations show SYNCMSG may include a feed
 			// beyond the login ceiling. Do not deliver or commit outside the
-			// selected interval; roster reconciliation handles membership.
+			// selected interval; the next login's ll covers it.
 			if logID > targetMax {
 				continue
 			}

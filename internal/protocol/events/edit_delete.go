@@ -80,10 +80,20 @@ type feedJSON struct {
 	ByHost         bool        `json:"byHost"`
 }
 
-// decodeFeed decodes a type-0 chat log. Only the edit and delete feeds are
+// decodeFeed decodes a type-0 chat log. Membership, edit and delete feeds are
 // recognized here; any other feed is reported as malformed so delivery keeps
 // an explicit gap for it.
 func decodeFeed(chatID, logID int64, chatLog bson.Raw) (Event, error) {
+	// Membership feeds reach catch-up as type-0 logs (observed 2026-10-14:
+	// feedType 1 carries inviter and members, 2 carries member). They decode
+	// exactly as the chat log inside a NEWMEM or DELMEM push.
+	if members, err := membershipMessageMembers(chatLog, true); err == nil {
+		return MemberAdded{ChatID: chatID, LogID: logID, Members: members}, nil
+	}
+	if members, err := membershipMessageMembers(chatLog, false); err == nil {
+		member := members[0]
+		return MemberRemoved{ChatID: chatID, LogID: logID, UserID: member.UserID, UserType: member.UserType}, nil
+	}
 	message, err := requiredString(chatLog, "message")
 	if err != nil {
 		return nil, ErrMalformedEvent

@@ -20,6 +20,10 @@ type chatInfoOptions struct {
 	// unavailable, so a refresh cannot be mistaken for a confirmed clear.
 	requirePersonalMeta bool
 	inventory           *chatmeta.ChatData
+	// storedRoster replaces MEMLIST with a roster the bridge already verified.
+	// Reconnect discovery uses it for managed groups, whose later changes
+	// arrive as membership feeds through pushes and catch-up.
+	storedRoster []int64
 }
 
 // chatSnapshot is everything one chat-info read fetched from the source:
@@ -107,8 +111,10 @@ func (kc *KakaoClient) fetchChatSnapshot(ctx context.Context, portal *bridgev2.P
 	// MEMLIST is a UI-originated API in the official client and its stored
 	// room token is not exposed by ChatData. An initial bridge sync therefore
 	// starts at token zero; later membership updates remain separate work.
-	roster, err := c.MemberList(ctx, chatID, 0)
-	if err != nil {
+	var roster chatmeta.MemberListResponse
+	if len(opts.storedRoster) > 0 {
+		roster.MemberIDs = opts.storedRoster
+	} else if roster, err = c.MemberList(ctx, chatID, 0); err != nil {
 		return chatSnapshot{}, err
 	}
 	if opts.regularGroupOnly && len(roster.MemberIDs) == 0 {
