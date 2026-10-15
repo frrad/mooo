@@ -150,6 +150,51 @@ func TestObservedLegacyReactionCountMap(t *testing.T) {
 	}
 }
 
+func TestLegacyReactionExtraIsDecodedOptionally(t *testing.T) {
+	push := func(extra any) ReactionChanged {
+		t.Helper()
+		event, err := Decode(packet(t, "CHGLOGMETA", bson.D{
+			{Key: "chatId", Value: int64(42)}, {Key: "logId", Value: int64(99)},
+			{Key: "type", Value: int32(1)}, {Key: "revision", Value: int64(3)},
+			{Key: "content", Value: `{"2":1}`}, {Key: "extra", Value: extra},
+		}))
+		changed, ok := event.(ReactionChanged)
+		if err != nil || !ok {
+			t.Fatalf("extra %v: %T %v", extra, event, err)
+		}
+		return changed
+	}
+	full := push(`{"my":2,"userId":7,"type":2}`)
+	if !full.Extra.HasOwnPick || full.Extra.OwnPick != 2 || !full.Extra.HasActor || full.Extra.ActorID != 7 || full.Extra.ActorPick != 2 {
+		t.Fatalf("extra = %#v", full.Extra)
+	}
+	ownOnly := push(`{"my":0}`)
+	if !ownOnly.Extra.HasOwnPick || ownOnly.Extra.OwnPick != 0 || ownOnly.Extra.HasActor {
+		t.Fatalf("own-only extra = %#v", ownOnly.Extra)
+	}
+	// Absent, null, malformed or out-of-range extra is not a malformed event;
+	// it only withholds the derived picks.
+	for _, extra := range []any{nil, `{`, `{"my":7}`, `{"my":"2"}`, `{"my":1,"userId":0,"type":1}`, `{"my":1,"userId":7,"type":9}`} {
+		changed := push(extra)
+		if extra == `{"my":1,"userId":0,"type":1}` || extra == `{"my":1,"userId":7,"type":9}` {
+			if !changed.Extra.HasOwnPick || changed.Extra.HasActor {
+				t.Fatalf("extra %v = %#v, want own pick without actor", extra, changed.Extra)
+			}
+			continue
+		}
+		if changed.Extra != (LegacyReactionExtra{}) {
+			t.Fatalf("extra %v = %#v, want none", extra, changed.Extra)
+		}
+	}
+	synced, err := DecodeSyncedLogMeta([]byte(`{"chatId":42,"logId":99,"type":1,"revision":3,"content":"{}","extra":"{\"my\":0}"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if extra := synced.(ReactionChanged).Extra; !extra.HasOwnPick || extra.OwnPick != 0 {
+		t.Fatalf("synced extra = %#v", extra)
+	}
+}
+
 func TestDecodeReadStateChanged(t *testing.T) {
 	event, err := Decode(packet(t, "DECUNREAD", bson.D{
 		{Key: "chatId", Value: int64(42)},

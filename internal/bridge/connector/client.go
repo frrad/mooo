@@ -224,6 +224,16 @@ type KakaoClient struct {
 
 	reactionNoticeMu sync.Mutex
 	reactionNotices  map[string]time.Time
+	// reactionLookupMu guards the attribution-read coalescing windows and
+	// the account's read budget; reactionApplyMu serializes reaction applies
+	// from the event loop, trailing reads and viewing resync.
+	reactionLookupMu sync.Mutex
+	reactionLookups  map[reactionLookupKey]*reactionLookupWindow
+	// reactionConfirmed records messages whose stored legacy roster a read
+	// or derivation on the current session established.
+	reactionConfirmed map[reactionLookupKey]reactionConfirmation
+	reactionBudget    reactionLookupBudget
+	reactionApplyMu   sync.Mutex
 	// reactionView is the current viewing episode; lifecycle mu guards it.
 	reactionView     *reactionViewingState
 	reactionSyncBusy bool
@@ -430,7 +440,7 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		kc.observeReactionRevision(evt.ChatID, evt.Revision)
 		handled, err := kc.applyReactionChange(c, evt)
 		if err != nil {
-			return kc.reportReactionFailure(evt, err)
+			return kc.reactionPushFailure(evt, err)
 		}
 		return handled
 	case events.ReadStateChanged:

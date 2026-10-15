@@ -41,7 +41,9 @@ not executed fixtures.
   debounced `/emoticon/chat/rx/logmetas` fetch for visible messages.
 - **Per-member state.** Only aggregate counts and the viewer's own pick are
   stored; any change arrives as a new aggregate that replaces the row.
-  Members and mini details are fetched on demand for the detail view.
+  Members and mini details are fetched on demand for the detail view. The
+  own pick is `extra.my`, read with no actor check; native ignores
+  `extra.userId` ([lookup budget](REACTION-LOOKUP-BUDGET.md)).
 
 Recorded gaps: server interpretation of `cur`/`max`/`cnt` beyond the owned
 observation below, the `/rx/logmetas` response model and failure handling, UI
@@ -98,6 +100,12 @@ Each change was preceded by a failing production-path test.
   ([skew audit](NATIVE-SKEW-AUDIT.md) #5). Removal now compares the redacted
   row with this login's stored legacy reaction on the message and sends only
   the cancel. A stored pick that a push already replaced suppresses the cancel.
+
+- **Fewer attribution reads.** Pushes and resync rows that `extra.my`, an
+  `extra` actor or a uniquely attributable count change explain are applied
+  without `/members`. The remaining reads are coalesced per message and
+  budgeted per account ([lookup budget](REACTION-LOOKUP-BUDGET.md), skew
+  audit #4).
 
 ### Deliberate deviations
 

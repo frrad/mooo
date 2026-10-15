@@ -1,0 +1,19 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "mooo bridge (Mac 26.8.0 request shapes) on the owned B secondary profile; official Android 26.8.2 on A",
+    "date": "2026-10-15",
+    "method": "Owned encrypted A/B/C regular group. The Matrix tester (the bridge account's user) sent heart, then thumbs-up, then redacted the thumbs-up on one synthetic text from A. A lab overlay recorded each inbound CHGLOGMETA's keys, legacy counts, extra keys, extra.my, the role of extra.userId and the type of extra.type, and counted connector-to-client calls. extra.type was recorded as a number but not by value; it equalled extra.my on all three pushes, inferred from the bridge's self-consistency check passing without a fallback read. Identifiers and revisions here are synthetic.",
+    "doc": "research/bridge/REACTION-LOOKUP-BUDGET.md"
+  },
+  "pushes": [
+    {"action": "own heart", "type": 1, "revision": 101, "content": "{\"1\":1}", "extra": "{\"my\":1,\"userId\":1000,\"type\":1}"},
+    {"action": "own thumbs-up", "type": 1, "revision": 102, "content": "{\"2\":1}", "extra": "{\"my\":2,\"userId\":1000,\"type\":2}"},
+    {"action": "own cancel", "type": 1, "revision": 103, "content": "{}", "extra": "{\"my\":0,\"userId\":1000,\"type\":0}"}
+  ],
+  "mooo_expected": {
+    "members_reads": 1,
+    "note": "The first push for the message reads /members because its stored roster was not yet confirmed on this session; the next two are derived from extra.my. The cancel itself sent only the cancel POST.",
+    "final_reactions": 0
+  }
+}
