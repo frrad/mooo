@@ -21,6 +21,20 @@ length and content checks. Admission holds the shared account lease until the
 whole downloader has validated its result, including checksum and decryption
 where the existing media API requires them. Failed validation retains backoff.
 
+## Live inbound media lane (bridge policy)
+
+Live inbound media does not use the account admission (audit finding 17). The
+official client downloads a received attachment with no traced pacing gate, so
+queueing a photo burst behind paced metadata reads added latency without parity
+grounds. A live message's photo, audio, video, file, contact, multi-photo,
+sticker and mini-text resources go through a separate per-profile lane: at most
+two transfers at once, with starts at least 250 ms apart. A failed live
+transfer does not reserve the history error backoff; retry pacing for a failed
+live download comes from the per-chat delivery hold. The lane shares the
+validated resource cache below. These values are bridge policy, not a claimed
+Kakao limit. Historical deliveries (`history-group`, stored-history backfill),
+profile avatars and every metadata read stay on the paced account admission.
+
 Physical HTTP exchanges, including redirects, are counted individually. The
 first dispatch uses normal admission; subsequent exchanges wait the configured
 minimum interval after the previous body closes, reserve error backoff before

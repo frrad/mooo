@@ -25,6 +25,10 @@ func (c *resourceTestClient) AcquireHistoryResource(ctx context.Context, key str
 	return c.source.AcquireHistoryResource(ctx, key, fetch)
 }
 
+func (c *resourceTestClient) AcquireLiveMedia(ctx context.Context, key string, fetch func(context.Context) ([]byte, error)) ([]byte, error) {
+	return c.source.AcquireLiveMedia(ctx, key, fetch)
+}
+
 func TestHistoryPhotoConversionUsesValidatedResourceAfterRestart(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Chmod(root, 0700); err != nil {
