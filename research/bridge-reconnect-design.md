@@ -49,10 +49,47 @@ source-side catch-up failures. Outbound Matrix sends fail while disconnected
 and are never queued for implicit resend. An accepted write whose response is
 lost remains ambiguous and is sent only once.
 
-Catch-up still runs before live subscription. A conversion or commit failure
-aborts bootstrap, leaves the checkpoint unchanged, and is not replayed in a
-tight recovery loop. An unrecoverable bounded gap remains represented by the
-existing gap notice policy.
+Catch-up still runs before live subscription. An event that cannot be
+delivered holds its chat (below) instead of aborting bootstrap; a source-side
+catch-up failure still aborts it and leaves the checkpoint unchanged. An
+unrecoverable bounded gap remains represented by the existing gap notice
+policy.
+
+### Delivery holds (2026-10-14)
+
+A failed delivery is not a failed Kakao session. Matrix, an inbound media
+download, the `GETMSGS` read that completes an edit feed, and the roster read
+of a NEWMEM/DELMEM notice are dependencies of delivery; no traced official
+path turns their failure into logout or recovery
+([native skew audit](bridge/NATIVE-SKEW-AUDIT.md) finding 2). Until this change
+a failed delivery ended the session, and catch-up replayed the same event after
+a full relogin, so a persistent failure logged in again on every step of the
+schedule above.
+
+The event pump now holds the chat instead (`delivery_hold.go`). The failed
+event and the chat's later events stay uncommitted and are buffered in source
+order (at most 1024; later positioned events are dropped and read again by
+catch-up when the chat resumes). Other chats keep flowing: commits are per
+chat, so no chat's cursor passes an undelivered event. A catch-up or seeded
+event that fails holds its chat the same way, and the session goes live.
+
+- **Retry:** the held chat is retried in the live session on the ordinary
+  schedule (5, 10, 20, 40, 60 s), with no relogin.
+- **Cap:** after those five retries the chat is paused. It is not retried on a
+  timer again, and the bridge reports `UNKNOWN_ERROR`
+  `kakao-chat-delivery-paused`.
+- **Source access:** a chat whose group is paused for unconverged membership
+  (or whose source access was removed) is not retried on a timer at all. A
+  failed membership refresh already schedules its own membership retry; the
+  held chat resumes when that retry converges the roster.
+- **Resume:** a paused chat resumes when its membership converges, when the
+  operator sends `reconnect` (which, while connected, retries the paused chats
+  in the live session instead of logging in), or at the next session, whose
+  catch-up replays the uncommitted interval.
+- **Transport:** a genuine Kakao transport failure still ends the session,
+  because the source stream closes. An event that belongs to no chat (for
+  example a terminal notice) cannot be held and still ends the session when it
+  fails.
 
 KICKOUT is terminal and preserves the continuity store. The official client
 logs out on KICKOUT, so the bridge saves the notice and its reason on the

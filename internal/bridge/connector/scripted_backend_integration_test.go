@@ -17,7 +17,6 @@ import (
 	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"maunium.net/go/mautrix/bridgev2"
-	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
 )
 
@@ -68,6 +67,9 @@ func (c *observedClient) committedIDs() []int64 {
 	return append([]int64(nil), c.committed...)
 }
 
+// A Matrix delivery failure during catch-up holds the chat in the live
+// session: the acquired page is retried without another login or SYNCMSG, and
+// its commit precedes the chat's live commits.
 func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T) {
 	statePath := newIntegrationProfile(t)
 	checkpoint, err := continuity.Open(statePath + ".continuity")
@@ -78,74 +80,43 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 		t.Fatal(err)
 	}
 
-	firstDialers, firstBackends, _ := scriptedScenario(t, 2, nil, false)
-	firstRaw, err := client.OpenWithTestDialers(statePath, nil, firstDialers, shadowCheckedOptions())
-	if err != nil {
-		t.Fatal(err)
-	}
-	firstClient := &observedClient{kakaoClient: firstRaw}
-	kakao1, harness1 := newTestClient(t, func() (kakaoClient, error) { return firstClient, nil })
-	t.Cleanup(kakao1.Disconnect)
-	harness1.results = []bridgev2.EventHandlingResult{bridgev2.EventHandlingResultFailed}
-	kakao1.Connect(context.Background())
-	// A Matrix delivery failure during the first catch-up schedules a retry.
-	if got := harness1.lastState(); got.StateEvent != status.StateTransientDisconnect || got.Error != stateDeliveryPaused {
-		t.Fatalf("failed catch-up state = %+v", got)
-	}
-	// Stop the scheduled retry; the second client below stands in for it.
-	kakao1.Disconnect()
-	if got := firstClient.subscriptions(); got != 0 {
-		t.Fatalf("Events calls after failed catch-up = %d, want 0", got)
-	}
-	if err := firstRaw.Shutdown(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	waitBackends(t, firstBackends)
-	reloaded, err := continuity.Open(statePath + ".continuity")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reloaded.IsCommitted(testChatID, 2) {
-		t.Fatal("failed catch-up advanced the checkpoint")
-	}
-
 	trigger := make(chan struct{})
-	// Warm recovery must replay the acquired page without another SYNCMSG.
-	secondDialers, secondBackends, writes := scriptedScenarioWithIDs(t, 2, trigger, true, 2, 3, true, true)
-	secondRaw, err := client.OpenWithTestDialers(statePath, nil, secondDialers, shadowCheckedOptions())
+	// The script admits one login and one SYNCMSG.
+	dialers, backends, writes := scriptedScenario(t, 2, trigger, true)
+	raw, err := client.OpenWithTestDialers(statePath, nil, dialers, shadowCheckedOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondClient := &observedClient{kakaoClient: secondRaw}
-	kakao2, harness2 := newTestClient(t, func() (kakaoClient, error) { return secondClient, nil })
-	t.Cleanup(kakao2.Disconnect)
-	kakao2.Connect(context.Background())
-	if got := secondClient.subscriptions(); got != 1 {
-		for _, backend := range secondBackends {
-			if backendErr := backend.Wait(100 * time.Millisecond); backendErr != nil {
-				t.Logf("backend: %v", backendErr)
-			}
-		}
-		t.Fatalf("Events calls after successful catch-up = %d, want 1; state=%+v queued=%d", got, harness2.lastState(), harness2.queuedCount())
+	observed := &observedClient{kakaoClient: raw}
+	var opens int
+	kakao, harness := newTestClient(t, func() (kakaoClient, error) {
+		opens++
+		return observed, nil
+	})
+	t.Cleanup(kakao.Disconnect)
+	kakao.deliveryRetryDelays = []time.Duration{300 * time.Millisecond}
+	harness.results = []bridgev2.EventHandlingResult{bridgev2.EventHandlingResultFailed}
+	kakao.Connect(context.Background())
+	if !kakao.IsLoggedIn() || observed.subscriptions() != 1 {
+		t.Fatalf("a failed catch-up delivery did not go live; state=%+v", harness.lastState())
 	}
-	replayed, err := continuity.Open(statePath + ".continuity")
-	if err != nil {
-		t.Fatal(err)
+	if len(observed.committedIDs()) != 0 {
+		t.Fatal("failed catch-up advanced progress")
 	}
-	if !replayed.IsCommitted(testChatID, 2) || replayed.IsCommitted(testChatID, 3) {
-		t.Fatal("catch-up checkpoint was not committed before live delivery")
-	}
+	// The live message waits behind the held replay.
 	close(trigger)
-	deadline := time.After(2 * time.Second)
-	for harness2.queuedCount() < 2 {
-		select {
-		case <-deadline:
-			t.Fatalf("replay/live delivery count = %d, want 2", harness2.queuedCount())
-		default:
-			time.Sleep(time.Millisecond)
-		}
+	time.Sleep(50 * time.Millisecond)
+	if got := observed.committedIDs(); len(got) != 0 || harness.queuedCount() != 1 {
+		t.Fatalf("live delivery passed the held replay: commits=%v queued=%d", got, harness.queuedCount())
 	}
-	if _, err := kakao2.HandleMatrixMessage(context.Background(), matrixMessage(event.MsgText, "ambiguous outbound")); err == nil {
+	waitFor(t, func() bool { return len(observed.committedIDs()) == 2 })
+	if got := observed.committedIDs(); got[0] != 2 || got[1] != 3 {
+		t.Fatalf("commits = %v, want replay 2 before live 3", got)
+	}
+	if opens != 1 || harness.queuedCount() != 3 {
+		t.Fatalf("opens = %d, queued = %d; want one login and three deliveries", opens, harness.queuedCount())
+	}
+	if _, err := kakao.HandleMatrixMessage(context.Background(), matrixMessage(event.MsgText, "ambiguous outbound")); err == nil {
 		t.Fatal("ambiguous outbound unexpectedly succeeded")
 	}
 	if *writes != 1 {
@@ -153,16 +124,16 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	}
 	// Stop the connector supervisor before releasing the underlying session.
 	// Closing only the raw client would schedule recovery beyond this test.
-	kakao2.Disconnect()
-	waitBackends(t, secondBackends)
-	reloaded, err = continuity.Open(statePath + ".continuity")
+	kakao.Disconnect()
+	waitBackends(t, backends)
+	reloaded, err := continuity.Open(statePath + ".continuity")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reloaded.IsCommitted(testChatID, 2) || !reloaded.IsCommitted(testChatID, 3) {
 		t.Fatal("replayed and live events were not committed")
 	}
-	reopenedClient, err := client.OpenWithTestDialers(statePath, nil, secondDialers, shadowCheckedOptions())
+	reopenedClient, err := client.OpenWithTestDialers(statePath, nil, dialers, shadowCheckedOptions())
 	if err != nil {
 		t.Fatal("profile lease was not released after shutdown")
 	}

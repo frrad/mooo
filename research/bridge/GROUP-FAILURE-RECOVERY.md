@@ -23,6 +23,12 @@ that the previous owner closes before replacement and that catch-up delivers
 both messages in source order before live subscription. Outbound mutations do
 not enter this replay path. Race-enabled connector tests and `make check` pass.
 
+Superseded 2026-10-14: a failed delivery now holds its chat in the live
+session and retries it there instead of ending the session; see
+[delivery holds](../bridge-reconnect-design.md#delivery-holds-2026-10-14). The
+ordering guarantee above is unchanged: the held chat's later events wait
+behind the failed one.
+
 ## Official-client trace
 
 Method: read-only static inspection of the authorized macOS 26.8.0 arm64 binary,
@@ -124,6 +130,9 @@ receipt before dispatch. Real account-specific artifacts remain outside tracked
 files. The current implementation is not a claim of complete failure parity.
 
 ## Catch-up replay during a continuing outage
+
+Superseded 2026-10-14 by [delivery holds](../bridge-reconnect-design.md#delivery-holds-2026-10-14):
+a catch-up delivery failure now holds its chat instead of reconnecting.
 
 A live delivery pause reconnects after a short delay, and its catch-up replays
 the paused event. If Matrix is still unavailable, that replay fails too.
