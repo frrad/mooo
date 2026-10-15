@@ -60,6 +60,19 @@ func (s *session) Members(ctx context.Context, chatID int64, userIDs []int64) ([
 	return members, nil
 }
 
+// GetMetas reads the shared chat metas of up to chatmeta.MaxGetMetasBatch
+// rooms with one GETMETAS. It sends exactly once.
+func (s *session) GetMetas(ctx context.Context, chatIDs []int64) ([]chatmeta.ChatMetaSet, error) {
+	return call(s, ctx, chatmeta.GetMetasCommand, chatmeta.GetMetasRequest{ChatIDs: chatIDs}, chatmeta.DecodeGetMetasResponse)
+}
+
+// GetMetas lazily connects once, then reads several rooms' shared chat metas.
+func (c *Client) GetMetas(ctx context.Context, chatIDs []int64) ([]chatmeta.ChatMetaSet, error) {
+	return withSession(c, ctx, func(session *session) ([]chatmeta.ChatMetaSet, error) {
+		return session.GetMetas(ctx, chatIDs)
+	})
+}
+
 // MemberList refreshes a room's member-ID roster with MEMLIST. The official
 // client issues it only from member-list UI; it sends exactly once.
 func (s *session) MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error) {

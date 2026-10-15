@@ -110,6 +110,8 @@ type fakeKakao struct {
 	moimResponse       chatmeta.MoimResponse
 	moimErr            error
 	chatOnRoom         map[int64]chatmeta.ChatOnRoomResponse
+	metaSets           map[int64]chatmeta.ChatMetaSet
+	getMetasErr        error
 	chatOnRoomCalls    []int64
 	chatOnRoomErr      error
 	fetchResults       [][]events.Event
@@ -141,6 +143,19 @@ func (f *fakeKakao) ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatIn
 	defer f.mu.Unlock()
 	f.metadataCalls = append(f.metadataCalls, fmt.Sprintf("ChatInfo(%d)", chatID))
 	return f.chatInfo, f.chatInfoErr
+}
+
+func (f *fakeKakao) GetMetas(ctx context.Context, chatIDs []int64) ([]chatmeta.ChatMetaSet, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.metadataCalls = append(f.metadataCalls, fmt.Sprintf("GetMetas(%v)", chatIDs))
+	var sets []chatmeta.ChatMetaSet
+	for _, chatID := range chatIDs {
+		if set, ok := f.metaSets[chatID]; ok {
+			sets = append(sets, set)
+		}
+	}
+	return sets, f.getMetasErr
 }
 
 func (f *fakeKakao) MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error) {
