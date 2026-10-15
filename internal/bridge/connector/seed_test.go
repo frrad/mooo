@@ -158,7 +158,7 @@ func TestSeedingRunsBeforeCatchUpAndLiveSubscription(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	seed, resume := slices.Index(f.calls, "SeedLastMessage(4000)"), slices.Index(f.calls, "ResumeTargets")
+	seed, resume := slices.Index(f.calls, "SeedLastMessage(4000)"), slices.Index(f.calls, "CatchUpAll")
 	if seed < 0 || resume < 0 || seed > resume {
 		t.Fatalf("calls = %v, want seeding before catch-up targets", f.calls)
 	}

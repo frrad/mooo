@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
@@ -40,6 +41,13 @@ func checkBulk(ids, sinces []int64) func(bson.Raw) error {
 		return nil
 	}
 }
+
+// startupOnly runs the connect chain with startup history and no rooms to
+// catch up.
+func startupOnly(t *testing.T, api *Client, options StartupHistoryOptions) (CatchUpResult, error) {
+	t.Helper()
+	return api.CatchUpAll(t.Context(), CatchUpOptions{StartupHistory: &options})
+}
 func startupClient(t *testing.T, backend *testloco.Backend, rooms []bson.Raw, floor int64) (*Client, string) {
 	t.Helper()
 	api := testContinuityClient(t, testCheckpoint(t), backend)
@@ -66,8 +74,8 @@ func TestStartupBulkPartialRetirementPersistsBeforeNextRequest(t *testing.T) {
 	if _, err := api.checkpoint.CommitReadWatermark(42, 400); err != nil {
 		t.Fatal(err)
 	}
-	got, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{})
-	if err != nil || got.Pages != 2 || got.Logs != 3 || got.Pending != 0 {
+	got, err := startupOnly(t, api, StartupHistoryOptions{})
+	if err != nil || got.Pages != 2 || got.Logs != 3 || got.HistoryPending != 0 {
 		t.Fatalf("bulk result %+v %v", got, err)
 	}
 	reopened := reopenTestHistoryStore(t, dir)
@@ -100,8 +108,8 @@ func TestStartupBulkBatchesOneHundredValidRooms(t *testing.T) {
 		testloco.Expect("MCHATLOGS", checkBulk([]int64{101}, []int64{0}), statusDocument(bson.E{Key: "eof", Value: true})),
 	)
 	api, _ := startupClient(t, backend, rooms, 0)
-	result, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{})
-	if err != nil || result.Pages != 2 || result.Pending != 0 || result.Logs != 0 {
+	result, err := startupOnly(t, api, StartupHistoryOptions{})
+	if err != nil || result.Pages != 2 || result.HistoryPending != 0 || result.Logs != 0 {
 		t.Fatalf("batch cap %+v %v", result, err)
 	}
 	if len(api.historyStore.bulkSnapshot()) != 0 {
@@ -112,8 +120,10 @@ func TestStartupBulkBatchesOneHundredValidRooms(t *testing.T) {
 func TestStartupBulkStopsNonProgressAndRetainsCursor(t *testing.T) {
 	backend := newScriptedBackend(t, false, testloco.Expect("MCHATLOGS", checkBulk([]int64{42}, []int64{0}), statusDocument(bson.E{Key: "eof", Value: false})))
 	api, _ := startupClient(t, backend, []bson.Raw{bulkRoom(t, 42, 103)}, 0)
-	if _, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{}); !errors.Is(err, ErrGapUnresolved) {
-		t.Fatal(err)
+	// A non-progressing page leaves the room for a later connect instead of
+	// failing the connect that carries catch-up.
+	if result, err := startupOnly(t, api, StartupHistoryOptions{}); err != nil || result.HistoryPending != 1 {
+		t.Fatal(result, err)
 	}
 	if len(api.historyStore.bulkSnapshot()) != 0 {
 		t.Fatal("non-progress advanced acquisition")
@@ -126,13 +136,13 @@ func TestStartupBulkBudgetResumeUsesAcquiredCursor(t *testing.T) {
 		testloco.Expect("MCHATLOGS", checkBulk([]int64{42}, []int64{101}), statusDocument(bson.E{Key: "eof", Value: true}, bson.E{Key: "chatLogs", Value: bson.A{bulkLog(42, 103)}})),
 	)
 	api, dir := startupClient(t, backend, []bson.Raw{bulkRoom(t, 42, 103)}, 0)
-	first, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{MaxPages: 1})
-	if err != nil || first.Pending != 1 {
+	first, err := startupOnly(t, api, StartupHistoryOptions{MaxPages: 1})
+	if err != nil || first.HistoryPending != 1 {
 		t.Fatal(first, err)
 	}
 	api.historyStore = reopenTestHistoryStore(t, dir)
-	next, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{MaxPages: 1})
-	if err != nil || next.Pending != 0 {
+	next, err := startupOnly(t, api, StartupHistoryOptions{MaxPages: 1})
+	if err != nil || next.HistoryPending != 0 {
 		t.Fatal(next, err)
 	}
 	waitBackends(t, backend)
@@ -169,8 +179,8 @@ func TestStartupBulkDoesNotSkipDisconnectedCachedSuffix(t *testing.T) {
 				}
 			}
 			api.historyStore = reopenTestHistoryStore(t, dir)
-			got, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{MaxPages: 1})
-			if err != nil || got.Pages != 1 || got.Pending != 0 {
+			got, err := startupOnly(t, api, StartupHistoryOptions{MaxPages: 1})
+			if err != nil || got.Pages != 1 || got.HistoryPending != 0 {
 				t.Fatalf("disconnected suffix skipped acquisition: %+v %v", got, err)
 			}
 			api.historyStore = reopenTestHistoryStore(t, dir)
@@ -184,8 +194,8 @@ func TestStartupBulkDoesNotSkipDisconnectedCachedSuffix(t *testing.T) {
 					t.Fatalf("recovered identity/order/content at %d: %+v", i, ev)
 				}
 			}
-			again, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{MaxPages: 1})
-			if err != nil || again.Pages != 0 || again.Pending != 0 {
+			again, err := startupOnly(t, api, StartupHistoryOptions{MaxPages: 1})
+			if err != nil || again.Pages != 0 || again.HistoryPending != 0 {
 				t.Fatalf("satisfied restart reacquired history: %+v %v", again, err)
 			}
 			waitBackends(t, backend)
@@ -205,16 +215,16 @@ func TestStartupBulkBudgetResumeStopsAtGapBeforeCachedSuffix(t *testing.T) {
 		syncmsg.Response{ChatLogs: []bson.Raw{mustBSON(bulkLog(42, 103))}}); err != nil {
 		t.Fatal(err)
 	}
-	first, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{MaxPages: 1})
-	if err != nil || first.Pages != 1 || first.Pending != 1 {
+	first, err := startupOnly(t, api, StartupHistoryOptions{MaxPages: 1})
+	if err != nil || first.Pages != 1 || first.HistoryPending != 1 {
 		t.Fatal(first, err)
 	}
 	api.historyStore = reopenTestHistoryStore(t, dir)
 	if cursor := api.historyStore.bulkSnapshot()[42]; cursor != 101 {
 		t.Fatalf("budget restart skipped unresolved gap: %d", cursor)
 	}
-	next, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{MaxPages: 1})
-	if err != nil || next.Pages != 1 || next.Pending != 0 {
+	next, err := startupOnly(t, api, StartupHistoryOptions{MaxPages: 1})
+	if err != nil || next.Pages != 1 || next.HistoryPending != 0 {
 		t.Fatal(next, err)
 	}
 	api.historyStore = reopenTestHistoryStore(t, dir)
@@ -222,23 +232,20 @@ func TestStartupBulkBudgetResumeStopsAtGapBeforeCachedSuffix(t *testing.T) {
 	if err != nil || !page.Complete || len(page.Events) != 3 || api.historyStore.bulkSnapshot()[42] != 103 {
 		t.Fatalf("connected prefix/suffix recovery: %+v %v", page, err)
 	}
-	again, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{MaxPages: 1})
+	again, err := startupOnly(t, api, StartupHistoryOptions{MaxPages: 1})
 	if err != nil || again.Pages != 0 {
 		t.Fatal(again, err)
 	}
 	waitBackends(t, backend)
 }
 
-func TestStartupBulkSelectionFailsClosedAndDoesNotExpand(t *testing.T) {
-	backend := newScriptedBackend(t, false, testloco.Expect("MCHATLOGS", checkBulk([]int64{42}, []int64{0}), statusDocument(bson.E{Key: "eof", Value: true}, bson.E{Key: "chatLogs", Value: bson.A{bulkLog(42, 10)}})))
-	api, _ := startupClient(t, backend, []bson.Raw{bulkRoom(t, 42, 10), bulkRoom(t, 43, 10)}, 0)
-	for _, ids := range [][]int64{{99}, {42, 42}, {-1}} {
-		if _, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{ChatIDs: ids}); !errors.Is(err, ErrProtocol) {
-			t.Fatal(ids, err)
+func TestStartupBulkOptionsFailClosed(t *testing.T) {
+	backend := newScriptedBackend(t, false)
+	api, _ := startupClient(t, backend, []bson.Raw{bulkRoom(t, 42, 10)}, 0)
+	for _, options := range []StartupHistoryOptions{{MaxPages: -1}, {MaxPages: 1001}, {MaximumDuration: -time.Second}, {MaximumDuration: 2 * time.Hour}} {
+		if _, err := api.CatchUpAll(t.Context(), CatchUpOptions{StartupHistory: &options}); !errors.Is(err, ErrProtocol) {
+			t.Fatal(options, err)
 		}
-	}
-	if got, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{ChatIDs: []int64{42}}); err != nil || got.Pages != 1 {
-		t.Fatal(got, err)
 	}
 	waitBackends(t, backend)
 }
@@ -248,10 +255,10 @@ func TestStartupBulkConcurrentInvocationRechecksDurableEligibility(t *testing.T)
 	backend := newScriptedBackend(t, false, testloco.Expect("MCHATLOGS", func(raw bson.Raw) error { close(entered); <-release; return checkBulk([]int64{42}, []int64{0})(raw) }, statusDocument(bson.E{Key: "eof", Value: true}, bson.E{Key: "chatLogs", Value: bson.A{bulkLog(42, 10)}})))
 	api, _ := startupClient(t, backend, []bson.Raw{bulkRoom(t, 42, 10)}, 0)
 	done := make(chan error, 2)
-	go func() { _, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{}); done <- err }()
+	go func() { _, err := startupOnly(t, api, StartupHistoryOptions{}); done <- err }()
 	<-entered
 	go func() {
-		result, err := api.AcquireStartupHistory(t.Context(), StartupHistoryOptions{})
+		result, err := startupOnly(t, api, StartupHistoryOptions{})
 		if err == nil && result.Pages != 0 {
 			err = fmt.Errorf("warm invocation fetched %d pages", result.Pages)
 		}

@@ -32,9 +32,13 @@ scenarios cover:
 - official deletion-before-chat-data ordering, proving a same-page recreated chat
   regains its recovery target without inheriting the deleted commit boundary;
 - duplicate suppression plus explicit message commits across checkpoint reopen;
-- paged `SYNCMSG` catch-up, sparse ordered log IDs, and fail-closed no-progress
-  handling that durably records an unresolved interval without prematurely
-  advancing the checkpoint;
+- paged `SYNCMSG` catch-up (now a held chat's dropped interval), sparse ordered
+  log IDs, and fail-closed no-progress handling that durably records an
+  unresolved interval without prematurely advancing the checkpoint;
+- connect catch-up as one bulk `MCHATLOGS` chain replaying the observed
+  connect-traffic fixture: batch retirement, boundary-room retention, `prevId`
+  contiguity, skipped-predecessor and unresolved gaps, the floor room, the
+  no-progress stop and the account-wide page cap;
 - `SYNCMSG` catch-up that crosses a recovered message boundary while keeping
   application commit and read-state side effects distinct; this is required
   because the official path is not semantically read-only;
