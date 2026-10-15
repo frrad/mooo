@@ -1,0 +1,92 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk server via the owned Mac-class secondary profile; native request rules from static KakaoTalk for Mac 26.8.0 arm64",
+    "date": "2026-10-15",
+    "method": "Owned A/B/C regular-group differential (markread-8b): A's official Android client sent synthetic texts, the Matrix tester's read receipt drove the bridge's MarkRead, and A's per-message unread counts were read before and after each request. Server responses are the observed status, isOK and returned log positions; log IDs are replaced with small synthetic values that keep their order. Requests are the ones the bridge sent and the server answered as listed.",
+    "doc": "research/bridge/read-receipt-policy.md"
+  },
+  "server_rule": "isOK=true, and the chat is marked read through max, exactly when cnt is at least the number of logs in (cur, max]; otherwise the response returns the logs, isOK=false, and nothing is marked read.",
+  "cases": [
+    {
+      "name": "never acknowledged chat with an unbridged older feed",
+      "confirmed": 0,
+      "held": [11, 12, 13],
+      "watermark": 12,
+      "responses": [
+        {"isOK": false, "logIds": [5]},
+        {"isOK": true, "logIds": null}
+      ],
+      "expected_requests": [
+        {"cur": 0, "max": 12, "cnt": 2},
+        {"cur": 5, "max": 12, "cnt": 2}
+      ],
+      "expected_confirmed": 12,
+      "observed_read_through": 12
+    },
+    {
+      "name": "every log after the confirmed position is held",
+      "confirmed": 12,
+      "held": [11, 12, 13, 14, 15],
+      "watermark": 15,
+      "responses": [
+        {"isOK": true, "logIds": null}
+      ],
+      "expected_requests": [
+        {"cur": 12, "max": 15, "cnt": 3}
+      ],
+      "expected_confirmed": 15,
+      "observed_read_through": 15
+    },
+    {
+      "name": "undercount ends with the empty range at the watermark",
+      "confirmed": 15,
+      "held": [16, 18],
+      "watermark": 18,
+      "responses": [
+        {"isOK": false, "logIds": [16, 17, 18]},
+        {"isOK": true, "logIds": null}
+      ],
+      "expected_requests": [
+        {"cur": 15, "max": 18, "cnt": 2},
+        {"cur": 18, "max": 18, "cnt": 0}
+      ],
+      "expected_confirmed": 18,
+      "observed_read_through": 18
+    },
+    {
+      "name": "overcount is confirmed",
+      "confirmed": 18,
+      "held": [19, 20, 21],
+      "watermark": 21,
+      "responses": [
+        {"isOK": true, "logIds": null}
+      ],
+      "expected_requests": [
+        {"cur": 18, "max": 21, "cnt": 3}
+      ],
+      "expected_confirmed": 21,
+      "observed_read_through": 21,
+      "note": "The server held two logs in the range; a held row it does not count (synthetic 20) still yields isOK and a read."
+    },
+    {
+      "name": "never acknowledged backlog above 300",
+      "confirmed": 0,
+      "held": [],
+      "held_range": {"from": 101, "through": 402},
+      "watermark": 402,
+      "responses": [
+        {"isOK": false, "logIds": [5]},
+        {"isOK": true, "logIds": null},
+        {"isOK": true, "logIds": null}
+      ],
+      "expected_requests": [
+        {"cur": 0, "max": 400, "cnt": 300},
+        {"cur": 5, "max": 400, "cnt": 300},
+        {"cur": 400, "max": 402, "cnt": 2}
+      ],
+      "expected_confirmed": 402,
+      "observed_read_through": 402
+    }
+  ]
+}

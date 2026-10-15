@@ -79,3 +79,45 @@ func TestExecutedSyncMessageModels(t *testing.T) {
 		}
 	}
 }
+
+// The executed Mac model decodes isOK independently of status and defaults it
+// to false when absent; mark-read commits its position from that flag.
+func TestExecutedSyncMessageResponseIsOK(t *testing.T) {
+	raw, err := os.ReadFile("../../../research/fixtures/history-startup/model-runtime.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Responses []struct {
+			Method   string
+			Input    map[string]any
+			Expected struct {
+				IsOK *bool `json:"isOK"`
+			}
+		}
+	}
+	if err = json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, tc := range fixture.Responses {
+		if tc.Method != "SYNCMSG" || tc.Expected.IsOK == nil {
+			continue
+		}
+		body, err := bson.Marshal(tc.Input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := ParseResponse(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.IsOK != *tc.Expected.IsOK {
+			t.Fatalf("isOK = %v for %v, want %v", got.IsOK, tc.Input, *tc.Expected.IsOK)
+		}
+		checked++
+	}
+	if checked == 0 {
+		t.Fatal("fixture has no SYNCMSG isOK cases")
+	}
+}

@@ -77,8 +77,16 @@ retention, pre-join visibility, restart semantics or complete history acceptance
 The working implementation adds `history-group <after log ID> <through log ID>
 <maximum 1–1000>` in an existing selected room, or `history-group resume`.
 It serializes with group delivery, verifies current source membership and a
-fresh regular-room ceiling before each page, sends zero-held requests once,
-and never runs from bootstrap or a ticker. A separate durable journal reserves
+fresh regular-room ceiling once per command, before its first page, sends
+zero-held requests once, and never runs from bootstrap or a ticker. One
+`CHATINFO` and one `MEMLIST` serve every page of the command (audit finding 16):
+the ceiling only grows, and live membership feeds keep the stored roster
+current between pages.
+
+The command is a deliberate, opt-in deviation from the official client. Native
+older-history scrolling is local-only and has no remote reverse page
+([HISTORY-STATIC](HISTORY-STATIC.md) §C); the bridge pages the source backward
+only when an operator runs this command, under the shared history pacing. A separate durable journal reserves
 each source request before dispatch and checkpoints each confirmed delivery.
 Interruption and uncertain requests require explicit resume. Exhausting the
 message budget requires a new explicit bounded selection. Source-empty or
@@ -96,8 +104,9 @@ partial delivery failure and explicit resume through a newly constructed client
 using the same durable journal. Actual framework delivery tests verify that an
 already mapped live message is not sent twice and that later historical logs
 retain their own mappings. Historical sends can temporarily join a former
-member's ghost through the Matrix SDK; fresh source-roster reconciliation runs
-after both successful and failed sends, before advancing historical progress.
+member's ghost through the Matrix SDK; roster reconciliation to the bridge's
+current verified roster (no new source read) runs after both successful and
+failed sends, before advancing historical progress.
 Regression tests reproduce and protect both cleanup paths.
 
 Historical Matrix sends keep the SDK's encryption, joining, profile and double

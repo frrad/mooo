@@ -20,7 +20,7 @@ stay outside Git. The sanitized fixture is
 | CT-STATIC-002 | Starting a recovery episode arms a 600 s watchdog. If no login succeeds within it, the episode ends as failed, the client posts its LOCO-disconnected notification, and the auth controller logs out without resetting the database. | static | High for the chain; UI after logout not traced |
 | CT-STATIC-003 | `bgReconnItv` from GETCONF is stored and archived but has no other reader. | static | High: getter called only from the archiver; no other selector, ivar or key-string use |
 | CT-STATIC-004 | The CHECKIN route is cached in memory with `cacheExpire` from the CHECKIN reply and the system uptime at CHECKIN success; it is expired when `uptime - checkTime >= cacheExpire`. A valid cached route skips CHECKIN. | static | High |
-| CT-STATIC-005 | GETCONF is sent only when the stored GETCONF revision is zero or the more-settings `locoConfRevision` is newer. Its reply is persisted. | static | High for the gate; the more-settings fetch trigger is not traced |
+| CT-STATIC-005 | GETCONF is sent only when the stored GETCONF revision is zero or the more-settings `locoConfRevision` is newer. Its reply is persisted. | static | High for the gate; the more-settings request and triggers are in [RECOVERY-TRACE](RECOVERY-TRACE.md) RT-STATIC-007/008 |
 | CT-STATIC-006 | Booking and ticket retries use equal-jitter backoff: `half = min(2^n / 2, cap) / 2`, delay `= half + U{0..floor(half)}` seconds. | static | High |
 | CT-LIVE-001 | MCHATLOGS from the bridge's committed positions returned exactly the same logs, in the same order, as per-room `SYNCMSG cnt=0`, in one request instead of three. | observed | High for this run |
 | CT-LIVE-002 | MCHATLOGS caps each response at 80 logs **in total across rooms**. Rooms are concatenated in ascending chat-ID order, each as one contiguous ascending run. The last room in a capped page may be cut. | observed | High for this run |
@@ -188,6 +188,32 @@ Regression tests (production code, scripted backend), built from the fixture:
 - empty `eof=false` stops with gaps recorded and no second request;
 - the page cap records gaps for pending rooms.
 
+### Implementation (2026-10-15)
+
+`Client.CatchUpAll` (`internal/client/bulk_catchup.go`) implements steps 1–11;
+the connector's `catchUp` delivers its rooms. Production-path tests replay the
+fixture's committed-position exchange and its five-page chain from committed
+positions, and cover the skipped predecessor, the broken chain, the empty
+non-final page, the page cap, the floor room, failure without commits and the
+shared startup-history chain. Single-room `SYNCMSG` remains for explicit history,
+mark-read and a held chat's dropped interval (delivery holds, not connect).
+
+Deliberate differences from native, beyond those the spec names (pacing through
+history admission, abort on failure):
+
+- **No send of the 100-room batch from the completion callback.** Pages are
+  serial and paced, as step 2 says.
+- **Gap notices.** One notice per partly recovered chat: before its recovered
+  messages when the server skipped identities ahead of them, after them when
+  only the tail is unrecovered. Any recorded gap also triggers the managed-group
+  roster fallback, since the skipped interval may hold membership feeds.
+- **A discontinuity past the ceiling** ends the room's chain without a gap: only
+  identities after the login ceiling are in doubt, and the live stream and the
+  next login cover them.
+- **Startup history.** Rooms that need catch-up are requested from their delivery
+  position, never from an older acquired cursor, and the acquisition budget
+  (25 pages, one minute) only removes acquisition rooms from the chain.
+
 ### Read side effect
 
 `SYNCMSG` catch-up can make messages appear read to other participants
@@ -297,8 +323,10 @@ reopen reusing the persisted GETCONF.
   Callers: the manager-status delegate on the 25 → 26 transition
   ([GROUP-FAILURE-RECOVERY](GROUP-FAILURE-RECOVERY.md)), and
   `clientSystemSleepStatusChanged:` (system wake) when the network is reachable
-  and the screen is not covered. One Swift caller is unresolved. A
-  PC-sleep-status (`doSetStWithPCStatus`) failure also schedules
+  and the screen is not covered. No other caller exists
+  ([RECOVERY-TRACE](RECOVERY-TRACE.md) RT-STATIC-011). Regained network
+  reachability calls `wakeup`, which reschedules `recoverLocoLogin:` after
+  0.1 s without logging out first (RT-STATIC-010). A PC-sleep-status (`doSetStWithPCStatus`) failure also schedules
   `recoverLocoLogin:` after 0.1 s.
 - **Attempt** (`recoverLocoLogin:`). Ignore a stale cursor. On the first
   attempt of an episode, set the active flag and schedule
@@ -324,9 +352,11 @@ reopen reusing the persisted GETCONF.
 - **`bgReconnItv`.** GETCONF `wifi.bgReconnItv` (180 observed) is decoded,
   stored and archived. Nothing else reads it, so it does not drive reconnect
   timing on the Mac.
-- **Untraced.** How `login:completion:` treats specific LOGINLIST statuses
-  (-328, -950) before the recovery completion runs. Whether a
-  network-reachability change (not only wake) calls `resetAndRecoverLocoLogin`.
+- **LOGINLIST statuses** ([RECOVERY-TRACE](RECOVERY-TRACE.md)). -328, -310
+  and other unlisted statuses are ordinary failures with the 10 s retry.
+  -950 renews the token over HTTP and resends LOGINLIST at once, with no
+  renewal cap. -445 and renewal results -998/-999 log out. -305 counts as
+  success but never completes recovery, so the watchdog logs out.
 
 ### Implementation spec
 
@@ -350,10 +380,13 @@ Replace the ordinary-failure ladder in `internal/bridge/connector/lifecycle.go`
    ends within 60 s of its successful login, more than 3 times in a row, joins
    the 15-minute tier. Native has no such guard, so record it as a deviation
    against CHANGESVR/close loops.
-5. **Keep as bridge policy** (native behavior untraced): the `-328` ladder
-   (60/120/240/480/900 s), the single `-950` renewal, and the terminal
-   KICKOUT/credential rules from the [reconnect design](../bridge-reconnect-design.md).
-   A -328 reply must never fall back to the 10 s cadence.
+5. **Keep as bridge policy** (deviations; see
+   [RECOVERY-TRACE](RECOVERY-TRACE.md#finding-7-reconnect-schedule)): the
+   `-328` ladder (60/120/240/480/900 s), although native retries -328 every
+   10 s; the single `-950` renewal, although native renews without a cap; and
+   the terminal KICKOUT/credential rules from the
+   [reconnect design](../bridge-reconnect-design.md). A -328 reply must never
+   fall back to the 10 s cadence.
 6. Do **not** read `bgReconnItv`.
 
 Tests: lifecycle tests on an injected clock for the 0.1 s / 10 s cadence, the
@@ -362,12 +395,9 @@ short-session guard, -328 isolation and restart persistence.
 
 ## Remaining gaps
 
-- Native LOGINLIST status handling inside `login:completion:` before the
-  recovery completion (-328, -950, others).
-- The more-settings request that feeds `locoConfRevision`, and its trigger.
 - Which entry reaches the persisted last-route branch at carriage connect.
-- The resolved Swift caller of `resetAndRecoverLocoLogin`, and any
-  reachability-change trigger.
+- The LOGINLIST status, more-settings and reachability gaps are closed in
+  [RECOVERY-TRACE](RECOVERY-TRACE.md), which lists what remains there.
 - MCHATLOGS: a cut that lands inside a non-first room (seen only for the first
   room), and an `eof=false` empty page (never observed). The spec handles both
   conservatively.
