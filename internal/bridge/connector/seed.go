@@ -2,7 +2,6 @@ package connector
 
 import (
 	"context"
-	"fmt"
 
 	"maunium.net/go/mautrix/bridgev2"
 
@@ -16,8 +15,8 @@ import (
 // never prove that older history was acquired. Seeding requests no history: a
 // direct room is created from inventory display data, and groups already have
 // rooms from discovery. Committing the seeded message lets later reconnects
-// catch up from it. Like catch-up, an undelivered seed ends the connection,
-// because its queued commit must precede the chat's live commits.
+// catch up from it. Like catch-up, an undelivered seed holds its chat, because
+// its queued commit must precede the chat's live commits.
 func (kc *KakaoClient) seedLastMessages(ctx context.Context, c kakaoClient) error {
 	chats, err := c.ListChats(ctx)
 	if err != nil {
@@ -42,7 +41,9 @@ func (kc *KakaoClient) seedLastMessages(ctx context.Context, c kakaoClient) erro
 		delivered := kc.handleEvent(c, evt)
 		release()
 		if !delivered {
-			return fmt.Errorf("seed chat: %w", errDeliveryNotConfirmed)
+			// The event pump retries it before the chat's live commits.
+			kc.hold(chat.ChatID, []events.Event{evt})
+			continue
 		}
 		if chat.NewMessageCount == 0 {
 			// The account has read the chat, so the seeded message is not

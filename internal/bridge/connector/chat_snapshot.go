@@ -165,10 +165,9 @@ func (kc *KakaoClient) cacheProfiles(profiles []chatmeta.Member, requested []int
 	return accepted
 }
 
-// projectChatInfo maps a source snapshot to bridge chat info without I/O.
-func (kc *KakaoClient) projectChatInfo(portal *bridgev2.Portal, snap chatSnapshot) (*bridgev2.ChatInfo, error) {
-	data := snap.data
-	completeRoster := len(snap.roster) > 0
+// projectMembers maps a snapshot's roster and profiles to a member list. It is
+// full only when the snapshot carries a complete roster.
+func (kc *KakaoClient) projectMembers(snap chatSnapshot) *bridgev2.ChatMemberList {
 	members := bridgev2.ChatMemberMap{}.Set(bridgev2.ChatMember{
 		EventSender: kc.selfSender(),
 		Membership:  event.MembershipJoin,
@@ -194,11 +193,19 @@ func (kc *KakaoClient) projectChatInfo(portal *bridgev2.Portal, snap chatSnapsho
 			Membership:  event.MembershipJoin,
 		})
 	}
+	list := &bridgev2.ChatMemberList{IsFull: len(snap.roster) > 0, MemberMap: members}
+	if list.IsFull {
+		list.TotalMemberCount = len(members)
+	}
+	return list
+}
 
-	info := &bridgev2.ChatInfo{CanBackfill: kc.historyEnabled(), Members: &bridgev2.ChatMemberList{
-		IsFull:    completeRoster,
-		MemberMap: members,
-	}}
+// projectChatInfo maps a source snapshot to bridge chat info without I/O.
+func (kc *KakaoClient) projectChatInfo(portal *bridgev2.Portal, snap chatSnapshot) (*bridgev2.ChatInfo, error) {
+	data := snap.data
+	completeRoster := len(snap.roster) > 0
+	info := &bridgev2.ChatInfo{CanBackfill: kc.historyEnabled(), Members: kc.projectMembers(snap)}
+	members := info.Members.MemberMap
 	// Notifications on/off is the account's personal setting for this chat.
 	// It maps only to the Matrix user's own mute, never to shared state.
 	if data.PushAlertSet {
@@ -208,9 +215,7 @@ func (kc *KakaoClient) projectChatInfo(portal *bridgev2.Portal, snap chatSnapsho
 		}
 		info.UserLocal = &bridgev2.UserLocalPortalInfo{MutedUntil: &mutedUntil}
 	}
-	if completeRoster {
-		info.Members.TotalMemberCount = len(members)
-	} else if data.ActiveMemberCount > 0 {
+	if !completeRoster && data.ActiveMemberCount > 0 {
 		info.Members.TotalMemberCount = int(data.ActiveMemberCount)
 	}
 	if data.Type == "MultiChat" {
