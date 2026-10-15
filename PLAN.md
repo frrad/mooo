@@ -1074,6 +1074,10 @@ above. One PR each, highest account-safety risk first:
       and adopt the native delay.
 - [ ] (#18) Trace the GETMETA chain; replace CHATINFO room-info refreshes with
       revision-gated GETMETA at login.
-- [ ] (#15, #16, #17) After the trigger rework, cap metadata/membership
-      retries, read membership once per `!history-group` command, and give
+- [x] (#15) Cap background metadata retries: optional reads (MEMBER,
+      personal metadata, Boards, room info) retry at most three times (2, 4,
+      8 min) and then wait for their next native trigger. The paused-group
+      membership retry stays unbounded (hourly at most), because a paused
+      group forwards nothing until its roster converges.
+- [ ] (#16, #17) Read membership once per `!history-group` command, and give
       live inbound media its own pacing lane.

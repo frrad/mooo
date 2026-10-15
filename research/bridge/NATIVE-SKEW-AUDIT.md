@@ -74,6 +74,12 @@ Risk:
   unresolved group creation fails every bootstrap, so the detached login is
   the only way to reconcile it
   ([reconnect policy](../bridge-reconnect-design.md)).
+- Finding 15 (2026-10-14): a failed optional metadata read (MEMBER, personal
+  metadata, Boards, room info) retries at most three times, after 2, 4 and 8
+  minutes, and is then dropped until its next native trigger enqueues it
+  again. The paused-group membership retry keeps retrying, backing off to one
+  attempt an hour, because the group forwards nothing until its roster
+  converges (`maxMetadataRetries` in `metadata_refresh.go`).
 
 ## Matches (no change)
 
