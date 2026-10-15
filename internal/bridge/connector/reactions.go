@@ -315,7 +315,7 @@ func classifyReactionFailure(base, cause error) error {
 // A failure is returned as a *reactionLookupError recording the stage that
 // failed and the responses read so far, for diagnostics.
 func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, change events.ReactionChanged, coalesce bool) (_ bridgev2.RemoteEvent, err error) {
-	trace := &reactionLookupError{stage: "validate", stored: -1}
+	trace := &reactionLookupError{stage: "validate", stored: -1, legacyStored: -1}
 	defer func() {
 		if err != nil && !errors.Is(err, errReactionLookupDeferred) && !errors.Is(err, errReactionLookupBudget) {
 			trace.err = err
@@ -374,12 +374,14 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 		return nil, errReactionRevision
 	}
 	if change.MetadataType == 2 {
+		trace.stage = "legacy_revision"
 		legacyChange := change
 		legacyChange.MetadataType = 1
 		legacyStored, err := kc.storedReactionRevision(ctx, legacyChange)
 		if err != nil {
 			return nil, err
 		}
+		trace.legacyStored = legacyStored
 		if members.Revision < legacyStored {
 			return nil, errReactionRevision
 		}
