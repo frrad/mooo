@@ -27,6 +27,7 @@ stay outside Git. The sanitized fixture is
 | CT-LIVE-003 | Every returned run starts with `prevId == since` when the room's history after `since` is available, and `prevId` chains within runs. A `since` below the server's window yields a first `prevId` that is not `since`. | observed | High for this run |
 | CT-LIVE-004 | Rooms whose last log is below `minLogId` are silently absent. An up-to-date request returns an empty `eof=true`. MCHATLOGS has no upper bound and returns logs after the login ceiling. | observed | High for this run |
 | CT-LIVE-005 | CHECKIN `cacheExpire` = 3600; GETCONF `revision` = 200; GETCONF `wifi.bgReconnItv` = 180. | observed | Values for this account and date |
+| CT-LIVE-006 | The bridge with bulk catch-up (PR #401), after 85 + 3 + 2 offline texts in three owned groups, sent two MCHATLOGS and no SYNCMSG at connect. Page 1: `eof=false`, 80 logs as 3 + 2 + 75 in ascending room order; page 2: the boundary room's last 10, `eof=true`. All 90 messages were bridged once, in log order. | observed | High for this run |
 
 ## Finding #1: catch-up with MCHATLOGS only
 
@@ -195,7 +196,8 @@ the connector's `catchUp` delivers its rooms. Production-path tests replay the
 fixture's committed-position exchange and its five-page chain from committed
 positions, and cover the skipped predecessor, the broken chain, the empty
 non-final page, the page cap, the floor room, failure without commits and the
-shared startup-history chain. Single-room `SYNCMSG` remains for explicit history,
+shared startup-history chain. CT-LIVE-006 confirmed the chain live on 2026-10-15
+(owned B bridge, A and C phones); a live gap was not provoked. Single-room `SYNCMSG` remains for explicit history,
 mark-read and a held chat's dropped interval (delivery holds, not connect).
 
 Deliberate differences from native, beyond those the spec names (pacing through
