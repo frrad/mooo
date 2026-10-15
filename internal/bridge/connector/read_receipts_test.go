@@ -14,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
+	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/id"
 
 	"github.com/frrad/mooo/internal/client"
@@ -208,6 +209,8 @@ func TestMatrixReadReceiptSendsOneMarkReadAndCheckpointSuppressesRepeat(t *testi
 		testloco.HoldOpen(),
 	)
 	timers := captureReadAckTimers(kc)
+	putBridgedLog(kc, 1, 1)
+	putBridgedLog(kc, 2, 2)
 
 	if err := kc.HandleMatrixReadReceipt(context.Background(), matrixReadReceipt(2)); err != nil {
 		t.Fatal(err)
@@ -222,7 +225,7 @@ func TestMatrixReadReceiptSendsOneMarkReadAndCheckpointSuppressesRepeat(t *testi
 	kc.Disconnect()
 	waitBackends(t, backends)
 
-	want := []syncRequest{{chatID: testChatID, cur: 1, max: 2, count: 1}}
+	want := []syncRequest{{chatID: testChatID, cur: 0, max: 2, count: 2}}
 	if fmt.Sprint(requests) != fmt.Sprint(want) {
 		t.Fatalf("SYNCMSG requests = %+v, want %+v", requests, want)
 	}
@@ -232,6 +235,74 @@ func TestMatrixReadReceiptSendsOneMarkReadAndCheckpointSuppressesRepeat(t *testi
 	}
 	if got := reloaded.ReadWatermark(testChatID); got != 2 {
 		t.Fatalf("persisted read acknowledgement = %d, want 2", got)
+	}
+}
+
+// putBridgedLog stores one bridged Kakao log of the test chat, sent at the
+// given second, as the framework would after delivering it to Matrix.
+func putBridgedLog(kc *KakaoClient, logID int64, second int64, parts ...networkid.PartID) {
+	if len(parts) == 0 {
+		parts = []networkid.PartID{""}
+	}
+	for _, part := range parts {
+		kc.store.(*memStore).putMessage(&database.Message{
+			ID:        makeMessageID(testChatID, logID),
+			PartID:    part,
+			MXID:      id.EventID(fmt.Sprintf("$log-%d-%s", logID, part)),
+			Room:      makePortalKey(testChatID, kc.login.ID),
+			Timestamp: time.Unix(1_800_000_000+second, 0),
+		})
+	}
+}
+
+func TestMatrixReadReceiptDeclaresBridgedLogsAfterLastAcknowledgement(t *testing.T) {
+	statePath := newIntegrationProfile(t)
+	checkpoint, err := continuity.Open(statePath + ".continuity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkpoint.CommitReadWatermark(testChatID, 10); err != nil {
+		t.Fatal(err)
+	}
+	var requests []syncRequest
+	kc, backends := connectScriptedReadReceiptClient(t, statePath,
+		syncCaptureStep(&requests, bson.D{{Key: "status", Value: int32(0)}, {Key: "chatLogs", Value: bson.A{}}, {Key: "isOK", Value: true}}),
+		testloco.HoldOpen(),
+	)
+	timers := captureReadAckTimers(kc)
+	// Logs 9 and 10 are at or before the acknowledged position, 12 has two
+	// parts but is one log, 11 and 12 share a second, and 15 lies after the
+	// receipt. Another chat's log in the same portal never counts.
+	putBridgedLog(kc, 9, 1)
+	putBridgedLog(kc, 10, 2)
+	putBridgedLog(kc, 11, 3)
+	putBridgedLog(kc, 12, 3, "a", "b")
+	putBridgedLog(kc, 14, 4)
+	putBridgedLog(kc, 15, 5)
+	kc.store.(*memStore).putMessage(&database.Message{
+		ID:        makeMessageID(testChatID+1, 13),
+		MXID:      "$foreign:test",
+		Room:      makePortalKey(testChatID, kc.login.ID),
+		Timestamp: time.Unix(1_800_000_004, 0),
+	})
+
+	if err := kc.HandleMatrixReadReceipt(context.Background(), matrixReadReceipt(14)); err != nil {
+		t.Fatal(err)
+	}
+	timers.fireAll()
+	kc.Disconnect()
+	waitBackends(t, backends)
+
+	want := []syncRequest{{chatID: testChatID, cur: 10, max: 14, count: 3}}
+	if fmt.Sprint(requests) != fmt.Sprint(want) {
+		t.Fatalf("SYNCMSG requests = %+v, want %+v", requests, want)
+	}
+	reloaded, err := continuity.Open(statePath + ".continuity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.ReadWatermark(testChatID); got != 14 {
+		t.Fatalf("persisted read acknowledgement = %d, want 14", got)
 	}
 }
 
