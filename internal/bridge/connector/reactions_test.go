@@ -42,7 +42,7 @@ func TestObservedMiniReactionAttribution(t *testing.T) {
 	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{Revision: 2, Members: map[reactions.Type][]int64{reactions.Heart: {1000}}}, mini: reactions.DetailsResponse{Details: []reactions.Detail{{Kind: 2, ReactionID: "synthetic_021", UserIDs: []int64{42}}}}}
 	kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
 	change := events.ReactionChanged{MetadataType: 2, ChatID: testChatID, LogID: 99, Revision: 9, Items: []events.ReactionItem{{Kind: 2, ID: "synthetic_021", Count: 1, Alt: map[string]string{"ko": "synthetic label"}}}}
-	remote, err := kc.reactionRemote(context.Background(), backend, change)
+	remote, err := kc.reactionRemote(context.Background(), backend, change, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,19 +55,19 @@ func TestObservedMiniReactionAttribution(t *testing.T) {
 		t.Fatal("legacy state lost")
 	}
 	backend.mini.Details[0].UserIDs = []int64{42, 43}
-	if _, err = kc.reactionRemote(context.Background(), backend, change); err == nil {
+	if _, err = kc.reactionRemote(context.Background(), backend, change, false); err == nil {
 		t.Fatal("aggregate/detail disagreement accepted")
 	}
 	backend.mini.Details = []reactions.Detail{}
 	change.Items = nil
-	remote, err = kc.reactionRemote(context.Background(), backend, change)
+	remote, err = kc.reactionRemote(context.Background(), backend, change, false)
 	if err != nil || len(remote.(*kakaoReactionSync).Reactions.Users) != 1 {
 		t.Fatalf("empty mini state: %v", err)
 	}
 	backend.members = reactions.MembersResponse{Revision: 0, Fields: map[string]json.RawMessage{"revision": []byte(`0`)}}
 	backend.mini.Details = []reactions.Detail{{Kind: 2, ReactionID: "synthetic_021", UserIDs: []int64{42}}}
 	change.Items = []events.ReactionItem{{Kind: 2, ID: "synthetic_021", Count: 1}}
-	if _, err := kc.reactionRemote(context.Background(), backend, change); err != nil {
+	if _, err := kc.reactionRemote(context.Background(), backend, change, false); err != nil {
 		t.Fatalf("observed empty legacy roster: %v", err)
 	}
 	kc.store.(*memStore).putMessage(&database.Message{
@@ -75,7 +75,7 @@ func TestObservedMiniReactionAttribution(t *testing.T) {
 		Room:     makePortalKey(change.ChatID, kc.login.ID),
 		Metadata: &KakaoMessageMetadata{ReactionRevision: 12},
 	})
-	if _, err := kc.reactionRemote(context.Background(), backend, change); err == nil {
+	if _, err := kc.reactionRemote(context.Background(), backend, change, false); err == nil {
 		t.Fatal("mini snapshot rolled back newer legacy state")
 	}
 }
@@ -243,6 +243,8 @@ func TestReactionHandleUsesFrameworkOperationsAndPersistsOnlyAfterAllACK(t *test
 	kc, portal, login, old := newFrameworkReactionFixture(t, intent)
 	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{Revision: 2, Members: map[reactions.Type][]int64{reactions.Like: {testOtherID}}, Fields: map[string]json.RawMessage{"2": []byte(`[2000]`)}}}
 	kc.client = backend
+	// A replay of the same change is a separate push, not part of a burst.
+	spacedReactionClock(kc)
 	login.Client = kc
 	ghost, ghostErr := portal.Bridge.GetGhostByID(ctx, makeUserID(testOtherID))
 	if ghostErr != nil || ghost == nil {
@@ -334,6 +336,8 @@ func TestReactionRemovalRequiresDatabaseDeletionPostcondition(t *testing.T) {
 	}
 	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{Revision: 2, Fields: map[string]json.RawMessage{}}}
 	kc.client = backend
+	// A replay of the same change is a separate push, not part of a burst.
+	spacedReactionClock(kc)
 	kc.queue = func(evt bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
 		return (*bridgev2.PortalInternals)(portal).HandleRemoteEvent(ctx, login, evt.GetType(), evt)
 	}
@@ -516,7 +520,7 @@ func TestReactionEventRejectsOlderMembersRevision(t *testing.T) {
 	}}
 	kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
 	kc.client = backend
-	if _, err := kc.reactionRemote(context.Background(), backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 9}); err == nil {
+	if _, err := kc.reactionRemote(context.Background(), backend, events.ReactionChanged{ChatID: testChatID, LogID: 99, Revision: 9}, false); err == nil {
 		t.Fatal("older members revision accepted for newer event")
 	}
 }
@@ -527,6 +531,8 @@ func TestReactionRevisionAdvancesOnlyAfterSuccessfulHandling(t *testing.T) {
 	}}
 	kc, _ := newTestClient(t, func() (kakaoClient, error) { return backend, nil })
 	kc.client = backend
+	// A replay of the same change is a separate push, not part of a burst.
+	spacedReactionClock(kc)
 	kc.store.(*memStore).putMessage(&database.Message{
 		ID:       makeMessageID(testChatID, 99),
 		MXID:     "$target:test",

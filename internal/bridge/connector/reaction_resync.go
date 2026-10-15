@@ -258,6 +258,10 @@ func (kc *KakaoClient) resyncChatReactions(ctx context.Context, c kakaoClient, p
 				continue
 			}
 			handled, err := kc.applyReactionChangeContext(ctx, c, change)
+			if errors.Is(err, errReactionLookupBudget) {
+				// Keep the cursor before this page; a later tick continues.
+				return errReactionSyncBudget
+			}
 			if err != nil || !handled {
 				return fmt.Errorf("connector: resynced reaction for log %d was not applied: %v", change.LogID, err)
 			}
