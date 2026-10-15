@@ -204,6 +204,12 @@ type KakaoClient struct {
 	metadataRefresh *metadataRefreshQueue
 	// readStateMu serializes member read-watermark updates.
 	readStateMu sync.Mutex
+	// readAckMu guards readAcks, the per-chat Matrix read acknowledgements
+	// waiting out their coalescing window.
+	readAckMu sync.Mutex
+	readAcks  map[int64]*pendingReadAck
+	// afterFunc arms a coalescing timer; tests replace it.
+	afterFunc func(time.Duration, func()) stopper
 
 	reactionNoticeMu sync.Mutex
 	reactionNotices  map[string]time.Time
@@ -244,6 +250,7 @@ func newKakaoClient(login *bridgev2.UserLogin, st store, userID int64, open func
 	kc.wait = waitForRecovery
 	kc.metadataRefresh.dropped = func() { kc.log().Warn().Msg("Background metadata queue is full; deferring refresh") }
 	kc.now = time.Now
+	kc.afterFunc = func(delay time.Duration, fire func()) stopper { return time.AfterFunc(delay, fire) }
 	kc.reserveOutbound = kc.reserveOutboundKV
 	kc.refreshMembership = kc.refreshMembershipAsync
 	kc.sendState = func(state status.BridgeState) { kc.stateQueue().Send(state) }

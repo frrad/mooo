@@ -1,11 +1,14 @@
 package connector
 
 import (
+	"bytes"
 	"context"
-	"errors"
 	"fmt"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -204,15 +207,18 @@ func TestMatrixReadReceiptSendsOneMarkReadAndCheckpointSuppressesRepeat(t *testi
 		syncCaptureStep(&requests, bson.D{{Key: "status", Value: int32(0)}, {Key: "chatLogs", Value: bson.A{}}}),
 		testloco.HoldOpen(),
 	)
+	timers := captureReadAckTimers(kc)
 
 	if err := kc.HandleMatrixReadReceipt(context.Background(), matrixReadReceipt(2)); err != nil {
 		t.Fatal(err)
 	}
+	timers.fireAll()
 	// The same receipt again is answered from the persisted acknowledgement;
 	// holdStep fails the backend if a second SYNCMSG arrives.
 	if err := kc.HandleMatrixReadReceipt(context.Background(), matrixReadReceipt(2)); err != nil {
 		t.Fatal(err)
 	}
+	timers.fireAll()
 	kc.Disconnect()
 	waitBackends(t, backends)
 
@@ -237,12 +243,21 @@ func TestMatrixReadReceiptFailureIsSurfacedRedactedWithoutRetry(t *testing.T) {
 		testloco.HoldOpen(),
 	)
 
-	err := kc.HandleMatrixReadReceipt(context.Background(), matrixReadReceipt(2))
-	if !errors.Is(err, errReadReceiptMutation) {
-		t.Fatalf("receipt error = %v, want read receipt mutation failure", err)
+	timers := captureReadAckTimers(kc)
+	var logged bytes.Buffer
+	kc.login.Log = zerolog.New(&logged)
+
+	// The acknowledgement is sent after the coalescing window, so its failure
+	// is logged, not returned to the framework.
+	if err := kc.HandleMatrixReadReceipt(context.Background(), matrixReadReceipt(2)); err != nil {
+		t.Fatalf("receipt error = %v, want nil", err)
 	}
-	if strings.Contains(err.Error(), "test-access") || strings.Contains(err.Error(), "carriage.invalid") {
-		t.Fatalf("receipt error leaks backend detail: %v", err)
+	timers.fireAll()
+	if !strings.Contains(logged.String(), errReadReceiptMutation.Error()) {
+		t.Fatalf("failure log = %q, want the read acknowledgement category", logged.String())
+	}
+	if strings.Contains(logged.String(), "test-access") || strings.Contains(logged.String(), "carriage.invalid") {
+		t.Fatalf("failure log leaks backend detail: %q", logged.String())
 	}
 	kc.Disconnect()
 	waitBackends(t, backends)
@@ -274,5 +289,121 @@ func TestMatrixReadReceiptForOtherChatOrNonMessageIsIgnored(t *testing.T) {
 	}
 	if got := fake.markReads(); len(got) != 0 {
 		t.Fatalf("ignored receipts sent MarkRead %v", got)
+	}
+}
+
+// readAckTimers captures the coalescing timers HandleMatrixReadReceipt arms so
+// a test fires them instead of waiting out the window.
+type readAckTimers struct {
+	mu      sync.Mutex
+	delays  []time.Duration
+	pending []*readAckTestTimer
+}
+
+type readAckTestTimer struct {
+	fire    func()
+	stopped bool
+	fired   bool
+}
+
+func (t *readAckTestTimer) Stop() bool {
+	was := !t.stopped && !t.fired
+	t.stopped = true
+	return was
+}
+
+func captureReadAckTimers(kc *KakaoClient) *readAckTimers {
+	timers := &readAckTimers{}
+	kc.afterFunc = func(delay time.Duration, fire func()) stopper {
+		timers.mu.Lock()
+		defer timers.mu.Unlock()
+		timer := &readAckTestTimer{fire: fire}
+		timers.delays = append(timers.delays, delay)
+		timers.pending = append(timers.pending, timer)
+		return timer
+	}
+	return timers
+}
+
+func (t *readAckTimers) armed() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.pending)
+}
+
+func (t *readAckTimers) fireAll() {
+	t.mu.Lock()
+	pending := t.pending
+	t.pending = nil
+	t.mu.Unlock()
+	for _, timer := range pending {
+		if !timer.stopped && !timer.fired {
+			timer.fired = true
+			timer.fire()
+		}
+	}
+}
+
+func TestMatrixReadReceiptsCoalescePerChat(t *testing.T) {
+	fake := &fakeKakao{}
+	kc := connectedClient(t, fake)
+	timers := captureReadAckTimers(kc)
+	other := matrixReadReceipt(4)
+	other.Portal = &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID+1, makeUserLoginID(testSelfID))}}
+	other.ExactMessage.ID = makeMessageID(testChatID+1, 4)
+
+	// An active Matrix client sends a receipt per incoming message.
+	for _, receipt := range []*bridgev2.MatrixReadReceipt{matrixReadReceipt(5), matrixReadReceipt(7), other, matrixReadReceipt(6)} {
+		if err := kc.HandleMatrixReadReceipt(context.Background(), receipt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := fake.markReads(); len(got) != 0 {
+		t.Fatalf("MarkRead before the coalescing window = %v, want none", got)
+	}
+	if got := timers.armed(); got != 2 {
+		t.Fatalf("armed timers = %d, want one per chat", got)
+	}
+	for _, delay := range timers.delays {
+		if delay != readReceiptCoalesceWindow {
+			t.Fatalf("timer delay = %v, want %v", delay, readReceiptCoalesceWindow)
+		}
+	}
+	timers.fireAll()
+	got := fake.markReads()
+	sort.Slice(got, func(i, j int) bool { return got[i][0] < got[j][0] })
+	want := [][2]int64{{testChatID, 7}, {testChatID + 1, 4}}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("MarkRead = %v, want the latest position per chat %v", got, want)
+	}
+
+	// A receipt after the window starts a new one.
+	if err := kc.HandleMatrixReadReceipt(context.Background(), matrixReadReceipt(9)); err != nil {
+		t.Fatal(err)
+	}
+	if got := timers.armed(); got != 1 {
+		t.Fatalf("armed timers after the window = %d, want 1", got)
+	}
+	timers.fireAll()
+	if got := fake.markReads(); len(got) != 3 || got[2] != [2]int64{testChatID, 9} {
+		t.Fatalf("MarkRead = %v, want a third acknowledgement at 9", got)
+	}
+}
+
+func TestDisconnectFlushesPendingReadAcknowledgement(t *testing.T) {
+	fake := &fakeKakao{}
+	kc := connectedClient(t, fake)
+	timers := captureReadAckTimers(kc)
+	if err := kc.HandleMatrixReadReceipt(context.Background(), matrixReadReceipt(5)); err != nil {
+		t.Fatal(err)
+	}
+	kc.Disconnect()
+	if got := fake.markReads(); fmt.Sprint(got) != fmt.Sprint([][2]int64{{testChatID, 5}}) {
+		t.Fatalf("MarkRead after Disconnect = %v, want the pending acknowledgement", got)
+	}
+	// The stopped timer must not send it again.
+	timers.fireAll()
+	if got := fake.markReads(); len(got) != 1 {
+		t.Fatalf("MarkRead after stopped timer = %v, want one", got)
 	}
 }
