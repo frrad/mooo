@@ -1046,12 +1046,14 @@ other bridge-originated request with the official Mac client; the numbers
 below are its findings. These items exclude the native-metadata-trigger work
 above. One PR each, highest account-safety risk first:
 
-- [ ] (#2) Stop ending the source session when a membership refresh, media
+- [x] (#2) Stop ending the source session when a membership refresh, media
       download or GETMSGS dependency fails. Retry delivery in-process with a
       cap; relogin only on transport failure. Regressions for all three.
-- [ ] (#3) Make `!reconcile-group` / `!complete-group-invitations` refuse when
-      there is no live session instead of opening a detached login that skips
-      the retry schedule, `-328` backoff and KICKOUT block.
+- [x] (#3) Make `!reconcile-group` / `!complete-group-invitations` stop
+      opening a detached login that skips the retry schedule, `-328` backoff
+      and KICKOUT block. Done by gating the detached login on those, not by
+      refusing whenever no session is live: an unresolved creation blocks
+      every bootstrap, so the detached login is its only repair path.
 - [ ] (#1) Use bulk MCHATLOGS (≤100 rooms) as the connect catch-up path and
       drop per-chat `SYNCMSG cnt=0` at connect. Differential done
       (CT-LIVE-001..004); implement the spec in
@@ -1064,9 +1066,12 @@ above. One PR each, highest account-safety risk first:
       aggregate) and record the remainder as a deliberate deviation.
 - [ ] (#8) Debounce Matrix read receipts per chat; trace and differential-test
       the native mark-read SYNCMSG shape before switching to it.
-- [ ] (#11, #12, #13, #14) Apply NEWMEM/DELMEM feed payloads instead of
-      CHATINFO+MEMLIST; drop the redundant reads around ADDMEM, CREATE and the
-      viewing-episode CHATINFO.
+- [x] (#11) Apply NEWMEM/DELMEM feed payloads to the stored verified roster
+      instead of CHATINFO+MEMLIST; MEMBER for every invitee.
+- [x] (#12) Drop CHATINFO+MEMLIST around ADDMEM; apply the reply's invitation
+      log to the stored roster and send MEMBER for the invitee.
+- [ ] (#13, #14) Drop the redundant reads after CREATE and the viewing-episode
+      CHATINFO.
 - [ ] (#9, #10) After the metadata-trigger PRs land: skip room-avatar downloads
       whose avatar ID is unchanged, and stop enqueueing CHATINFO on every
       cached `GetChatInfo`.
@@ -1085,6 +1090,10 @@ above. One PR each, highest account-safety risk first:
       and the reachability-change recovery trigger.
 - [ ] (#18) Trace the GETMETA chain; replace CHATINFO room-info refreshes with
       revision-gated GETMETA at login.
-- [ ] (#15, #16, #17) After the trigger rework, cap metadata/membership
-      retries, read membership once per `!history-group` command, and give
+- [x] (#15) Cap background metadata retries: optional reads (MEMBER,
+      personal metadata, Boards, room info) retry at most three times (2, 4,
+      8 min) and then wait for their next native trigger. The paused-group
+      membership retry stays unbounded (hourly at most), because a paused
+      group forwards nothing until its roster converges.
+- [ ] (#16, #17) Read membership once per `!history-group` command, and give
       live inbound media its own pacing lane.

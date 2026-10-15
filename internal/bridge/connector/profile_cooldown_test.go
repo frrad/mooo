@@ -20,7 +20,7 @@ func TestMemberProfileCooldownAcrossRoomsAndRestart(t *testing.T) {
 	kc, backend, _ := newGroupCreationFramework(t)
 	ctx := context.Background()
 	backend.members = []chatmeta.Member{{UserID: 2000, Nickname: "Shared profile"}}
-	if _, err := kc.resolveMemberProfiles(ctx, backend, 5000, []int64{2000, 4000}); err != nil {
+	if _, err := kc.resolveMemberProfiles(ctx, backend, 5000, []int64{2000, 4000}, nil); err != nil {
 		t.Fatal(err)
 	}
 	read := func(kc *KakaoClient, chatID int64) {
@@ -86,7 +86,7 @@ func TestMemberProfileStoredProfileSurvivesDatabaseReopenWithoutRefetch(t *testi
 		return []chatmeta.Member{{UserID: 2000, Nickname: "Old", AccessPermit: "synthetic-private-permit"}}, nil
 	}}
 	ctx := context.Background()
-	if _, err := kc.resolveMemberProfiles(ctx, backend, 3000, []int64{2000}); err != nil {
+	if _, err := kc.resolveMemberProfiles(ctx, backend, 3000, []int64{2000}, nil); err != nil {
 		t.Fatal(err)
 	}
 	raw, _, err := kc.store.get(ctx, memberProfileKey(kc.userID, 2000))
@@ -107,13 +107,13 @@ func TestMemberProfileStoredProfileSurvivesDatabaseReopenWithoutRefetch(t *testi
 		restarted = newKakaoClient(kc.login, newBridgeStore(br.DB), kc.userID, nil)
 		restarted.now = kc.now
 		now = now.Add(time.Second)
-		profiles, err := restarted.resolveMemberProfiles(ctx, backend, 4000, []int64{2000})
+		profiles, err := restarted.resolveMemberProfiles(ctx, backend, 4000, []int64{2000}, nil)
 		if err != nil || len(profiles) != 1 || profiles[0].Nickname != "Old" || backend.count() != 1 {
 			t.Fatal("restart/cache hit refetched a stored profile")
 		}
 	}
 	now = now.Add(24 * time.Hour)
-	profiles, err := restarted.resolveMemberProfiles(ctx, backend, 4000, []int64{2000})
+	profiles, err := restarted.resolveMemberProfiles(ctx, backend, 4000, []int64{2000}, nil)
 	if err != nil || len(profiles) != 1 || profiles[0].Nickname != "Old" || backend.count() != 1 {
 		t.Fatalf("stored profile was refetched after a day: %d requests", backend.count())
 	}
@@ -128,7 +128,7 @@ func TestMemberProfileCooldownPartialAndMissingResultsSurviveRestart(t *testing.
 		return []chatmeta.Member{{UserID: 2000, Nickname: "Retained"}, {UserID: 9999, Nickname: "Unrequested"}}, unavailable
 	}}
 	ctx := context.Background()
-	profiles, err := kc.resolveMemberProfiles(ctx, backend, 3000, []int64{0, 1000, 2000, 2000, 4000})
+	profiles, err := kc.resolveMemberProfiles(ctx, backend, 3000, []int64{0, 1000, 2000, 2000, 4000}, nil)
 	if !errors.Is(err, unavailable) || len(profiles) != 1 || profiles[0].UserID != 2000 {
 		t.Fatal("partial profiles discarded or foreign result accepted")
 	}
@@ -137,12 +137,12 @@ func TestMemberProfileCooldownPartialAndMissingResultsSurviveRestart(t *testing.
 	backend.fetch = func(context.Context, int64, []int64) ([]chatmeta.Member, error) {
 		return []chatmeta.Member{{UserID: 4000}}, nil
 	}
-	profiles, err = restarted.resolveMemberProfiles(ctx, backend, 4000, []int64{2000, 4000})
+	profiles, err = restarted.resolveMemberProfiles(ctx, backend, 4000, []int64{2000, 4000}, nil)
 	if err != nil || len(profiles) != 1 || backend.count() != 1 {
 		t.Fatal("missing or failed result retried on restart")
 	}
 	now = now.Add(memberProfileAttemptCooldown)
-	profiles, err = restarted.resolveMemberProfiles(ctx, backend, 4000, []int64{2000, 4000})
+	profiles, err = restarted.resolveMemberProfiles(ctx, backend, 4000, []int64{2000, 4000}, nil)
 	if err != nil || len(profiles) != 2 || profiles[1].Nickname != "" || backend.count() != 2 {
 		t.Fatal("missing profile not retried or confirmed clear lost")
 	}
@@ -168,9 +168,9 @@ func TestMemberProfileCooldownConcurrentClaimsAndLateResponse(t *testing.T) {
 	}}
 	ctx := context.Background()
 	done := make(chan error, 1)
-	go func() { _, err := kc.resolveMemberProfiles(ctx, backend, 3000, []int64{2000}); done <- err }()
+	go func() { _, err := kc.resolveMemberProfiles(ctx, backend, 3000, []int64{2000}, nil); done <- err }()
 	<-entered
-	profiles, err := peer.resolveMemberProfiles(ctx, backend, 4000, []int64{2000})
+	profiles, err := peer.resolveMemberProfiles(ctx, backend, 4000, []int64{2000}, nil)
 	if err != nil || len(profiles) != 0 || backend.count() != 1 {
 		t.Fatal("concurrent room repeated unresolved request")
 	}
@@ -180,7 +180,7 @@ func TestMemberProfileCooldownConcurrentClaimsAndLateResponse(t *testing.T) {
 	newer := &cooldownBackend{fetch: func(context.Context, int64, []int64) ([]chatmeta.Member, error) {
 		return []chatmeta.Member{{UserID: 2000, Nickname: "Newer"}}, nil
 	}}
-	if _, err = peer.resolveMemberProfiles(ctx, newer, 4000, []int64{2000}); err != nil {
+	if _, err = peer.resolveMemberProfiles(ctx, newer, 4000, []int64{2000}, nil); err != nil {
 		t.Fatal(err)
 	}
 	unblock()
@@ -199,18 +199,18 @@ func TestMemberProfileCooldownFailureBacksOffAndIsolatesAccounts(t *testing.T) {
 	kc.now = func() time.Time { return now }
 	ctx := context.Background()
 	backend := &cooldownBackend{fetch: func(context.Context, int64, []int64) ([]chatmeta.Member, error) { return nil, context.DeadlineExceeded }}
-	profiles, err := kc.resolveMemberProfiles(ctx, backend, 4000, []int64{2000})
+	profiles, err := kc.resolveMemberProfiles(ctx, backend, 4000, []int64{2000}, nil)
 	if !errors.Is(err, context.DeadlineExceeded) || len(profiles) != 0 {
 		t.Fatal("failed fetch invented a profile")
 	}
-	if _, err = kc.resolveMemberProfiles(ctx, backend, 5000, []int64{2000}); err != nil || backend.count() != 1 {
+	if _, err = kc.resolveMemberProfiles(ctx, backend, 5000, []int64{2000}, nil); err != nil || backend.count() != 1 {
 		t.Fatal("failure requeued before cooldown")
 	}
 	now = now.Add(memberProfileAttemptCooldown)
 	backend.fetch = func(context.Context, int64, []int64) ([]chatmeta.Member, error) {
 		return []chatmeta.Member{{UserID: 2000, Nickname: "Retained"}}, nil
 	}
-	profiles, err = kc.resolveMemberProfiles(ctx, backend, 5000, []int64{2000})
+	profiles, err = kc.resolveMemberProfiles(ctx, backend, 5000, []int64{2000}, nil)
 	if err != nil || backend.count() != 2 || len(profiles) != 1 || profiles[0].Nickname != "Retained" {
 		t.Fatal("unknown member was not retried after cooldown")
 	}
@@ -219,7 +219,7 @@ func TestMemberProfileCooldownFailureBacksOffAndIsolatesAccounts(t *testing.T) {
 	backend.fetch = func(context.Context, int64, []int64) ([]chatmeta.Member, error) {
 		return []chatmeta.Member{{UserID: 2000, Nickname: "Different observer"}}, nil
 	}
-	profiles, err = other.resolveMemberProfiles(ctx, backend, 4000, []int64{2000})
+	profiles, err = other.resolveMemberProfiles(ctx, backend, 4000, []int64{2000}, nil)
 	if err != nil || backend.count() != 3 || profiles[0].Nickname != "Different observer" {
 		t.Fatal("observers shared cached identity data")
 	}
@@ -248,7 +248,7 @@ func TestMemberProfileCooldownStorageFailureStopsFetch(t *testing.T) {
 				t.Error("fetch after invalid or unwritable checkpoint")
 				return nil, nil
 			}}
-			if _, err := kc.resolveMemberProfiles(ctx, backend, 3000, []int64{2000}); err == nil || backend.count() != 0 {
+			if _, err := kc.resolveMemberProfiles(ctx, backend, 3000, []int64{2000}, nil); err == nil || backend.count() != 0 {
 				t.Fatal("storage failure did not stop fetch")
 			}
 		})
@@ -291,7 +291,7 @@ func TestMemberProfileCooldownAtomicClaimAcrossConnectors(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 2)
 	for _, owner := range []*KakaoClient{kc, peer} {
-		go func() { _, err := owner.resolveMemberProfiles(ctx, backend, 3000, []int64{2000}); done <- err }()
+		go func() { _, err := owner.resolveMemberProfiles(ctx, backend, 3000, []int64{2000}, nil); done <- err }()
 	}
 	for range 2 {
 		select {
@@ -318,7 +318,7 @@ func TestMemberProfileCooldownCanceledPartialResultRemainsDurable(t *testing.T) 
 		cancel()
 		return []chatmeta.Member{{UserID: 2000, Nickname: "First batch"}}, context.Canceled
 	}}
-	profiles, err := kc.resolveMemberProfiles(ctx, backend, 3000, []int64{2000, 4000})
+	profiles, err := kc.resolveMemberProfiles(ctx, backend, 3000, []int64{2000, 4000}, nil)
 	if !errors.Is(err, context.Canceled) || len(profiles) != 1 {
 		t.Fatal("completed partial result lost with caller cancellation")
 	}
@@ -332,7 +332,7 @@ func TestMemberProfileCooldownMembershipChangesRetainPartialResult(t *testing.T)
 	kc, _ := newTestClient(t, nil)
 	backend := &fakeKakao{members: []chatmeta.Member{{UserID: 2000, Nickname: "Completed profile"}}, membersErr: errors.New("synthetic later batch failed")}
 	kc.client = backend
-	if _, err := kc.resolveMemberProfiles(t.Context(), backend, 3000, []int64{2000, 4000}); !errors.Is(err, backend.membersErr) {
+	if _, err := kc.resolveMemberProfiles(t.Context(), backend, 3000, []int64{2000, 4000}, nil); !errors.Is(err, backend.membersErr) {
 		t.Fatal(err)
 	}
 	changes, err := kc.memberChanges(t.Context(), 3000, []events.MemberIdentity{{UserID: 2000}, {UserID: 4000}}, true)
@@ -356,7 +356,7 @@ func TestMemberProfileCooldownBoundsEncodedProfile(t *testing.T) {
 		expanded := strings.Repeat("<", 8192)
 		return []chatmeta.Member{{UserID: 2000, Nickname: expanded, ProfileImageURL: expanded, FullProfileImageURL: expanded}}, nil
 	}}
-	if _, err := kc.resolveMemberProfiles(t.Context(), backend, 3000, []int64{2000}); !errors.Is(err, errProfileCheckpoint) {
+	if _, err := kc.resolveMemberProfiles(t.Context(), backend, 3000, []int64{2000}, nil); !errors.Is(err, errProfileCheckpoint) {
 		t.Fatal("oversized encoded record was accepted")
 	}
 	record, _, err := kc.readMemberProfile(t.Context(), 2000)
@@ -380,7 +380,7 @@ func TestMemberProfileLegacyFreshnessRecordIsReused(t *testing.T) {
 	backend := &cooldownBackend{fetch: func(context.Context, int64, []int64) ([]chatmeta.Member, error) {
 		return []chatmeta.Member{{UserID: 2000, Nickname: "Refetched"}}, nil
 	}}
-	profiles, err := kc.resolveMemberProfiles(ctx, backend, 4000, []int64{2000})
+	profiles, err := kc.resolveMemberProfiles(ctx, backend, 4000, []int64{2000}, nil)
 	if err != nil || len(profiles) != 1 || profiles[0].Nickname != "Legacy" || backend.count() != 0 {
 		t.Fatalf("legacy record: profiles %+v, err %v, requests %d", profiles, err, backend.count())
 	}

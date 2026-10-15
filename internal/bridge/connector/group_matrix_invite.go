@@ -4,15 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/event"
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chat"
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
+	"github.com/frrad/mooo/internal/protocol/events"
 )
 
 var (
@@ -30,9 +34,12 @@ const teamChatMetaType = 15
 var blockedFriendInviteStatuses = map[int32]bool{-402: true, -405: true}
 
 // handleMatrixInvite adds a KakaoTalk user to the regular group with one
-// ADDMEM, as any member can in the official client. The reply does not decide
-// Matrix membership: unless KakaoTalk certainly refused, a fresh source
-// roster joins the invited ghost or revokes its invite.
+// ADDMEM, as any member can in the official client's invitation picker, which
+// offers only non-members of the stored room. A confirmed reply's invitation
+// log is applied to the stored roster like a NEWMEM feed, with MEMBER for the
+// invitee, as the official client refreshes the selected members. Otherwise,
+// unless KakaoTalk certainly refused, a fresh source roster joins the invited
+// ghost or revokes its invite.
 func (kc *KakaoClient) handleMatrixInvite(ctx context.Context, msg *bridgev2.MatrixMembershipChange, ghost *bridgev2.Ghost) error {
 	refuse := func(err error, message string) error {
 		revokeGhostMembership(ctx, msg, ghost)
@@ -59,31 +66,24 @@ func (kc *KakaoClient) handleMatrixInvite(ctx context.Context, msg *bridgev2.Mat
 	if c == nil {
 		return bridgev2.ErrNotLoggedIn
 	}
-	info, err := c.ChatInfo(ctx, chatID)
-	if err != nil {
-		return err
+	roster, team, stored := kc.storedGroupRoster(ctx, chatID)
+	if !stored {
+		// Without a verified roster the group's kind and members are unknown.
+		roster, team, err = kc.readInviteGroup(ctx, c, chatID)
+		if errors.Is(err, errInviteNotRegularGroup) {
+			return refuse(err, notRegular)
+		} else if err != nil {
+			return err
+		}
 	}
-	data := info.ChatData
-	if data.ChatID != chatID {
-		return errChatInfoMismatch
-	}
-	if data.Type != "MultiChat" || data.LinkID != 0 {
+	if team {
 		return refuse(errInviteNotRegularGroup, notRegular)
 	}
-	for _, meta := range data.ChatMetas {
-		if meta.Type == teamChatMetaType {
-			return refuse(errInviteNotRegularGroup, notRegular)
+	if slices.Contains(roster, userID) {
+		if !stored {
+			kc.refreshMembership(c, chatID, nil)
 		}
-	}
-	roster, err := c.MemberList(ctx, chatID, 0)
-	if err != nil {
-		return err
-	}
-	for _, member := range roster.MemberIDs {
-		if member == userID {
-			kc.refreshMembership(c, chatID)
-			return nil
-		}
+		return nil
 	}
 	if err = kc.beginOutboundEvent(ctx, msg.Event); err != nil {
 		return err
@@ -96,7 +96,11 @@ func (kc *KakaoClient) handleMatrixInvite(ctx context.Context, msg *bridgev2.Mat
 	case errors.As(err, &statusErr):
 		return refuse(errInviteRefused, fmt.Sprintf("KakaoTalk refused the invite (status %d). The invite was revoked.", statusErr.Status))
 	}
-	kc.refreshMembership(c, chatID)
+	var feed *membershipFeed
+	if err == nil && response.Warning == "" && stored {
+		feed = invitationFeed(chatID, response.ChatLog)
+	}
+	kc.refreshMembership(c, chatID, feed)
 	unconfirmed := func(message string) error {
 		// An unconfirmed invite keeps WrapErrorInStatus's generic reason.
 		return noticeStatus(errInviteUnconfirmed, event.MessageStatusFail, event.MessageStatusGenericError, false, message)
@@ -122,4 +126,65 @@ func revokeGhostMembership(ctx context.Context, msg *bridgev2.MatrixMembershipCh
 		return false
 	}
 	return true
+}
+
+// storedGroupRoster returns a managed group's verified roster and whether its
+// stored chat data marks it a team chat. It reports false when either is not
+// stored, so the caller must read the source.
+func (kc *KakaoClient) storedGroupRoster(ctx context.Context, chatID int64) (roster []int64, team, ok bool) {
+	roster = kc.verifiedRoster(ctx, chatID)
+	if len(roster) == 0 {
+		return nil, false, false
+	}
+	q := kc.metadataRefresh
+	q.mu.Lock()
+	task, found := q.snapshots[chatID]
+	q.mu.Unlock()
+	data := task.snapshot.data
+	if !found || data.Type != "MultiChat" || data.LinkID != 0 {
+		return nil, false, false
+	}
+	return roster, slices.ContainsFunc(data.ChatMetas, func(meta chatmeta.ChatMeta) bool { return meta.Type == teamChatMetaType }), true
+}
+
+// readInviteGroup reads an unverified group's kind and roster from the source.
+func (kc *KakaoClient) readInviteGroup(ctx context.Context, c kakaoClient, chatID int64) (roster []int64, team bool, err error) {
+	info, err := c.ChatInfo(ctx, chatID)
+	if err != nil {
+		return nil, false, err
+	}
+	data := info.ChatData
+	if data.ChatID != chatID {
+		return nil, false, errChatInfoMismatch
+	}
+	if data.Type != "MultiChat" || data.LinkID != 0 {
+		return nil, false, errInviteNotRegularGroup
+	}
+	team = slices.ContainsFunc(data.ChatMetas, func(meta chatmeta.ChatMeta) bool { return meta.Type == teamChatMetaType })
+	if team {
+		return nil, true, nil
+	}
+	members, err := c.MemberList(ctx, chatID, 0)
+	if err != nil {
+		return nil, false, err
+	}
+	return members.MemberIDs, false, nil
+}
+
+// invitationFeed decodes the invitation log of a confirmed ADDMEM reply, or
+// returns nil when the reply carries no usable membership feed for chatID.
+func invitationFeed(chatID int64, chatLog bson.Raw) *membershipFeed {
+	if len(chatLog) == 0 {
+		return nil
+	}
+	evt, err := events.DecodeChatLog(chatID, chatLog)
+	added, ok := evt.(events.MemberAdded)
+	if err != nil || !ok || added.ChatID != chatID {
+		return nil
+	}
+	feed := &membershipFeed{}
+	for _, member := range added.Members {
+		feed.invitees = append(feed.invitees, member.UserID)
+	}
+	return feed
 }
