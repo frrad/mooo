@@ -188,6 +188,32 @@ Regression tests (production code, scripted backend), built from the fixture:
 - empty `eof=false` stops with gaps recorded and no second request;
 - the page cap records gaps for pending rooms.
 
+### Implementation (2026-10-15)
+
+`Client.CatchUpAll` (`internal/client/bulk_catchup.go`) implements steps 1–11;
+the connector's `catchUp` delivers its rooms. Production-path tests replay the
+fixture's committed-position exchange and its five-page chain from committed
+positions, and cover the skipped predecessor, the broken chain, the empty
+non-final page, the page cap, the floor room, failure without commits and the
+shared startup-history chain. Single-room `SYNCMSG` remains for explicit history,
+mark-read and a held chat's dropped interval (delivery holds, not connect).
+
+Deliberate differences from native, beyond those the spec names (pacing through
+history admission, abort on failure):
+
+- **No send of the 100-room batch from the completion callback.** Pages are
+  serial and paced, as step 2 says.
+- **Gap notices.** One notice per partly recovered chat: before its recovered
+  messages when the server skipped identities ahead of them, after them when
+  only the tail is unrecovered. Any recorded gap also triggers the managed-group
+  roster fallback, since the skipped interval may hold membership feeds.
+- **A discontinuity past the ceiling** ends the room's chain without a gap: only
+  identities after the login ceiling are in doubt, and the live stream and the
+  next login cover them.
+- **Startup history.** Rooms that need catch-up are requested from their delivery
+  position, never from an older acquired cursor, and the acquisition budget
+  (25 pages, one minute) only removes acquisition rooms from the chain.
+
 ### Read side effect
 
 `SYNCMSG` catch-up can make messages appear read to other participants

@@ -2,6 +2,7 @@ package syncmsg
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -136,4 +137,41 @@ func TestTargetFromChatDataIncludesFeedsAfterTheLastChatLog(t *testing.T) {
 	if target, err := TargetFromChatData(older); err != nil || target.MaxLogID != 100 {
 		t.Fatalf("older ll target = %+v err=%v", target, err)
 	}
+}
+
+// The official single-room sync sends cur equal to max (cnt=0) when a
+// response without isOK moved its synced position to the target; owned
+// observation showed the server accepts it. Catch-up keeps rejecting it.
+func TestReadRequestAllowsEqualBoundsOnly(t *testing.T) {
+	body, err := (ReadRequest{ChatID: 42, Cur: 900, Max: 900, Count: 0}).MarshalBSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(bsonfieldKeys(t, body)) != "[chatId cur max cnt]" || bson.Raw(body).Lookup("cnt").Type != bson.TypeInt32 || bson.Raw(body).Lookup("max").Int64() != 900 {
+		t.Fatalf("read request shape = %v", bson.Raw(body))
+	}
+	for _, request := range []ReadRequest{
+		{ChatID: 0, Cur: 1, Max: 2, Count: 1},
+		{ChatID: 1, Cur: 3, Max: 2, Count: 0},
+		{ChatID: 1, Cur: -1, Max: 2, Count: 0},
+		{ChatID: 1, Cur: 1, Max: 2, Count: 301},
+		{ChatID: 1, Cur: 1, Max: 2, Count: -1},
+	} {
+		if _, err := request.MarshalBSON(); !errors.Is(err, ErrInvalidRequest) {
+			t.Fatalf("request %#v error = %v", request, err)
+		}
+	}
+}
+
+func bsonfieldKeys(t *testing.T, body []byte) []string {
+	t.Helper()
+	elements, err := bson.Raw(body).Elements()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := make([]string, 0, len(elements))
+	for _, element := range elements {
+		keys = append(keys, element.Key())
+	}
+	return keys
 }

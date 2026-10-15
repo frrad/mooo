@@ -230,7 +230,7 @@ func TestCatchUpUnidentifiableMessageIsPermanentAdmissionFailure(t *testing.T) {
 		catchUps:      map[int64]catchUpResult{testChatID: {err: events.ErrUnidentifiableMessage}},
 	}
 	kc, _ := newTestClient(t, nil)
-	err := kc.catchUp(context.Background(), fake)
+	_, err := kc.catchUpChain(context.Background(), fake, nil)
 	if !isUnidentifiableMessageError(err) {
 		t.Fatalf("catch-up error = %v, want permanent unidentifiable-message error", err)
 	}

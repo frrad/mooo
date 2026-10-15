@@ -24,6 +24,7 @@ type store interface {
 	firstMessageInPortal(ctx context.Context, key networkid.PortalKey) (*database.Message, error)
 	lastNMessagesInPortal(ctx context.Context, key networkid.PortalKey, n int) ([]*database.Message, error)
 	lastRealMessageAtOrBefore(ctx context.Context, key networkid.PortalKey, at time.Time) (*database.Message, error)
+	messagesBetweenTime(ctx context.Context, key networkid.PortalKey, after, through time.Time) ([]*database.Message, error)
 	updateMessage(ctx context.Context, msg *database.Message) error
 
 	reactionsToMessage(ctx context.Context, receiver networkid.UserLoginID, id networkid.MessageID) ([]*database.Reaction, error)
@@ -93,6 +94,10 @@ func (s bridgeStore) lastNMessagesInPortal(ctx context.Context, key networkid.Po
 
 func (s bridgeStore) lastRealMessageAtOrBefore(ctx context.Context, key networkid.PortalKey, at time.Time) (*database.Message, error) {
 	return s.db.Message.GetLastNonFakePartAtOrBeforeTime(ctx, key, at)
+}
+
+func (s bridgeStore) messagesBetweenTime(ctx context.Context, key networkid.PortalKey, after, through time.Time) ([]*database.Message, error) {
+	return s.db.Message.GetMessagesBetweenTimeQuery(ctx, key, after, through)
 }
 
 func (s bridgeStore) updateMessage(ctx context.Context, msg *database.Message) error {

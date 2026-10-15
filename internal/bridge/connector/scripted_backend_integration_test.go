@@ -68,7 +68,7 @@ func (c *observedClient) committedIDs() []int64 {
 }
 
 // A Matrix delivery failure during catch-up holds the chat in the live
-// session: the acquired page is retried without another login or SYNCMSG, and
+// session: the acquired page is retried without another login or MCHATLOGS, and
 // its commit precedes the chat's live commits.
 func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T) {
 	statePath := newIntegrationProfile(t)
@@ -81,7 +81,7 @@ func TestScriptedBackendCatchUpFailureReplaysBeforeLiveAndSendsOnce(t *testing.T
 	}
 
 	trigger := make(chan struct{})
-	// The script admits one login and one SYNCMSG.
+	// The script admits one login and one MCHATLOGS.
 	dialers, backends, writes := scriptedScenario(t, 2, trigger, true)
 	raw, err := client.OpenWithTestDialers(statePath, nil, dialers, shadowCheckedOptions())
 	if err != nil {
@@ -254,14 +254,12 @@ func scriptedScenario(t *testing.T, maxLogID int64, trigger <-chan struct{}, wit
 	return scriptedScenarioWithIDs(t, maxLogID, trigger, withWrite, 2, 3, true)
 }
 
-func scriptedScenarioWithIDs(t *testing.T, maxLogID int64, trigger <-chan struct{}, withWrite bool, replayLogID, liveLogID int64, pushLive bool, cached ...bool) (client.TestDialers, []*testloco.Backend, *int) {
+func scriptedScenarioWithIDs(t *testing.T, maxLogID int64, trigger <-chan struct{}, withWrite bool, replayLogID, liveLogID int64, pushLive bool) (client.TestDialers, []*testloco.Backend, *int) {
 	t.Helper()
 	loginReply := bson.D{{Key: "status", Value: int32(0)}, {Key: "chatDatas", Value: bson.A{bson.D{{Key: "c", Value: testChatID}, {Key: "l", Value: bson.D{{Key: "chatId", Value: testChatID}, {Key: "logId", Value: maxLogID}}}}}}, {Key: "eof", Value: true}, {Key: "lastTokenId", Value: int64(10)}, {Key: "lbk", Value: int32(1)}}
-	syncReply := bson.D{{Key: "status", Value: int32(0)}, {Key: "chatLogs", Value: bson.A{bson.D{{Key: "logId", Value: replayLogID}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "replay"}}}}}
+	catchUpReply := bson.D{{Key: "status", Value: int32(0)}, {Key: "eof", Value: true}, {Key: "chatLogs", Value: bson.A{bson.D{{Key: "chatId", Value: testChatID}, {Key: "logId", Value: replayLogID}, {Key: "prevId", Value: replayLogID - 1}, {Key: "type", Value: int32(1)}, {Key: "message", Value: "replay"}}}}}
 	steps := []testloco.Step{testloco.Expect("LOGINLIST", nil, loginReply)}
-	if len(cached) == 0 || !cached[0] {
-		steps = append(steps, testloco.Expect("SYNCMSG", nil, syncReply))
-	}
+	steps = append(steps, testloco.Expect("MCHATLOGS", nil, catchUpReply))
 	writes := new(int)
 	if trigger == nil {
 		steps = append(steps, testloco.HoldOpen())

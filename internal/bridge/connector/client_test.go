@@ -47,6 +47,8 @@ type sentReply struct {
 type catchUpResult struct {
 	events []events.Event
 	err    error
+	// skipped and unresolved mark a partly recovered room.
+	skipped, unresolved bool
 }
 
 type fakeKakao struct {
@@ -202,25 +204,27 @@ func (f *fakeKakao) Events(ctx context.Context) (<-chan events.Result, error) {
 	return f.stream, nil
 }
 
-func (f *fakeKakao) ResumeTargets(ctx context.Context) ([]syncmsg.Target, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, "ResumeTargets")
-	return f.resumeTargets, f.resumeErr
-}
-
 func (f *fakeKakao) UndeliveredTargets(context.Context) ([]syncmsg.Target, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.undeliveredTargets, nil
 }
 
-func (f *fakeKakao) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error) {
+// CatchUpAll returns each resume target's scripted catch-up as one chain.
+// A target scripted with client.ErrGapUnresolved is an unresolved room; any
+// other error fails the chain.
+func (f *fakeKakao) CatchUpAll(ctx context.Context, options client.CatchUpOptions) (client.CatchUpResult, error) {
 	f.mu.Lock()
-	f.calls = append(f.calls, fmt.Sprintf("CatchUp(%d,%d)", chatID, targetMax))
-	result := f.catchUps[chatID]
+	f.calls = append(f.calls, "CatchUpAll")
+	if options.StartupHistory != nil {
+		f.calls = append(f.calls, "StartupHistory")
+	}
+	targets, err := f.resumeTargets, f.resumeErr
 	entered, release := f.catchupEntered, f.catchupRelease
 	f.mu.Unlock()
+	if err != nil {
+		return client.CatchUpResult{}, err
+	}
 	if entered != nil {
 		f.catchupEnterOnce.Do(func() { close(entered) })
 	}
@@ -234,10 +238,34 @@ func (f *fakeKakao) CatchUp(ctx context.Context, chatID, targetMax int64) ([]eve
 			select {
 			case <-release:
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return client.CatchUpResult{}, ctx.Err()
 			}
 		}
 	}
+	result := client.CatchUpResult{Pages: 1}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, target := range targets {
+		f.calls = append(f.calls, fmt.Sprintf("CatchUp(%d,%d)", target.ChatID, target.MaxLogID))
+		caught := f.catchUps[target.ChatID]
+		room := client.CaughtUpRoom{ChatID: target.ChatID, Ceiling: target.MaxLogID, Events: caught.events, Skipped: caught.skipped, Unresolved: caught.unresolved}
+		switch {
+		case errors.Is(caught.err, client.ErrGapUnresolved):
+			room.Events, room.Unresolved = nil, true
+		case caught.err != nil:
+			return client.CatchUpResult{}, caught.err
+		}
+		result.Rooms = append(result.Rooms, room)
+	}
+	return result, nil
+}
+
+// CatchUp serves a held chat's dropped interval.
+func (f *fakeKakao) CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, fmt.Sprintf("CatchUp(%d,%d)", chatID, targetMax))
+	result := f.catchUps[chatID]
 	return result.events, result.err
 }
 
@@ -275,7 +303,7 @@ func (f *fakeKakao) SendText(ctx context.Context, chatID int64, message string) 
 	return f.sendResp, f.sendErr
 }
 
-func (f *fakeKakao) MarkRead(ctx context.Context, chatID, watermark int64) (syncmsg.Response, error) {
+func (f *fakeKakao) MarkRead(ctx context.Context, chatID, watermark int64, _ client.HeldMessages) (syncmsg.Response, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.marks = append(f.marks, [2]int64{chatID, watermark})
@@ -1555,7 +1583,7 @@ func TestConnectCatchesUpMissedMessagesBeforeSubscribingToLiveEvents(t *testing.
 	close(fake.stream)
 	waitForState(t, harness, status.StateTransientDisconnect)
 
-	wantCalls := []string{"ResumeTargets", "CatchUp(3000,42)", "Events"}
+	wantCalls := []string{"CatchUpAll", "CatchUp(3000,42)", "Events"}
 	if fmt.Sprint(fake.calls) != fmt.Sprint(wantCalls) {
 		t.Fatalf("calls = %v, want %v", fake.calls, wantCalls)
 	}
@@ -1598,6 +1626,53 @@ func TestUnrecoverableGapPostsNoticeAndKeepsConnecting(t *testing.T) {
 	}
 	if len(fake.committed()) != 0 {
 		t.Fatalf("committed %v for an unrecovered gap", fake.committed())
+	}
+}
+
+// A partly recovered chat gets one notice: before its messages when the
+// server skipped identities ahead of them, after them when only its tail
+// was not recovered. Its recovered messages are still delivered.
+func TestPartlyRecoveredChatPostsOneNoticeAroundItsMessages(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		skipped        bool
+		unresolved     bool
+		noticeFirst    bool
+		noticeExpected bool
+	}{
+		{name: "skipped", skipped: true, noticeFirst: true},
+		{name: "unresolved tail", unresolved: true},
+		{name: "skipped and unresolved", skipped: true, unresolved: true, noticeFirst: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recovered := events.TextMessage{ChatID: testChatID, LogID: 41, AuthorID: testOtherID, Message: "recovered"}
+			fake := &fakeKakao{
+				stream:        make(chan events.Result),
+				resumeTargets: []syncmsg.Target{{ChatID: testChatID, MaxLogID: 42}},
+				catchUps:      map[int64]catchUpResult{testChatID: {events: []events.Event{recovered}, skipped: tc.skipped, unresolved: tc.unresolved}},
+			}
+			t.Cleanup(func() { close(fake.stream) })
+			kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+
+			kc.Connect(context.Background())
+
+			if !kc.IsLoggedIn() || len(harness.queued) != 2 {
+				t.Fatalf("logged in = %t, queued %d events, want a notice and the message", kc.IsLoggedIn(), len(harness.queued))
+			}
+			noticeIndex := 1
+			if tc.noticeFirst {
+				noticeIndex = 0
+			}
+			if id := harness.queued[noticeIndex].(bridgev2.RemoteMessage).GetID(); id != networkid.MessageID("gap:3000:42") {
+				t.Fatalf("event %d = %q, want the gap notice", noticeIndex, id)
+			}
+			if id := harness.queued[1-noticeIndex].(bridgev2.RemoteMessage).GetID(); id != makeMessageID(testChatID, 41) {
+				t.Fatalf("event %d = %q, want the recovered message", 1-noticeIndex, id)
+			}
+			if fmt.Sprint(fake.committed()) != fmt.Sprint([]events.Event{recovered}) {
+				t.Fatalf("committed %v", fake.committed())
+			}
+		})
 	}
 }
 
