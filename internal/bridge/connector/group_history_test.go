@@ -7,6 +7,8 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/frrad/mooo/internal/client"
@@ -282,5 +284,62 @@ func TestGroupHistoryInventoryDoesNotAuthorizeAnotherRoomOrHigherBound(t *testin
 				t.Fatal("unverified history requested")
 			}
 		})
+	}
+}
+
+// Audit finding 16: one !history-group command reads CHATINFO and the source
+// roster once, before its first page, and reuses them for every later page.
+// Restoring the roster after a former sender's delivery reconverges Matrix to
+// the bridge's current roster without another source read.
+func TestGroupHistoryReadsMembershipOncePerCommand(t *testing.T) {
+	kc, source := newHistoryTest(t)
+	p, err := kc.login.Bridge.GetPortalByMXID(t.Context(), "!selected:test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kc.queue = func(remote bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		//nolint:staticcheck // Exercise ghost sender and membership effects.
+		return p.Internal().HandleRemoteEvent(historyFrameworkContext(t.Context(), remote), kc.login, remote.GetType(), remote)
+	}
+	source.pages = []client.HistoryPage{
+		{Events: []events.Event{events.TextMessage{ChatID: 5000, LogID: 101, AuthorID: 2000, Message: "first page", SentAt: 1700000000}}, Next: 101},
+		{Events: []events.Event{events.TextMessage{ChatID: 5000, LogID: 102, AuthorID: 3000, Message: "former member", SentAt: 1700000001}}, Next: 102},
+		{Events: []events.Event{events.TextMessage{ChatID: 5000, LogID: 103, AuthorID: 4000, Message: "third page", SentAt: 1700000002}}, Next: 103, Complete: true},
+	}
+	source.mu.Lock()
+	source.metadataCalls = nil
+	source.mu.Unlock()
+	done, err := kc.BackfillGroup(t.Context(), "!selected:test", 100, 103, 10, false)
+	if err != nil || !done {
+		t.Fatalf("three-page history: done=%t err=%v", done, err)
+	}
+	if len(source.calls) != 3 {
+		t.Fatalf("history pages requested: %v", source.calls)
+	}
+	source.mu.Lock()
+	calls := slices.Clone(source.metadataCalls)
+	source.mu.Unlock()
+	chatInfo, memberList := 0, 0
+	for _, call := range calls {
+		switch {
+		case strings.HasPrefix(call, "ChatInfo("):
+			chatInfo++
+		case strings.HasPrefix(call, "MemberList("):
+			memberList++
+		}
+	}
+	if chatInfo != 1 || memberList != 1 {
+		t.Fatalf("metadata reads per command: CHATINFO=%d MEMLIST=%d (%v)", chatInfo, memberList, calls)
+	}
+	matrix := kc.login.Bridge.Matrix.(*groupCreationMatrix)
+	matrix.mu.Lock()
+	defer matrix.mu.Unlock()
+	if member := matrix.members["@kakao_3000:test"]; member != nil && member.Membership == event.MembershipJoin {
+		t.Fatal("historical author rejoined the current Matrix roster")
+	}
+	for _, current := range []id.UserID{"@kakao_2000:test", "@kakao_4000:test"} {
+		if member := matrix.members[current]; member == nil || member.Membership != event.MembershipJoin {
+			t.Fatalf("current member %s left the Matrix roster: %+v", current, member)
+		}
 	}
 }
