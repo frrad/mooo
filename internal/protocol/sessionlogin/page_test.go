@@ -145,3 +145,22 @@ func TestAcceptedLChatListStatus(t *testing.T) {
 		}
 	}
 }
+
+// Observed 2026-10-14: LOGINLIST carries mcmRevision as a 32-bit integer. The
+// Mac client compares it with its stored personal-metadata revision.
+func TestDecodeLoginListPageMCMRevision(t *testing.T) {
+	body, _ := bson.Marshal(bson.D{{Key: "status", Value: int32(0)}, {Key: "eof", Value: true}, {Key: "mcmRevision", Value: int32(1791592744)}})
+	page, err := DecodeLoginListPage(body)
+	if err != nil || page.MCMRevision == nil || *page.MCMRevision != 1791592744 {
+		t.Fatalf("page = %+v, err %v", page.MCMRevision, err)
+	}
+	for _, doc := range []bson.D{
+		{{Key: "status", Value: int32(0)}, {Key: "eof", Value: true}},
+		{{Key: "status", Value: int32(0)}, {Key: "eof", Value: true}, {Key: "mcmRevision", Value: "7"}},
+	} {
+		body, _ = bson.Marshal(doc)
+		if page, err = DecodeLoginListPage(body); err != nil || page.MCMRevision != nil {
+			t.Fatalf("absent or non-integer revision = %+v, err %v", page.MCMRevision, err)
+		}
+	}
+}

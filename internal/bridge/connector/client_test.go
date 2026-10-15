@@ -50,6 +50,7 @@ type catchUpResult struct {
 }
 
 type fakeKakao struct {
+	mcmRevision       *int32
 	chatInventory     []chatmeta.ChatData
 	chatInventoryErr  error
 	mu                sync.Mutex
@@ -1803,4 +1804,13 @@ func (f *fakeKakao) PersonalMetas(ctx context.Context) (map[int64]chatmeta.RoomM
 		return nil, f.personalMetaErr
 	}
 	return map[int64]chatmeta.RoomMeta{f.chatInfo.ChatData.ChatID: *f.personalMeta}, f.personalMetaErr
+}
+
+func (f *fakeKakao) PersonalMetaRevision(context.Context) (int32, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.mcmRevision == nil {
+		return 0, false, nil
+	}
+	return *f.mcmRevision, true, nil
 }

@@ -43,6 +43,8 @@ type metadataRefreshTask struct {
 	ids       []int64
 	notBefore time.Time
 	attempts  int
+	// personalRevision is the login-list mcmRevision a personal read answers.
+	personalRevision int32
 }
 
 // versioned reports whether the task belongs to one remembered room snapshot.
@@ -116,6 +118,7 @@ func (q *metadataRefreshQueue) offer(task metadataRefreshTask) {
 			}
 			task.ids = merged
 		}
+		task.personalRevision = max(task.personalRevision, previous.personalRevision)
 		task.notBefore = maxRefreshTime(task.notBefore, previous.notBefore)
 		task.attempts = max(task.attempts, previous.attempts)
 	} else if len(q.pending) >= maxMetadataRefreshJobs {
@@ -193,8 +196,9 @@ func (kc *KakaoClient) enqueueEnrichment(snap chatSnapshot, cache roomMetadataCa
 	if snap.data.Type != "MultiChat" {
 		return
 	}
-	now := kc.now()
-	if snap.data.Meta == nil && (cache.PersonalAt.IsZero() || !now.Before(cache.PersonalAt.Add(roomMetadataFreshness))) {
+	// Personal metadata is read once per room; afterwards the login-list
+	// revision and CHGMCMETA payloads drive it.
+	if snap.data.Meta == nil && cache.PersonalAt.IsZero() {
 		task.kind = refreshPersonal
 		kc.metadataRefresh.offer(task)
 	}
@@ -319,6 +323,11 @@ func (kc *KakaoClient) performMetadataRefresh(ctx context.Context, c kakaoClient
 		result.err, result.sourceErr = err, err
 		if err != nil {
 			break
+		}
+		if task.personalRevision != 0 {
+			if err = kc.recordPersonalRevision(ctx, task.personalRevision); err != nil {
+				result.err = err
+			}
 		}
 		for _, selected := range selectedRooms {
 			if selected.snapshot.data.Type != "MultiChat" || !kc.metadataRoomAllowed(ctx, selected) {
@@ -622,12 +631,9 @@ func (kc *KakaoClient) enqueueExistingRoomEnrichment(ctx context.Context, chatID
 	if err != nil {
 		return false
 	}
-	due := cache.PersonalAt.IsZero() || !kc.now().Before(cache.PersonalAt.Add(roomMetadataFreshness))
-	if kind == refreshBoards {
-		// Stored Boards are reprojected, never reread by age.
-		due = true
-	}
-	if due {
+	// A stored checkpoint is reprojected; only a room never read is fetched.
+	// Neither kind is reread by age.
+	if kind == refreshBoards || cache.PersonalAt.IsZero() {
 		task.kind = kind
 		q.offer(task)
 	}

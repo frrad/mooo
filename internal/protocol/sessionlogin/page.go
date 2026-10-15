@@ -42,6 +42,9 @@ type LoginListPage struct {
 	// CommitsCursor reports true.
 	LastTokenID *int64
 	LBK         *int32
+	// MCMRevision is the account's personal chat-metadata revision
+	// (mcmRevision), nil when absent or not a 32-bit integer.
+	MCMRevision *int32
 	// Next is the LCHATLIST request that continues the list. It is set exactly
 	// when Status is 0 and EOF is false.
 	Next *LChatListRequest
@@ -117,6 +120,10 @@ func DecodeLoginListPage(body bson.Raw) (LoginListPage, error) {
 	if value, ok, err := fields.Int64(body, "lbk"); err == nil && ok && value >= 0 && value <= math.MaxInt32 {
 		lbk := int32(value)
 		page.LBK = &lbk
+	}
+	if value, err := body.LookupErr("mcmRevision"); err == nil && value.Type == bson.TypeInt32 {
+		revision := value.Int32()
+		page.MCMRevision = &revision
 	}
 	if status == 0 && !page.EOF {
 		lastTokenID, ok, err := fields.Int64(body, "lastTokenId")

@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
+	"github.com/frrad/mooo/internal/protocol/events"
 	"maunium.net/go/mautrix/bridgev2"
 )
-
-const roomMetadataFreshness = 15 * time.Minute
 
 var errRoomMetadataCache = errors.New("connector: room enrichment checkpoint is invalid")
 
@@ -46,6 +46,49 @@ func (kc *KakaoClient) writeRoomMetadata(ctx context.Context, record roomMetadat
 		return errRoomMetadataCache
 	}
 	return kc.store.put(ctx, kc.roomMetadataKey(record.ChatID), string(encoded))
+}
+
+func (kc *KakaoClient) personalRevisionKey() string {
+	return fmt.Sprintf("kakao:personal-meta-revision:%d", kc.userID)
+}
+
+// appliedPersonalRevision is the last personal-metadata revision the bridge
+// applied, from GETMCMETA or CHGMCMETA. Zero when none was applied.
+func (kc *KakaoClient) appliedPersonalRevision(ctx context.Context) (int32, error) {
+	raw, found, err := kc.store.get(ctx, kc.personalRevisionKey())
+	if err != nil || !found {
+		return 0, err
+	}
+	revision, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil {
+		return 0, errRoomMetadataCache
+	}
+	return int32(revision), nil
+}
+
+func (kc *KakaoClient) recordPersonalRevision(ctx context.Context, revision int32) error {
+	applied, err := kc.appliedPersonalRevision(ctx)
+	if err != nil || revision <= applied {
+		return err
+	}
+	return kc.store.put(ctx, kc.personalRevisionKey(), strconv.FormatInt(int64(revision), 10))
+}
+
+// personalRevisionDemand follows the official client's login rule: GETMCMETA
+// only when the login-list mcmRevision exceeds the applied revision.
+func (kc *KakaoClient) personalRevisionDemand(ctx context.Context, c chatMetaAPI) {
+	revision, ok, err := c.PersonalMetaRevision(ctx)
+	if err != nil || !ok {
+		return
+	}
+	applied, err := kc.appliedPersonalRevision(ctx)
+	if err != nil {
+		kc.log().Warn().Str("error_class", sourceErrorClass(err)).Msg("Personal metadata revision is unreadable; skipping its login read")
+		return
+	}
+	if revision > applied {
+		kc.metadataRefresh.offer(metadataRefreshTask{kind: refreshPersonal, personalRevision: revision})
+	}
 }
 
 func (kc *KakaoClient) cachedMemberProfiles(ctx context.Context, ids []int64) ([]chatmeta.Member, error) {
@@ -119,4 +162,44 @@ func (kc *KakaoClient) cachedChatInfo(ctx context.Context, p *bridgev2.Portal) (
 	kc.enqueueExistingRoomEnrichment(ctx, chatID, refreshPersonal, false)
 	kc.enqueueExistingRoomEnrichment(ctx, chatID, refreshBoards, false)
 	return info, true, nil
+}
+
+// applyPersonalPush stores a CHGMCMETA name or image into the room's personal
+// checkpoint and records its revision. It reports false, storing nothing, when
+// the room's personal metadata was never read. A push no newer than the
+// applied revision is accepted without changes.
+func (kc *KakaoClient) applyPersonalPush(ctx context.Context, evt events.ChatMCMetaChanged) (bool, error) {
+	q := kc.metadataRefresh
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	cache, err := kc.readRoomMetadata(ctx, evt.ChatID)
+	if err != nil || cache.PersonalAt.IsZero() {
+		return false, err
+	}
+	// A delayed push no newer than the applied revision changes nothing.
+	applied, err := kc.appliedPersonalRevision(ctx)
+	if err != nil || evt.Revision <= applied {
+		return err == nil, err
+	}
+	personal := chatmeta.RoomMeta{}
+	if cache.Personal != nil {
+		personal = *cache.Personal
+	}
+	switch evt.Type {
+	case "name":
+		personal.Name = evt.Content
+	case "imagePath":
+		personal.ImageURL, personal.FullImageURL = evt.ImageURL, evt.FullImageURL
+	}
+	cache.Personal = &personal
+	// A source read begun before this push must not overwrite it.
+	if task, ok := q.snapshots[evt.ChatID]; ok {
+		q.version++
+		task.version = q.version
+		q.snapshots[evt.ChatID] = task
+	}
+	if err = kc.writeRoomMetadata(ctx, cache); err != nil {
+		return false, err
+	}
+	return true, kc.recordPersonalRevision(ctx, evt.Revision)
 }
