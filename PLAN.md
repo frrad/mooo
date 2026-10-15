@@ -1068,9 +1068,10 @@ above. One PR each, highest account-safety risk first:
       remainder as a deliberate deviation (REACTION-LOOKUP-BUDGET.md).
 - [x] (#8a) Debounce Matrix read receipts per chat (3 s window, latest
       position, flushed on Disconnect).
-- [ ] (#8b) Differential-test the native mark-read SYNCMSG shape before
+- [x] (#8b) Differential-test the native mark-read SYNCMSG shape before
       switching to it; needs a lastSyncLogId analogue and a held count
-      (read-receipt-policy.md "Native mark-read shape").
+      (read-receipt-policy.md "Native mark-read shape"). Switched after an
+      owned differential; deviations named there.
 - [x] (#11) Apply NEWMEM/DELMEM feed payloads to the stored verified roster
       instead of CHATINFO+MEMLIST; MEMBER for every invitee.
 - [x] (#12) Drop CHATINFO+MEMLIST around ADDMEM; apply the reply's invitation

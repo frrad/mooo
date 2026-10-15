@@ -65,49 +65,123 @@ later position covered both messages.
 
 ### Request
 
-`MarkRead` sends one `SYNCMSG` `[watermark-1, watermark]` with `cnt=1`, and
-after a successful response it persists the watermark as the chat's read
+`MarkRead` sends the official client's single-room sync
+([native mark-read shape](#native-mark-read-shape)). After the server confirms
+a request with `isOK=true`, the bridge persists its `max` as the chat's read
 acknowledgement. A later receipt at or below that position is not re-sent,
 including after a restart. A failure is reported once, without a retry: the
 shared request path never retries mutations. The logged error keeps only a
 stable category (`status N`, cancelled, deadline, session closed, or outcome
 unknown) and never wraps backend detail.
 
-### Native mark-read shape (not adopted)
+### Native mark-read shape
 
-The official client acknowledges reads through its single-room sync
-coordinator ([HISTORY-STATIC](HISTORY-STATIC.md) §C, SL-BIN-035):
+Adopted 2026-10-15 after the owned differential below.
 
-- `cur` is the room's persisted `lastSyncLogId`;
-- `max` and `cnt` come from the locally held messages after `cur`, capped
-  at 300, with the room's last log as the fallback `max`;
-- nothing is sent when `lastSyncLogId` equals both `lastSeenLogId` and
-  `lastLogId`;
-- an `isOK=true` response sets `lastSeenLogId` and `lastSyncLogId` to the
-  request's `max`.
+**Official client (macOS 26.8.0, static).** Explicit mark-as-read, read-all
+and summary-and-read enter the single-room sync coordinator with the room's
+`lastLogId` as the upper bound ([HISTORY-STATIC](HISTORY-STATIC.md) §C,
+SL-BIN-035, SL-BIN-042):
 
-The bridge still sends `[watermark-1, watermark]` with `cnt=1`, a window the
-official client never builds. Switching needs two things this checkpoint
-does not have yet:
+- `cur` is the room's `lastSyncLogId`. Only this coordinator's response
+  callback writes it, so a room that never ran a single-room sync starts at 0.
+  LOGINLIST/LCHATLIST `s`, live `MSG`, bulk `MCHATLOGS`, `CHATONROOM`,
+  `DECUNREAD` and a successful `WRITE` leave it unchanged.
+- `max` and `cnt` come from one query over the local messages: the oldest 300
+  with `cur < logId <= upper bound`, no type or status filter. `max` is the
+  highest of them; with no rows it is the room's `lastLogId`.
+- Nothing is sent when `lastSyncLogId`, `lastSeenLogId` and `lastLogId` are all
+  equal. Otherwise the request is sent even when `cur` equals `max`, with
+  `cnt=0`.
+- `isOK=true` sets `lastSyncLogId` and `lastSeenLogId` to the request's `max`,
+  and the coordinator runs again only when `cnt` was 300. `isOK=false` raises
+  `lastSyncLogId` to the highest returned log (and `lastSeenLogId` only to the
+  request's `cur`), and the coordinator runs again when any log was returned.
+  Each continuation recomputes `cur`, `max` and `cnt` with the original upper
+  bound, without a delay.
 
-1. **An analogue of `lastSyncLogId`.** Native raises it after every
-   single-room sync, including the mark-read itself. It does not raise it
-   for a live `MSG`. The bridge's `ChatCursor` advances on live messages too,
-   and `ReadWatermark` is zero for a chat the bridge never acknowledged. The
-   candidate is the higher of `ReadWatermark` and the catch-up target of the
-   last connect, which would need a new checkpoint field.
-2. **A held count.** This is the number of bridged messages after `cur`, up
-   to the receipt position, capped at 300. The server returns the messages
-   that `cnt` says the client does not hold (SL-LIVE-013). An undercount
-   only costs bytes, because `MarkRead` ignores the returned logs. Whether
-   the server's read effect depends on `cnt` is unproven: SL-LIVE-014 is
-   only a hint.
+**Server rule (owned, observed).** One A/B/C regular group, the bridge as B,
+A's official Android client sending synthetic texts, A's per-message unread
+counts read before and after each request ([fixture](../fixtures/bridge/markread-native-observed.json),
+SL-LIVE-015):
 
-The switch waits for an owned differential in one group, with the same
-unread setup as the [coalescing acceptance](#coalescing-bridge-policy). It
-compares the current shape with the native shape on: the read markers on A,
-B's phone notification, and the response's `chatLogs` count. It must cover
-a chat the bridge never acknowledged and a backlog above 300.
+| Request | Server held in `(cur, max]` | Response | A's unread counts |
+|---|---|---|---|
+| `cnt` equal to the held count | n | `isOK=true`, no logs | read through `max` |
+| `cnt` above it (overcount) | 2, `cnt=3` | `isOK=true`, no logs | read through `max` |
+| `cnt` below it (undercount) | 3, `cnt=2`; 2, `cnt=1` | `isOK=false`, the logs | unchanged after 30 s |
+| `cur` equal to `max`, `cnt=0` | 0 | `isOK=true`, no logs | read through `max` |
+
+The server confirms a request, and marks the chat read through `max`, exactly
+when `cnt` covers every log it holds in `(cur, max]`. The bound is not the
+account's server read position: `cur` above it still reads everything through
+`max`. This also explains earlier observations. Catch-up's `cnt=0` over unread
+logs is an undercount and reads nothing, and the old `[watermark-1, watermark]`
+`cnt=1` window always holds exactly one log, so the server always confirmed it.
+Whether the logs returned with `isOK=false` are always the whole range is open:
+one undercount returned only an older log below the declared ones, two others
+the whole range.
+
+**Bridge analogues.**
+
+- *`lastSyncLogId`:* the persisted read acknowledgement, zero for a chat the
+  bridge never acknowledged, as for a native room that never synced. It
+  advances only on `isOK=true`, so it is also the analogue of `lastSeenLogId`
+  after a mark-read.
+- *Held messages:* the chat's bridged Kakao logs in `(cur, receipt]`, every
+  message row of the chat with or without a Matrix event, oldest 300 first.
+  Logs the bridge never stores (feeds such as invitations, skipped types, logs
+  before the bridge joined) make this an undercount.
+- *Upper bound:* the Matrix receipt position, not the chat's last log
+  (deviation below).
+
+**Request sequence.** `MarkRead` sends `SYNCMSG(cur, max, cnt)` from those
+analogues. On `isOK=true` it persists `max` and continues from it only when
+`cnt` was 300 and `max` is below the receipt. On `isOK=false` with returned
+logs it continues from the highest returned log; when that is the receipt
+position, the next request is `cur=max`, `cnt=0`, which the server confirms. On
+`isOK=false` without logs it stops without persisting anything.
+
+**Owned acceptance (production path).** With a build of this branch:
+
+- A chat the bridge never acknowledged, receipt on the second of three new
+  texts: `(0, t2, 2)` returned the group's older invitation feed with
+  `isOK=false`; `(feed, t2, 2)` was confirmed. A showed the first two texts
+  read and the third unread.
+- The next receipt, three bridged texts later: one confirmed `(t2, t5, 3)`.
+- An undercount forced by the lab overlay: `(t8, t15, 6)` for seven held texts
+  returned all seven with `isOK=false`; `(t15, t15, 0)` was confirmed and A
+  showed all seven read.
+- A second chat the bridge never acknowledged, with 302 bridged texts and a
+  receipt on the last: `(0, t300, 300)` returned only the older invitation
+  feed with `isOK=false`, `(feed, t300, 300)` was confirmed, and the capped
+  continuation `(t300, t302, 2)` was confirmed. A showed the last texts read,
+  and `CHATONROOM` reported the account's watermark at t302.
+- Control, a build without this change, in a third group: `[t1-1, t1]`
+  `cnt=1` was confirmed and read the first text only.
+
+The returned logs had no side effect on the bridge: no message was bridged
+again, and the chat cursor, server inventory and history gaps in the
+continuity checkpoint changed only with live delivery.
+
+**Deliberate deviations.**
+
+- *Upper bound.* Native acknowledges the whole room (`lastLogId`). A Matrix
+  receipt may name an earlier message, and the bridge acknowledges only up to
+  it.
+- *Unconfirmed position.* Native persists the `isOK=false` position as
+  `lastSyncLogId`. The bridge keeps it only for the continuation in progress.
+  A position the server never confirmed is not a read, and persisting it made a
+  first build of this change skip later receipts while A still showed the
+  messages unread. An interrupted continuation therefore repeats one
+  unconfirmed round instead.
+- *Skip predicate.* Native skips only when its three positions are equal and
+  can send `cur=max`, `cnt=0` to confirm a position it already synced. The
+  bridge skips any receipt at or below its acknowledgement.
+- *Extra round.* Native stores feeds and every message type, so its count is
+  usually exact and one request suffices. The bridge's count misses logs it
+  never stores, which costs one `isOK=false` round that returns them before the
+  confirming request.
 
 ### Decoupling from catch-up
 
@@ -120,10 +194,10 @@ showed as unread.
 
 Checkpoint version 5 records the read watermark only after a successful
 `MarkRead`. Migrating from version 4 discards the stored values. Outbound
-receipts therefore no longer depend on the server effect of `cnt=0`. If
-`cnt=0` does mark messages read, the cost is at most one repeated `cnt=1`
-acknowledgement. The `cnt=0` differential still matters for catch-up and
-backfill policy, but it no longer blocks receipts.
+receipts therefore no longer depend on the server effect of `cnt=0`. The
+2026-10-15 differential settled that effect: a catch-up page declares none of
+the logs it fetches, so the server answers without `isOK` and marks nothing
+read ([native mark-read shape](#native-mark-read-shape)).
 
 ## `NOTIREAD`: not sent
 

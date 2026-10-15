@@ -2,8 +2,12 @@
 
 An owned regular-group run of this differential on 2026-10-10 (catch-up
 `cnt=0` left the sender's unread count unchanged; `MarkRead` `cnt=1` lowered it)
-is recorded in [group read receipts](GROUP-READ-RECEIPTS.md). The original
-procedure follows.
+is recorded in [group read receipts](GROUP-READ-RECEIPTS.md). A 2026-10-15
+run explained it: the server marks a chat read through `max` only when `cnt`
+covers every log in `(cur, max]`, so `cnt=0` over unread logs reads nothing,
+while `cnt=0` over an empty range (`cur == max`) does
+([native mark-read shape](read-receipt-policy.md#native-mark-read-shape)). The
+original procedure follows.
 
 This is a proposed controlled experiment, not a live validation result. It
 resolves whether `SYNCMSG` with `cnt=0` changes Kakao's server-side unread/read

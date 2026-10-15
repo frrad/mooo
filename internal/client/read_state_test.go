@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/continuity"
-	"github.com/frrad/mooo/internal/protocol/loco"
 	"github.com/frrad/mooo/internal/protocol/syncmsg"
 	testloco "github.com/frrad/mooo/internal/testsupport/loco"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -22,60 +22,242 @@ import (
 // LOGINLIST for each would exercise nothing new. login_sync_test.go and
 // client_test.go cover the bootstrap end to end.
 
-func TestSessionMarkReadUsesOneMessageSyncShape(t *testing.T) {
-	backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", func(raw bson.Raw) error {
+// heldNone is a HeldMessages that holds nothing, so MarkRead falls back to
+// the acknowledged position itself with cnt=0.
+func heldNone(context.Context, int64, int64, int) (int64, int, error) { return 0, 0, nil }
+
+// heldFixed returns a HeldMessages that reports logs as the caller's stored
+// log IDs and records each query's (after, upTo, limit).
+func heldFixed(logs []int64, queries *[][3]int64) HeldMessages {
+	return func(_ context.Context, after, upTo int64, limit int) (int64, int, error) {
+		*queries = append(*queries, [3]int64{after, upTo, int64(limit)})
+		var last int64
+		count := 0
+		for _, log := range logs {
+			if log > after && log <= upTo && count < limit {
+				last = log
+				count++
+			}
+		}
+		return last, count, nil
+	}
+}
+
+func syncShapeStep(chatID, cur, max int64, count int32) testloco.Step {
+	return testloco.Expect("SYNCMSG", func(raw bson.Raw) error {
 		if err := requireExactKeys(raw, "chatId", "cur", "max", "cnt"); err != nil {
 			return err
 		}
-		if err := requireInt64(raw, "chatId", 42); err != nil {
+		if err := requireInt64(raw, "chatId", chatID); err != nil {
 			return err
 		}
-		if err := requireInt64(raw, "cur", 98); err != nil {
+		if err := requireInt64(raw, "cur", cur); err != nil {
 			return err
 		}
-		if err := requireInt64(raw, "max", 99); err != nil {
+		if err := requireInt64(raw, "max", max); err != nil {
 			return err
 		}
-		count, err := raw.LookupErr("cnt")
-		if err != nil || count.Type != bson.TypeInt32 || count.Int32() != 1 {
-			return errors.New("cnt is not int32(1)")
+		value, err := raw.LookupErr("cnt")
+		if err != nil || value.Type != bson.TypeInt32 || value.Int32() != count {
+			return fmt.Errorf("cnt is not int32(%d)", count)
 		}
 		return nil
-	}, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})))
-	session := &session{
-		wire:    clientWire(backend),
-		nextID:  1,
-		pushes:  make(chan loco.Packet, 1),
-		pending: make(map[uint32]pendingRequest),
-	}
-	go session.readLoop()
+	}, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}}, bson.E{Key: "isOK", Value: true}))
+}
 
-	response, err := session.MarkRead(context.Background(), 42, 99)
+func TestClientMarkReadSendsNativeHeldShapeFromAcknowledgedPosition(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitReadWatermark(42, 90); err != nil {
+		t.Fatal(err)
+	}
+	backend := newScriptedBackend(t, false, syncShapeStep(42, 90, 99, 3))
+	api := testContinuityClient(t, checkpoint, backend)
+	var queries [][3]int64
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldFixed([]int64{88, 90, 93, 95, 99, 104}, &queries)); err != nil {
+		t.Fatal(err)
+	}
+	waitBackends(t, backend)
+	if want := [][3]int64{{90, 99, 300}}; fmt.Sprint(queries) != fmt.Sprint(want) {
+		t.Fatalf("held queries = %v, want %v", queries, want)
+	}
+	if got := checkpoint.ReadWatermark(42); got != 99 {
+		t.Fatalf("watermark = %d, want 99", got)
+	}
+}
+
+func TestClientMarkReadContinuesWhileHeldCountIsCapped(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitReadWatermark(42, 1000); err != nil {
+		t.Fatal(err)
+	}
+	logs := make([]int64, 0, 302)
+	for log := int64(1001); log <= 1302; log++ {
+		logs = append(logs, log)
+	}
+	backend := newScriptedBackend(t, false,
+		syncShapeStep(42, 1000, 1300, 300),
+		syncShapeStep(42, 1300, 1302, 2),
+	)
+	api := testContinuityClient(t, checkpoint, backend)
+	var queries [][3]int64
+	if _, err := api.MarkRead(context.Background(), 42, 1302, heldFixed(logs, &queries)); err != nil {
+		t.Fatal(err)
+	}
+	waitBackends(t, backend)
+	if want := [][3]int64{{1000, 1302, 300}, {1300, 1302, 300}}; fmt.Sprint(queries) != fmt.Sprint(want) {
+		t.Fatalf("held queries = %v, want %v", queries, want)
+	}
+	if got := checkpoint.ReadWatermark(42); got != 1302 {
+		t.Fatalf("watermark = %d, want 1302", got)
+	}
+}
+
+func TestClientMarkReadNotOKRaisesToReturnedLogAndContinues(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitReadWatermark(42, 90); err != nil {
+		t.Fatal(err)
+	}
+	first := testloco.Expect("SYNCMSG", nil, statusDocument(
+		bson.E{Key: "chatLogs", Value: bson.A{bson.D{{Key: "logId", Value: int64(94)}}}},
+		bson.E{Key: "isOK", Value: false},
+	))
+	backend := newScriptedBackend(t, false, first, syncShapeStep(42, 94, 99, 2))
+	api := testContinuityClient(t, checkpoint, backend)
+	var queries [][3]int64
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldFixed([]int64{93, 95, 99}, &queries)); err != nil {
+		t.Fatal(err)
+	}
+	waitBackends(t, backend)
+	if want := [][3]int64{{90, 99, 300}, {94, 99, 300}}; fmt.Sprint(queries) != fmt.Sprint(want) {
+		t.Fatalf("held queries = %v, want %v", queries, want)
+	}
+	if got := checkpoint.ReadWatermark(42); got != 99 {
+		t.Fatalf("watermark = %d, want 99", got)
+	}
+}
+
+// Owned regression (2026-10-15): an undercounted request is answered without
+// isOK and marks nothing read, yet the previous build recorded its maximum as
+// acknowledged, so later receipts were skipped while the server still showed
+// the messages unread. The official continuation sends cur equal to max with
+// cnt=0, which the server confirms.
+func TestClientMarkReadUndercountEndsWithEmptyRangeBeforeCommitting(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitReadWatermark(42, 90); err != nil {
+		t.Fatal(err)
+	}
+	undercounted := testloco.Expect("SYNCMSG", nil, statusDocument(
+		bson.E{Key: "chatLogs", Value: bson.A{bson.D{{Key: "logId", Value: int64(95)}}, bson.D{{Key: "logId", Value: int64(97)}}, bson.D{{Key: "logId", Value: int64(99)}}}},
+		bson.E{Key: "isOK", Value: false},
+	))
+	backend := newScriptedBackend(t, false, undercounted, syncShapeStep(42, 99, 99, 0))
+	api := testContinuityClient(t, checkpoint, backend)
+	var queries [][3]int64
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldFixed([]int64{97, 99}, &queries)); err != nil {
+		t.Fatal(err)
+	}
+	waitBackends(t, backend)
+	if got := checkpoint.ReadWatermark(42); got != 99 {
+		t.Fatalf("watermark = %d, want 99 after the confirmed empty range", got)
+	}
+}
+
+func TestClientMarkReadUnconfirmedContinuationIsNotPersisted(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitReadWatermark(42, 90); err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	undercounted := testloco.Expect("SYNCMSG", nil, statusDocument(
+		bson.E{Key: "chatLogs", Value: bson.A{bson.D{{Key: "logId", Value: int64(99)}}}},
+		bson.E{Key: "isOK", Value: false},
+	))
+	backend := newScriptedBackend(t, false, undercounted, testloco.DropAfter("SYNCMSG", &requests))
+	api := testContinuityClient(t, checkpoint, backend)
+	var queries [][3]int64
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldFixed([]int64{99}, &queries)); err == nil {
+		t.Fatal("MarkRead succeeded although the continuation was cut off")
+	}
+	waitBackends(t, backend)
+	if got := checkpoint.ReadWatermark(42); got != 90 {
+		t.Fatalf("watermark = %d, want the last confirmed 90", got)
+	}
+}
+
+func TestClientMarkReadNotOKWithoutLogsKeepsPosition(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitReadWatermark(42, 90); err != nil {
+		t.Fatal(err)
+	}
+	backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", nil, statusDocument(bson.E{Key: "isOK", Value: false})))
+	api := testContinuityClient(t, checkpoint, backend)
+	var queries [][3]int64
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldFixed([]int64{93, 99}, &queries)); err != nil {
+		t.Fatal(err)
+	}
+	waitBackends(t, backend)
+	if got := checkpoint.ReadWatermark(42); got != 90 {
+		t.Fatalf("watermark = %d, want unchanged 90", got)
+	}
+}
+
+func TestClientMarkReadWithoutHeldMessagesAcknowledgesPositionWithZeroCount(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitReadWatermark(42, 90); err != nil {
+		t.Fatal(err)
+	}
+	backend := newScriptedBackend(t, false, syncShapeStep(42, 90, 99, 0))
+	api := testContinuityClient(t, checkpoint, backend)
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldNone); err != nil {
+		t.Fatal(err)
+	}
+	waitBackends(t, backend)
+	if got := checkpoint.ReadWatermark(42); got != 99 {
+		t.Fatalf("watermark = %d, want 99", got)
+	}
+}
+
+func TestClientMarkReadHeldLookupFailureSendsNothing(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	api, err := newClient(reusableTestState(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(response.ChatLogs) != 0 {
-		t.Fatalf("response chat logs = %d, want empty", len(response.ChatLogs))
+	api.checkpoint = checkpoint
+	api.dial = func(context.Context, authstate.State) (*session, error) {
+		return nil, errors.New("unexpected dial")
 	}
-	waitBackends(t, backend)
+	lookup := errors.New("store unavailable")
+	failing := func(context.Context, int64, int64, int) (int64, int, error) { return 0, 0, lookup }
+	if _, err := api.MarkRead(context.Background(), 42, 99, failing); !errors.Is(err, lookup) {
+		t.Fatalf("MarkRead error = %v, want the lookup failure", err)
+	}
+	if got := checkpoint.ReadWatermark(42); got != 0 {
+		t.Fatalf("watermark = %d, want none", got)
+	}
 }
 
-func TestSessionMarkReadRejectsInvalidInput(t *testing.T) {
-	session := &session{}
+func TestClientMarkReadRejectsInvalidInput(t *testing.T) {
+	api, err := newClient(reusableTestState(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, test := range []struct {
 		name      string
 		ctx       context.Context
 		chatID    int64
 		watermark int64
+		held      HeldMessages
 		want      error
 	}{
-		{name: "chat id", ctx: context.Background(), chatID: 0, watermark: 1, want: syncmsg.ErrInvalidRequest},
-		{name: "watermark zero", ctx: context.Background(), chatID: 42, watermark: 0, want: syncmsg.ErrInvalidRequest},
-		{name: "watermark negative", ctx: context.Background(), chatID: 42, watermark: -1, want: syncmsg.ErrInvalidRequest},
-		{name: "nil context", ctx: nil, chatID: 42, watermark: 1, want: ErrProtocol},
+		{name: "chat id", ctx: context.Background(), chatID: 0, watermark: 1, held: heldNone, want: syncmsg.ErrInvalidRequest},
+		{name: "watermark zero", ctx: context.Background(), chatID: 42, watermark: 0, held: heldNone, want: syncmsg.ErrInvalidRequest},
+		{name: "watermark negative", ctx: context.Background(), chatID: 42, watermark: -1, held: heldNone, want: syncmsg.ErrInvalidRequest},
+		{name: "nil held", ctx: context.Background(), chatID: 42, watermark: 1, held: nil, want: ErrProtocol},
+		{name: "nil context", ctx: nil, chatID: 42, watermark: 1, held: heldNone, want: ErrProtocol},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := session.MarkRead(test.ctx, test.chatID, test.watermark); !errors.Is(err, test.want) {
+			if _, err := api.MarkRead(test.ctx, test.chatID, test.watermark, test.held); !errors.Is(err, test.want) {
 				t.Fatalf("MarkRead error = %v, want %v", err, test.want)
 			}
 		})
@@ -85,10 +267,10 @@ func TestSessionMarkReadRejectsInvalidInput(t *testing.T) {
 func TestClientMarkReadCommitsOnlyAfterSuccess(t *testing.T) {
 	checkpoint := testCheckpoint(t)
 	backend := newScriptedBackend(t, false, testloco.Expect("SYNCMSG", nil, statusDocument(
-		bson.E{Key: "chatLogs", Value: bson.A{}},
+		bson.E{Key: "chatLogs", Value: bson.A{}}, bson.E{Key: "isOK", Value: true},
 	)))
 	api := testContinuityClient(t, checkpoint, backend)
-	response, err := api.MarkRead(context.Background(), 42, 99)
+	response, err := api.MarkRead(context.Background(), 42, 99, heldNone)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,12 +296,12 @@ func TestClientMarkReadSerializesDuplicateWatermarks(t *testing.T) {
 		requests++
 		close(firstRequest)
 		<-allowFirstResponse
-		return server.WriteBSON(request.Header.PacketID, "SYNCMSG", statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}}))
+		return server.WriteBSON(request.Header.PacketID, "SYNCMSG", statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}}, bson.E{Key: "isOK", Value: true}))
 	})
 	api := testContinuityClient(t, checkpoint, backend)
 	errs := make(chan error, 2)
 	go func() {
-		_, err := api.MarkRead(context.Background(), 42, 99)
+		_, err := api.MarkRead(context.Background(), 42, 99, heldNone)
 		errs <- err
 	}()
 	select {
@@ -130,7 +312,7 @@ func TestClientMarkReadSerializesDuplicateWatermarks(t *testing.T) {
 	secondStarted := make(chan struct{})
 	go func() {
 		close(secondStarted)
-		_, err := api.MarkRead(context.Background(), 42, 99)
+		_, err := api.MarkRead(context.Background(), 42, 99, heldNone)
 		errs <- err
 	}()
 	select {
@@ -165,7 +347,7 @@ func TestClientMarkReadSkipsPersistedWatermark(t *testing.T) {
 		dials++
 		return nil, errors.New("unexpected dial")
 	}
-	if _, err := api.MarkRead(context.Background(), 42, 99); err != nil {
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldNone); err != nil {
 		t.Fatal(err)
 	}
 	if dials != 0 {
@@ -188,7 +370,7 @@ func TestClientMarkReadSkipsOlderPersistedWatermark(t *testing.T) {
 		dials++
 		return nil, errors.New("unexpected dial")
 	}
-	if _, err := api.MarkRead(context.Background(), 42, 98); err != nil {
+	if _, err := api.MarkRead(context.Background(), 42, 98, heldNone); err != nil {
 		t.Fatal(err)
 	}
 	if dials != 0 || checkpoint.ReadWatermark(42) != 99 {
@@ -221,7 +403,7 @@ func TestClientMarkReadSkipsWatermarkAfterCheckpointReopen(t *testing.T) {
 	api.dial = func(context.Context, authstate.State) (*session, error) {
 		return nil, errors.New("unexpected dial after restart")
 	}
-	if _, err := api.MarkRead(context.Background(), 42, 99); err != nil {
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldNone); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -235,7 +417,7 @@ func TestClientMarkReadNonzeroStatusDoesNotPersistOrRetry(t *testing.T) {
 	}, bson.D{{Key: "status", Value: int32(-321)}}))
 	api := testContinuityClient(t, checkpoint, backend)
 	var status StatusError
-	if _, err := api.MarkRead(context.Background(), 42, 99); !errors.As(err, &status) {
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldNone); !errors.As(err, &status) {
 		t.Fatalf("MarkRead error = %v, want status error", err)
 	}
 	if requests != 1 || checkpoint.ReadWatermark(42) != 0 {
@@ -249,7 +431,7 @@ func TestClientMarkReadDisconnectDoesNotPersistOrRetry(t *testing.T) {
 	requests := 0
 	backend := newScriptedBackend(t, false, testloco.DropAfter("SYNCMSG", &requests))
 	api := testContinuityClient(t, checkpoint, backend)
-	if _, err := api.MarkRead(context.Background(), 42, 99); err == nil {
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldNone); err == nil {
 		t.Fatal("MarkRead unexpectedly succeeded after disconnect")
 	}
 	if requests != 1 || checkpoint.ReadWatermark(42) != 0 {
@@ -271,7 +453,7 @@ func TestClientSyncMessagesCatchUpDoesNotSuppressLaterMarkRead(t *testing.T) {
 	}
 	backend := newScriptedBackend(t, false,
 		testloco.Expect("SYNCMSG", recordCount, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})),
-		testloco.Expect("SYNCMSG", recordCount, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}})),
+		testloco.Expect("SYNCMSG", recordCount, statusDocument(bson.E{Key: "chatLogs", Value: bson.A{}}, bson.E{Key: "isOK", Value: true})),
 	)
 	api := testContinuityClient(t, checkpoint, backend)
 	// Catch-up declares zero held messages. Whether that marks the interval
@@ -282,7 +464,8 @@ func TestClientSyncMessagesCatchUpDoesNotSuppressLaterMarkRead(t *testing.T) {
 	if got := checkpoint.ReadWatermark(42); got != 0 {
 		t.Fatalf("catch-up recorded read acknowledgement %d, want none", got)
 	}
-	if _, err := api.MarkRead(context.Background(), 42, 99); err != nil {
+	var queries [][3]int64
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldFixed([]int64{99}, &queries)); err != nil {
 		t.Fatal(err)
 	}
 	if len(counts) != 2 || counts[0] != 0 || counts[1] != 1 {
@@ -292,4 +475,89 @@ func TestClientSyncMessagesCatchUpDoesNotSuppressLaterMarkRead(t *testing.T) {
 		t.Fatalf("read acknowledgement after MarkRead = %d, want 99", got)
 	}
 	waitBackends(t, backend)
+}
+
+// The fixture replays an owned differential: the server's observed answers
+// to each native-shaped request, and the requests the bridge sent.
+func TestClientMarkReadMatchesObservedNativeContinuation(t *testing.T) {
+	raw, err := os.ReadFile("../../research/fixtures/bridge/markread-native-observed.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Provenance struct{ Kind string }
+		Cases      []struct {
+			Name      string
+			Confirmed int64
+			Held      []int64
+			HeldRange struct{ From, Through int64 } `json:"held_range"`
+			Watermark int64
+			Responses []struct {
+				IsOK   bool    `json:"isOK"`
+				LogIDs []int64 `json:"logIds"`
+			}
+			ExpectedRequests []struct {
+				Cur, Max int64
+				Cnt      int32
+			} `json:"expected_requests"`
+			ExpectedConfirmed int64 `json:"expected_confirmed"`
+		}
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.Provenance.Kind != "observed" || len(fixture.Cases) == 0 {
+		t.Fatalf("fixture provenance %q with %d cases", fixture.Provenance.Kind, len(fixture.Cases))
+	}
+	for _, tc := range fixture.Cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			if len(tc.Responses) != len(tc.ExpectedRequests) {
+				t.Fatal("fixture pairs each request with one response")
+			}
+			held := tc.Held
+			for log := tc.HeldRange.From; log > 0 && log <= tc.HeldRange.Through; log++ {
+				held = append(held, log)
+			}
+			checkpoint := testCheckpoint(t)
+			if tc.Confirmed > 0 {
+				if _, err := checkpoint.CommitReadWatermark(42, tc.Confirmed); err != nil {
+					t.Fatal(err)
+				}
+			}
+			steps := make([]testloco.Step, 0, len(tc.Responses))
+			for i, response := range tc.Responses {
+				reply := statusDocument(bson.E{Key: "isOK", Value: response.IsOK})
+				if response.LogIDs != nil {
+					logs := bson.A{}
+					for _, id := range response.LogIDs {
+						logs = append(logs, bson.D{{Key: "logId", Value: id}})
+					}
+					reply = append(reply, bson.E{Key: "chatLogs", Value: logs})
+				}
+				want := tc.ExpectedRequests[i]
+				steps = append(steps, testloco.Expect("SYNCMSG", func(raw bson.Raw) error {
+					if err := requireInt64(raw, "cur", want.Cur); err != nil {
+						return err
+					}
+					if err := requireInt64(raw, "max", want.Max); err != nil {
+						return err
+					}
+					if count, err := raw.LookupErr("cnt"); err != nil || count.Type != bson.TypeInt32 || count.Int32() != want.Cnt {
+						return fmt.Errorf("cnt is not int32(%d)", want.Cnt)
+					}
+					return nil
+				}, reply))
+			}
+			backend := newScriptedBackend(t, false, steps...)
+			api := testContinuityClient(t, checkpoint, backend)
+			var queries [][3]int64
+			if _, err := api.MarkRead(context.Background(), 42, tc.Watermark, heldFixed(held, &queries)); err != nil {
+				t.Fatal(err)
+			}
+			waitBackends(t, backend)
+			if got := checkpoint.ReadWatermark(42); got != tc.ExpectedConfirmed {
+				t.Fatalf("confirmed = %d, want %d", got, tc.ExpectedConfirmed)
+			}
+		})
+	}
 }

@@ -252,8 +252,58 @@ func (kc *KakaoClient) sendReadAck(ctx context.Context, chatID, logID int64) {
 		kc.log().Debug().Int64("kakao_chat_id", chatID).Msg("Dropping Kakao read acknowledgement: not connected")
 		return
 	}
-	if _, err := c.MarkRead(ctx, chatID, logID); err != nil {
+	if _, err := c.MarkRead(ctx, chatID, logID, kc.heldMessages(chatID)); err != nil {
 		kc.log().Warn().Err(classifyReadReceiptFailure(err)).Int64("kakao_chat_id", chatID).Msg("Kakao read acknowledgement failed")
+	}
+}
+
+// heldMessages counts the chat's bridged Kakao logs in (after, upTo], the
+// bridge's analogue of the official client's locally stored messages: every
+// message row whose ID is a log of this chat counts, whether or not it has a
+// Matrix event. Rows are selected by timestamp first, from the row at after
+// (or the start of the chat when after was never bridged) through the row at
+// upTo, then filtered by log ID. Kakao timestamps follow log order, so the
+// inclusive time bounds cover the interval; any row outside them is only
+// undercounted, which makes the server return a log the acknowledgement
+// ignores. When upTo itself was never bridged nothing is reported held.
+func (kc *KakaoClient) heldMessages(chatID int64) client.HeldMessages {
+	return func(ctx context.Context, after, upTo int64, limit int) (int64, int, error) {
+		upper, err := kc.store.lastMessagePart(ctx, kc.login.ID, makeMessageID(chatID, upTo))
+		if err != nil || upper == nil {
+			return 0, 0, err
+		}
+		from := time.Unix(0, 0)
+		if after > 0 {
+			lower, err := kc.store.firstMessagePart(ctx, kc.login.ID, makeMessageID(chatID, after))
+			if err != nil {
+				return 0, 0, err
+			}
+			if lower != nil {
+				from = lower.Timestamp.Add(-time.Nanosecond)
+			}
+		}
+		rows, err := kc.store.messagesBetweenTime(ctx, makePortalKey(chatID, kc.login.ID), from, upper.Timestamp)
+		if err != nil {
+			return 0, 0, err
+		}
+		seen := make(map[int64]struct{}, len(rows))
+		logs := make([]int64, 0, len(rows))
+		for _, row := range rows {
+			rowChat, logID, err := parseMessageID(row.ID)
+			if err != nil || rowChat != chatID || logID <= after || logID > upTo {
+				continue
+			}
+			if _, dup := seen[logID]; !dup {
+				seen[logID] = struct{}{}
+				logs = append(logs, logID)
+			}
+		}
+		if len(logs) == 0 {
+			return 0, 0, nil
+		}
+		sort.Slice(logs, func(i, j int) bool { return logs[i] < logs[j] })
+		logs = logs[:min(len(logs), limit)]
+		return logs[len(logs)-1], len(logs), nil
 	}
 }
 
