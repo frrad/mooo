@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
@@ -80,7 +81,7 @@ func (r memberProfileRecord) member() (chatmeta.Member, bool) {
 // enrichment. Durable compare-and-swap coalesces per-user attempts across rooms
 // and connector instances. Concurrent callers return cached fields or unresolved
 // identities; they do not wait on another caller's request deadline.
-func (kc *KakaoClient) resolveMemberProfiles(ctx context.Context, c chatMetaAPI, chatID int64, userIDs []int64) ([]chatmeta.Member, error) {
+func (kc *KakaoClient) resolveMemberProfiles(ctx context.Context, c chatMetaAPI, chatID int64, userIDs, refetch []int64) ([]chatmeta.Member, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -116,8 +117,8 @@ func (kc *KakaoClient) resolveMemberProfiles(ctx context.Context, c chatMetaAPI,
 			results[userID] = profile
 		}
 		// An empty stored nickname is refetched, as native message conversion
-		// does, at most once per attempt cooldown.
-		if record.Profile != nil && record.Profile.Nickname != "" || now.Before(record.NextAttemptAt) {
+		// does, and so is a requested refetch, at most once per attempt cooldown.
+		if record.Profile != nil && record.Profile.Nickname != "" && !slices.Contains(refetch, userID) || now.Before(record.NextAttemptAt) {
 			continue
 		}
 		record.LastAttemptAt = now
