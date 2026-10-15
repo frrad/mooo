@@ -260,12 +260,21 @@ reports the `MEMBER` outcome. The traced blocks do not persist the response
 
 The `NEWMEM` manager path (see
 [`membership-chat-change-inventory.md`](membership-chat-change-inventory.md))
-collects the invitees' `userId`s and looks up the room by `chatLog.chatId`.
-Depending on a database-side room check and the feed type, it may issue
-`CHATINFO` for the chat. It then issues `MEMBER` for a filtered subset of the
-invitee IDs, using the room's link ID. A feed-type-4 branch skips the
-`CHATINFO` step in the traced flow. The exact room-existence and filter
-predicates are not yet resolved.
+first schedules the chat log as a stored message. It then enumerates
+`chatLog.feed.invitees`: each positive invitee ID other than the account's own
+is collected, and an invitee equal to the account's own ID sets a self-invite
+flag. It looks up the stored room by `chatLog.chatId`. Resolved 2026-10-14:
+
+- **Stored room, no self invite:** when at least one invitee was collected, it
+  sends `MEMBER` for all of them with the room's link ID and
+  `addChatRoomMember` unset. Known invitees are not filtered out; no
+  `CHATINFO` is sent.
+- **Unknown room, or self invite:** it sends `CHATINFO` unless the feed type
+  is 4. Its completion upserts the room and then sends `MEMBER`.
+
+The `DELMEM` manager path sends no request. Its database block deletes the
+room when the leaver is the account itself; otherwise it stores the chat log
+as a message and removes the leaver from the room by user ID.
 
 `CHATINFO` is also issued by the sync-join push handler, by a message-push
 fallback that fetches room information for an unknown chat, and by several UI
@@ -300,8 +309,8 @@ Implementation decisions that follow from the traced behavior:
   Merge, replacement, and member-set effects remain open.
 - **User upsert creation path:** creation versus update of a new user record,
   and the ordinary-user friend-type state table for member `type` 9.
-- **NEWMEM predicates:** the room-existence flag, feed-type-4 branch, and
-  invitee filter.
+- **NEWMEM feed type 4:** the branch is traced, but which membership event
+  carries feed type 4 is not identified here.
 - **MEMLIST token semantics:** where the room's member-list token is written,
   and whether an unchanged token yields an empty `memberIds`.
 - **Friend/contact synchronization:** the HTTP full and token-based friend sync
