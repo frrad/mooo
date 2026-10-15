@@ -72,8 +72,8 @@ func TestRestartWaitsOutPersistedRecoveryBackoff(t *testing.T) {
 	first.Connect(ctx)
 	select {
 	case delay := <-scheduled:
-		if delay != 5*time.Second {
-			t.Fatalf("first recovery delay = %s, want 5s", delay)
+		if delay != 10*time.Second {
+			t.Fatalf("first recovery delay = %s, want 10s", delay)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("failed first connect did not schedule a retry")
@@ -93,8 +93,8 @@ func TestRestartWaitsOutPersistedRecoveryBackoff(t *testing.T) {
 	restarted.Connect(ctx)
 	waitFor(t, restarted.IsLoggedIn)
 
-	if got := waits.got(); len(got) != 1 || got[0] != 3*time.Second {
-		t.Fatalf("restart delays = %v, want [3s]: the rest of the saved 5s backoff", got)
+	if got := waits.got(); len(got) != 1 || got[0] != 8*time.Second {
+		t.Fatalf("restart delays = %v, want [8s]: the rest of the saved 10s backoff", got)
 	}
 	scheduledStates := 0
 	for _, state := range harness.allStates() {
@@ -125,8 +125,10 @@ func TestRestartsSoonAfterLoginEscalateBackoff(t *testing.T) {
 	// supervisor that restarts it at once.
 	previous.Disconnect()
 
+	// The first three restarts count as short sessions and log in at once;
+	// later ones wait out the slow tier from the previous login.
 	loginAt := start
-	want := []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 60 * time.Second, 15 * time.Minute, 15 * time.Minute}
+	want := []time.Duration{0, 0, 0, 15 * time.Minute, 15 * time.Minute}
 	for i, backoff := range want {
 		restartAt := loginAt.Add(time.Second)
 		var opens atomic.Int32
@@ -145,7 +147,11 @@ func TestRestartsSoonAfterLoginEscalateBackoff(t *testing.T) {
 		}
 		restarted.Connect(ctx)
 		waitFor(t, restarted.IsLoggedIn)
-		if got := waits.got(); len(got) != 1 || got[0] != backoff-time.Second {
+		got := waits.got()
+		switch {
+		case backoff == 0 && len(got) != 0:
+			t.Fatalf("restart %d delays = %v, want none", i+1, got)
+		case backoff != 0 && (len(got) != 1 || got[0] != backoff-time.Second):
 			t.Fatalf("restart %d delays = %v, want [%s]", i+1, got, backoff-time.Second)
 		}
 		loginAt = time.Unix(0, clock.Load()).UTC()
@@ -167,7 +173,7 @@ func TestRestartAfterStableSessionConnectsAtOnce(t *testing.T) {
 	previous.Disconnect()
 
 	restarted, _ := restartFrameworkClient(t, br, previous, open)
-	restarted.now = func() time.Time { return start.Add(stableSessionDuration) }
+	restarted.now = func() time.Time { return start.Add(shortSessionDuration) }
 	restarted.wait = func(context.Context, time.Duration) error {
 		t.Error("restart after a stable session waited")
 		return nil

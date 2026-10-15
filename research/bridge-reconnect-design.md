@@ -12,36 +12,53 @@ This ordering preserves the profile lease and prevents two sessions from
 sharing a profile. An explicit disconnect cancels an active bootstrap and
 pending timer, increments the generation, and waits for the cleanup owner.
 
-Recovery from a retryable failure never gives up (2026-10-11). The first
-five attempts after an outage follow a fast schedule: ordinary failures wait
-5, 10, 20, 40 and 60 seconds, and a known `LOGINLIST -328` rate limit waits
-60, 120, 240, 480 and 900 seconds. After that, the bridge reports
-`UNKNOWN_ERROR` `kakao-recovery-stalled` once and keeps retrying every 15
-minutes. The first connect retries on the same schedule, so a network outage
-at startup no longer leaves the bridge down until a restart. A network failure
-during bootstrap (the GETCONF and CHECKIN dials and requests, before LOGINLIST
-sends any credentials) is retryable. Until 2026-10-13 the client hid its cause,
-so a DNS failure right after a lab Mac woke from sleep stopped the bridge for
-good. A transport failure during LOGINLIST itself is still classified only as
-a login failure and is not retried.
+Recovery from a retryable failure never gives up (2026-10-11). Since
+2026-10-15 it follows the official Mac client's recovery episode
+([CONNECT-TRAFFIC finding #7](bridge/CONNECT-TRAFFIC.md#finding-7-reconnect-schedule)).
+A session loss starts an episode whose first attempt runs after 0.1 s. A
+failed attempt retries after a fixed 10 s, with no growth and no jitter. A
+successful login ends the episode, so the next loss starts again at 0.1 s.
+The first connect is an episode's first attempt too, so a network outage at
+startup retries every 10 s. A network failure during bootstrap (the GETCONF
+and CHECKIN dials and requests, before LOGINLIST sends any credentials) is
+retryable. Until 2026-10-13 the client hid its cause, so a DNS failure right
+after a lab Mac woke from sleep stopped the bridge for good. A transport
+failure during LOGINLIST itself is still classified only as a login failure
+and is not retried.
 
-The schedule restarts only after a session has stayed connected for five
-minutes. A session that ends sooner, for example by repeated `CHANGESVR` or a
-close right after login, keeps advancing it, so the bridge cannot log in every
-few seconds forever.
+No attempt runs at or after 600 s from the episode's first attempt, the
+native watchdog. Native then ends the episode and logs out. The bridge
+instead reports `UNKNOWN_ERROR` `kakao-recovery-stalled` once and keeps
+retrying every 15 minutes (deviation: an unattended service has no user or
+wake event to restart recovery).
+
+A known `LOGINLIST -328` device limit keeps the bridge's own ladder,
+independent of the 10 s cadence: the episode's consecutive `-328` replies
+wait 60, 120, 240, 480 and 900 seconds, then 15 minutes with the stall
+report. An ordinary failure in the same episode returns to the 10 s cadence
+while the watchdog allows it.
+
+Sessions that end within 60 s of their successful login, more than three
+times in a row, start their episodes on the 15-minute tier (deviation: native
+has no such guard). A session that lasts 60 s or longer resets the count. It
+stops a server that repeatedly sends `CHANGESVR` or closes the session right
+after login from causing a login every few seconds.
 
 The schedule survives a process restart (2026-10-11). The login's metadata
-records when each login attempt began, its attempt number, and the time a
-scheduled retry may log in. On its first `Connect`, a freshly loaded login
-waits out a pending retry. If the previous process logged in less than five
-minutes before it ended, the restart counts as a short session: the attempt
-number advances and the bridge waits for that attempt's delay, measured
-from the previous login. It reports `TRANSIENT_DISCONNECT`
+records when each login attempt began, the episode's start, its failed
+attempts and `-328` count, the short-session count, the slow tier, and the
+time a scheduled retry may log in. On its first `Connect`, a freshly loaded
+login continues a saved episode: it waits out a pending retry, or retries at
+once if the retry came due while the process was down. Otherwise, if the
+previous process's last login began less than 60 s before the restart, the
+restart counts as a short session; after three of them in a row it waits
+15 minutes from that login. It reports `TRANSIENT_DISCONNECT`
 `kakao-reconnect-scheduled` while it waits. A supervisor that restarts a
-crashing bridge therefore follows the same 5 s to 15 minute schedule
-instead of logging in on every restart. A restart more than five minutes
-after the last login connects at once. Later `Connect` calls in the same
-process keep the in-memory schedule.
+crashing bridge therefore cannot log in on every restart. Later `Connect`
+calls in the same process keep the in-memory schedule.
+
+`GETCONF` `wifi.bgReconnItv` is not read: the Mac client stores it but never
+uses it.
 
 These do not retry: profile-open or lease failures, `ErrLogin`, credential
 renewal failures, unknown `LOGINLIST` status errors, a second `-950`, and
@@ -73,8 +90,9 @@ catch-up when the chat resumes). Other chats keep flowing: commits are per
 chat, so no chat's cursor passes an undelivered event. A catch-up or seeded
 event that fails holds its chat the same way, and the session goes live.
 
-- **Retry:** the held chat is retried in the live session on the ordinary
-  schedule (5, 10, 20, 40, 60 s), with no relogin.
+- **Retry:** the held chat is retried in the live session after
+  delays of 5, 10, 20, 40 and 60 s (the reconnect ladder before 2026-10-15),
+  with no relogin.
 - **Cap:** after those five retries the chat is paused. It is not retried on a
   timer again, and the bridge reports `UNKNOWN_ERROR`
   `kakao-chat-delivery-paused`.

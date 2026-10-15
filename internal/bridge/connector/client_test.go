@@ -874,6 +874,9 @@ func TestConnectRunsEventLoopAndReportsSessionEnd(t *testing.T) {
 func TestChangeServerReportsDistinctTerminalDisconnect(t *testing.T) {
 	fake := &fakeKakao{stream: make(chan events.Result, 2)}
 	kc, harness := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
+	// The reconnect after CHANGESVR stays pending until Disconnect.
+	kc.wait = func(ctx context.Context, _ time.Duration) error { <-ctx.Done(); return ctx.Err() }
+	t.Cleanup(kc.Disconnect)
 
 	kc.Connect(context.Background())
 	fake.stream <- events.Result{Event: events.ChangeServer{}}
@@ -899,6 +902,9 @@ func TestTerminalNoticeStopsLaterEvents(t *testing.T) {
 			fake := &fakeKakao{stream: make(chan events.Result, 3)}
 			// A kickout is saved on the login, which needs the framework.
 			kc, harness, _ := newFrameworkTestClient(t, func() (kakaoClient, error) { return fake, nil })
+			// The reconnect after CHANGESVR stays pending until Disconnect.
+			kc.wait = func(ctx context.Context, _ time.Duration) error { <-ctx.Done(); return ctx.Err() }
+			t.Cleanup(kc.Disconnect)
 
 			kc.Connect(context.Background())
 			fake.stream <- events.Result{Event: tc.event}

@@ -268,9 +268,7 @@ func newKakaoClient(login *bridgev2.UserLogin, st store, userID int64, open func
 		metadataRefresh: newMetadataRefreshQueue(),
 		reactionNotices: make(map[string]time.Time),
 		holds:           newDeliveryHolds(),
-		// A held chat retries on the ordinary reconnect schedule, without
-		// the reconnect.
-		deliveryRetryDelays: ordinaryRecoveryDelays[:],
+		deliveryRetryDelays: heldChatRetryDelays,
 		deliveryResume:      make(chan struct{}, 1),
 	}
 	kc.wait = waitForRecovery

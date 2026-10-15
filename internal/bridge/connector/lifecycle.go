@@ -20,22 +20,6 @@ var terminalDisconnectTimeout = 5 * time.Second
 
 const recoveryCleanupTimeout = 5 * time.Second
 
-// Recovery from a retryable failure is never abandoned. The first
-// fastRecoveryAttempts follow the fast schedule; after that the bridge reports
-// a stalled state and keeps retrying every slowRecoveryDelay, so an outage
-// longer than the fast schedule does not leave it silently down.
-const fastRecoveryAttempts = 5
-const slowRecoveryDelay = 15 * time.Minute
-
-var ordinaryRecoveryDelays = [fastRecoveryAttempts]time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 60 * time.Second}
-var rateLimitedRecoveryDelays = [fastRecoveryAttempts]time.Duration{60 * time.Second, 120 * time.Second, 240 * time.Second, 480 * time.Second, 900 * time.Second}
-
-// stableSessionDuration is how long a session must stay connected before its
-// end restarts the recovery schedule. A session that the server ends sooner,
-// for example by repeated CHANGESVR right after login, keeps advancing the
-// schedule instead of reconnecting every few seconds forever.
-const stableSessionDuration = 5 * time.Minute
-
 // connLifecycle is a KakaoClient's connection lifecycle state: the active
 // session, the retained profile owner, and the background workers that
 // recover or clean them up. mu guards every field.
@@ -60,10 +44,11 @@ type connLifecycle struct {
 	// pump, which interrupts in-flight inbound conversions.
 	lifecycle       context.Context
 	lifecycleCancel context.CancelFunc
-	// retry waits out a recovery backoff and then reconnects; recoveryTry
-	// counts the attempts since the last stable session.
-	retry       worker
-	recoveryTry int
+	// retry waits out a recovery backoff and then reconnects; schedule is
+	// the reconnect schedule that chooses the backoff. Recovery from a
+	// retryable failure is never abandoned.
+	retry    worker
+	schedule recoverySchedule
 	// connectedAt is when the current session connected.
 	connectedAt time.Time
 	// cleanupRetry is the single delayed retry of a timed-out owner cleanup;
@@ -77,7 +62,7 @@ type connLifecycle struct {
 }
 
 func (kc *KakaoClient) Connect(ctx context.Context) {
-	restartWait, restartAttempt, restored := kc.restoredSchedule()
+	restartWait, restartSchedule, restored := kc.restoredSchedule()
 	kc.mu.Lock()
 	if kc.client != nil || kc.cleanup != nil || kc.connecting {
 		kc.mu.Unlock()
@@ -98,7 +83,7 @@ func (kc *KakaoClient) Connect(ctx context.Context) {
 	kc.generation++
 	generation := kc.generation
 	if restored {
-		kc.recoveryTry = restartAttempt
+		kc.schedule = restartSchedule
 	}
 	if restartWait > 0 {
 		// The previous process left a backoff pending, or ended soon after
@@ -160,9 +145,11 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	// client whose subscription has not returned yet.
 	kc.mu.Lock()
 	kc.retain(c)
-	attempt := kc.recoveryTry
+	now := kc.now()
+	kc.schedule.begin(now)
+	schedule := kc.schedule
 	kc.mu.Unlock()
-	kc.recordLoginAttempt(attempt, kc.now())
+	kc.recordLoginAttempt(schedule, now)
 	stream, err := kc.connectAndSubscribe(ctx, c)
 	if err != nil {
 		kc.shutdownBootstrap(c, "after connect failure", false)
@@ -201,6 +188,7 @@ func (kc *KakaoClient) connectOnce(ctx context.Context, generation uint64, recov
 	kc.reactionView = nil
 	kc.done = done
 	kc.connectedAt = kc.now()
+	kc.schedule.succeeded()
 	kc.cleanupRetryAttempts = 0
 	kc.mu.Unlock()
 	kc.sendReadyState()
@@ -236,6 +224,15 @@ func (kc *KakaoClient) retryAfter(err error, generation uint64) bool {
 	if !retryableRecoveryError(err) {
 		return false
 	}
+	return kc.scheduleRecovery(generation, func(schedule *recoverySchedule, now time.Time) (time.Duration, bool) {
+		return schedule.failed(err, now)
+	})
+}
+
+// scheduleRecovery starts the next recovery attempt for generation after the
+// delay that next chooses from the schedule. It reports false when the
+// generation is no longer current.
+func (kc *KakaoClient) scheduleRecovery(generation uint64, next func(*recoverySchedule, time.Time) (delay time.Duration, enteredSlow bool)) bool {
 	// The stalled state is published after the lifecycle mutex is released.
 	stalled := false
 	defer func() {
@@ -248,14 +245,13 @@ func (kc *KakaoClient) retryAfter(err error, generation uint64) bool {
 		kc.mu.Unlock()
 		return false
 	}
-	attempt := kc.recoveryTry
-	kc.recoveryTry++
-	delay := recoveryDelay(err, attempt)
-	stalled = attempt == fastRecoveryAttempts
-	nextAttempt, notBefore := kc.recoveryTry, kc.now().Add(delay)
+	now := kc.now()
+	delay, enteredSlow := next(&kc.schedule, now)
+	stalled = enteredSlow
+	schedule := kc.schedule
 	kc.startRetryLocked(generation, delay)
 	kc.mu.Unlock()
-	kc.recordScheduledRetry(nextAttempt, notBefore)
+	kc.recordScheduledRetry(schedule, now.Add(delay))
 	return true
 }
 
@@ -289,26 +285,11 @@ func (kc *KakaoClient) startRetryLocked(generation uint64, delay time.Duration) 
 	})
 }
 
-// recoveryStalled reports whether recovery has left the fast schedule.
+// recoveryStalled reports whether recovery has left the episode schedule.
 func (kc *KakaoClient) recoveryStalled() bool {
 	kc.mu.Lock()
 	defer kc.mu.Unlock()
-	return kc.recoveryTry > fastRecoveryAttempts
-}
-
-func recoveryDelay(err error, attempt int) time.Duration {
-	if attempt < 0 {
-		attempt = 0
-	}
-	if attempt >= fastRecoveryAttempts {
-		return slowRecoveryDelay
-	}
-	var delays = ordinaryRecoveryDelays[:]
-	var statusErr client.StatusError
-	if errors.As(err, &statusErr) && statusErr.Status == -328 {
-		delays = rateLimitedRecoveryDelays[:]
-	}
-	return delays[attempt]
+	return kc.schedule.slow
 }
 
 // errDeliveryNotConfirmed marks a catch-up stopped because Matrix did not
@@ -484,6 +465,7 @@ func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generatio
 		return
 	}
 	stopping := kc.stopping
+	lasted := kc.now().Sub(kc.connectedAt)
 	kc.client = nil
 	kc.done = nil
 	if !stopping {
@@ -498,27 +480,30 @@ func (kc *KakaoClient) sessionEnded(c kakaoClient, done chan struct{}, generatio
 	kc.mu.Lock()
 	kc.release(c, shutdownErr)
 	canRecover := shutdownErr == nil && !kc.stopping && kc.generation == generation
-	if kc.now().Sub(kc.connectedAt) >= stableSessionDuration {
-		kc.recoveryTry = 0
-	}
 	kc.mu.Unlock()
-	if shutdownErr != nil {
-		kc.log().Err(shutdownErr).Msg("Failed to close Kakao client before recovery")
-		kc.scheduleCleanupRetry(c, generation, kickedOut, terminalErr == nil)
-		return
+	// The session loss starts a new recovery episode.
+	recoverSession := func() {
+		kc.scheduleRecovery(generation, func(schedule *recoverySchedule, _ time.Time) (time.Duration, bool) {
+			return schedule.sessionEnded(lasted)
+		})
 	}
 	if kickedOut || terminalErr != nil {
+		recoverSession = nil
+	}
+	if shutdownErr != nil {
+		kc.log().Err(shutdownErr).Msg("Failed to close Kakao client before recovery")
+		kc.scheduleCleanupRetry(c, generation, recoverSession)
 		return
 	}
-	if canRecover {
-		kc.retryAfter(client.ErrClosed, generation)
+	if canRecover && recoverSession != nil {
+		recoverSession()
 	}
 }
 
 // scheduleCleanupRetry keeps a timed-out profile owner attached and permits
 // one later cleanup attempt. No replacement can be opened while this owner is
 // retained; this is deliberately separate from the recovery attempt budget.
-func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, kickedOut, recover bool) {
+func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, recoverSession func()) {
 	kc.mu.Lock()
 	defer kc.mu.Unlock()
 	if kc.cleanup != c || kc.stopping || kc.cleanupRetry.running() || kc.cleanupRetryAttempts >= 1 {
@@ -542,8 +527,8 @@ func (kc *KakaoClient) scheduleCleanupRetry(c kakaoClient, generation uint64, ki
 		kc.release(c, err)
 		canRecover := err == nil && !kc.stopping && kc.generation == generation
 		kc.mu.Unlock()
-		if canRecover && !kickedOut && recover {
-			kc.retryAfter(client.ErrClosed, generation)
+		if canRecover && recoverSession != nil {
+			recoverSession()
 		}
 	})
 }
@@ -849,7 +834,7 @@ func (kc *KakaoClient) openDetached() (kakaoClient, error) {
 	kc.mu.Lock()
 	busy := kc.stopping || kc.connecting || kc.cleanup != nil
 	pending := kc.retry.running()
-	attempt := kc.recoveryTry
+	schedule := kc.schedule
 	kc.mu.Unlock()
 	if pending {
 		return nil, errDetachedRetryPending
@@ -861,7 +846,7 @@ func (kc *KakaoClient) openDetached() (kakaoClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	kc.recordLoginAttempt(attempt, kc.now())
+	kc.recordLoginAttempt(schedule, kc.now())
 	return c, nil
 }
 
