@@ -486,7 +486,7 @@ func TestGetChatInfoUsesSourceMetadataAndInitialRoster(t *testing.T) {
 
 	// The production resolver warms the persistent cache; subsequent projection
 	// can reuse the name without doing source I/O or downloading an avatar.
-	if _, err := kc.resolveMemberProfiles(context.Background(), fake, testChatID, []int64{testOtherID}); err != nil {
+	if _, err := kc.resolveMemberProfiles(context.Background(), fake, testChatID, []int64{testOtherID}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := kc.GetChatInfo(context.Background(), portal); err != nil {
