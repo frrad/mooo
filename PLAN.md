@@ -1046,7 +1046,7 @@ other bridge-originated request with the official Mac client; the numbers
 below are its findings. These items exclude the native-metadata-trigger work
 above. One PR each, highest account-safety risk first:
 
-- [ ] (#2) Stop ending the source session when a membership refresh, media
+- [x] (#2) Stop ending the source session when a membership refresh, media
       download or GETMSGS dependency fails. Retry delivery in-process with a
       cap; relogin only on transport failure. Regressions for all three.
 - [ ] (#3) Make `!reconcile-group` / `!complete-group-invitations` refuse when

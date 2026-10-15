@@ -524,6 +524,9 @@ func (kc *KakaoClient) applyMetadataRefresh(c kakaoClient, result metadataRefres
 		defer cancel()
 		if _, ok := kc.managedMembershipEvent(ctx, c, result.task.chatID, false); !ok {
 			kc.scheduleMembershipRetry(result.task.chatID, result.task.attempts+1)
+		} else {
+			// Delivery held behind the paused membership can resume.
+			kc.resumeHeld(c, result.task.chatID)
 		}
 		return false
 	}

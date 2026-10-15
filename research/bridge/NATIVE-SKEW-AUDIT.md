@@ -63,6 +63,12 @@ Risk:
 | 20 | Typing is not sent | Matrix typing | Native receives `SYNCACTION` as typing ([METADATA-TRIGGERS](METADATA-TRIGGERS.md)). Outbound typing is untraced | O/U | cos | Trace outbound typing before adding it. It adds traffic, so it is optional |
 | 21 | Inbound media and member-avatar downloads happen immediately on bridging | Each inbound media `MSG`; ghost avatar changes | Native thumbnail and download triggers are untraced (view-triggered download is noted as open in [HISTORY-STATIC](HISTORY-STATIC.md) §D) | U | acct (CDN) | Unavoidable for a bridge, which must re-upload to Matrix. Record it as a deliberate deviation. Trace native auto-download to know how far the bridge differs |
 
+## Resolved
+
+- Finding 2 (2026-10-14): a failed delivery holds its chat and retries it in
+  the live session, capped, instead of relogging in
+  ([delivery holds](../bridge-reconnect-design.md#delivery-holds-2026-10-14)).
+
 ## Matches (no change)
 
 | Bridge action | Evidence |
