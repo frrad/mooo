@@ -348,7 +348,7 @@ func retryableRecoveryError(err error) bool {
 	}
 	var statusErr client.StatusError
 	if errors.As(err, &statusErr) {
-		return !(statusErr.Command == "LOGINLIST" && statusErr.Status == -445)
+		return statusErr.Command != "LOGINLIST" || statusErr.Status != -445
 	}
 	if errors.Is(err, client.ErrLogin) || errors.Is(err, client.ErrCredentialRenewal) {
 		return true
