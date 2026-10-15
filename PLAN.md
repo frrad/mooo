@@ -1054,13 +1054,12 @@ above. One PR each, highest account-safety risk first:
       and KICKOUT block. Done by gating the detached login on those, not by
       refusing whenever no session is live: an unresolved creation blocks
       every bootstrap, so the detached login is its only repair path.
-- [ ] (#1) Use bulk MCHATLOGS (≤100 rooms) as the connect catch-up path and
-      drop per-chat `SYNCMSG cnt=0` at connect. Differential done
-      (CT-LIVE-001..004); implement the spec in
-      [CONNECT-TRAFFIC.md](research/bridge/CONNECT-TRAFFIC.md#implementation-spec):
-      80-log batch cap, `prevId` contiguity, boundary-room retention, gaps for
-      floor rooms, no-progress stop, page cap. Merge with `startup_history` so
-      a connect sends one MCHATLOGS chain.
+- [x] (#1) Use bulk MCHATLOGS (≤100 rooms) as the connect catch-up path and
+      drop per-chat `SYNCMSG cnt=0` at connect. Implemented (#401) per
+      [CONNECT-TRAFFIC.md](research/bridge/CONNECT-TRAFFIC.md#implementation-2026-10-15),
+      with `startup_history` on the same chain; live-verified as CT-LIVE-006
+      (two MCHATLOGS, no SYNCMSG, 90 messages once and in order). A live gap
+      was not provoked.
 - [x] (#5) Reactions: drop the `/members` pre-read on cancel; cancel from the
       stored own pick.
 - [x] (#4) Reactions: derive the own pick and single-actor deltas from the
