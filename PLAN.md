@@ -1055,9 +1055,11 @@ above. One PR each, highest account-safety risk first:
 - [ ] (#1) Use bulk MCHATLOGS (≤100 rooms) as the connect catch-up path and
       drop per-chat `SYNCMSG cnt=0` at connect. Requires an owned offline-
       message differential for gap handling first.
-- [ ] (#4, #5) Reactions: drop the `/members` pre-read on cancel; budget and
-      coalesce the per-push `/members` lookups (or derive the actor from the
-      aggregate) and record the remainder as a deliberate deviation.
+- [x] (#5) Reactions: drop the `/members` pre-read on cancel; cancel from the
+      stored own pick.
+- [ ] (#4) Reactions: budget and coalesce the per-push `/members` lookups (or
+      derive the actor from the aggregate) and record the remainder as a
+      deliberate deviation.
 - [ ] (#8) Debounce Matrix read receipts per chat; trace and differential-test
       the native mark-read SYNCMSG shape before switching to it.
 - [ ] (#11, #12, #13, #14) Apply NEWMEM/DELMEM feed payloads instead of

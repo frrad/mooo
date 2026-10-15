@@ -17,11 +17,14 @@ Raw backend errors are not surfaced because they may contain URLs, response
 bodies, authorization material, or implementation-specific details. Safe
 sentinel identities remain available for tests and redacted caller handling.
 
-Reaction-removal first performs a read-only membership lookup. A lookup failure
-returns a distinct `ErrLookupFailed` category and sends no cancellation
-mutation. If the lookup confirms the authenticated user's reaction,
-cancellation follows the same single-attempt mutation policy and uses the
-mutation categories above.
+Reaction removal sends no lookup. Like the official client, which cancels from
+its locally stored own pick, the bridge compares the redacted reaction with
+this login's stored legacy selection on the message (its bridged legacy
+reaction row). It sends the cancellation only when they match; a stored
+selection that a Kakao push has since replaced makes the redaction stale, and
+nothing is sent. Two different stored legacy selections are an inconsistent
+store: removal returns `ErrLookupFailed` and sends nothing. Cancellation follows
+the same single-attempt mutation policy and uses the mutation categories above.
 
 The categories describe the observable result at the bridge boundary. They do
 not claim that an HTTP rejection means Kakao's state is unchanged.
