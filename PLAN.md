@@ -1046,12 +1046,14 @@ other bridge-originated request with the official Mac client; the numbers
 below are its findings. These items exclude the native-metadata-trigger work
 above. One PR each, highest account-safety risk first:
 
-- [ ] (#2) Stop ending the source session when a membership refresh, media
+- [x] (#2) Stop ending the source session when a membership refresh, media
       download or GETMSGS dependency fails. Retry delivery in-process with a
       cap; relogin only on transport failure. Regressions for all three.
-- [ ] (#3) Make `!reconcile-group` / `!complete-group-invitations` refuse when
-      there is no live session instead of opening a detached login that skips
-      the retry schedule, `-328` backoff and KICKOUT block.
+- [x] (#3) Make `!reconcile-group` / `!complete-group-invitations` stop
+      opening a detached login that skips the retry schedule, `-328` backoff
+      and KICKOUT block. Done by gating the detached login on those, not by
+      refusing whenever no session is live: an unresolved creation blocks
+      every bootstrap, so the detached login is its only repair path.
 - [ ] (#1) Use bulk MCHATLOGS (≤100 rooms) as the connect catch-up path and
       drop per-chat `SYNCMSG cnt=0` at connect. Requires an owned offline-
       message differential for gap handling first.
@@ -1066,15 +1068,18 @@ above. One PR each, highest account-safety risk first:
       log to the stored roster and send MEMBER for the invitee.
 - [x] (#13) Bind a created group from the CREATE reply's full-data room
       instead of CHATINFO+MEMLIST+MEMBER.
-- [ ] (#14) Drop the viewing-episode CHATINFO before CHATONROOM.
-- [ ] (#9, #10) After the metadata-trigger PRs land: skip room-avatar downloads
-      whose avatar ID is unchanged, and stop enqueueing CHATINFO on every
-      cached `GetChatInfo`.
+- [x] (#14) Drop the viewing-episode CHATINFO before CHATONROOM.
+- [x] (#9, #10) Skip room-avatar downloads whose avatar ID is unchanged, and
+      stop enqueueing CHATINFO on every cached `GetChatInfo`.
 - [ ] (#6, #7) Trace the native recovery delay and carriage route cache
       expiry, then cache the route across reconnects, jitter ticket attempts
       and adopt the native delay.
 - [x] (#18) Trace the GETMETAS chain; send revision-gated GETMETAS at login
       instead of discovery room-info CHATINFO.
-- [ ] (#15, #16, #17) After the trigger rework, cap metadata/membership
-      retries, read membership once per `!history-group` command, and give
+- [x] (#15) Cap background metadata retries: optional reads (MEMBER,
+      personal metadata, Boards, room info) retry at most three times (2, 4,
+      8 min) and then wait for their next native trigger. The paused-group
+      membership retry stays unbounded (hourly at most), because a paused
+      group forwards nothing until its roster converges.
+- [ ] (#16, #17) Read membership once per `!history-group` command, and give
       live inbound media its own pacing lane.
