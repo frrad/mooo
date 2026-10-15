@@ -25,8 +25,9 @@ type chatInfoOptions struct {
 	// changes arrive as membership feeds through pushes and catch-up; group
 	// creation passes the CREATE reply's active member list.
 	storedRoster []int64
-	// metasComplete marks inventory chat metas as the room's full set (a
-	// CREATE reply's full-data room), so no room-info read follows.
+	// metasComplete marks inventory chat metas as needing no room-info read:
+	// they are the room's full set (a CREATE reply's full-data room), or the
+	// login revision gate reads them with GETMETAS (reconnect discovery).
 	metasComplete bool
 }
 
