@@ -311,7 +311,17 @@ func classifyReactionFailure(base, cause error) error {
 // reactionRemote reads the attribution for a change newer than the stored
 // revision. coalesce marks a live push, whose read may be deferred into the
 // message's trailing read; every read is charged to the account budget.
-func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, change events.ReactionChanged, coalesce bool) (bridgev2.RemoteEvent, error) {
+//
+// A failure is returned as a *reactionLookupError recording the stage that
+// failed and the responses read so far, for diagnostics.
+func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, change events.ReactionChanged, coalesce bool) (_ bridgev2.RemoteEvent, err error) {
+	trace := &reactionLookupError{stage: "validate", stored: -1}
+	defer func() {
+		if err != nil && !errors.Is(err, errReactionLookupDeferred) && !errors.Is(err, errReactionLookupBudget) {
+			trace.err = err
+			err = trace
+		}
+	}()
 	if change.ChatID <= 0 || change.LogID <= 0 || change.LinkID < 0 || change.Revision <= 0 {
 		return nil, errReactionRevision
 	}
@@ -325,10 +335,12 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 	}
 	ctx, cancel := context.WithTimeout(parent, reactionLookupTimeout)
 	defer cancel()
+	trace.stage = "stored_revision"
 	stored, err := kc.storedReactionRevision(ctx, change)
 	if err != nil {
 		return nil, err
 	}
+	trace.stored = stored
 	if change.Revision <= stored {
 		return nil, nil
 	}
@@ -337,6 +349,7 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 	if coalesce && kc.reactionLookupPending(change) && kc.coalesceReactionLookup(change) {
 		return nil, errReactionLookupDeferred
 	}
+	trace.stage = "derive_legacy"
 	derived, err := kc.deriveLegacyReactions(ctx, c, change, stored)
 	if err != nil {
 		return nil, err
@@ -350,10 +363,13 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 	if !kc.takeReactionLookups(change) {
 		return nil, errReactionLookupBudget
 	}
+	trace.stage = "members_read"
 	members, err := c.ReactionMembers(ctx, change.ChatID, change.LogID)
 	if err != nil {
 		return nil, err
 	}
+	trace.members = &members
+	trace.stage = "members_revision"
 	if change.MetadataType != 2 && (members.Revision < change.Revision || members.Revision < stored) {
 		return nil, errReactionRevision
 	}
@@ -368,6 +384,7 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 			return nil, errReactionRevision
 		}
 	}
+	trace.stage = "members_roster"
 	users, err := reactionSyncUsers(members, kc.userID, kc.login.ID)
 	// A message with only mini reactions has no legacy revision yet. The
 	// observed members response is exactly {"revision":0}; it is an empty
@@ -383,10 +400,13 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 	}
 	appliedRevision := members.Revision
 	if change.MetadataType == 2 {
+		trace.stage = "mini_read"
 		mini, err := c.MiniReactionDetails(ctx, change.ChatID, change.LinkID, change.LogID)
 		if err != nil {
 			return nil, err
 		}
+		trace.mini = &mini
+		trace.stage = "mini_roster"
 		if err := addMiniReactionUsers(users, mini, change, kc.userID, kc.login.ID); err != nil {
 			return nil, err
 		}
@@ -588,6 +608,7 @@ type kakaoReactionSync struct {
 }
 
 func (kc *KakaoClient) reportReactionFailure(change events.ReactionChanged, err error) bool {
+	kc.noteReactionFailure(change, err)
 	kind := "lookup"
 	if errors.Is(err, errReactionUnsupported) {
 		kind = "unsupported"
