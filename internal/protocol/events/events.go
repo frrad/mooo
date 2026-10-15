@@ -165,8 +165,9 @@ type MemberRemoved struct {
 	UserType int32
 }
 
-func (MemberRemoved) Kind() Kind { return KindMemberRemoved }
-func (MemberRemoved) isEvent()   {}
+func (MemberRemoved) Kind() Kind           { return KindMemberRemoved }
+func (m MemberRemoved) Position() Position { return Position{m.ChatID, m.LogID} }
+func (MemberRemoved) isEvent()             {}
 
 type MemberIdentity struct {
 	UserID   int64
@@ -181,8 +182,9 @@ type MemberAdded struct {
 	Members []MemberIdentity
 }
 
-func (MemberAdded) Kind() Kind { return KindMemberAdded }
-func (MemberAdded) isEvent()   {}
+func (MemberAdded) Kind() Kind           { return KindMemberAdded }
+func (m MemberAdded) Position() Position { return Position{m.ChatID, m.LogID} }
+func (MemberAdded) isEvent()             {}
 
 // ChatLeft carries the chat and cursor identity from a LEFT notice. Room
 // deletion and cursor persistence remain manager-owned effects.

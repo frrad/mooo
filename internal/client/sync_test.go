@@ -377,6 +377,35 @@ func TestResumeTargetsOnlyIncludeCommittedChatsThatFellBehind(t *testing.T) {
 	}
 }
 
+// A chat this profile never delivered is not caught up, so a membership feed
+// in it is unrecovered; the bridge falls back to a roster read for it.
+func TestUndeliveredTargetsListChatsCatchUpCannotCover(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	token := int64(7)
+	known := []continuity.ChatTarget{{ChatID: 1, MaxLogID: 100}, {ChatID: 3, MaxLogID: 300}, {ChatID: 5, MaxLogID: 0}}
+	if err := checkpoint.InstallSession(&token, nil, known, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkpoint.CommitMessage(1, 100); err != nil {
+		t.Fatal(err)
+	}
+	api, err := newClient(reusableTestState(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api.checkpoint = checkpoint
+	api.dial = func(context.Context, authstate.State) (*session, error) {
+		return &session{initialChatData: []bson.Raw{}}, nil
+	}
+	targets, err := api.UndeliveredTargets(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 1 || targets[0] != (syncmsg.Target{ChatID: 3, MaxLogID: 300}) {
+		t.Fatalf("undelivered targets = %#v, want only chat 3", targets)
+	}
+}
+
 func TestCommitEventRejectsDECUNREADWithoutChangingMessageCheckpoint(t *testing.T) {
 	checkpoint := testCheckpoint(t)
 	if _, err := checkpoint.CommitMessage(42, 100); err != nil {

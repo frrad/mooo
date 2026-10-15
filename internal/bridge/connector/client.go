@@ -38,6 +38,7 @@ type sessionAPI interface {
 	Events(ctx context.Context) (<-chan events.Result, error)
 	CommitEvent(event events.Event) error
 	ResumeTargets(ctx context.Context) ([]syncmsg.Target, error)
+	UndeliveredTargets(ctx context.Context) ([]syncmsg.Target, error)
 	CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error)
 	SeedLastMessage(chat chatmeta.ChatData, accept func(events.Event) bool) (events.Event, error)
 	Shutdown(ctx context.Context) error
@@ -321,6 +322,15 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 	if err != nil {
 		return fmt.Errorf("list catch-up targets: %w", err)
 	}
+	// Catch-up does not cover a chat this profile never delivered from, so a
+	// managed group there reads its roster as the documented fallback.
+	undelivered, err := c.UndeliveredTargets(ctx)
+	if err != nil {
+		return fmt.Errorf("list undelivered chats: %w", err)
+	}
+	for _, target := range undelivered {
+		kc.rosterFallback(ctx, c, target.ChatID)
+	}
 	for _, target := range targets {
 		missed, err := c.CatchUp(ctx, target.ChatID, target.MaxLogID)
 		if errors.Is(err, client.ErrGapUnresolved) {
@@ -328,6 +338,9 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 			if result := kc.queue(kc.gapNotice(target.ChatID, target.MaxLogID)); !committable(result) {
 				return fmt.Errorf("catch-up gap notice: %w", errDeliveryNotConfirmed)
 			}
+			// The unrecovered interval may hold membership feeds; read the
+			// roster as the documented fallback for a managed group.
+			kc.rosterFallback(ctx, c, target.ChatID)
 			continue
 		} else if err != nil {
 			if isUnidentifiableMessageError(err) {
@@ -344,6 +357,18 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 	return nil
 }
 
+// rosterFallback reads a managed group's roster when catch-up could not
+// recover its interval, which may hold membership feeds. A failure pauses the
+// group and schedules its retry, as for a membership notice.
+func (kc *KakaoClient) rosterFallback(ctx context.Context, c kakaoClient, chatID int64) {
+	if kc.verifiedRoster(ctx, chatID) == nil {
+		return
+	}
+	kc.groupGate.Lock()
+	defer kc.groupGate.Unlock()
+	kc.managedMembershipEvent(ctx, c, chatID, false)
+}
+
 func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 	kc.groupGate.Lock()
 	defer kc.groupGate.Unlock()
@@ -357,10 +382,12 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		return false
 	}
 	if removedChat > 0 {
-		return kc.applyRemovedSource(ctx, removedChat)
+		return kc.applyRemovedSource(ctx, removedChat) && kc.commitIfPositioned(c, evt, "Failed to commit Kakao source removal")
 	}
 	if handled, success := kc.handleMembershipEvent(ctx, c, evt); handled {
-		return success
+		// Membership events carry their log position; catch-up must not
+		// replay an applied feed on the next reconnect.
+		return success && kc.commitIfPositioned(c, evt, "Failed to commit Kakao membership change")
 	}
 	remote := kc.remoteEventFor(evt)
 	chatID, guarded, err := sourceChatOf(evt, remote)

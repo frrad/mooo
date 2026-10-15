@@ -48,6 +48,10 @@ func (kc *KakaoClient) refreshGroupMembership(ctx context.Context, c kakaoClient
 	return kc.refreshGroupMembershipInventory(ctx, c, chatID, create, nil)
 }
 func (kc *KakaoClient) refreshGroupMembershipInventory(ctx context.Context, c kakaoClient, chatID int64, create bool, inventory *chatmeta.ChatData) error {
+	return kc.refreshGroupMembershipFrom(ctx, c, chatID, create, chatInfoOptions{regularGroupOnly: true, inventory: inventory})
+}
+
+func (kc *KakaoClient) refreshGroupMembershipFrom(ctx context.Context, c kakaoClient, chatID int64, create bool, opts chatInfoOptions) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	p, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(chatID, kc.login.ID))
@@ -64,7 +68,7 @@ func (kc *KakaoClient) refreshGroupMembershipInventory(ctx context.Context, c ka
 	if err = kc.saveMembershipCheckpoint(ctx, p, true, nil); err != nil {
 		return err
 	}
-	info, snap, err := kc.chatInfoFromClient(ctx, p, c, chatInfoOptions{regularGroupOnly: true, inventory: inventory})
+	info, snap, err := kc.chatInfoFromClient(ctx, p, c, opts)
 	if err != nil {
 		return err
 	}

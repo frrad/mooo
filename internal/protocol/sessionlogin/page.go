@@ -54,8 +54,9 @@ type LoginListPage struct {
 type LoginChat struct {
 	ChatID int64
 	// MaxLogID is the larger of the last chat log's logId (l.logId) and the
-	// last log ID (ll), which also covers later feeds such as edits. It is
-	// zero when the chat has no last chat log.
+	// last log ID (ll), which also covers later feeds such as edits and
+	// membership changes. Without a last chat log it is ll, and zero when
+	// neither is present.
 	MaxLogID int64
 	// Data is an independent copy of the whole chatDatas document.
 	Data bson.Raw
@@ -188,6 +189,12 @@ func decodeLoginChat(raw bson.Raw) (LoginChat, error) {
 	chat := LoginChat{ChatID: chatID, Data: append(bson.Raw(nil), raw...)}
 	last, err := raw.LookupErr("l")
 	if err != nil || last.Type == bson.TypeNull {
+		// A chat whose newest logs are feeds (observed 2026-10-14: an offline
+		// leave and invite) carries only ll. The Mac client marks a loss from
+		// lastServerLogId in that case, so ll alone still sets the target.
+		if lastLogID, ok, err := fields.Int64(raw, "ll"); err == nil && ok && lastLogID > 0 {
+			chat.MaxLogID = lastLogID
+		}
 		return chat, nil
 	}
 	if last.Type != bson.TypeEmbeddedDocument {

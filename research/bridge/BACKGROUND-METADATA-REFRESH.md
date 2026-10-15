@@ -54,7 +54,8 @@ connection failure and reconnected.
   (`MembershipPending`) is bridge-only safety state with no native counterpart.
   The failure itself schedules a retry with the backoff above. The retry runs
   the same refresh a membership notice uses and un-pauses the group once Matrix
-  converges. A missed leave notice is corrected at the next reconnect's discovery.
+  converges. A leave missed while offline arrives as a catch-up membership feed
+  ([metadata triggers](METADATA-TRIGGERS.md#offline-membership-through-catch-up-2026-10-15)).
 - **Freshness.** Profiles keep the per-user policy from
   [PROFILE-REFRESH-COOLDOWN.md](PROFILE-REFRESH-COOLDOWN.md): a stored profile
   is never refetched. Boards are read once per

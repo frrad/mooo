@@ -164,3 +164,16 @@ func TestDecodeLoginListPageMCMRevision(t *testing.T) {
 		}
 	}
 }
+
+// Observed 2026-10-14: after an offline leave and invite, a group's chatDatas
+// entry had ll but no l. The membership feeds still make it a catch-up target.
+func TestLoginChatWithOnlyLastLogIDTargetsIt(t *testing.T) {
+	body, _ := bson.Marshal(bson.D{{Key: "status", Value: int32(0)}, {Key: "eof", Value: true}, {Key: "chatDatas", Value: bson.A{
+		bson.D{{Key: "c", Value: int64(42)}, {Key: "ll", Value: int64(105)}},
+		bson.D{{Key: "c", Value: int64(43)}},
+	}}})
+	page, err := DecodeLoginListPage(body)
+	if err != nil || len(page.Chats) != 2 || page.Chats[0].MaxLogID != 105 || page.Chats[1].MaxLogID != 0 {
+		t.Fatalf("chats = %+v, %v", page.Chats, err)
+	}
+}
