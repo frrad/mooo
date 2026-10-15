@@ -1064,7 +1064,9 @@ above. One PR each, highest account-safety risk first:
       the native mark-read SYNCMSG shape before switching to it.
 - [x] (#11) Apply NEWMEM/DELMEM feed payloads to the stored verified roster
       instead of CHATINFO+MEMLIST; MEMBER for every invitee.
-- [ ] (#12, #13) Drop the redundant reads around ADDMEM and CREATE.
+- [x] (#12) Drop CHATINFO+MEMLIST around ADDMEM; apply the reply's invitation
+      log to the stored roster and send MEMBER for the invitee.
+- [ ] (#13) Drop the redundant reads after CREATE.
 - [x] (#14) Drop the viewing-episode CHATINFO before CHATONROOM.
 - [ ] (#9, #10) After the metadata-trigger PRs land: skip room-avatar downloads
       whose avatar ID is unchanged, and stop enqueueing CHATINFO on every
