@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -186,9 +187,10 @@ type KakaoClient struct {
 	saveLogin func(context.Context) error
 	// reserveOutbound defaults to the bridge's durable store.
 	reserveOutbound func(context.Context, id.EventID) (bool, error)
-	// refreshMembership re-reads a group's source roster outside the portal
-	// event loop that delivered a Matrix change.
-	refreshMembership func(kakaoClient, int64)
+	// refreshMembership applies a membership feed, or with a nil feed re-reads
+	// a group's source roster, outside the portal event loop that delivered a
+	// Matrix change.
+	refreshMembership func(kakaoClient, int64, *membershipFeed)
 
 	groupGate   sync.Mutex
 	displayGate sync.Mutex
@@ -202,6 +204,14 @@ type KakaoClient struct {
 	// login inventory data while their last message is seeded.
 	inventoryRooms  map[int64]chatmeta.ChatData
 	metadataRefresh *metadataRefreshQueue
+	// holds are the current session's held chats; see delivery_hold.go.
+	// deliveryRetryDelays is their retry schedule, replaced in tests.
+	// pausedDeliveries counts paused chats for the bridge state, and
+	// deliveryResume asks the event pump to retry them.
+	holds               *deliveryHolds
+	deliveryRetryDelays []time.Duration
+	pausedDeliveries    atomic.Int32
+	deliveryResume      chan struct{}
 	// readStateMu serializes member read-watermark updates.
 	readStateMu sync.Mutex
 	// readAckMu guards readAcks, the per-chat Matrix read acknowledgements
@@ -256,6 +266,11 @@ func newKakaoClient(login *bridgev2.UserLogin, st store, userID int64, open func
 		profiles:        make(map[int64]chatmeta.Member),
 		metadataRefresh: newMetadataRefreshQueue(),
 		reactionNotices: make(map[string]time.Time),
+		holds:           newDeliveryHolds(),
+		// A held chat retries on the ordinary reconnect schedule, without
+		// the reconnect.
+		deliveryRetryDelays: ordinaryRecoveryDelays[:],
+		deliveryResume:      make(chan struct{}, 1),
 	}
 	kc.wait = waitForRecovery
 	kc.metadataRefresh.dropped = func() { kc.log().Warn().Msg("Background metadata queue is full; deferring refresh") }
@@ -286,6 +301,10 @@ func (kc *KakaoClient) log() *zerolog.Logger {
 // first would move the chat's cursor past the missed ones. Until Events is
 // called the session buffers pushes, so nothing live is lost meanwhile.
 func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (<-chan events.Result, error) {
+	// Held chats of an ended session stay uncommitted; this catch-up replays
+	// them.
+	kc.holds = newDeliveryHolds()
+	kc.pausedDeliveries.Store(0)
 	if err := c.Connect(ctx); err != nil {
 		return nil, bootstrapFailure{stage: "connect", err: err}
 	}
@@ -332,7 +351,8 @@ func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (
 // catchUp bridges and commits, in order, the messages each previously
 // bridged chat received while the bridge was away. SYNCMSG may mark them read
 // on the server. A chat whose interval cannot be recovered keeps its recorded
-// gap and gets a notice; any other failure aborts the connection so live
+// gap and gets a notice. A chat whose event cannot be delivered is held for
+// the event pump to retry; any other failure aborts the connection so live
 // commits never skip past unrecovered messages.
 func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 	targets, err := c.ResumeTargets(ctx)
@@ -365,9 +385,12 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 			}
 			return fmt.Errorf("catch up chat: %w", err)
 		}
-		for _, evt := range missed {
+		for i, evt := range missed {
 			if !kc.handleEvent(c, evt) {
-				return fmt.Errorf("catch-up event: %w", errDeliveryNotConfirmed)
+				// Hold the chat's remaining interval; the event pump retries
+				// it without another login.
+				kc.hold(target.ChatID, missed[i:])
+				break
 			}
 		}
 	}
@@ -595,15 +618,17 @@ func (kc *KakaoClient) IsThisUser(ctx context.Context, userID networkid.UserID) 
 // profile APIs are deliberately called only once per request; the bridge does
 // not invent names or avatars when Kakao omits them.
 func (kc *KakaoClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
-	return kc.getChatInfo(ctx, portal, false)
+	return kc.getChatInfo(ctx, portal, false, false)
 }
 
-func (kc *KakaoClient) getChatInfo(ctx context.Context, portal *bridgev2.Portal, regularGroupOnly bool) (*bridgev2.ChatInfo, error) {
+// getChatInfo serves chat info for a portal. refreshRoom marks a native
+// CHATINFO trigger, which also refreshes a cached room's info.
+func (kc *KakaoClient) getChatInfo(ctx context.Context, portal *bridgev2.Portal, regularGroupOnly, refreshRoom bool) (*bridgev2.ChatInfo, error) {
 	if portal == nil {
 		return nil, errChatInfoMismatch
 	}
 	if !regularGroupOnly {
-		if info, found, err := kc.cachedChatInfo(ctx, portal); found || err != nil {
+		if info, found, err := kc.cachedChatInfo(ctx, portal, refreshRoom); found || err != nil {
 			return info, err
 		}
 	}

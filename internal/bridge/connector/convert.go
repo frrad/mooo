@@ -192,7 +192,7 @@ func (kc *KakaoClient) chatResync(chatID, logID, authorID int64) bridgev2.Remote
 			}
 			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
-			return kc.GetChatInfo(ctx, portal)
+			return kc.getChatInfo(ctx, portal, false, true)
 		},
 	}
 }
@@ -213,7 +213,7 @@ func (kc *KakaoClient) memberChange(chatID, logID, authorID int64, identities []
 			if portal == nil || portal.PortalKey != portalKey {
 				return nil, errChatInfoMismatch
 			}
-			return kc.getChatInfo(ctx, portal, true)
+			return kc.getChatInfo(ctx, portal, true, false)
 		},
 		getInfo: func(ctx context.Context) (*bridgev2.ChatInfo, error) {
 			portal := &bridgev2.Portal{Portal: &database.Portal{PortalKey: portalKey}}

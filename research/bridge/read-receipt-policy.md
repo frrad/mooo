@@ -57,6 +57,12 @@ activation, not once per message. Because the request is deferred, its
 failure is logged with the categories below instead of being returned to the
 framework.
 
+Owned acceptance (2026-10-15, B bridge, A/B/C group): A sent two messages and
+the Matrix tester sent read receipts for both. Their EDUs reached the bridge
+within 0.1 s, and one `MarkRead` went out 3 s later. On A, both messages
+dropped to one unread member (only C), so the single acknowledgement of the
+later position covered both messages.
+
 ### Request
 
 `MarkRead` sends one `SYNCMSG` `[watermark-1, watermark]` with `cnt=1`, and
@@ -66,6 +72,42 @@ including after a restart. A failure is reported once, without a retry: the
 shared request path never retries mutations. The logged error keeps only a
 stable category (`status N`, cancelled, deadline, session closed, or outcome
 unknown) and never wraps backend detail.
+
+### Native mark-read shape (not adopted)
+
+The official client acknowledges reads through its single-room sync
+coordinator ([HISTORY-STATIC](HISTORY-STATIC.md) §C, SL-BIN-035):
+
+- `cur` is the room's persisted `lastSyncLogId`;
+- `max` and `cnt` come from the locally held messages after `cur`, capped
+  at 300, with the room's last log as the fallback `max`;
+- nothing is sent when `lastSyncLogId` equals both `lastSeenLogId` and
+  `lastLogId`;
+- an `isOK=true` response sets `lastSeenLogId` and `lastSyncLogId` to the
+  request's `max`.
+
+The bridge still sends `[watermark-1, watermark]` with `cnt=1`, a window the
+official client never builds. Switching needs two things this checkpoint
+does not have yet:
+
+1. **An analogue of `lastSyncLogId`.** Native raises it after every
+   single-room sync, including the mark-read itself. It does not raise it
+   for a live `MSG`. The bridge's `ChatCursor` advances on live messages too,
+   and `ReadWatermark` is zero for a chat the bridge never acknowledged. The
+   candidate is the higher of `ReadWatermark` and the catch-up target of the
+   last connect, which would need a new checkpoint field.
+2. **A held count.** This is the number of bridged messages after `cur`, up
+   to the receipt position, capped at 300. The server returns the messages
+   that `cnt` says the client does not hold (SL-LIVE-013). An undercount
+   only costs bytes, because `MarkRead` ignores the returned logs. Whether
+   the server's read effect depends on `cnt` is unproven: SL-LIVE-014 is
+   only a hint.
+
+The switch waits for an owned differential in one group, with the same
+unread setup as the [coalescing acceptance](#coalescing-bridge-policy). It
+compares the current shape with the native shape on: the read markers on A,
+B's phone notification, and the response's `chatLogs` count. It must cover
+a chat the bridge never acknowledged and a backlog above 300.
 
 ### Decoupling from catch-up
 
@@ -114,6 +156,24 @@ user is looking at this room right now". The request would then follow the
 dossier: five keys, fire and forget, and only for another member's live `MSG`
 in a room that exists locally. Its `notiRead` value would come from the
 `CHATONROOM` room object, defaulting to true.
+
+### Viewing episodes (considered 2026-10-15, not adopted)
+
+The bridge now receives Matrix viewing heartbeats (`HandleMatrixViewingChat`,
+used for reaction resync). They are the closest Matrix signal to an open
+window, but they do not establish the native preconditions:
+
+- Native needs a window that is focused and not holding its watermark.
+  A heartbeat says only that a client shows the room. Its focus and
+  visibility semantics are untraced, and standard Matrix clients send no
+  heartbeats.
+- Native `NOTIREAD` marks a live message read on arrival. If a heartbeat
+  were mistaken for focus, Kakao would mark read messages the Matrix user
+  never saw, and the receipt path already acknowledges the ones they did see.
+
+No owned experiment has compared a heartbeat-driven `NOTIREAD` with the
+receipt path. Until one shows a behavior the receipt path cannot produce,
+the bridge does not send it.
 
 ## Regular groups (2026-10-10)
 

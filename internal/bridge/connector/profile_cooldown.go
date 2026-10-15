@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
@@ -80,7 +81,7 @@ func (r memberProfileRecord) member() (chatmeta.Member, bool) {
 // enrichment. Durable compare-and-swap coalesces per-user attempts across rooms
 // and connector instances. Concurrent callers return cached fields or unresolved
 // identities; they do not wait on another caller's request deadline.
-func (kc *KakaoClient) resolveMemberProfiles(ctx context.Context, c chatMetaAPI, chatID int64, userIDs []int64) ([]chatmeta.Member, error) {
+func (kc *KakaoClient) resolveMemberProfiles(ctx context.Context, c chatMetaAPI, chatID int64, userIDs, refetch []int64) ([]chatmeta.Member, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -116,8 +117,8 @@ func (kc *KakaoClient) resolveMemberProfiles(ctx context.Context, c chatMetaAPI,
 			results[userID] = profile
 		}
 		// An empty stored nickname is refetched, as native message conversion
-		// does, at most once per attempt cooldown.
-		if record.Profile != nil && record.Profile.Nickname != "" || now.Before(record.NextAttemptAt) {
+		// does, and so is a requested refetch, at most once per attempt cooldown.
+		if record.Profile != nil && record.Profile.Nickname != "" && !slices.Contains(refetch, userID) || now.Before(record.NextAttemptAt) {
 			continue
 		}
 		record.LastAttemptAt = now
@@ -190,4 +191,37 @@ func (kc *KakaoClient) resolveMemberProfiles(ctx context.Context, c chatMetaAPI,
 		}
 	}
 	return output(), fetchErr
+}
+
+// storeMemberProfiles records profiles a source reply carried in full, such as
+// a CREATE reply's room members, as if MEMBER had returned them. A record
+// changed concurrently is left to its writer.
+func (kc *KakaoClient) storeMemberProfiles(ctx context.Context, members []chatmeta.Member) error {
+	for _, profile := range members {
+		if profile.UserID <= 0 || profile.UserID == kc.userID {
+			continue
+		}
+		fields := memberProfileFields{Nickname: profile.Nickname, Thumbnail: profile.ProfileImageURL, FullImage: profile.FullProfileImageURL}
+		if !validMemberProfileFields(fields) {
+			return errProfileCheckpoint
+		}
+		record, raw, err := kc.readMemberProfile(ctx, profile.UserID)
+		if err != nil {
+			return err
+		}
+		record.Profile = &fields
+		record.FetchedAt = kc.now()
+		record.LastAttemptAt, record.NextAttemptAt = record.FetchedAt, record.FetchedAt
+		if fields.Nickname == "" {
+			record.NextAttemptAt = record.FetchedAt.Add(memberProfileAttemptCooldown)
+		}
+		encoded, err := json.Marshal(record)
+		if err != nil || len(encoded) > maxMemberProfileRecord {
+			return errProfileCheckpoint
+		}
+		if _, err = kc.store.compareAndSwap(ctx, memberProfileKey(kc.userID, profile.UserID), raw, string(encoded)); err != nil {
+			return err
+		}
+	}
+	return nil
 }

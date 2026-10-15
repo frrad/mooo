@@ -82,20 +82,31 @@ Each change was preceded by a failing production-path test.
   Self changes and Matrix-only users pass silently. Neither reaches
   KakaoTalk.
 - **Invites.** A Matrix invite of a KakaoTalk user adds them to the group:
-  - Only a plain regular group qualifies, checked with a fresh `CHATINFO`
-    (`MultiChat`, no open-chat link, no team meta 15). A 1:1 chat, open chat
-    or team chat refuses the invite with a notice and revokes it.
-  - A user already in a fresh `MEMLIST` gets no request; the roster refresh
-    restores them in Matrix.
+  - Only a plain regular group qualifies (`MultiChat`, no open-chat link, no
+    team meta 15). A managed group with a verified roster is checked against
+    its stored chat data and roster with no request, as the official picker
+    offers only non-members of the stored room. Any other group is checked
+    with a fresh `CHATINFO` and `MEMLIST`. A 1:1 chat, open chat or team chat
+    refuses the invite with a notice and revokes it.
+  - A user already in the roster gets no request. For a group without a
+    verified roster, the roster refresh restores them in Matrix.
   - Otherwise the Matrix event reserves its one send durably, and the bridge
     sends one `ADDMEM` for that user, never retried, including after a
     redelivery or restart.
   - A refusal status revokes the invite with a notice (−402/−405 name the
     blocked-friends list).
   - Success, a lost reply or a warning leaves the invite; a lost reply or a
-    warning also sends a notice. A fresh source roster, read outside the
-    portal's event loop, then joins the invited ghost or revokes the invite.
-    So Matrix follows KakaoTalk, not the reply.
+    warning also sends a notice. A confirmed reply in a verified group carries
+    the invitation chat log; it is applied to the stored roster like a NEWMEM
+    feed, outside the portal's event loop, and `MEMBER` is queued for the
+    invitee, as the official success block refreshes the selected members.
+    Otherwise a fresh source roster joins the invited ghost or revokes the
+    invite. So Matrix follows KakaoTalk, not the bare reply status.
+  - Owned acceptance, 2026-10-15 (provenance `observed`, packet observer on
+    B): after C left natively (one `DELMEM`, no request), a Matrix invite of
+    C's ghost sent one `ADDMEM` and then one `MEMBER`, and nothing else. No
+    `NEWMEM` reached the inviting session, which confirms that the reply's
+    invitation log, not a push, must carry the roster. C's ghost joined.
 - Unchanged from earlier slices: room name and avatar changes are rejected
   (the Mac only edits personal values), and topic changes are rejected and
   restored ([outbound announcements](GROUP-OUTBOUND-ANNOUNCEMENTS.md)).

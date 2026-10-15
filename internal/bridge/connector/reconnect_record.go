@@ -67,6 +67,15 @@ func (kc *KakaoClient) restoredSchedule() (wait time.Duration, attempt int, rest
 	return wait, attempt, true
 }
 
+// persistedRetryPending reports whether the login's metadata holds a retry
+// that may not log in yet.
+func (kc *KakaoClient) persistedRetryPending() bool {
+	kc.metaMu.Lock()
+	defer kc.metaMu.Unlock()
+	meta, ok := kc.login.Metadata.(*UserLoginMetadata)
+	return ok && meta.Reconnect != nil && meta.Reconnect.NotBefore != 0 && time.UnixMilli(meta.Reconnect.NotBefore).After(kc.now())
+}
+
 // recordLoginAttempt persists the start of a login before it reaches the
 // network.
 func (kc *KakaoClient) recordLoginAttempt(attempt int, at time.Time) {

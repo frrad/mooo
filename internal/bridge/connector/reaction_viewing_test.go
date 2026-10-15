@@ -411,3 +411,29 @@ func TestOwnReactionDuringSyncKeepsRefreshDemand(t *testing.T) {
 		t.Fatal("completed sync discarded concurrent own reaction refresh")
 	}
 }
+
+// Opening a chat in the official client sends CHATONROOM; the room type is
+// already local from the login chat data. A room in the login inventory is
+// therefore entered without CHATINFO (research/bridge/METADATA-TRIGGERS.md).
+func TestViewingInventoryRoomSendsOnlyChatOnRoom(t *testing.T) {
+	for _, tc := range []struct {
+		typ   string
+		entry int
+	}{{"MultiChat", 1}, {"DirectChat", 1}, {"PlusChat", 0}} {
+		t.Run(tc.typ, func(t *testing.T) {
+			kc, portal, _, _ := newFrameworkReactionFixture(t, &recordingIntent{})
+			backend := reactionViewingBackend()
+			backend.chatInventory = []chatmeta.ChatData{{ChatID: testChatID, Type: tc.typ}}
+			kc.client = backend
+			if err := openReactionView(kc, portal); err != nil {
+				t.Fatal(err)
+			}
+			if len(backend.metadataCalls) != 0 {
+				t.Fatalf("viewing read room metadata: %v", backend.metadataCalls)
+			}
+			if len(backend.chatOnRoomCalls) != tc.entry || len(backend.reactionCursors) != tc.entry {
+				t.Fatalf("CHATONROOM = %v, reaction syncs = %d, want %d", backend.chatOnRoomCalls, len(backend.reactionCursors), tc.entry)
+			}
+		})
+	}
+}

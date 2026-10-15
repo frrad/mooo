@@ -39,7 +39,10 @@ connection failure and reconnected.
 - **Safe publication.** The event pump publishes results only after checking
   the active session, the room's snapshot generation and its removal/pause
   state. Enrichment results never carry a membership map. Avatars are uploaded
-  in the worker so the pump never waits on a download.
+  in the worker so the pump never waits on a download. A room avatar whose ID
+  (the source URL hash) matches the portal's applied avatar reuses the stored
+  Matrix media without a download. Room info (CHATINFO) is queued only by a
+  CHGCHATST or CHGMETA resync, never by a framework read of a cached room.
 - **Failure scope.** Only an error returned by a Kakao read can end the session,
   and only when it is a transport failure. Local deadlines and cancellation,
   Matrix errors and database errors never can. A failed task retries after 2,
