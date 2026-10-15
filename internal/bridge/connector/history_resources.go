@@ -12,6 +12,18 @@ type historyResourceOwnerKey struct{}
 type historyResourceAPI interface {
 	AcquireHistoryResource(context.Context, string, func(context.Context) ([]byte, error)) ([]byte, error)
 }
+type liveMediaAPI interface {
+	AcquireLiveMedia(context.Context, string, func(context.Context) ([]byte, error)) ([]byte, error)
+}
+
+// liveDelivery reports whether ctx converts a live inbound message. Live
+// events carry a non-required send state (newMessage); historical deliveries
+// carry a required one (historyMessage), and stored-history backfill carries
+// none.
+func liveDelivery(ctx context.Context) bool {
+	state, ok := ctx.Value(historyDeliveryKey).(*historySendState)
+	return ok && !state.required
+}
 
 func historyResourceBytes(ctx context.Context, key any, fetch func(context.Context) ([]byte, error)) ([]byte, error) {
 	return historyDependencyBytes(ctx, key, fetch, true)
@@ -29,6 +41,15 @@ func historyDependencyBytes(ctx context.Context, key any, fetch func(context.Con
 	encoded, err := json.Marshal(key)
 	if err != nil {
 		return nil, client.ErrProtocol
+	}
+	if immutable && liveDelivery(ctx) {
+		// Live inbound media uses its own lane rather than the paced account
+		// gate for metadata and history reads (audit finding 17).
+		lane, ok := c.(liveMediaAPI)
+		if !ok {
+			return nil, client.ErrProtocol
+		}
+		return lane.AcquireLiveMedia(ctx, string(encoded), fetch)
 	}
 	if immutable {
 		admission, ok := c.(historyResourceAPI)

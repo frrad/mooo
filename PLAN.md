@@ -1101,5 +1101,5 @@ above. One PR each, highest account-safety risk first:
       8 min) and then wait for their next native trigger. The paused-group
       membership retry stays unbounded (hourly at most), because a paused
       group forwards nothing until its roster converges.
-- [ ] (#16, #17) Read membership once per `!history-group` command, and give
+- [x] (#16, #17) Read membership once per `!history-group` command, and give
       live inbound media its own pacing lane.

@@ -1806,6 +1806,10 @@ func (f *fakeKakao) AcquireHistoryResource(ctx context.Context, _ string, fetch 
 	return fetch(ctx)
 }
 
+func (f *fakeKakao) AcquireLiveMedia(ctx context.Context, _ string, fetch func(context.Context) ([]byte, error)) ([]byte, error) {
+	return fetch(ctx)
+}
+
 func TestBootstrapCleanupCannotShutdownOwnerAlreadyClaimedByDisconnect(t *testing.T) {
 	fake := &fakeKakao{}
 	kc, _ := newTestClient(t, nil)
