@@ -215,9 +215,25 @@ type KakaoClient struct {
 	deliveryResume      chan struct{}
 	// readStateMu serializes member read-watermark updates.
 	readStateMu sync.Mutex
+	// readAckMu guards readAcks, the per-chat Matrix read acknowledgements
+	// waiting out their coalescing window.
+	readAckMu sync.Mutex
+	readAcks  map[int64]*pendingReadAck
+	// afterFunc arms a coalescing timer; tests replace it.
+	afterFunc func(time.Duration, func()) stopper
 
 	reactionNoticeMu sync.Mutex
 	reactionNotices  map[string]time.Time
+	// reactionLookupMu guards the attribution-read coalescing windows and
+	// the account's read budget; reactionApplyMu serializes reaction applies
+	// from the event loop, trailing reads and viewing resync.
+	reactionLookupMu sync.Mutex
+	reactionLookups  map[reactionLookupKey]*reactionLookupWindow
+	// reactionConfirmed records messages whose stored legacy roster a read
+	// or derivation on the current session established.
+	reactionConfirmed map[reactionLookupKey]reactionConfirmation
+	reactionBudget    reactionLookupBudget
+	reactionApplyMu   sync.Mutex
 	// reactionView is the current viewing episode; lifecycle mu guards it.
 	reactionView     *reactionViewingState
 	reactionSyncBusy bool
@@ -260,6 +276,7 @@ func newKakaoClient(login *bridgev2.UserLogin, st store, userID int64, open func
 	kc.wait = waitForRecovery
 	kc.metadataRefresh.dropped = func() { kc.log().Warn().Msg("Background metadata queue is full; deferring refresh") }
 	kc.now = time.Now
+	kc.afterFunc = func(delay time.Duration, fire func()) stopper { return time.AfterFunc(delay, fire) }
 	kc.reserveOutbound = kc.reserveOutboundKV
 	kc.refreshMembership = kc.refreshMembershipAsync
 	kc.sendState = func(state status.BridgeState) { kc.stateQueue().Send(state) }
@@ -423,7 +440,7 @@ func (kc *KakaoClient) handleEvent(c kakaoClient, evt events.Event) bool {
 		kc.observeReactionRevision(evt.ChatID, evt.Revision)
 		handled, err := kc.applyReactionChange(c, evt)
 		if err != nil {
-			return kc.reportReactionFailure(evt, err)
+			return kc.reactionPushFailure(evt, err)
 		}
 		return handled
 	case events.ReadStateChanged:

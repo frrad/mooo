@@ -1061,11 +1061,16 @@ above. One PR each, highest account-safety risk first:
       80-log batch cap, `prevId` contiguity, boundary-room retention, gaps for
       floor rooms, no-progress stop, page cap. Merge with `startup_history` so
       a connect sends one MCHATLOGS chain.
-- [ ] (#4, #5) Reactions: drop the `/members` pre-read on cancel; budget and
-      coalesce the per-push `/members` lookups (or derive the actor from the
-      aggregate) and record the remainder as a deliberate deviation.
-- [ ] (#8) Debounce Matrix read receipts per chat; trace and differential-test
-      the native mark-read SYNCMSG shape before switching to it.
+- [x] (#5) Reactions: drop the `/members` pre-read on cancel; cancel from the
+      stored own pick.
+- [x] (#4) Reactions: derive the own pick and single-actor deltas from the
+      push, coalesce and budget the remaining `/members` reads, and record the
+      remainder as a deliberate deviation (REACTION-LOOKUP-BUDGET.md).
+- [x] (#8a) Debounce Matrix read receipts per chat (3 s window, latest
+      position, flushed on Disconnect).
+- [ ] (#8b) Differential-test the native mark-read SYNCMSG shape before
+      switching to it; needs a lastSyncLogId analogue and a held count
+      (read-receipt-policy.md "Native mark-read shape").
 - [x] (#11) Apply NEWMEM/DELMEM feed payloads to the stored verified roster
       instead of CHATINFO+MEMLIST; MEMBER for every invitee.
 - [x] (#12) Drop CHATINFO+MEMLIST around ADDMEM; apply the reply's invitation

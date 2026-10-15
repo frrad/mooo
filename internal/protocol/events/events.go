@@ -94,6 +94,56 @@ type ReactionChanged struct {
 	LogID        int64
 	Revision     int64
 	Items        []ReactionItem
+	// Extra is a legacy (type 1) meta's optional extra fields.
+	Extra LegacyReactionExtra
+}
+
+// LegacyReactionExtra holds the extra JSON of a legacy reaction meta. The
+// official Mac client reads only "my", the viewing account's own selection
+// (0 for none), and ignores "userId" and "type". Absent, malformed or
+// out-of-range values leave the corresponding Has flag false.
+type LegacyReactionExtra struct {
+	HasOwnPick bool
+	OwnPick    int64
+	// HasActor reports a positive "userId" with a "type" selection of 0..6.
+	HasActor  bool
+	ActorID   int64
+	ActorPick int64
+}
+
+func decodeLegacyReactionExtra(value string) LegacyReactionExtra {
+	var wire map[string]any
+	decoder := json.NewDecoder(bytes.NewBufferString(value))
+	decoder.UseNumber()
+	if decoder.Decode(&wire) != nil {
+		return LegacyReactionExtra{}
+	}
+	number := func(key string) (int64, bool) {
+		n, ok := wire[key].(json.Number) // a JSON number, not a quoted one
+		if !ok {
+			return 0, false
+		}
+		v, err := n.Int64()
+		return v, err == nil
+	}
+	selection := func(key string) (int64, bool) {
+		v, ok := number(key)
+		return v, ok && v >= 0 && v <= 6
+	}
+	var extra LegacyReactionExtra
+	extra.OwnPick, extra.HasOwnPick = selection("my")
+	if !extra.HasOwnPick {
+		extra.OwnPick = 0
+	}
+	actor, actorOK := number("userId")
+	pick, pickOK := selection("type")
+	if actorOK && actor > 0 && pickOK {
+		extra.HasActor, extra.ActorID, extra.ActorPick = true, actor, pick
+	}
+	if !extra.HasOwnPick && !extra.HasActor {
+		return LegacyReactionExtra{}
+	}
+	return extra
 }
 
 func (ReactionChanged) Kind() Kind { return KindReactionChanged }
@@ -546,7 +596,8 @@ func decodeLogMeta(body []byte) (Event, error) {
 	if err != nil {
 		return nil, ErrMalformedEvent
 	}
-	return logMetaEvent(chatID, logID, revision, linkID, metaType, content)
+	extra, _, _ := fields.String(raw, "extra")
+	return logMetaEvent(chatID, logID, revision, linkID, metaType, content, extra)
 }
 
 // DecodeSyncedLogMeta decodes one meta object from the HTTP resync endpoint.
@@ -559,6 +610,7 @@ func DecodeSyncedLogMeta(item []byte) (Event, error) {
 		Revision json.Number `json:"revision"`
 		LinkID   json.Number `json:"linkId"`
 		Content  *string     `json:"content"`
+		Extra    *string     `json:"extra"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(item))
 	decoder.UseNumber()
@@ -586,14 +638,18 @@ func DecodeSyncedLogMeta(item []byte) (Event, error) {
 	if !ok || revision <= 0 {
 		return nil, ErrMalformedEvent
 	}
-	return logMetaEvent(chatID, logID, revision, linkID, metaType, *wire.Content)
+	extra := ""
+	if wire.Extra != nil {
+		extra = *wire.Extra
+	}
+	return logMetaEvent(chatID, logID, revision, linkID, metaType, *wire.Content, extra)
 }
 
-func logMetaEvent(chatID, logID, revision, linkID, metaType int64, content string) (Event, error) {
+func logMetaEvent(chatID, logID, revision, linkID, metaType int64, content, extra string) (Event, error) {
 	if metaType == 1 {
 		// Legacy pushes carry selection-keyed counts, not the type-2 rx
-		// aggregate item IDs. Actors still come from the members lookup;
-		// extra.my/userId describes one change, not the complete roster.
+		// aggregate item IDs. extra names at most the viewer's own pick and
+		// one actor's change, never the complete roster.
 		var counts map[string]*int64
 		if err := decodeSingleJSON(content, &counts); err != nil || counts == nil {
 			return nil, ErrMalformedEvent
@@ -610,7 +666,7 @@ func logMetaEvent(chatID, logID, revision, linkID, metaType int64, content strin
 		for _, key := range keys {
 			items = append(items, ReactionItem{ID: key, Kind: 1, Count: *counts[key]})
 		}
-		return ReactionChanged{MetadataType: 1, ChatID: chatID, LinkID: linkID, LogID: logID, Revision: revision, Items: items}, nil
+		return ReactionChanged{MetadataType: 1, ChatID: chatID, LinkID: linkID, LogID: logID, Revision: revision, Items: items, Extra: decodeLegacyReactionExtra(extra)}, nil
 	}
 	var payload struct {
 		Reactions []struct {

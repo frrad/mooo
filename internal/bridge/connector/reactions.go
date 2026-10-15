@@ -232,30 +232,51 @@ func (kc *KakaoClient) HandleMatrixReactionRemove(ctx context.Context, msg *brid
 		}
 		wanted = entry.typeID
 	}
+	// Native cancels from its locally stored own pick, with no members read
+	// first. The bridge's stored own pick is this login's bridged legacy
+	// reaction on the target. When a Kakao push already replaced it, this
+	// redaction is stale and must not cancel the newer selection.
+	pick, err := kc.storedLegacyPick(ctx, msg.Portal.Receiver, msg.TargetReaction.MessageID)
+	if err != nil {
+		return err
+	}
+	if pick != wanted {
+		return nil
+	}
 	api, err := kc.reactionClient()
 	if err != nil {
 		return err
 	}
-	// Confirm the row being redacted is still the authenticated user's remote
-	// reaction. This prevents a stale Matrix redaction from canceling a newer
-	// replacement sent by the same user.
-	lookupCtx, cancel := context.WithTimeout(ctx, reactionLookupTimeout)
+	mutationCtx, cancel := context.WithTimeout(ctx, reactionLookupTimeout)
 	defer cancel()
-	members, err := api.ReactionMembers(lookupCtx, chatID, logID)
-	if err != nil {
-		return classifyReactionLookup(err)
-	}
-	if _, err := reactionSyncUsers(members, kc.userID, kc.login.ID); err != nil {
-		return fmt.Errorf("%w: %w", errReactionLookup, reactions.ErrLookupFailed)
-	}
-	if !containsReactionUser(members.Members[wanted], kc.userID) {
-		return nil
-	}
-	if _, err = api.React(lookupCtx, reactions.Request{ChatID: chatID, LogID: logID, Type: reactions.Cancel}); err != nil {
+	if _, err = api.React(mutationCtx, reactions.Request{ChatID: chatID, LogID: logID, Type: reactions.Cancel}); err != nil {
 		return classifyReactionFailure(errReactionMutation, err)
 	}
 	kc.requestViewedReactionRefresh(chatID)
 	return nil
+}
+
+// storedLegacyPick returns this login's bridged legacy selection on a message,
+// or Cancel when there is none. Kakao keeps one legacy selection per user, so
+// two different stored selections are an inconsistent store; the caller must
+// not guess which one the server holds.
+func (kc *KakaoClient) storedLegacyPick(ctx context.Context, receiver networkid.UserLoginID, messageID networkid.MessageID) (reactions.Type, error) {
+	rows, err := kc.store.reactionsBySender(ctx, receiver, messageID, makeUserID(kc.userID))
+	if err != nil {
+		return reactions.Cancel, fmt.Errorf("%w: %w", errReactionLookup, reactions.ErrLookupFailed)
+	}
+	pick := reactions.Cancel
+	for _, row := range rows {
+		typeID, ok := legacyReactionEmojiID(row.EmojiID)
+		if !ok {
+			continue
+		}
+		if pick != reactions.Cancel && pick != typeID {
+			return reactions.Cancel, fmt.Errorf("%w: %w: conflicting stored legacy selections", errReactionLookup, reactions.ErrLookupFailed)
+		}
+		pick = typeID
+	}
+	return pick, nil
 }
 
 // classifyReactionFailure returns only stable, redacted categories. Backend
@@ -287,35 +308,10 @@ func classifyReactionFailure(base, cause error) error {
 	return fmt.Errorf("%w: %w", base, category)
 }
 
-func classifyReactionLookup(cause error) error {
-	if errors.Is(cause, context.Canceled) {
-		return fmt.Errorf("%w: %w: %w", errReactionLookup, reactions.ErrLookupFailed, context.Canceled)
-	}
-	if errors.Is(cause, context.DeadlineExceeded) {
-		return fmt.Errorf("%w: %w: %w", errReactionLookup, reactions.ErrLookupFailed, context.DeadlineExceeded)
-	}
-	if errors.Is(cause, macweb.ErrTransport) {
-		return fmt.Errorf("%w: %w: %w", errReactionLookup, reactions.ErrLookupFailed, macweb.ErrTransport)
-	}
-	if errors.Is(cause, reactions.ErrInvalidResponse) {
-		return fmt.Errorf("%w: %w: %w", errReactionLookup, reactions.ErrLookupFailed, reactions.ErrInvalidResponse)
-	}
-	if errors.Is(cause, reactions.ErrRejected) {
-		return fmt.Errorf("%w: %w: %w", errReactionLookup, reactions.ErrLookupFailed, reactions.ErrRejected)
-	}
-	return fmt.Errorf("%w: %w", errReactionLookup, reactions.ErrLookupFailed)
-}
-
-func containsReactionUser(values []int64, userID int64) bool {
-	for _, value := range values {
-		if value == userID {
-			return true
-		}
-	}
-	return false
-}
-
-func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, change events.ReactionChanged) (bridgev2.RemoteEvent, error) {
+// reactionRemote reads the attribution for a change newer than the stored
+// revision. coalesce marks a live push, whose read may be deferred into the
+// message's trailing read; every read is charged to the account budget.
+func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, change events.ReactionChanged, coalesce bool) (bridgev2.RemoteEvent, error) {
 	if change.ChatID <= 0 || change.LogID <= 0 || change.LinkID < 0 || change.Revision <= 0 {
 		return nil, errReactionRevision
 	}
@@ -335,6 +331,24 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 	}
 	if change.Revision <= stored {
 		return nil, nil
+	}
+	// A waiting trailing read will see this change; derive nothing on top of
+	// the state it is about to replace.
+	if coalesce && kc.reactionLookupPending(change) && kc.coalesceReactionLookup(change) {
+		return nil, errReactionLookupDeferred
+	}
+	derived, err := kc.deriveLegacyReactions(ctx, c, change, stored)
+	if err != nil {
+		return nil, err
+	}
+	if derived != nil {
+		return derived, nil
+	}
+	if coalesce && kc.coalesceReactionLookup(change) {
+		return nil, errReactionLookupDeferred
+	}
+	if !kc.takeReactionLookups(change) {
+		return nil, errReactionLookupBudget
 	}
 	members, err := c.ReactionMembers(ctx, change.ChatID, change.LogID)
 	if err != nil {
@@ -400,12 +414,23 @@ func (kc *KakaoClient) reactionRemote(parent context.Context, c kakaoClient, cha
 // applyReactionChange delivers one reaction change to Matrix and persists its
 // applied revision. A lookup error is returned for the caller's policy: a
 // live push reports it, a resync keeps its cursor.
+// applyReactionChange applies a live push; its read may be coalesced.
 func (kc *KakaoClient) applyReactionChange(c kakaoClient, reaction events.ReactionChanged) (bool, error) {
-	return kc.applyReactionChangeContext(context.Background(), c, reaction)
+	return kc.applyReaction(context.Background(), c, reaction, true)
 }
 
+// applyReactionChangeContext applies a viewing-resync row without coalescing.
 func (kc *KakaoClient) applyReactionChangeContext(ctx context.Context, c kakaoClient, reaction events.ReactionChanged) (bool, error) {
-	remote, err := kc.reactionRemote(ctx, c, reaction)
+	return kc.applyReaction(ctx, c, reaction, false)
+}
+
+func (kc *KakaoClient) applyReaction(ctx context.Context, c kakaoClient, reaction events.ReactionChanged, coalesce bool) (bool, error) {
+	kc.reactionApplyMu.Lock()
+	defer kc.reactionApplyMu.Unlock()
+	remote, err := kc.reactionRemote(ctx, c, reaction, coalesce)
+	if errors.Is(err, errReactionLookupDeferred) {
+		return true, nil
+	}
 	if err != nil {
 		return false, err
 	}
@@ -457,6 +482,7 @@ func (kc *KakaoClient) applyReactionChangeContext(ctx context.Context, c kakaoCl
 			kc.log().Warn().Msg("Kakao reaction revision could not be persisted")
 			return false, nil
 		}
+		kc.confirmLegacyReactions(c, reaction, appliedRevision)
 	}
 	return true, nil
 }

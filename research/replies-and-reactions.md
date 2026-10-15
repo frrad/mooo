@@ -162,12 +162,15 @@ The bridge currently exposes six legacy Matrix reactions: heart (`❤️`, with
 authenticated mutation; custom and mini-reaction mutation remains unsupported.
 The caller's reaction limit is one, matching the observed cancellation model.
 
-Incoming `CHGLOGMETA` updates always fetch the legacy members response, including
-when the aggregate `rx` list is empty. A complete supported response requires a
-positive members revision at least as new as the triggering event, positive user
-IDs, and no conflicting user buckets. Only then does the connector emit a full
-`ReactionSync`; the exact members revision applied is stored with the bridged
-message and advanced after Matrix handling succeeds.
+Incoming `CHGLOGMETA` updates first try to derive the change from the stored
+roster, `extra.my` and the push counts. Otherwise they read the legacy members
+response, coalesced per message and limited by an account budget
+([derivation, coalescing and budget](bridge/REACTION-LOOKUP-BUDGET.md)). A
+complete supported response requires a positive members revision at least as
+new as the triggering event, positive user IDs, and no conflicting user
+buckets. Only then does the connector emit a full `ReactionSync`. The exact
+members revision applied is stored with the bridged message and advanced after
+Matrix handling succeeds.
 Unknown or malformed numeric buckets, mini/custom items, and lookup failures
 preserve existing Matrix state and produce a bounded room notice. The connector
 never treats an aggregate item's `o` identifier as a legacy selection value.
