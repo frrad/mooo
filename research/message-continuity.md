@@ -45,10 +45,13 @@ message, `cnt=300` and `cnt=1` returned nothing, while `cnt=0` returned the mess
 
 The same request serves explicit mark-as-read and read-all. One run suggested
 that `cnt=0` recovery left the sender's unread marker in place while requests that
-declared held messages cleared it (SL-LIVE-014); treat this read-state effect as
-a hypothesis until a dedicated A/B test confirms it. The client currently records
-a local read watermark after every `SYNCMSG`, including `cnt=0` recovery, which
-may be wrong if recovery does not mark messages read.
+declared held messages cleared it (SL-LIVE-014). A 2026-10-15 differential
+confirmed the rule behind it: the server answers `isOK=true` and marks the chat
+read through `max` exactly when `cnt` covers every log in `(cur, max]`, and an
+undercount such as catch-up's `cnt=0` reads nothing (SL-LIVE-015,
+[read receipts](bridge/read-receipt-policy.md#native-mark-read-shape)). The client
+records its read watermark only after a confirmed mark-read, never after
+`cnt=0` recovery.
 
 A targeted follow-up of the official `handleLChatListResponse:` path confirmed
 the surrounding state semantics that the first narrow pass missed. On successful

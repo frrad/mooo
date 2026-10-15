@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -474,4 +475,89 @@ func TestClientSyncMessagesCatchUpDoesNotSuppressLaterMarkRead(t *testing.T) {
 		t.Fatalf("read acknowledgement after MarkRead = %d, want 99", got)
 	}
 	waitBackends(t, backend)
+}
+
+// The fixture replays an owned differential: the server's observed answers
+// to each native-shaped request, and the requests the bridge sent.
+func TestClientMarkReadMatchesObservedNativeContinuation(t *testing.T) {
+	raw, err := os.ReadFile("../../research/fixtures/bridge/markread-native-observed.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Provenance struct{ Kind string }
+		Cases      []struct {
+			Name      string
+			Confirmed int64
+			Held      []int64
+			HeldRange struct{ From, Through int64 } `json:"held_range"`
+			Watermark int64
+			Responses []struct {
+				IsOK   bool    `json:"isOK"`
+				LogIDs []int64 `json:"logIds"`
+			}
+			ExpectedRequests []struct {
+				Cur, Max int64
+				Cnt      int32
+			} `json:"expected_requests"`
+			ExpectedConfirmed int64 `json:"expected_confirmed"`
+		}
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.Provenance.Kind != "observed" || len(fixture.Cases) == 0 {
+		t.Fatalf("fixture provenance %q with %d cases", fixture.Provenance.Kind, len(fixture.Cases))
+	}
+	for _, tc := range fixture.Cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			if len(tc.Responses) != len(tc.ExpectedRequests) {
+				t.Fatal("fixture pairs each request with one response")
+			}
+			held := tc.Held
+			for log := tc.HeldRange.From; log > 0 && log <= tc.HeldRange.Through; log++ {
+				held = append(held, log)
+			}
+			checkpoint := testCheckpoint(t)
+			if tc.Confirmed > 0 {
+				if _, err := checkpoint.CommitReadWatermark(42, tc.Confirmed); err != nil {
+					t.Fatal(err)
+				}
+			}
+			steps := make([]testloco.Step, 0, len(tc.Responses))
+			for i, response := range tc.Responses {
+				reply := statusDocument(bson.E{Key: "isOK", Value: response.IsOK})
+				if response.LogIDs != nil {
+					logs := bson.A{}
+					for _, id := range response.LogIDs {
+						logs = append(logs, bson.D{{Key: "logId", Value: id}})
+					}
+					reply = append(reply, bson.E{Key: "chatLogs", Value: logs})
+				}
+				want := tc.ExpectedRequests[i]
+				steps = append(steps, testloco.Expect("SYNCMSG", func(raw bson.Raw) error {
+					if err := requireInt64(raw, "cur", want.Cur); err != nil {
+						return err
+					}
+					if err := requireInt64(raw, "max", want.Max); err != nil {
+						return err
+					}
+					if count, err := raw.LookupErr("cnt"); err != nil || count.Type != bson.TypeInt32 || count.Int32() != want.Cnt {
+						return fmt.Errorf("cnt is not int32(%d)", want.Cnt)
+					}
+					return nil
+				}, reply))
+			}
+			backend := newScriptedBackend(t, false, steps...)
+			api := testContinuityClient(t, checkpoint, backend)
+			var queries [][3]int64
+			if _, err := api.MarkRead(context.Background(), 42, tc.Watermark, heldFixed(held, &queries)); err != nil {
+				t.Fatal(err)
+			}
+			waitBackends(t, backend)
+			if got := checkpoint.ReadWatermark(42); got != tc.ExpectedConfirmed {
+				t.Fatalf("confirmed = %d, want %d", got, tc.ExpectedConfirmed)
+			}
+		})
+	}
 }

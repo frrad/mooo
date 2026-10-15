@@ -172,7 +172,20 @@ caller-supplied maximum as another bound.
 The coordinator skips dispatch only when **both** `lastSyncLogId ==
 lastSeenLogId` and `lastSyncLogId == lastLogId`; a difference in either can
 enter synchronization. Deleted rooms and a calculated maximum below the
-sync position take completion paths without a request.
+sync position take completion paths without a request. A calculated maximum
+equal to the sync position is sent, as `cur == max` with `cnt=0`.
+
+SL-BIN-042 (2026-10-15) completes the inputs. Only this coordinator's
+response callback writes `lastSyncLogId`, so it is 0 for a room that never
+synced; chat-list `s`, live `MSG`, bulk `MCHATLOGS`, `CHATONROOM`, `DECUNREAD`
+and `WRITE` success do not touch it. The held query selects the oldest 300
+local messages with `cur < logId <= bound` and no type, status or scope
+filter. Explicit mark-as-read, read-all and summary-and-read pass the room's
+`lastLogId` as the bound; window release passes an unbounded maximum. A
+continuation re-enters with the original bound and recomputes `cur` from the
+updated `lastSyncLogId`, synchronously and without a delay. The owned server
+rule and the bridge's use of it are in
+[read receipts](read-receipt-policy.md#native-mark-read-shape).
 
 For a successful response, its continuation decision is:
 
@@ -198,9 +211,9 @@ next `sinces` array. The bulk callback does not directly set `lastSyncLogId`
 or `lastSeenLogId` in its per-room cursor-update block.
 
 The single-room callback behaves differently. In the `isOK=false` branch it
-raises local `lastSeenLogId` to the captured request maximum when needed,
-raises `lastSyncLogId` and `lastMChatLogId` to the returned maximum when needed,
-and repairs the recovered marker interval. The `isOK=true` branch sets
+raises local `lastSeenLogId` to the captured request `cur` (not its maximum;
+corrected 2026-10-15, SL-BIN-042), raises `lastSyncLogId` and `lastMChatLogId`
+to the returned maximum when needed, and repairs the recovered marker interval. The `isOK=true` branch sets
 `lastSeenLogId` and `lastSyncLogId` to the captured request maximum, raising
 the bulk cursor where needed. Other watermark reconciliation occurs in this
 callback as well. This is further evidence that the official sync routine is
