@@ -63,6 +63,15 @@ Risk:
 | 20 | Typing is not sent | Matrix typing | Native receives `SYNCACTION` as typing ([METADATA-TRIGGERS](METADATA-TRIGGERS.md)). Outbound typing is untraced | O/U | cos | Trace outbound typing before adding it. It adds traffic, so it is optional |
 | 21 | Inbound media and member-avatar downloads happen immediately on bridging | Each inbound media `MSG`; ghost avatar changes | Native thumbnail and download triggers are untraced (view-triggered download is noted as open in [HISTORY-STATIC](HISTORY-STATIC.md) §D) | U | acct (CDN) | Unavoidable for a bridge, which must re-upload to Matrix. Record it as a deliberate deviation. Trace native auto-download to know how far the bridge differs |
 
+## Resolved
+
+- Finding 3 (2026-10-14): the detached reconciliation login is refused after
+  KICKOUT and while a retry is scheduled, and is recorded in the persisted
+  schedule. It is not refused merely because no session is live: an
+  unresolved group creation fails every bootstrap, so the detached login is
+  the only way to reconcile it
+  ([reconnect policy](../bridge-reconnect-design.md)).
+
 ## Matches (no change)
 
 | Bridge action | Evidence |
