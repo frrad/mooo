@@ -32,16 +32,38 @@ if a future store needs it.
 
 ## Outbound: Matrix receipts
 
-A Matrix read receipt from the bridge user calls `Client.MarkRead` with the
-receipted message's Kakao log ID. If the receipt targets a non-message event,
+A Matrix read receipt from the bridge user schedules `Client.MarkRead` with
+the receipted message's Kakao log ID. If the receipt targets a non-message event,
 bridgev2's read-up-to time selects the latest bridged message at or before it.
 A receipt for a message in another chat is ignored.
+
+### Coalescing (bridge policy)
+
+An active Matrix client sends a receipt for nearly every incoming message.
+Sending each one would put a mark-read `SYNCMSG` on the wire at message rate,
+which the official client never does
+([skew audit](NATIVE-SKEW-AUDIT.md) #8). The first receipt for a chat arms a
+3-second window; later receipts in the window only raise the chat's pending
+position. When the window ends, the bridge sends one acknowledgement for the
+highest position. A chat therefore sees at most one acknowledgement per
+window. `Disconnect` sends any pending acknowledgement before closing the
+session. If the session is already gone, the acknowledgement is dropped, and
+the next receipt sends it.
+
+The 3 seconds is not a traced native interval. The closest native timer is
+the 100 ms watermark release after main-window activation
+([HISTORY-STATIC](HISTORY-STATIC.md) §D), which runs once per window
+activation, not once per message. Because the request is deferred, its
+failure is logged with the categories below instead of being returned to the
+framework.
+
+### Request
 
 `MarkRead` sends one `SYNCMSG` `[watermark-1, watermark]` with `cnt=1`, and
 after a successful response it persists the watermark as the chat's read
 acknowledgement. A later receipt at or below that position is not re-sent,
-including after a restart. A failure is returned once, without a retry: the
-shared request path never retries mutations. The returned error keeps only a
+including after a restart. A failure is reported once, without a retry: the
+shared request path never retries mutations. The logged error keeps only a
 stable category (`status N`, cancelled, deadline, session closed, or outcome
 unknown) and never wraps backend detail.
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/bridgev2"
@@ -18,6 +19,25 @@ import (
 )
 
 var errReadReceiptMutation = errors.New("connector: Kakao read acknowledgement failed")
+
+// readReceiptCoalesceWindow is how long a Matrix read receipt waits before it
+// is acknowledged to Kakao. Receipts for one chat within the window collapse
+// into one acknowledgement of the latest position. An active Matrix client
+// sends a receipt per incoming message; the official client never acknowledges
+// at that rate. This is bridge policy, not a traced native interval.
+const readReceiptCoalesceWindow = 3 * time.Second
+
+// readAckTimeout bounds one deferred acknowledgement request.
+const readAckTimeout = 30 * time.Second
+
+// stopper is the part of *time.Timer the coalescer uses.
+type stopper interface{ Stop() bool }
+
+// pendingReadAck is one chat's acknowledgement waiting out its window.
+type pendingReadAck struct {
+	logID int64
+	timer stopper
+}
 
 // readReceiptTargetWindow bounds how many recent bridged messages are scanned
 // when a DECUNREAD watermark names a log the bridge never stored.
@@ -124,10 +144,10 @@ func (kc *KakaoClient) readReceiptTarget(ctx context.Context, chatID, watermark 
 	return target, nil
 }
 
-// HandleMatrixReadReceipt acknowledges the receipted Kakao message once. The
-// client persists each successful acknowledgement, so a repeated receipt is
-// not re-sent; a failed one is reported without retrying, matching the shared
-// request path.
+// HandleMatrixReadReceipt acknowledges the receipted Kakao message after the
+// chat's coalescing window. The client persists each successful
+// acknowledgement, so a repeated receipt is not re-sent; a failed one is
+// logged without retrying, matching the shared request path.
 func (kc *KakaoClient) HandleMatrixReadReceipt(ctx context.Context, receipt *bridgev2.MatrixReadReceipt) error {
 	// See HandleMatrixMessage: no connector gate under the portal event lock.
 	if receipt == nil || receipt.Portal == nil || receipt.Portal.Portal == nil {
@@ -160,10 +180,81 @@ func (kc *KakaoClient) HandleMatrixReadReceipt(ctx context.Context, receipt *bri
 	if c == nil {
 		return bridgev2.ErrNotLoggedIn
 	}
-	if _, err := c.MarkRead(ctx, chatID, logID); err != nil {
-		return classifyReadReceiptFailure(err)
-	}
+	kc.scheduleReadAck(chatID, logID)
 	return nil
+}
+
+// scheduleReadAck records logID as the chat's acknowledgement position and
+// arms the chat's coalescing timer if none is running. Positions only move
+// forward; the client also suppresses positions it already acknowledged.
+func (kc *KakaoClient) scheduleReadAck(chatID, logID int64) {
+	kc.readAckMu.Lock()
+	if pending := kc.readAcks[chatID]; pending != nil {
+		pending.logID = max(pending.logID, logID)
+		kc.readAckMu.Unlock()
+		return
+	}
+	if kc.readAcks == nil {
+		kc.readAcks = make(map[int64]*pendingReadAck)
+	}
+	pending := &pendingReadAck{logID: logID}
+	kc.readAcks[chatID] = pending
+	kc.readAckMu.Unlock()
+	// Armed outside the lock: the timer callback takes it.
+	timer := kc.afterFunc(readReceiptCoalesceWindow, func() { kc.flushReadAck(chatID, pending) })
+	kc.readAckMu.Lock()
+	pending.timer = timer
+	kc.readAckMu.Unlock()
+}
+
+// flushReadAck sends one chat's pending acknowledgement, unless it was
+// already taken by Disconnect. A failure is logged once and not retried,
+// matching the shared request path; the next receipt tries again.
+func (kc *KakaoClient) flushReadAck(chatID int64, pending *pendingReadAck) {
+	kc.readAckMu.Lock()
+	if kc.readAcks[chatID] != pending {
+		kc.readAckMu.Unlock()
+		return
+	}
+	delete(kc.readAcks, chatID)
+	logID := pending.logID
+	kc.readAckMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), readAckTimeout)
+	defer cancel()
+	kc.sendReadAck(ctx, chatID, logID)
+}
+
+// flushReadAcks sends every pending acknowledgement now. Disconnect calls it
+// before closing the session so a receipt inside its window is not lost.
+func (kc *KakaoClient) flushReadAcks(ctx context.Context) {
+	kc.readAckMu.Lock()
+	pending := kc.readAcks
+	kc.readAcks = nil
+	kc.readAckMu.Unlock()
+	chats := make([]int64, 0, len(pending))
+	for chatID, ack := range pending {
+		if ack.timer != nil {
+			ack.timer.Stop()
+		}
+		chats = append(chats, chatID)
+	}
+	sort.Slice(chats, func(i, j int) bool { return chats[i] < chats[j] })
+	for _, chatID := range chats {
+		kc.sendReadAck(ctx, chatID, pending[chatID].logID)
+	}
+}
+
+func (kc *KakaoClient) sendReadAck(ctx context.Context, chatID, logID int64) {
+	kc.mu.Lock()
+	c := kc.client
+	kc.mu.Unlock()
+	if c == nil {
+		kc.log().Debug().Int64("kakao_chat_id", chatID).Msg("Dropping Kakao read acknowledgement: not connected")
+		return
+	}
+	if _, err := c.MarkRead(ctx, chatID, logID); err != nil {
+		kc.log().Warn().Err(classifyReadReceiptFailure(err)).Int64("kakao_chat_id", chatID).Msg("Kakao read acknowledgement failed")
+	}
 }
 
 // classifyReadReceiptFailure keeps only stable categories. Backend errors can
