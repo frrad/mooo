@@ -412,9 +412,12 @@ func metaBool(raw bson.Raw, key string) (bool, error) {
 	}
 }
 
-func decodeChatMetas(raw bson.Raw) ([]ChatMeta, error) {
-	value, ok := fields.Lookup(raw, "chatMetas")
-	if !ok {
+func decodeChatMetas(raw bson.Raw, keys ...string) ([]ChatMeta, error) {
+	if len(keys) == 0 {
+		keys = []string{"chatMetas"}
+	}
+	value, ok := fields.Lookup(raw, keys...)
+	if !ok || value.Type == bson.TypeNull {
 		return nil, nil
 	}
 	if value.Type != bson.TypeArray {
@@ -524,25 +527,33 @@ func DecodeMemberResponse(body []byte) (MemberResponse, error) {
 	if !ok {
 		return response, nil
 	}
+	if response.Members, err = decodeMembers(value); err != nil {
+		return MemberResponse{}, err
+	}
+	return response, nil
+}
+
+// decodeMembers decodes an array of MEMBER profile objects.
+func decodeMembers(value bson.RawValue) ([]Member, error) {
 	if value.Type != bson.TypeArray {
-		return MemberResponse{}, fmt.Errorf("%w: members", ErrInvalidResponse)
+		return nil, fmt.Errorf("%w: members", ErrInvalidResponse)
 	}
 	values, err := value.Array().Values()
 	if err != nil {
-		return MemberResponse{}, ErrInvalidResponse
+		return nil, ErrInvalidResponse
 	}
-	response.Members = make([]Member, 0, len(values))
+	members := make([]Member, 0, len(values))
 	for _, value := range values {
 		if value.Type != bson.TypeEmbeddedDocument {
-			return MemberResponse{}, fmt.Errorf("%w: member", ErrInvalidResponse)
+			return nil, fmt.Errorf("%w: member", ErrInvalidResponse)
 		}
 		member, err := DecodeMember(value.Document())
 		if err != nil {
-			return MemberResponse{}, err
+			return nil, err
 		}
-		response.Members = append(response.Members, member)
+		members = append(members, member)
 	}
-	return response, nil
+	return members, nil
 }
 
 // DecodeMember decodes one MEMBER profile object. The user ID is required and

@@ -62,6 +62,12 @@ func (t *profileRefreshTrace) ChatInfo(ctx context.Context, chatID int64) (chatm
 	})
 }
 
+func (t *profileRefreshTrace) GetMetas(ctx context.Context, chatIDs []int64) ([]chatmeta.ChatMetaSet, error) {
+	return traceStep(t, ctx, "GETMETAS", func(ctx context.Context) ([]chatmeta.ChatMetaSet, error) {
+		return t.kakaoClient.GetMetas(ctx, chatIDs)
+	})
+}
+
 func (t *profileRefreshTrace) PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.RoomMeta, error) {
 	return traceStep(t, ctx, "PERSONALMETA", func(ctx context.Context) (*chatmeta.RoomMeta, error) {
 		return t.kakaoClient.PersonalMeta(ctx, chatID)

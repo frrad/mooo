@@ -43,11 +43,17 @@ func (kc *KakaoClient) discoverGroups(ctx context.Context, c kakaoClient) error 
 	}
 	for _, chatID := range ordered {
 		data := inventory[chatID]
-		opts := chatInfoOptions{regularGroupOnly: true, inventory: &data, storedRoster: kc.verifiedRoster(ctx, chatID)}
+		// Room metas follow the login revision gate below, not a CHATINFO read.
+		opts := chatInfoOptions{regularGroupOnly: true, inventory: &data, storedRoster: kc.verifiedRoster(ctx, chatID), metasComplete: true}
 		if err = kc.refreshGroupMembershipFrom(ctx, c, chatID, true, opts); err != nil {
 			return err
 		}
 	}
+	groups := make([]chatmeta.ChatData, 0, len(ordered))
+	for _, chatID := range ordered {
+		groups = append(groups, inventory[chatID])
+	}
+	kc.loginMetasDemand(ctx, groups)
 	return nil
 }
 

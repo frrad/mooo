@@ -20,10 +20,15 @@ type chatInfoOptions struct {
 	// unavailable, so a refresh cannot be mistaken for a confirmed clear.
 	requirePersonalMeta bool
 	inventory           *chatmeta.ChatData
-	// storedRoster replaces MEMLIST with a roster the bridge already verified.
-	// Reconnect discovery uses it for managed groups, whose later changes
-	// arrive as membership feeds through pushes and catch-up.
+	// storedRoster replaces MEMLIST with a roster from another source.
+	// Reconnect discovery passes a managed group's verified roster, whose later
+	// changes arrive as membership feeds through pushes and catch-up; group
+	// creation passes the CREATE reply's active member list.
 	storedRoster []int64
+	// metasComplete marks inventory chat metas as needing no room-info read:
+	// they are the room's full set (a CREATE reply's full-data room), or the
+	// login revision gate reads them with GETMETAS (reconnect discovery).
+	metasComplete bool
 }
 
 // chatSnapshot is everything one chat-info read fetched from the source:
@@ -39,6 +44,7 @@ type chatSnapshot struct {
 	moimMetas        []chatmeta.MoimMeta
 	moimKnown        bool
 	deferred         bool
+	metasComplete    bool
 	personalRequired bool
 }
 
@@ -125,7 +131,7 @@ func (kc *KakaoClient) fetchChatSnapshot(ctx context.Context, portal *bridgev2.P
 			return chatSnapshot{}, fmt.Errorf("%w: %d", errInvalidMemberRoster, userID)
 		}
 	}
-	snap := chatSnapshot{data: data, roster: append([]int64(nil), roster.MemberIDs...), moimMetas: cache.Boards, moimKnown: !cache.BoardsAt.IsZero(), deferred: true, personalRequired: opts.requirePersonalMeta}
+	snap := chatSnapshot{data: data, roster: append([]int64(nil), roster.MemberIDs...), moimMetas: cache.Boards, moimKnown: !cache.BoardsAt.IsZero(), deferred: true, personalRequired: opts.requirePersonalMeta, metasComplete: opts.metasComplete}
 	userIDs := append([]int64(nil), snap.profileIDs()...)
 	profiles, err := kc.cachedMemberProfiles(ctx, userIDs)
 	if err != nil {
