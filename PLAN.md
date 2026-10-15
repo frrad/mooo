@@ -1064,9 +1064,8 @@ above. One PR each, highest account-safety risk first:
       instead of CHATINFO+MEMLIST; MEMBER for every invitee.
 - [ ] (#12, #13, #14) Drop the redundant reads around ADDMEM, CREATE and the
       viewing-episode CHATINFO.
-- [ ] (#9, #10) After the metadata-trigger PRs land: skip room-avatar downloads
-      whose avatar ID is unchanged, and stop enqueueing CHATINFO on every
-      cached `GetChatInfo`.
+- [x] (#9, #10) Skip room-avatar downloads whose avatar ID is unchanged, and
+      stop enqueueing CHATINFO on every cached `GetChatInfo`.
 - [ ] (#6, #7) Trace the native recovery delay and carriage route cache
       expiry, then cache the route across reconnects, jitter ticket attempts
       and adopt the native delay.
