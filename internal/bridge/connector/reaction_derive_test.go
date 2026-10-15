@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"sort"
 	"testing"
 
@@ -216,4 +217,54 @@ func attachFrameworkUser(t *testing.T, login *bridgev2.UserLogin) {
 	}
 	login.User = user
 	login.UserMXID = user.MXID
+}
+
+func TestObservedOwnLegacyPushesNeedOneMembersRead(t *testing.T) {
+	raw, err := os.ReadFile("../../../research/fixtures/reactions/observed-own-legacy-pushes.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Pushes []struct {
+			Revision int64  `json:"revision"`
+			Content  string `json:"content"`
+			Extra    string `json:"extra"`
+		} `json:"pushes"`
+		Expected struct {
+			MembersReads   int `json:"members_reads"`
+			FinalReactions int `json:"final_reactions"`
+		} `json:"mooo_expected"`
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	intent := &recordingIntent{}
+	kc, portal, login, old := newFrameworkReactionFixture(t, intent)
+	if err := kc.login.Bridge.DB.Reaction.Delete(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	backend := &reactionTestBackend{fakeKakao: &fakeKakao{}, members: reactions.MembersResponse{
+		Revision: fixture.Pushes[0].Revision,
+		Members:  map[reactions.Type][]int64{reactions.Heart: {testSelfID}},
+		Fields:   map[string]json.RawMessage{"1": []byte(`[1000]`)},
+	}}
+	kc.client = backend
+	login.Client = kc
+	attachFrameworkUser(t, login)
+	spacedReactionClock(kc)
+	kc.queue = func(evt bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		return (*bridgev2.PortalInternals)(portal).HandleRemoteEvent(ctx, login, evt.GetType(), evt)
+	}
+	for _, push := range fixture.Pushes {
+		if !kc.handleEvent(backend, legacyPush(push.Revision, push.Content, push.Extra)) {
+			t.Fatalf("push %d was not handled", push.Revision)
+		}
+	}
+	if backend.memberCalls != fixture.Expected.MembersReads {
+		t.Fatalf("members reads = %d, want %d", backend.memberCalls, fixture.Expected.MembersReads)
+	}
+	if got := storedLegacyPicks(t, kc); len(got) != fixture.Expected.FinalReactions {
+		t.Fatalf("stored reactions = %v, want %d", got, fixture.Expected.FinalReactions)
+	}
 }

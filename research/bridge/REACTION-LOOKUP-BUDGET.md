@@ -3,7 +3,7 @@
 Status: implemented 2026-10-15 for [native skew audit](NATIVE-SKEW-AUDIT.md)
 finding #4. Static evidence is from the authorized official macOS KakaoTalk
 26.8.0 arm64 binary, read-only, in the private Ghidra project. Owned live
-acceptance is recorded below when it has run.
+acceptance is recorded below.
 
 ## Official-client contract (static, 2026-10-15)
 
@@ -38,11 +38,20 @@ root.
   selector call site exists. Confidence: high. Dynamic dispatch cannot be
   ruled out.
 
+Owned observation (2026-10-15): legacy pushes that this account's own
+reactions caused carry `extra` with `my`, `userId` (this account) and a
+numeric `type`. `type` was recorded only as a number, but it matched `my` on
+all three pushes: the bridge's self-consistency check passed every time
+without a fallback read. Mini (type 2) pushes carry `extra: null`
+([fixture](../fixtures/reactions/observed-own-legacy-pushes.json)).
+
 Hypothesis, not yet observed: native applies `extra.my` without checking who
 acted, so its display is right only if the server writes `extra` separately
-for each recipient, pushes included. The one owned sync-meta observation
-(`{"my":0}` after this account cancelled) fits that hypothesis. An owned A/B
-push capture decides it.
+for each recipient, pushes included. Another member's legacy reaction would
+settle it. The lab has no second legacy sender: Android's quick reactions are
+Mini items. Until it is observed, a push carrying another member's `userId`
+is still checked against the counts, so a different meaning falls back to a
+read.
 
 Untraced: how the push notice decodes its BSON body (it is dispatched through
 a table), Swift readers of `extra` that use inline literals, and the Mini
@@ -89,6 +98,21 @@ for Mini), which native sends only from the detail view:
 
 The trigger is a reaction change Matrix must attribute. The 2-second window
 and the bucket size are bridge policy, not traced native intervals.
+
+## Owned acceptance (2026-10-15)
+
+B bridge with a call-counting overlay, owned A/B/C group, one bridge session:
+
+| Action | Requests |
+|---|---|
+| Matrix ❤️ on a message (first push for it this session) | 1 reaction POST, 1 `/members` |
+| Matrix 👍 replacing it | 1 reaction POST, no `/members` (derived from `extra.my`) |
+| Matrix redaction of 👍 | 1 cancel POST, no `/members` (see #5), push derived |
+| A's quick heart (Mini), then its removal | 1 `/members` + 1 log details each |
+
+Before this change the same sequence read `/members` six times (including the
+cancel pre-read) and log details twice. Now it reads `/members` three times
+and log details twice. All the remaining reads are first or Mini changes.
 
 ## Gaps
 
