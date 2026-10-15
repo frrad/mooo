@@ -49,6 +49,7 @@ type chatMetaAPI interface {
 	ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error)
 	PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.RoomMeta, error)
 	PersonalMetas(ctx context.Context) (map[int64]chatmeta.RoomMeta, error)
+	PersonalMetaRevision(ctx context.Context) (int32, bool, error)
 	MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error)
 	Members(ctx context.Context, chatID int64, userIDs []int64) ([]chatmeta.Member, error)
 	MemberList(ctx context.Context, chatID, token int64) (chatmeta.MemberListResponse, error)
@@ -291,6 +292,7 @@ func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (
 	if err := kc.discoverGroups(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "group-discovery", err: err}
 	}
+	kc.personalRevisionDemand(ctx, c)
 	if err := kc.seedLastMessages(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "last-messages", err: err}
 	}

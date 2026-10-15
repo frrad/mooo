@@ -327,11 +327,17 @@ func TestPersonalMetadataReadConvergesWhenCHATINFOOmitsPersonalFields(t *testing
 	if matrix.name != "Current personal name" {
 		t.Fatal("separate personal read did not supply current display name")
 	}
-	backend.personalMeta = &chatmeta.RoomMeta{}
-	kc.handleEvent(backend, events.ChatMCMetaChanged{ChatID: 5000, Type: "name", Content: "Current personal name", Revision: 9})
+	// Once read, pushes carry the value (research/bridge/METADATA-TRIGGERS.md):
+	// a newer empty name is a personal clear that reveals the shared name.
+	kc.handleEvent(backend, events.ChatMCMetaChanged{ChatID: 5000, Type: "name", Content: "", Revision: 9})
 	drainMetadataRefresh(t, kc, backend)
 	if matrix.name != "Synthetic created group" {
-		t.Fatal("confirmed personal clear did not reveal shared name")
+		t.Fatal("pushed personal clear did not reveal shared name")
+	}
+	kc.handleEvent(backend, events.ChatMCMetaChanged{ChatID: 5000, Type: "name", Content: "Delayed old name", Revision: 8})
+	drainMetadataRefresh(t, kc, backend)
+	if matrix.name != "Synthetic created group" {
+		t.Fatal("a push older than the applied revision changed the name")
 	}
 }
 

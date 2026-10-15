@@ -21,6 +21,9 @@ type loginCursor struct {
 	observed         []continuity.ChatTarget
 	deleted          []int64
 	replaceInventory bool
+	// mcmRevision is the LOGINLIST page's personal-metadata revision.
+	mcmRevision *int32
+	pages       int
 }
 
 // checkin tries each CHECKIN host and port in the official dial order and
@@ -118,6 +121,11 @@ func finishLoginSyncSession(ctx context.Context, session *session, first []byte,
 // cursors when the page commits them. A later page's deletion removes an
 // earlier page's chat before session installation.
 func (cursor *loginCursor) apply(page sessionlogin.LoginListPage) {
+	// The Mac client records mcmRevision from the LOGINLIST reply only.
+	if cursor.pages == 0 {
+		cursor.mcmRevision = page.MCMRevision
+	}
+	cursor.pages++
 	if page.CommitsCursor() {
 		if page.LastTokenID != nil {
 			cursor.lastTokenID = page.LastTokenID

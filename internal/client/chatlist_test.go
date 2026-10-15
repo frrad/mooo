@@ -122,3 +122,22 @@ func TestListChatsAppliesPageDeletionBeforeRecreationAndLatestMetadata(t *testin
 		t.Fatalf("recreated latest inventory: %#v, %v", chats, err)
 	}
 }
+
+// The personal-metadata revision comes from the LOGINLIST page, on delta and
+// full logins alike.
+func TestPersonalMetaRevisionFromLoginList(t *testing.T) {
+	var cursor loginCursor
+	revision := int32(7)
+	cursor.apply(sessionlogin.LoginListPage{MCMRevision: &revision})
+	later := int32(9)
+	cursor.apply(sessionlogin.LoginListPage{MCMRevision: &later, EOF: true})
+	c := &Client{session: &session{loginCursor: cursor}}
+	got, ok, err := c.PersonalMetaRevision(context.Background())
+	if err != nil || !ok || got != 7 {
+		t.Fatalf("revision = %d %t %v, want the LOGINLIST page's 7", got, ok, err)
+	}
+	c = &Client{session: &session{}}
+	if _, ok, err = c.PersonalMetaRevision(context.Background()); err != nil || ok {
+		t.Fatalf("absent revision reported: %t %v", ok, err)
+	}
+}

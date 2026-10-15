@@ -36,3 +36,20 @@ func (s *session) ListChats() ([]chatmeta.ChatData, error) {
 	sort.Slice(result, func(i, j int) bool { return result[i].ChatID < result[j].ChatID })
 	return result, nil
 }
+
+// PersonalMetaRevision returns this session's login-list personal-metadata
+// revision (mcmRevision). The official client fetches GETMCMETA only when it
+// exceeds the revision it last applied. ok is false when the server sent none.
+func (c *Client) PersonalMetaRevision(ctx context.Context) (int32, bool, error) {
+	type result struct {
+		revision int32
+		ok       bool
+	}
+	r, err := withSession(c, ctx, func(session *session) (result, error) {
+		if session == nil || session.loginCursor.mcmRevision == nil {
+			return result{}, nil
+		}
+		return result{*session.loginCursor.mcmRevision, true}, nil
+	})
+	return r.revision, r.ok, err
+}

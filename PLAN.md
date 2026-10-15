@@ -1014,7 +1014,7 @@ regular members. Follow-up changes, one PR each:
 - [x] Remove the minute profile tick (`group_profile_refresh.go`,
       `lifecycle.go` ticker). Keep the paused-group membership retry, which
       schedules itself.
-- [ ] Replace time-based freshness with native triggers. MEMBER: fetch only
+- [x] Replace time-based freshness with native triggers. MEMBER: fetch only
       members with no stored profile (new roster entries, NEWMEM invitees and
       unknown message authors). GETMOMETA: fetch from the CHATONROOM response
       revisions on Matrix viewing, and apply CHGMOMETAS payloads directly.

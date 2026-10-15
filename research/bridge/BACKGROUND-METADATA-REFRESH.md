@@ -59,8 +59,9 @@ connection failure and reconnected.
   [PROFILE-REFRESH-COOLDOWN.md](PROFILE-REFRESH-COOLDOWN.md): a stored profile
   is never refetched. Boards are read once per
   room, then follow CHGMOMETAS payloads and the viewed room's CHATONROOM
-  revisions. Personal checkpoints are fresh for 15 minutes and are invalidated
-  by CHGMCMETA.
+  revisions. Personal metadata is read once per room, then GETMCMETA runs at
+  login only when the login-list `mcmRevision` exceeds the applied revision;
+  CHGMCMETA payloads newer than it are applied without a read.
 
 ## Owned-account acceptance (2026-10-14)
 
@@ -93,8 +94,7 @@ reads behind CONNECTED is a separate question.
 - [Metadata triggers](METADATA-TRIGGERS.md) traces every request here to its
   native trigger. The official client has no MEMBER, Boards or personal
   metadata timer and no regular profile push. The minute tick is removed; the
-  15-minute freshness windows remain a bridge deviation, with their removal
-  planned in `PLAN.md`. No claim is made that the worker reproduces native pacing.
+  15-minute freshness windows are removed.
 - Personal metadata cached in a checkpoint takes precedence over a snapshot's
   inventory value. This assumes the checkpoint is the fresher of the two, which
   holds for every write path in this change.

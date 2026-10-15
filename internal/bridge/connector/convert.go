@@ -109,8 +109,6 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 		return kc.announcementResync(evt)
 	case events.ChatMCMetaChanged:
 		if evt.Type == "name" || evt.Type == "imagePath" {
-			// Refresh the connected profile instead of applying potentially
-			// delayed personal notice values to current Matrix state.
 			resync := kc.chatResync(evt.ChatID, 0, kc.userID).(*simplevent.ChatResync)
 			resync.GetChatInfoFunc = func(ctx context.Context, portal *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
 				if ctx == nil {
@@ -121,6 +119,18 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 				}
 				ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 				defer cancel()
+				// The official client applies the pushed value and revision
+				// without GETMCMETA. A room never read has nothing to apply to.
+				applied, err := kc.applyPersonalPush(ctx, evt)
+				if err != nil {
+					return nil, err
+				}
+				if applied {
+					if kc.enqueueExistingRoomEnrichment(ctx, evt.ChatID, refreshBoards, false) {
+						return &bridgev2.ChatInfo{}, nil
+					}
+					return kc.GetChatInfo(ctx, portal)
+				}
 				c, err := kc.metadataClient()
 				if err != nil {
 					return nil, err
