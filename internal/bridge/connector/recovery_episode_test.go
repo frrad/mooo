@@ -298,3 +298,59 @@ func TestTerminalLoginFailureEndsEpisode(t *testing.T) {
 		kc.Disconnect()
 	}
 }
+
+// blockingConnect is a client whose Connect waits until its attempt is
+// cancelled, like a CHECKIN walk during an outage.
+type blockingConnect struct {
+	*fakeKakao
+	entered chan struct{}
+}
+
+func (b *blockingConnect) Connect(ctx context.Context) error {
+	close(b.entered)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// Regression (lab, 2026-10-15): the watchdog stopped recovery while an
+// attempt was in flight, the stopped attempt left the client marked as
+// connecting, and the reconnect command then reported a reconnect already in
+// progress forever.
+func TestWatchdogDuringAttemptLetsOperatorReconnect(t *testing.T) {
+	clock := newSteppedClock()
+	timers := &watchdogTimers{}
+	first := &fakeKakao{stream: make(chan events.Result)}
+	blocked := &blockingConnect{fakeKakao: &fakeKakao{}, entered: make(chan struct{})}
+	recovered := &fakeKakao{stream: make(chan events.Result)}
+	var opens atomic.Int32
+	kc, harness := newTestClient(t, func() (kakaoClient, error) {
+		switch opens.Add(1) {
+		case 1:
+			return first, nil
+		case 2:
+			return blocked, nil
+		default:
+			return recovered, nil
+		}
+	})
+	kc.now = clock.Now
+	kc.wait = clock.Wait
+	kc.watchdogAfter = timers.after
+	kc.Connect(context.Background())
+	close(first.stream)
+	<-blocked.entered
+	armed := timers.all()
+	if len(armed) != 2 {
+		t.Fatalf("watchdogs = %d, want 2", len(armed))
+	}
+	armed[1].fire()
+	if got := countStoppedStates(t, harness); got != 1 {
+		t.Fatalf("stopped states = %d, want 1", got)
+	}
+	if got := kc.operatorReconnect(); got != reconnectStarted {
+		t.Fatalf("reconnect after a watchdog during an attempt = %v, want started", got)
+	}
+	waitFor(t, func() bool { return opens.Load() == 3 && kc.IsLoggedIn() })
+	close(recovered.stream)
+	kc.Disconnect()
+}

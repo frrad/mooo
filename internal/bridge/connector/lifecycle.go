@@ -315,7 +315,10 @@ func (kc *KakaoClient) startRetryLocked(generation uint64, delay time.Duration) 
 		kc.connectOnce(connectCtx, generation, true)
 		connectCancel()
 		kc.mu.Lock()
-		if kc.generation == generation {
+		// A Disconnect during the attempt has already moved the generation
+		// on; the attempt must still clear its own connecting mark, or no
+		// later Connect could start.
+		if kc.connecting && kc.connectingGeneration == generation {
 			kc.connecting = false
 			kc.connectCancel = nil
 		}
