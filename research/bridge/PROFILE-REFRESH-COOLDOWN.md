@@ -52,7 +52,9 @@ Bridge policy for ordinary member nickname/avatar enrichment:
   minimal profile. An obsolete completion cannot
   overwrite a newer reservation. Partial successful batches are retained.
 - A user without a stored profile can be requested again after the cooldown
-  expires. Records written under the earlier 15-minute policy remain valid.
+  expires. A stored profile with an empty nickname is treated the same way, as
+  native message conversion refetches such an author; any demand (a bridged
+  message from the user, or a roster read) can trigger it. Records written under the earlier 15-minute policy remain valid.
 - New requests still use the selected room's MEMBER endpoint and the existing
   global account scheduler and physical batching. No direct request bypass is
   introduced. Invalid storage or failed durable reservation stops enrichment

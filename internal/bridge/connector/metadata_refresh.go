@@ -652,3 +652,22 @@ func (kc *KakaoClient) publishRoomMetadata(ctx context.Context, task metadataRef
 	}
 	return kc.writeRoomMetadata(ctx, record)
 }
+
+// noteMessageAuthor follows the official client's message conversion, which
+// sends MEMBER for an author without a record or with an empty nickname. The
+// queue worker skips authors whose stored profile is usable, so a known
+// author costs no request. Rooms not yet projected are left to their snapshot.
+func (kc *KakaoClient) noteMessageAuthor(chatID, authorID int64) {
+	if authorID <= 0 || authorID == kc.userID || kc.metadataRefresh == nil {
+		return
+	}
+	q := kc.metadataRefresh
+	q.mu.Lock()
+	task, ok := q.snapshots[chatID]
+	q.mu.Unlock()
+	if !ok {
+		return
+	}
+	task.kind, task.ids = refreshMembers, []int64{authorID}
+	q.offer(task)
+}

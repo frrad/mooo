@@ -131,7 +131,7 @@ Mapping each native trigger to the bridge:
 | --- | --- | --- |
 | Login-list completion | Connect/reconnect | LOGINLIST/LCHATLIST; GETMCMETA only when `mcmRevision` rose |
 | NEWMEM, DELMEM, CHGMETA, CHGMCMETA, CHGMOMETAS, SYNCJOIN | Push arrival | As today; apply CHGMOMETAS/CHGMCMETA payloads instead of refetching |
-| Message from an unknown author | Message bridging | MEMBER for that author only (bridge lacks this today) |
+| Message from an unknown author | Message bridging | MEMBER for that author only, also when its stored nickname is empty (at most once per 2-minute attempt cooldown) |
 | Chat window open | Matrix viewing heartbeat (`HandleMatrixViewingChat`) | CHATONROOM, then MEMBER for unknown members and GETMOMETA when revisions changed |
 | Member list open | No Matrix equivalent | Not sent; the roster comes from login chat data and membership pushes |
 | Profile view | No Matrix equivalent | Not sent |

@@ -379,6 +379,7 @@ func withConnectionLifecycle(ctx context.Context) (context.Context, func()) {
 }
 
 func (kc *KakaoClient) messageMeta(chatID, logID, authorID, sentAt int64) simplevent.EventMeta {
+	kc.noteMessageAuthor(chatID, authorID)
 	lifecycle := kc.connectionLifecycle()
 	return simplevent.EventMeta{
 		MutateContextFunc: func(ctx context.Context) context.Context {
