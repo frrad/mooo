@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
@@ -58,5 +59,27 @@ func TestLoginReadsMetasForRoomsWithNewerRevision(t *testing.T) {
 	drainMetadataRefresh(t, kc, backend)
 	if reads := metaReads(backend); len(reads) != 0 {
 		t.Fatalf("unchanged revision re-read metas: %v", reads)
+	}
+}
+
+// A failed GETMETAS batch is dropped with the rest of the login's demand, as
+// in the official client; the next login compares revisions again.
+func TestFailedLoginMetasReadIsNotRetried(t *testing.T) {
+	kc, backend := newManagedGroupReconnect(t)
+	backend.mu.Lock()
+	renamed := backend.chatInventory[0]
+	renamed.ChatMetas, renamed.MetaMaxRevision = nil, 9
+	backend.chatInventory = []chatmeta.ChatData{renamed}
+	backend.getMetasErr = chatmeta.ErrInvalidResponse
+	backend.mu.Unlock()
+	if _, err := kc.connectAndSubscribe(t.Context(), backend); err != nil {
+		t.Fatal(err)
+	}
+	drainMetadataRefresh(t, kc, backend)
+	if _, ok, _ := kc.metadataRefresh.take(time.Now().Add(24 * time.Hour)); ok {
+		t.Fatal("failed GETMETAS left queued work")
+	}
+	if reads := metaReads(backend); !slices.Equal(reads, []string{"GetMetas([5000])"}) {
+		t.Fatalf("meta reads = %v, want one GETMETAS", reads)
 	}
 }

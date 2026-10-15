@@ -617,20 +617,16 @@ func (kc *KakaoClient) applyMetadataRefresh(c kakaoClient, result metadataRefres
 		if connectionFailure(result.sourceErr) {
 			return true
 		}
-		// The official client drops a failed GETMETAS batch and the rest of
-		// its demand; the next login compares revisions again.
-		if result.task.kind != refreshRoomMetas {
-			retry := result.task
-			retry.attempts++
-			retry.notBefore = time.Now().Add(metadataRetryDelay(retry.attempts))
-			kc.metadataRefresh.offer(retry)
-
 		retry := result.task
 		retry.attempts++
-		if retry.kind == retryMembership || retry.attempts <= maxMetadataRetries {
+		switch {
+		case retry.kind == refreshRoomMetas:
+			// The official client drops a failed GETMETAS batch and the rest
+			// of its demand; the next login compares revisions again.
+		case retry.kind == retryMembership || retry.attempts <= maxMetadataRetries:
 			retry.notBefore = time.Now().Add(metadataRetryDelay(retry.attempts))
 			kc.metadataRefresh.offer(retry)
-		} else {
+		default:
 			kc.log().Info().Uint8("refresh_kind", uint8(retry.kind)).Int("attempts", retry.attempts).Msg("Background metadata refresh abandoned until its next trigger")
 		}
 	}
