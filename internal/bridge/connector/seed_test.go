@@ -184,7 +184,7 @@ func TestSeedingSkipsChatsAlreadyDelivered(t *testing.T) {
 	}
 }
 
-func TestUndeliveredSeedEndsTheConnection(t *testing.T) {
+func TestUndeliveredSeedHoldsChat(t *testing.T) {
 	kc, h := newTestClient(t, nil)
 	h.results = []bridgev2.EventHandlingResult{bridgev2.EventHandlingResultFailed}
 	f := &fakeKakao{
@@ -197,8 +197,10 @@ func TestUndeliveredSeedEndsTheConnection(t *testing.T) {
 
 	_, err := kc.connectAndSubscribe(context.Background(), f)
 
-	if err == nil || slices.Contains(f.calls, "Events") || len(f.committed()) != 0 {
-		t.Fatalf("err = %v, calls = %v, commits = %d; want a failed bootstrap before live events", err, f.calls, len(f.committed()))
+	// The event pump retries the held seed before the chat's live commits,
+	// without another login.
+	if err != nil || len(f.committed()) != 0 || kc.holds.chats[4000] == nil {
+		t.Fatalf("err = %v, commits = %d; want the undelivered seed held uncommitted", err, len(f.committed()))
 	}
 }
 

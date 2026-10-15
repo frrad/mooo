@@ -1046,7 +1046,7 @@ other bridge-originated request with the official Mac client; the numbers
 below are its findings. These items exclude the native-metadata-trigger work
 above. One PR each, highest account-safety risk first:
 
-- [ ] (#2) Stop ending the source session when a membership refresh, media
+- [x] (#2) Stop ending the source session when a membership refresh, media
       download or GETMSGS dependency fails. Retry delivery in-process with a
       cap; relogin only on transport failure. Regressions for all three.
 - [x] (#3) Make `!reconcile-group` / `!complete-group-invitations` stop
@@ -1062,8 +1062,9 @@ above. One PR each, highest account-safety risk first:
       aggregate) and record the remainder as a deliberate deviation.
 - [ ] (#8) Debounce Matrix read receipts per chat; trace and differential-test
       the native mark-read SYNCMSG shape before switching to it.
-- [ ] (#11, #12, #13, #14) Apply NEWMEM/DELMEM feed payloads instead of
-      CHATINFO+MEMLIST; drop the redundant reads around ADDMEM, CREATE and the
+- [x] (#11) Apply NEWMEM/DELMEM feed payloads to the stored verified roster
+      instead of CHATINFO+MEMLIST; MEMBER for every invitee.
+- [ ] (#12, #13, #14) Drop the redundant reads around ADDMEM, CREATE and the
       viewing-episode CHATINFO.
 - [ ] (#9, #10) After the metadata-trigger PRs land: skip room-avatar downloads
       whose avatar ID is unchanged, and stop enqueueing CHATINFO on every

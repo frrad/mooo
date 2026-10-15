@@ -36,11 +36,14 @@ const maxMetadataRefreshJobs = 1024
 const maxMetadataRetryDelay = time.Hour
 
 type metadataRefreshTask struct {
-	kind      metadataRefreshKind
-	chatID    int64
-	version   uint64
-	snapshot  chatSnapshot
-	ids       []int64
+	kind     metadataRefreshKind
+	chatID   int64
+	version  uint64
+	snapshot chatSnapshot
+	ids      []int64
+	// refetch lists ids whose usable stored profile is still refetched: the
+	// official client sends MEMBER for every NEWMEM invitee.
+	refetch   []int64
 	notBefore time.Time
 	attempts  int
 	// personalRevision is the login-list mcmRevision a personal read answers.
@@ -117,6 +120,11 @@ func (q *metadataRefreshQueue) offer(task metadataRefreshTask) {
 				}
 			}
 			task.ids = merged
+			for _, userID := range previous.refetch {
+				if !slices.Contains(task.refetch, userID) {
+					task.refetch = append(task.refetch, userID)
+				}
+			}
 		}
 		task.personalRevision = max(task.personalRevision, previous.personalRevision)
 		task.notBefore = maxRefreshTime(task.notBefore, previous.notBefore)
@@ -282,7 +290,7 @@ func (kc *KakaoClient) performMetadataRefresh(ctx context.Context, c kakaoClient
 	switch task.kind {
 	case refreshMembers:
 		batch := task.ids[:min(len(task.ids), chatmeta.MaxMemberBatch)]
-		profiles, err := kc.resolveMemberProfiles(ctx, c, task.chatID, batch)
+		profiles, err := kc.resolveMemberProfiles(ctx, c, task.chatID, batch, task.refetch)
 		result.err, result.sourceErr = err, err
 		result.profiles = map[int64]*bridgev2.UserInfo{}
 		for _, profile := range kc.cacheProfiles(profiles, batch) {
@@ -524,6 +532,9 @@ func (kc *KakaoClient) applyMetadataRefresh(c kakaoClient, result metadataRefres
 		defer cancel()
 		if _, ok := kc.managedMembershipEvent(ctx, c, result.task.chatID, false); !ok {
 			kc.scheduleMembershipRetry(result.task.chatID, result.task.attempts+1)
+		} else {
+			// Delivery held behind the paused membership can resume.
+			kc.resumeHeld(c, result.task.chatID)
 		}
 		return false
 	}
@@ -581,6 +592,29 @@ func (kc *KakaoClient) enqueueMemberEnrichment(chatID int64, ids []int64) {
 	task.kind, task.ids = refreshMembers, slices.Clone(ids)
 	q.offer(task)
 }
+
+// rememberFeedRoster records a roster derived from a membership feed in the
+// room's remembered snapshot, without invalidating its pending enrichment,
+// and queues MEMBER for the feed's invitees.
+func (kc *KakaoClient) rememberFeedRoster(chatID int64, roster, invitees []int64) {
+	q := kc.metadataRefresh
+	q.mu.Lock()
+	task, ok := q.snapshots[chatID]
+	if ok {
+		task.snapshot.roster = slices.Clone(roster)
+		q.snapshots[chatID] = task
+	}
+	q.mu.Unlock()
+	if !ok {
+		task = q.remember(chatSnapshot{data: chatmeta.ChatData{ChatID: chatID, Type: "MultiChat"}, roster: slices.Clone(roster), deferred: true})
+	}
+	if len(invitees) == 0 {
+		return
+	}
+	task.kind, task.ids, task.refetch = refreshMembers, slices.Clone(invitees), slices.Clone(invitees)
+	q.offer(task)
+}
+
 func (kc *KakaoClient) invalidateEnrichment(ctx context.Context, chatID int64, kind metadataRefreshKind) {
 	q := kc.metadataRefresh
 	q.mu.Lock()

@@ -377,10 +377,34 @@ func (kc *KakaoClient) run(c kakaoClient, stream <-chan events.Result, done chan
 	deliveryFailed := false
 	var terminalErr error
 	metadataResults, stopMetadata := kc.startMetadataRefresh(c)
+	// heldTimer wakes the pump for the earliest held-chat retry.
+	var heldTimer *time.Timer
+	defer func() {
+		if heldTimer != nil {
+			heldTimer.Stop()
+		}
+	}()
 eventLoop:
 	for {
 		var result events.Result
+		var heldRetry <-chan time.Time
+		if heldTimer != nil {
+			heldTimer.Stop()
+			heldTimer = nil
+		}
+		if due, ok := kc.nextHeldRetry(); ok && !kickedOut && !changeServer {
+			heldTimer = time.NewTimer(time.Until(due))
+			heldRetry = heldTimer.C
+		}
 		select {
+		case now := <-heldRetry:
+			kc.retryDueHolds(c, now)
+			continue
+		case <-kc.deliveryResume:
+			if !kickedOut && !changeServer {
+				kc.resumeHeld(c, 0)
+			}
+			continue
 		case enrichment := <-metadataResults:
 			if !kickedOut && !changeServer && kc.applyMetadataRefresh(c, enrichment) {
 				break eventLoop
@@ -417,9 +441,8 @@ eventLoop:
 		if _, ok := result.Event.(events.ChangeServer); ok {
 			changeServer = true
 		}
-		if !kc.handleEvent(c, result.Event) && !kickedOut && !changeServer {
-			// Continuing would strand the first uncommitted event while later
-			// deliveries could reach Matrix out of order. Release this session
+		if !kc.deliver(c, result.Event) && !kickedOut && !changeServer {
+			// A failed event of no chat cannot be held. Release this session
 			// and let bounded connector recovery replay from durable progress.
 			// Outbound mutations are never replayed by this path.
 			deliveryFailed = true
