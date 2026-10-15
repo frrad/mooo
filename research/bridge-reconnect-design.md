@@ -116,6 +116,16 @@ receive-header timeout: a request that gets no reply within GETCONF's
 `recvHeaderTimeout` (20 seconds observed) closes the carriage, whichever
 request it was, and the bridge recovers as for any dropped connection.
 
+`!reconcile-group` and `!complete-group-invitations` use the live session
+when there is one. Otherwise they open a detached profile client and log in,
+because an unresolved or partially invited group creation fails every
+bootstrap until it is reconciled, so reconnecting first cannot help. Since
+2026-10-14 that detached login passes the same gates as reconnecting: it is
+refused after KICKOUT and while a retry is scheduled (in this process, or
+restored from the login's metadata after a restart), since that retry may be
+waiting out `-328`. The login is recorded in the persisted schedule like any
+other ([native skew audit](bridge/NATIVE-SKEW-AUDIT.md) finding 3).
+
 CHANGESVR performs old-session cleanup and books a fresh session. It does not
 replay outbound mutations.
 

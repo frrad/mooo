@@ -1049,9 +1049,11 @@ above. One PR each, highest account-safety risk first:
 - [x] (#2) Stop ending the source session when a membership refresh, media
       download or GETMSGS dependency fails. Retry delivery in-process with a
       cap; relogin only on transport failure. Regressions for all three.
-- [ ] (#3) Make `!reconcile-group` / `!complete-group-invitations` refuse when
-      there is no live session instead of opening a detached login that skips
-      the retry schedule, `-328` backoff and KICKOUT block.
+- [x] (#3) Make `!reconcile-group` / `!complete-group-invitations` stop
+      opening a detached login that skips the retry schedule, `-328` backoff
+      and KICKOUT block. Done by gating the detached login on those, not by
+      refusing whenever no session is live: an unresolved creation blocks
+      every bootstrap, so the detached login is its only repair path.
 - [ ] (#1) Use bulk MCHATLOGS (≤100 rooms) as the connect catch-up path and
       drop per-chat `SYNCMSG cnt=0` at connect. Requires an owned offline-
       message differential for gap handling first.
