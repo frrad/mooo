@@ -389,3 +389,64 @@ func TestBackgroundMetadataRetryBacksOffToBound(t *testing.T) {
 		}
 	}
 }
+
+// Finding 15 of research/bridge/NATIVE-SKEW-AUDIT.md: a failed enrichment read
+// was retried with backoff forever. The official client clears its in-flight
+// state on failure and refetches on the next native trigger, so the bridge
+// retries an optional read only maxMetadataRetries times.
+func TestFailedEnrichmentRetriesAreCapped(t *testing.T) {
+	kc, backend, _ := newGroupCreationFramework(t)
+	drainMetadataRefresh(t, kc, backend)
+	sourceErr := client.StatusError{Command: "GETMCMETA", Status: -500}
+	task := metadataRefreshTask{kind: refreshPersonal}
+	retries := 0
+	later := time.Now()
+	for {
+		result := metadataRefreshResult{task: task, trace: newProfileRefreshTrace(backend), err: sourceErr, sourceErr: sourceErr}
+		if kc.applyMetadataRefresh(backend, result) {
+			t.Fatal("a source status error ended the session")
+		}
+		later = later.Add(maxMetadataRetryDelay)
+		next, due, _ := kc.metadataRefresh.take(later)
+		if !due {
+			break
+		}
+		if next.kind != refreshPersonal {
+			t.Fatalf("unexpected retry %+v", next)
+		}
+		retries++
+		if retries > 100 {
+			t.Fatal("failed enrichment is retried without a limit")
+		}
+		task = next
+	}
+	if retries != maxMetadataRetries {
+		t.Fatalf("enrichment retries = %d, want %d", retries, maxMetadataRetries)
+	}
+}
+
+// A paused group forwards nothing until its roster converges, so its
+// membership retry is the exception: it keeps retrying, at most hourly.
+func TestPausedMembershipRetryIsNotCapped(t *testing.T) {
+	kc, backend, _ := newGroupCreationFramework(t)
+	ctx := context.Background()
+	if _, err := kc.CreateGroup(ctx, &bridgev2.GroupCreateParams{Type: "regular", RoomID: "!selected:test", Participants: []networkid.UserID{"2000", "4000"}}); err != nil {
+		t.Fatal(err)
+	}
+	drainMetadataRefresh(t, kc, backend)
+	backend.memberListErr = errors.New("synthetic persistent refresh failure")
+	if _, ok := kc.managedMembershipEvent(ctx, backend, 5000, false); ok {
+		t.Fatal("failed refresh reported success")
+	}
+	later := time.Now()
+	for range maxMetadataRetries + 2 {
+		later = later.Add(maxMetadataRetryDelay)
+		task, due, _ := kc.metadataRefresh.take(later)
+		if !due || task.kind != retryMembership {
+			t.Fatalf("paused group lost its membership retry: %+v (due %t)", task, due)
+		}
+		if kc.applyMetadataRefresh(backend, kc.performMetadataRefresh(ctx, backend, task)) {
+			t.Fatal("membership retry ended the session")
+		}
+	}
+}
