@@ -38,8 +38,8 @@ type sessionAPI interface {
 	Connect(ctx context.Context) error
 	Events(ctx context.Context) (<-chan events.Result, error)
 	CommitEvent(event events.Event) error
-	ResumeTargets(ctx context.Context) ([]syncmsg.Target, error)
 	UndeliveredTargets(ctx context.Context) ([]syncmsg.Target, error)
+	CatchUpAll(ctx context.Context, options client.CatchUpOptions) (client.CatchUpResult, error)
 	CatchUp(ctx context.Context, chatID, targetMax int64) ([]events.Event, error)
 	SeedLastMessage(chat chatmeta.ChatData, accept func(events.Event) bool) (events.Event, error)
 	Shutdown(ctx context.Context) error
@@ -310,22 +310,17 @@ func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (
 	if err := c.Connect(ctx); err != nil {
 		return nil, bootstrapFailure{stage: "connect", err: err}
 	}
-	if kc.login != nil && kc.login.Bridge != nil {
-		if network, ok := kc.login.Bridge.Network.(*KakaoConnector); ok && network.Config.StartupHistory {
-			bulk, ok := c.(interface {
-				AcquireStartupHistory(context.Context, client.StartupHistoryOptions) (client.StartupHistoryResult, error)
-			})
-			if !ok {
-				return nil, bootstrapFailure{stage: "startup-history", err: client.ErrProtocol}
-			}
-			result, err := bulk.AcquireStartupHistory(ctx, client.StartupHistoryOptions{})
-			if err != nil {
-				return nil, bootstrapFailure{stage: "startup-history", err: err}
-			}
-			if result.Pending > 0 {
-				kc.log().Warn().Int("pending_rooms", result.Pending).Msg("Startup history acquisition stopped at its configured budget")
-			}
+	// With startup history, the connect's one MCHATLOGS chain runs first so
+	// the acquired store is filled before discovery creates rooms that may
+	// backfill from it. Its catch-up events are delivered at the catch-up
+	// stage, as without startup history.
+	var caught *client.CatchUpResult
+	if kc.historyEnabled() {
+		result, err := kc.catchUpChain(ctx, c, &client.StartupHistoryOptions{})
+		if err != nil {
+			return nil, bootstrapFailure{stage: "catch-up", err: err}
 		}
+		caught = &result
 	}
 	if err := kc.resumeGroupCreates(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "group-create-recovery", err: err}
@@ -340,7 +335,14 @@ func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (
 	if err := kc.checkStartupHistoryDelivery(ctx, c); err != nil {
 		return nil, bootstrapFailure{stage: "startup-history-delivery", err: err}
 	}
-	if err := kc.catchUp(ctx, c); err != nil {
+	if caught == nil {
+		result, err := kc.catchUpChain(ctx, c, nil)
+		if err != nil {
+			return nil, bootstrapFailure{stage: "catch-up", err: err}
+		}
+		caught = &result
+	}
+	if err := kc.catchUp(ctx, c, *caught); err != nil {
 		return nil, bootstrapFailure{stage: "catch-up", err: err}
 	}
 	stream, err := c.Events(ctx)
@@ -350,17 +352,30 @@ func (kc *KakaoClient) connectAndSubscribe(ctx context.Context, c kakaoClient) (
 	return stream, nil
 }
 
-// catchUp bridges and commits, in order, the messages each previously
-// bridged chat received while the bridge was away. SYNCMSG may mark them read
-// on the server. A chat whose interval cannot be recovered keeps its recorded
-// gap and gets a notice. A chat whose event cannot be delivered is held for
-// the event pump to retry; any other failure aborts the connection so live
-// commits never skip past unrecovered messages.
-func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
-	targets, err := c.ResumeTargets(ctx)
+// catchUpChain sends the connect's one MCHATLOGS chain. history, when set,
+// also acquires the startup history on it.
+func (kc *KakaoClient) catchUpChain(ctx context.Context, c kakaoClient, history *client.StartupHistoryOptions) (client.CatchUpResult, error) {
+	result, err := c.CatchUpAll(ctx, client.CatchUpOptions{StartupHistory: history})
 	if err != nil {
-		return fmt.Errorf("list catch-up targets: %w", err)
+		if isUnidentifiableMessageError(err) {
+			return client.CatchUpResult{}, unidentifiableMessageError()
+		}
+		return client.CatchUpResult{}, fmt.Errorf("catch up: %w", err)
 	}
+	if result.HistoryPending > 0 {
+		kc.log().Warn().Int("pending_rooms", result.HistoryPending).Msg("Startup history acquisition stopped at its configured budget")
+	}
+	return result, nil
+}
+
+// catchUp bridges and commits, in order, the messages each previously
+// bridged chat received while the bridge was away, as recovered by the
+// connect's MCHATLOGS chain. A chat whose interval was not fully recovered
+// keeps its recorded gap, gets one notice and, as a managed group, a roster
+// read. A chat whose event cannot be delivered is held for the event pump to
+// retry; any other failure aborts the connection so live commits never skip
+// past unrecovered messages.
+func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient, caught client.CatchUpResult) error {
 	// Catch-up does not cover a chat this profile never delivered from, so a
 	// managed group there reads its roster as the documented fallback.
 	undelivered, err := c.UndeliveredTargets(ctx)
@@ -370,30 +385,39 @@ func (kc *KakaoClient) catchUp(ctx context.Context, c kakaoClient) error {
 	for _, target := range undelivered {
 		kc.rosterFallback(ctx, c, target.ChatID)
 	}
-	for _, target := range targets {
-		missed, err := c.CatchUp(ctx, target.ChatID, target.MaxLogID)
-		if errors.Is(err, client.ErrGapUnresolved) {
-			kc.log().Warn().Int64("kakao_chat_id", target.ChatID).Msg("Could not recover messages missed while disconnected")
-			if result := kc.queue(kc.gapNotice(target.ChatID, target.MaxLogID)); !committable(result) {
+	for _, room := range caught.Rooms {
+		gap := room.Skipped || room.Unresolved
+		notice := func() error {
+			kc.log().Warn().Int64("kakao_chat_id", room.ChatID).Msg("Could not recover messages missed while disconnected")
+			if result := kc.queue(kc.gapNotice(room.ChatID, room.Ceiling)); !committable(result) {
 				return fmt.Errorf("catch-up gap notice: %w", errDeliveryNotConfirmed)
 			}
-			// The unrecovered interval may hold membership feeds; read the
-			// roster as the documented fallback for a managed group.
-			kc.rosterFallback(ctx, c, target.ChatID)
-			continue
-		} else if err != nil {
-			if isUnidentifiableMessageError(err) {
-				return unidentifiableMessageError()
-			}
-			return fmt.Errorf("catch up chat: %w", err)
+			return nil
 		}
-		for i, evt := range missed {
+		// A skipped interval precedes the recovered messages; an
+		// unrecovered tail follows them. One notice per chat either way.
+		if room.Skipped {
+			if err := notice(); err != nil {
+				return err
+			}
+		}
+		for i, evt := range room.Events {
 			if !kc.handleEvent(c, evt) {
 				// Hold the chat's remaining interval; the event pump retries
 				// it without another login.
-				kc.hold(target.ChatID, missed[i:])
+				kc.hold(room.ChatID, room.Events[i:])
 				break
 			}
+		}
+		if room.Unresolved && !room.Skipped {
+			if err := notice(); err != nil {
+				return err
+			}
+		}
+		if gap {
+			// The unrecovered interval may hold membership feeds; read the
+			// roster as the documented fallback for a managed group.
+			kc.rosterFallback(ctx, c, room.ChatID)
 		}
 	}
 	return nil

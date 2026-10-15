@@ -234,8 +234,10 @@ func (c *Client) SeedLastMessage(chat chatmeta.ChatData, accept func(events.Even
 	return event, nil
 }
 
-// CatchUp retrieves the missing interval after this profile's committed chat
-// maximum (or recorded first live admission) through targetMax. The result remains uncommitted so a crash before
+// CatchUp retrieves one chat's missing interval after this profile's committed
+// chat maximum (or recorded first live admission) through targetMax. Connect
+// catch-up uses CatchUpAll; this single-chat path reads a held chat's dropped
+// interval. The result remains uncommitted so a crash before
 // the application persists it causes replay rather than loss. SYNCMSG may make
 // that interval appear read to other participants; Kakao's current Mac client
 // uses the same operation for explicit read-all. An empty or non-progressing

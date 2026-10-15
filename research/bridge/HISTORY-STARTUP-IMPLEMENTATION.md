@@ -5,7 +5,10 @@ clean-login history, not completion of the three bridge flows.
 
 ## Contract and evidence
 
-`Client.AcquireStartupHistory` consumes the complete chat inventory and current
+Since 2026-10-15 the acquisition rides the connect's one MCHATLOGS chain:
+`Client.CatchUpAll` with `CatchUpOptions.StartupHistory` (see
+[connect traffic, finding #1](CONNECT-TRAFFIC.md#implementation-2026-10-15)).
+The acquisition consumes the complete chat inventory and current
 LOGINLIST global `minLogId`. It selects regular direct/group rooms whose acquired
 bulk cursor is below the inventory's last log and whose last log is at least the
 global floor. Inventory previews, delivered-message positions and read watermarks
@@ -37,21 +40,25 @@ pages. This closes the crash window between page publication and journal update.
 Bulk requests share the existing profile's zero-held-count SYNCMSG admission
 worker: one in-flight request, configured minimum spacing, durable error cooldown,
 bounded demand and finite request duration. The default startup demand is 25
-pages/one minute; a selected subset and smaller budget are available to the SDK.
-Concurrent startup coordinators serialize and rebuild eligibility after the
-previous invocation. A no-progress non-EOF reply stops with `ErrGapUnresolved`
-and retains the longer cooldown. There is no automatic source retry loop.
+pages/one minute, counted on the shared chain; a smaller budget is available to
+the SDK. When it is spent, acquisition-only rooms leave the chain with their
+durable cursors and catch-up rooms continue. A room that also needs catch-up is
+requested from its delivery position, so its older acquisition waits for a
+connect where it is up to date. Concurrent chains serialize and rebuild
+eligibility after the previous invocation. A no-progress non-EOF reply stops the
+chain; acquisition rooms stay pending rather than failing the connect. There is
+no automatic source retry loop.
 
-A selected subset must contain unique positive IDs present as supported regular
-rooms; an invalid selection fails before bulk dispatch. Production validation also
+Production validation also
 rejects unsorted/duplicate rooms and mismatched arrays, even though the native
 request model accepts malformed empty/mismatched arrays. Responses require
 positive room/message identities and increasing order within numerically ordered
 rooms, so an invalid boundary cannot retire another room. These are deliberate
 fail-closed production guards, not model-parity claims for malformed inputs.
 
-The bridge's opt-in `network.startup_history` executes acquisition before group
-discovery, inventory preview delivery and catch-up. It defaults to false. The
+The bridge's opt-in `network.startup_history` runs the connect's chain, with
+acquisition, before group discovery and inventory preview delivery; its catch-up
+messages are delivered at the catch-up stage. It defaults to false. The
 current slice caches older records; it does not automatically insert those older
 records into Matrix. Failure stops bootstrap before live subscription; this is a
 conservative bridge policy rather than a claim to reproduce the native callback's

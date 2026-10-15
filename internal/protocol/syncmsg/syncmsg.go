@@ -164,3 +164,14 @@ func LogID(raw bson.Raw) (int64, error) {
 	}
 	return value, nil
 }
+
+// PrevID returns a chat log's predecessor identity. It reports false when
+// the field is missing or invalid; zero is a valid predecessor (the chat's
+// first log).
+func PrevID(raw bson.Raw) (int64, bool) {
+	value, ok, err := fields.Int64(raw, "prevId")
+	if err != nil || !ok || value < 0 {
+		return 0, false
+	}
+	return value, true
+}
