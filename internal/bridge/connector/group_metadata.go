@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/bridgev2"
+	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/event"
 )
 
@@ -79,6 +81,10 @@ func (kc *KakaoClient) checkpointGroupDisplay(ctx context.Context, p *bridgev2.P
 	if raw != "" && json.Unmarshal([]byte(raw), &stored) != nil {
 		return chatmeta.ChatData{}, errors.New("connector: display checkpoint is invalid")
 	}
+	var incomingRevision int64
+	for _, meta := range data.ChatMetas {
+		incomingRevision = max(incomingRevision, meta.Revision)
+	}
 	selected := map[int32]chatmeta.ChatMeta{}
 	for _, meta := range stored {
 		if !isDisplayMeta(meta.Type) || meta.Revision < 0 {
@@ -131,7 +137,40 @@ func (kc *KakaoClient) checkpointGroupDisplay(ctx context.Context, p *bridgev2.P
 			return chatmeta.ChatData{}, err
 		}
 	}
+	if err = kc.recordMetaRevision(ctx, p.Portal, incomingRevision); err != nil {
+		return chatmeta.ChatData{}, err
+	}
 	return data, nil
+}
+
+func metaRevisionKey(p *database.Portal) string {
+	return fmt.Sprintf("kakao:room-meta-revision:%s:%s", p.Receiver, p.ID)
+}
+
+// appliedMetaRevision is the highest shared chat-meta revision the bridge has
+// merged for a group, of any meta type. The official client compares the
+// login chat data's metaMaxRevision with the maximum revision of the room's
+// stored metas.
+func (kc *KakaoClient) appliedMetaRevision(ctx context.Context, p *database.Portal) (int64, error) {
+	raw, found, err := kc.store.get(ctx, metaRevisionKey(p))
+	if err != nil || !found {
+		return 0, err
+	}
+	revision, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || revision < 0 {
+		return 0, errors.New("connector: meta revision checkpoint is invalid")
+	}
+	return revision, nil
+}
+
+// recordMetaRevision raises a group's applied meta revision; callers hold
+// displayGate, which serializes it with the display checkpoint.
+func (kc *KakaoClient) recordMetaRevision(ctx context.Context, p *database.Portal, revision int64) error {
+	applied, err := kc.appliedMetaRevision(ctx, p)
+	if err != nil || revision <= applied {
+		return err
+	}
+	return kc.store.put(ctx, metaRevisionKey(p), strconv.FormatInt(revision, 10))
 }
 
 func isDisplayMeta(typ int32) bool {

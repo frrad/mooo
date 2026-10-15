@@ -1076,8 +1076,8 @@ above. One PR each, highest account-safety risk first:
 - [ ] (#6, #7) Trace the native recovery delay and carriage route cache
       expiry, then cache the route across reconnects, jitter ticket attempts
       and adopt the native delay.
-- [ ] (#18) Trace the GETMETA chain; replace CHATINFO room-info refreshes with
-      revision-gated GETMETA at login.
+- [x] (#18) Trace the GETMETAS chain; send revision-gated GETMETAS at login
+      instead of discovery room-info CHATINFO.
 - [x] (#15) Cap background metadata retries: optional reads (MEMBER,
       personal metadata, Boards, room info) retry at most three times (2, 4,
       8 min) and then wait for their next native trigger. The paused-group
