@@ -198,11 +198,8 @@ type KakaoClient struct {
 	profiles      map[int64]chatmeta.Member
 	// inventoryRooms holds direct chats whose rooms are being created from
 	// login inventory data while their last message is seeded.
-	inventoryRooms map[int64]chatmeta.ChatData
-	// profileRefreshAfter is the periodic profile refresh cursor; groupGate
-	// guards it.
-	profileRefreshAfter string
-	metadataRefresh     *metadataRefreshQueue
+	inventoryRooms  map[int64]chatmeta.ChatData
+	metadataRefresh *metadataRefreshQueue
 
 	reactionNoticeMu sync.Mutex
 	reactionNotices  map[string]time.Time

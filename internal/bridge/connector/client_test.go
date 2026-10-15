@@ -142,6 +142,9 @@ func (f *fakeKakao) ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatIn
 }
 
 func (f *fakeKakao) MoimMeta(ctx context.Context, chatID int64) (chatmeta.MoimResponse, error) {
+	f.mu.Lock()
+	f.metadataCalls = append(f.metadataCalls, fmt.Sprintf("MoimMeta(%d)", chatID))
+	f.mu.Unlock()
 	if f.moimResponse.ChatID != 0 || f.moimErr != nil {
 		return f.moimResponse, f.moimErr
 	}
@@ -1793,6 +1796,9 @@ func TestBootstrapCleanupCannotShutdownOwnerAlreadyClaimedByDisconnect(t *testin
 }
 
 func (f *fakeKakao) PersonalMetas(ctx context.Context) (map[int64]chatmeta.RoomMeta, error) {
+	f.mu.Lock()
+	f.metadataCalls = append(f.metadataCalls, "PersonalMetas()")
+	f.mu.Unlock()
 	if f.personalMeta == nil {
 		return nil, f.personalMetaErr
 	}

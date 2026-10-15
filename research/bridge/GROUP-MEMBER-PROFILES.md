@@ -119,7 +119,12 @@ room's last chat message, mention/reply metadata, archive folder and dock badge,
 fetching CHATINFO for an unknown room. Neither traced dispatcher justifies
 mapping a generic push to an authoritative member nickname/avatar update.
 
-The bridge now schedules profile refresh independently of messages. Once per
+**Removed 2026-10-14.** The once-a-minute refresh described in this section
+and the next was removed: the official client has no such timer and no
+regular profile push ([metadata triggers](METADATA-TRIGGERS.md)). The text is
+kept as the record of the earlier acceptance.
+
+The bridge scheduled profile refresh independently of messages. Once per
 minute, its existing event pump selects one eligible group in rotating ID order.
 Only a previously managed regular group or a durably bound Matrix-created
 regular group qualifies; removed, pending, direct and unbound rooms are skipped.

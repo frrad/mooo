@@ -120,7 +120,7 @@ func (q *metadataRefreshQueue) offer(task metadataRefreshTask) {
 		task.attempts = max(task.attempts, previous.attempts)
 	} else if len(q.pending) >= maxMetadataRefreshJobs {
 		q.mu.Unlock()
-		// The minute ticker and the next session's discovery reconstruct demand.
+		// The next session's discovery reconstructs demand.
 		if q.dropped != nil {
 			q.dropped()
 		}
