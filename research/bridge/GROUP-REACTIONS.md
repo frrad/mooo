@@ -93,6 +93,12 @@ Each change was preceded by a failing production-path test.
   after KakaoTalk accepts a new legacy selection, the bridge replaces only that
   sender's previous legacy reaction.
 
+- **Cancel from the stored own pick.** A Matrix redaction used to read
+  `/members` before cancelling, a request native never sends there
+  ([skew audit](NATIVE-SKEW-AUDIT.md) #5). Removal now compares the redacted
+  row with this login's stored legacy reaction on the message and sends only
+  the cancel. A stored pick that a push already replaced suppresses the cancel.
+
 ### Deliberate deviations
 
 - The proposed viewing policy consumes framework heartbeats rather than a Mac

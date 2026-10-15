@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -165,6 +166,18 @@ func TestObservedGroupDiscoveryFixtureUsesProductionBootstrap(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			kc, h := newDiscoveryFramework(t, testChatID, tc.MemberIDs)
 			f := &fakeKakao{stream: make(chan events.Result), chatInventory: tc.Inventory, chatInfo: chatmeta.ChatInfoResponse{ChatData: tc.ChatData}, memberList: chatmeta.MemberListResponse{MemberIDs: tc.MemberIDs}, members: tc.Members}
+			// The fixture predates capturing the login metaMaxRevision. A titled
+			// group's chat data carries one above the bridge's (zero) applied
+			// revision, so its title arrives through GETMETAS.
+			f.metaSets = map[int64]chatmeta.ChatMetaSet{}
+			for i := range f.chatInventory {
+				f.chatInventory[i].MetaMaxRevision = 1
+				metas := slices.Clone(tc.ChatData.ChatMetas)
+				for j := range metas {
+					metas[j].Revision = 1
+				}
+				f.metaSets[f.chatInventory[i].ChatID] = chatmeta.ChatMetaSet{ChatID: f.chatInventory[i].ChatID, Metas: metas}
+			}
 			if _, err := kc.connectAndSubscribe(context.Background(), f); err != nil {
 				t.Fatal(err)
 			}

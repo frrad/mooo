@@ -1057,9 +1057,11 @@ above. One PR each, highest account-safety risk first:
 - [ ] (#1) Use bulk MCHATLOGS (≤100 rooms) as the connect catch-up path and
       drop per-chat `SYNCMSG cnt=0` at connect. Requires an owned offline-
       message differential for gap handling first.
-- [ ] (#4, #5) Reactions: drop the `/members` pre-read on cancel; budget and
-      coalesce the per-push `/members` lookups (or derive the actor from the
-      aggregate) and record the remainder as a deliberate deviation.
+- [x] (#5) Reactions: drop the `/members` pre-read on cancel; cancel from the
+      stored own pick.
+- [ ] (#4) Reactions: budget and coalesce the per-push `/members` lookups (or
+      derive the actor from the aggregate) and record the remainder as a
+      deliberate deviation.
 - [x] (#8a) Debounce Matrix read receipts per chat (3 s window, latest
       position, flushed on Disconnect).
 - [ ] (#8b) Differential-test the native mark-read SYNCMSG shape before
@@ -1077,8 +1079,8 @@ above. One PR each, highest account-safety risk first:
 - [ ] (#6, #7) Trace the native recovery delay and carriage route cache
       expiry, then cache the route across reconnects, jitter ticket attempts
       and adopt the native delay.
-- [ ] (#18) Trace the GETMETA chain; replace CHATINFO room-info refreshes with
-      revision-gated GETMETA at login.
+- [x] (#18) Trace the GETMETAS chain; send revision-gated GETMETAS at login
+      instead of discovery room-info CHATINFO.
 - [x] (#15) Cap background metadata retries: optional reads (MEMBER,
       personal metadata, Boards, room info) retry at most three times (2, 4,
       8 min) and then wait for their next native trigger. The paused-group
