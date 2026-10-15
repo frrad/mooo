@@ -26,6 +26,8 @@ var commandReconnect = &commands.FullHandler{
 			ce.Reply("KakaoTalk signed this device out. Log out of the bridge and log in again; reconnecting would reuse the revoked session.")
 		case reconnectAlreadyConnected:
 			ce.Reply("The Kakao login is already connected.")
+		case reconnectResumingDelivery:
+			ce.Reply("The Kakao login is connected. Retrying delivery of the paused chats; the bridge state reports the result.")
 		case reconnectPending:
 			ce.Reply("A reconnect is already in progress or scheduled. The bridge state shows when it will try again.")
 		case reconnectStarted:
@@ -41,6 +43,7 @@ const (
 	reconnectAlreadyConnected
 	reconnectPending
 	reconnectKickedOut
+	reconnectResumingDelivery
 )
 
 // operatorReconnect starts a new session for a login that stopped without a
@@ -56,6 +59,9 @@ func (kc *KakaoClient) operatorReconnect() reconnectResult {
 	pending := kc.connecting || kc.retry.running()
 	kc.mu.Unlock()
 	switch {
+	case connected && kc.requestDeliveryResume():
+		// A paused chat is retried in the live session; no new login.
+		return reconnectResumingDelivery
 	case connected:
 		return reconnectAlreadyConnected
 	case pending:

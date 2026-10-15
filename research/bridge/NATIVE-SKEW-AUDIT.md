@@ -65,6 +65,15 @@ Risk:
 
 ## Resolved
 
+- Finding 2 (2026-10-14): a failed delivery holds its chat and retries it in
+  the live session, capped, instead of relogging in
+  ([delivery holds](../bridge-reconnect-design.md#delivery-holds-2026-10-14)).
+- Finding 3 (2026-10-14): the detached reconciliation login is refused after
+  KICKOUT and while a retry is scheduled, and is recorded in the persisted
+  schedule. It is not refused merely because no session is live: an
+  unresolved group creation fails every bootstrap, so the detached login is
+  the only way to reconcile it
+  ([reconnect policy](../bridge-reconnect-design.md)).
 - Finding 15 (2026-10-14): a failed optional metadata read (MEMBER, personal
   metadata, Boards, room info) retries at most three times, after 2, 4 and 8
   minutes, and is then dropped until its next native trigger enqueues it
