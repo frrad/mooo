@@ -849,7 +849,7 @@ func (kc *KakaoClient) metadataClient() (kakaoClient, error) {
 }
 
 var (
-	errDetachedKickedOut    = errors.New("connector: KakaoTalk signed this device out; log out of the bridge and log in again instead")
+	errDetachedKickedOut       = errors.New("connector: KakaoTalk signed this device out; log out of the bridge and log in again instead")
 	errDetachedRetryPending    = errors.New("connector: the bridge is reconnecting to KakaoTalk; wait for the bridge state to report the outcome, then run this command again")
 	errDetachedRecoveryStopped = errors.New("connector: reconnecting to KakaoTalk failed and the bridge stopped trying; send the reconnect command first")
 )

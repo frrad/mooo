@@ -101,14 +101,14 @@ type session struct {
 	loginMinLogID      int64
 	// loginStatus is the accepted LOGINLIST status: 0, or -305 for a
 	// delta-only login.
-	loginStatus int32
-	userID             int64
-	appVersion         string
-	mediaDial          wireDialer
-	loginCursor        loginCursor
-	bootstrapDone      bool
-	bootstrapPushes    []loco.Packet
-	readLoopStarted    bool
+	loginStatus     int32
+	userID          int64
+	appVersion      string
+	mediaDial       wireDialer
+	loginCursor     loginCursor
+	bootstrapDone   bool
+	bootstrapPushes []loco.Packet
+	readLoopStarted bool
 	// headerClock and headerTimeout arm one receive-header timer per written
 	// request; headerTimers holds the armed ones by packet ID. A nil clock or
 	// a non-positive timeout arms nothing. mu guards headerTimers.
