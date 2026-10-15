@@ -131,6 +131,42 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 		}
 		progress = groupHistoryProgress{After: after, Through: through, Remaining: budget}
 	}
+	// One authoritative CHATINFO and source roster read precedes the first page
+	// and serves the whole command (audit finding 16). The ceiling only grows,
+	// and live membership feeds keep the stored roster current between pages.
+	info, err := c.ChatInfo(ctx, chatID)
+	if err != nil {
+		return false, errors.New("connector: history source metadata unavailable")
+	}
+	if info.ChatData.ChatID != chatID || info.ChatData.Type != "MultiChat" || info.ChatData.LinkID != 0 {
+		return false, errors.New("connector: history supports regular groups only")
+	}
+	if err = kc.refreshGroupMembershipInventory(ctx, c, chatID, false, &info.ChatData); err != nil {
+		return false, err
+	}
+	ceiling := info.ChatData.LastServerLogID
+	if len(info.ChatData.LastChatLog) > 0 {
+		if last, e := syncmsg.LogID(info.ChatData.LastChatLog); e == nil && last > ceiling {
+			ceiling = last
+		}
+	}
+	if ceiling <= 0 {
+		// Read rooms can omit CHATINFO's last-log fields. The original
+		// account's login inventory (including observed live maxima) still
+		// supplies a bounded ceiling; Matrix mappings are never authority.
+		targets, inventoryErr := c.InitialSyncTargets(ctx)
+		if inventoryErr != nil {
+			return false, errors.New("connector: history source inventory unavailable")
+		}
+		for _, target := range targets {
+			if target.ChatID == chatID && target.MaxLogID > ceiling {
+				ceiling = target.MaxLogID
+			}
+		}
+	}
+	if ceiling <= 0 || progress.Through > ceiling {
+		return false, errors.New("connector: selected history exceeds the source-visible ceiling")
+	}
 	for progress.Remaining > 0 && !progress.Done {
 		if err = ctx.Err(); err != nil {
 			return false, err
@@ -140,40 +176,6 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 		kc.mu.Unlock()
 		if stopping {
 			return false, bridgev2.ErrNotLoggedIn
-		}
-		// Fresh authoritative membership and regular-room checks precede every page.
-		if err = kc.refreshGroupMembership(ctx, c, chatID, false); err != nil {
-			return false, err
-		}
-		info, err := c.ChatInfo(ctx, chatID)
-		if err != nil {
-			return false, errors.New("connector: history source metadata unavailable")
-		}
-		if info.ChatData.ChatID != chatID || info.ChatData.Type != "MultiChat" || info.ChatData.LinkID != 0 {
-			return false, errors.New("connector: history supports regular groups only")
-		}
-		ceiling := info.ChatData.LastServerLogID
-		if len(info.ChatData.LastChatLog) > 0 {
-			if last, e := syncmsg.LogID(info.ChatData.LastChatLog); e == nil && last > ceiling {
-				ceiling = last
-			}
-		}
-		if ceiling <= 0 {
-			// Read rooms can omit CHATINFO's last-log fields. The original
-			// account's login inventory (including observed live maxima) still
-			// supplies a bounded ceiling; Matrix mappings are never authority.
-			targets, inventoryErr := c.InitialSyncTargets(ctx)
-			if inventoryErr != nil {
-				return false, errors.New("connector: history source inventory unavailable")
-			}
-			for _, target := range targets {
-				if target.ChatID == chatID && target.MaxLogID > ceiling {
-					ceiling = target.MaxLogID
-				}
-			}
-		}
-		if ceiling <= 0 || progress.Through > ceiling {
-			return false, errors.New("connector: selected history exceeds the source-visible ceiling")
 		}
 		progress.RequestPending = true
 		progress.Attempts++
@@ -221,22 +223,26 @@ func (kc *KakaoClient) BackfillGroup(ctx context.Context, room id.RoomID, after,
 			// Sending as a former ghost may temporarily join it via Matrix's
 			// intent API. Restore the authoritative current roster before
 			// checkpointing that historical delivery or accepting more work.
-			restoreRoster := false
+			var restoreRoster []int64
 			if message, ok := remote.(bridgev2.RemoteMessage); ok && message.GetSender().Sender != "" {
 				sender, parseErr := parseUserID(string(message.GetSender().Sender))
 				meta, metaOK := p.Metadata.(*KakaoPortalMetadata)
-				if parseErr != nil || !metaOK || meta == nil {
+				if parseErr != nil || !metaOK || meta == nil || len(meta.MembershipRoster) == 0 {
 					return false, errors.New("connector: historical sender roster is unavailable")
 				}
-				restoreRoster = !slices.Contains(meta.MembershipRoster, sender)
+				if !slices.Contains(meta.MembershipRoster, sender) {
+					restoreRoster = slices.Clone(meta.MembershipRoster)
+				}
 			}
 			historical, ok := remote.(bridgev2.RemoteMessage)
 			if !ok {
 				return false, errors.New("connector: historical delivery is not a message")
 			}
 			result := kc.queue(&historyMessage{RemoteMessage: historical, ctx: ctx})
-			if restoreRoster {
-				if err = kc.refreshGroupMembership(ctx, c, chatID, false); err != nil {
+			if restoreRoster != nil {
+				// Reconverge Matrix to the verified current roster; the source
+				// was already read for this command.
+				if err = kc.refreshGroupMembershipFrom(ctx, c, chatID, false, chatInfoOptions{regularGroupOnly: true, inventory: &info.ChatData, storedRoster: restoreRoster}); err != nil {
 					return false, err
 				}
 			}
