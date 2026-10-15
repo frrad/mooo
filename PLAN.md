@@ -1021,7 +1021,7 @@ regular members. Follow-up changes, one PR each:
       GETMCMETA: fetch only when the login-list `mcmRevision` exceeds the stored
       revision, and apply CHGMCMETA payloads. Drop the 15-minute freshness
       windows; keep the 2-minute attempt reservation as failure backoff.
-- [ ] Add MEMBER for a message author with no stored profile or an empty
+- [x] Add MEMBER for a message author with no stored profile or an empty
       nickname, matching native message conversion.
 - [ ] Remove the startup CHATONROOM sweep (`recoverReadWatermarks`). Native
       sends CHATONROOM only on chat open and, on reconnect, for open chat

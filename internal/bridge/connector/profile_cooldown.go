@@ -115,7 +115,9 @@ func (kc *KakaoClient) resolveMemberProfiles(ctx context.Context, c chatMetaAPI,
 		if profile, ok := record.member(); ok {
 			results[userID] = profile
 		}
-		if record.Profile != nil || now.Before(record.NextAttemptAt) {
+		// An empty stored nickname is refetched, as native message conversion
+		// does, at most once per attempt cooldown.
+		if record.Profile != nil && record.Profile.Nickname != "" || now.Before(record.NextAttemptAt) {
 			continue
 		}
 		record.LastAttemptAt = now
@@ -169,6 +171,9 @@ func (kc *KakaoClient) resolveMemberProfiles(ctx context.Context, c chatMetaAPI,
 		record.Profile = &fields
 		record.FetchedAt = kc.now()
 		record.NextAttemptAt = record.FetchedAt
+		if fields.Nickname == "" {
+			record.NextAttemptAt = record.FetchedAt.Add(memberProfileAttemptCooldown)
+		}
 		encoded, err := json.Marshal(record)
 		if err != nil || len(encoded) > maxMemberProfileRecord {
 			return output(), errProfileCheckpoint
