@@ -60,6 +60,7 @@ type Client struct {
 	historyAdmission *historyAdmission
 	historyStore     *historyStore
 	historyResources *historyResourceCache
+	liveMedia        liveMediaLane
 	historyStartup   chan struct{}
 	historyStartWait int
 	gaps             gapFunc

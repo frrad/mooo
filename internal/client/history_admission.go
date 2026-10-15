@@ -14,8 +14,9 @@ import (
 
 // HistoryPacing is operator policy, not a claimed Kakao server rate limit.
 // Zero values select conservative defaults. It applies to zero-held-count
-// SYNCMSG, startup MCHATLOGS and read-only LOCO dependencies; explicit read
-// acknowledgements have a separate path.
+// SYNCMSG, startup MCHATLOGS and read-only LOCO and HTTP dependencies; explicit
+// read acknowledgements and live inbound media (AcquireLiveMedia) have separate
+// paths.
 type HistoryPacing struct {
 	// StateDirectory defaults to the private profile directory. Profiles for one
 	// account in different directories must select the same private scheduling root.
