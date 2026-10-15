@@ -1068,9 +1068,8 @@ above. One PR each, highest account-safety risk first:
       log to the stored roster and send MEMBER for the invitee.
 - [ ] (#13) Drop the redundant reads after CREATE.
 - [x] (#14) Drop the viewing-episode CHATINFO before CHATONROOM.
-- [ ] (#9, #10) After the metadata-trigger PRs land: skip room-avatar downloads
-      whose avatar ID is unchanged, and stop enqueueing CHATINFO on every
-      cached `GetChatInfo`.
+- [x] (#9, #10) Skip room-avatar downloads whose avatar ID is unchanged, and
+      stop enqueueing CHATINFO on every cached `GetChatInfo`.
 - [ ] (#6, #7) Trace the native recovery delay and carriage route cache
       expiry, then cache the route across reconnects, jitter ticket attempts
       and adopt the native delay.
