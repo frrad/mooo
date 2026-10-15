@@ -17,13 +17,20 @@ const readSyncHeldCap = 300
 type HeldMessages func(ctx context.Context, after, upTo int64, limit int) (maxLogID int64, count int, err error)
 
 // MarkRead acknowledges a chat as read through watermark with the official
-// client's single-room sync shape: cur is the last synced position (the
-// analogue of its lastSyncLogId, zero for a chat never acknowledged), and max
-// and cnt describe the oldest messages held after it, capped at 300. When held
-// reports nothing, max is the watermark and cnt is zero. A response with isOK
-// persists its max, and a capped request continues from there; one without
-// isOK persists only the highest returned log and continues from it if it
-// moved. A restarted client therefore does not send a synced position again.
+// client's single-room sync: cur is the last position the server confirmed as
+// read (zero for a chat never acknowledged), and max and cnt describe the
+// oldest messages held after it, capped at 300; when held reports nothing, max
+// is the watermark and cnt is zero.
+//
+// The server answers isOK=true, and marks the chat read through max, only when
+// cnt covers every log in (cur, max]; that confirmed position is persisted, and
+// a capped request continues from it. Otherwise it returns the logs and marks
+// nothing read. As the official client does, MarkRead then continues from the
+// highest returned log, which ends with cur equal to max and cnt=0 once it
+// reaches the watermark. That intermediate position is not persisted: unlike
+// the official lastSyncLogId it was never confirmed, so an interrupted
+// acknowledgement repeats it rather than skipping an unread position.
+//
 // Catch-up SYNCMSG pages never write this checkpoint. Calls for one checkpoint
 // are serialized per Client so the check/request/commit sequence is atomic; the
 // profile lease ensures that only one Client owns a profile across processes.
@@ -53,7 +60,7 @@ func (c *Client) MarkRead(ctx context.Context, chatID, watermark int64, held Hel
 		cur = checkpoint.ReadWatermark(chatID)
 	}
 	var response syncmsg.Response
-	for cur < watermark {
+	for pending := cur < watermark; pending; {
 		maxLogID, count, err := held(ctx, cur, watermark, readSyncHeldCap)
 		if err != nil {
 			return syncmsg.Response{}, err
@@ -61,34 +68,27 @@ func (c *Client) MarkRead(ctx context.Context, chatID, watermark int64, held Hel
 		if count <= 0 || maxLogID <= cur || maxLogID > watermark {
 			maxLogID, count = watermark, 0
 		}
-		request := syncmsg.Request{ChatID: chatID, Cur: cur, Max: maxLogID, Count: int32(min(count, readSyncHeldCap))}
+		request := syncmsg.ReadRequest{ChatID: chatID, Cur: cur, Max: maxLogID, Count: int32(min(count, readSyncHeldCap))}
 		response, err = withSession(c, ctx, func(session *session) (syncmsg.Response, error) {
-			return session.syncMessages(ctx, request)
+			return call(session, ctx, "SYNCMSG", request, syncmsg.ParseResponse)
 		})
 		if err != nil {
 			return syncmsg.Response{}, err
 		}
-		// The official callback records isOK=true as synced through the
-		// request maximum. Otherwise it records only the highest returned
-		// log, and syncs again when that moved its position.
-		synced, again := maxLogID, count >= readSyncHeldCap
-		if !response.IsOK {
-			synced, again = cur, false
-			if n := len(response.ChatLogs); n > 0 {
-				if last, err := syncmsg.LogID(response.ChatLogs[n-1]); err == nil && last > cur {
-					synced, again = min(last, maxLogID), true
+		pending = false
+		if response.IsOK {
+			if checkpoint != nil {
+				if _, err := checkpoint.CommitReadWatermark(chatID, maxLogID); err != nil {
+					return syncmsg.Response{}, err
 				}
 			}
-		}
-		if synced > cur && checkpoint != nil {
-			if _, err := checkpoint.CommitReadWatermark(chatID, synced); err != nil {
-				return syncmsg.Response{}, err
+			pending = count >= readSyncHeldCap && maxLogID < watermark
+			cur = maxLogID
+		} else if n := len(response.ChatLogs); n > 0 {
+			if last, err := syncmsg.LogID(response.ChatLogs[n-1]); err == nil && last > cur && last <= maxLogID {
+				pending, cur = true, last
 			}
 		}
-		if !again {
-			break
-		}
-		cur = synced
 	}
 	return response, nil
 }

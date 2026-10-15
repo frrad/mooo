@@ -32,8 +32,30 @@ type Request struct {
 	Count  int32
 }
 
+// ReadRequest is the single-room sync request that acknowledges reading. It
+// differs from Request only in accepting cur equal to max: the official client
+// sends that empty range with cnt=0 after a response without isOK moved its
+// synced position to the target.
+type ReadRequest Request
+
+func (r ReadRequest) MarshalBSON() ([]byte, error) {
+	if r.Max < r.Cur {
+		return nil, ErrInvalidRequest
+	}
+	return r.marshal()
+}
+
 func (r Request) MarshalBSON() ([]byte, error) {
-	if r.ChatID <= 0 || r.Cur < 0 || r.Max <= r.Cur || r.Count < 0 || r.Count > MaxPageSize {
+	if r.Max <= r.Cur {
+		return nil, ErrInvalidRequest
+	}
+	return ReadRequest(r).marshal()
+}
+
+// marshal validates every bound except the order of cur and max, which each
+// request type checks itself.
+func (r ReadRequest) marshal() ([]byte, error) {
+	if r.ChatID <= 0 || r.Cur < 0 || r.Max <= 0 || r.Count < 0 || r.Count > MaxPageSize {
 		return nil, ErrInvalidRequest
 	}
 	return bson.Marshal(bson.D{

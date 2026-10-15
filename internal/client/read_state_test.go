@@ -135,6 +135,54 @@ func TestClientMarkReadNotOKRaisesToReturnedLogAndContinues(t *testing.T) {
 	}
 }
 
+// Owned regression (2026-10-15): an undercounted request is answered without
+// isOK and marks nothing read, yet the previous build recorded its maximum as
+// acknowledged, so later receipts were skipped while the server still showed
+// the messages unread. The official continuation sends cur equal to max with
+// cnt=0, which the server confirms.
+func TestClientMarkReadUndercountEndsWithEmptyRangeBeforeCommitting(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitReadWatermark(42, 90); err != nil {
+		t.Fatal(err)
+	}
+	undercounted := testloco.Expect("SYNCMSG", nil, statusDocument(
+		bson.E{Key: "chatLogs", Value: bson.A{bson.D{{Key: "logId", Value: int64(95)}}, bson.D{{Key: "logId", Value: int64(97)}}, bson.D{{Key: "logId", Value: int64(99)}}}},
+		bson.E{Key: "isOK", Value: false},
+	))
+	backend := newScriptedBackend(t, false, undercounted, syncShapeStep(42, 99, 99, 0))
+	api := testContinuityClient(t, checkpoint, backend)
+	var queries [][3]int64
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldFixed([]int64{97, 99}, &queries)); err != nil {
+		t.Fatal(err)
+	}
+	waitBackends(t, backend)
+	if got := checkpoint.ReadWatermark(42); got != 99 {
+		t.Fatalf("watermark = %d, want 99 after the confirmed empty range", got)
+	}
+}
+
+func TestClientMarkReadUnconfirmedContinuationIsNotPersisted(t *testing.T) {
+	checkpoint := testCheckpoint(t)
+	if _, err := checkpoint.CommitReadWatermark(42, 90); err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	undercounted := testloco.Expect("SYNCMSG", nil, statusDocument(
+		bson.E{Key: "chatLogs", Value: bson.A{bson.D{{Key: "logId", Value: int64(99)}}}},
+		bson.E{Key: "isOK", Value: false},
+	))
+	backend := newScriptedBackend(t, false, undercounted, testloco.DropAfter("SYNCMSG", &requests))
+	api := testContinuityClient(t, checkpoint, backend)
+	var queries [][3]int64
+	if _, err := api.MarkRead(context.Background(), 42, 99, heldFixed([]int64{99}, &queries)); err == nil {
+		t.Fatal("MarkRead succeeded although the continuation was cut off")
+	}
+	waitBackends(t, backend)
+	if got := checkpoint.ReadWatermark(42); got != 90 {
+		t.Fatalf("watermark = %d, want the last confirmed 90", got)
+	}
+}
+
 func TestClientMarkReadNotOKWithoutLogsKeepsPosition(t *testing.T) {
 	checkpoint := testCheckpoint(t)
 	if _, err := checkpoint.CommitReadWatermark(42, 90); err != nil {
