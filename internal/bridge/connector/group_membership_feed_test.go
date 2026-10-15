@@ -1,10 +1,12 @@
 package connector
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 	"time"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/event"
@@ -171,5 +173,100 @@ func TestMembershipFeedForUnverifiedGroupReadsRoster(t *testing.T) {
 	}
 	if n := rosterReads(backend); n != 1 {
 		t.Fatalf("unverified group roster reads = %d, want 1: %v", n, sourceCalls(backend))
+	}
+}
+
+// invitationLog is a synthetic ADDMEM reply chat log: a type-0 invitation feed
+// naming the invitees, in the observed feed shape.
+func invitationLog(t *testing.T, chatID, logID int64, invitees ...int64) bson.Raw {
+	t.Helper()
+	members := []map[string]any{}
+	for _, userID := range invitees {
+		members = append(members, map[string]any{"userId": userID, "nickName": "Synthetic"})
+	}
+	message, err := json.Marshal(map[string]any{"feedType": 1, "inviter": map[string]any{"userId": testSelfID, "nickName": "Self"}, "members": members})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := bson.Marshal(bson.D{{Key: "logId", Value: logID}, {Key: "chatId", Value: chatID}, {Key: "type", Value: int32(0)}, {Key: "authorId", Value: int64(testSelfID)}, {Key: "message", Value: string(message)}, {Key: "sendAt", Value: int32(1)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func matrixInviteOf(t *testing.T, kc *KakaoClient, userID int64, eventID id.EventID) *bridgev2.MatrixMembershipChange {
+	t.Helper()
+	p, err := kc.login.Bridge.GetPortalByKey(t.Context(), makePortalKey(5000, kc.login.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ghost, err := kc.login.Bridge.GetGhostByID(t.Context(), makeUserID(userID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := &bridgev2.MatrixMembershipChange{Target: ghost, Type: bridgev2.Invite}
+	msg.Event = &event.Event{ID: eventID, Type: event.StateMember}
+	msg.Content = &event.MemberEventContent{Membership: event.MembershipInvite}
+	msg.Portal = p
+	return msg
+}
+
+// The official invitation picker offers non-members of the stored room and
+// sends one ADDMEM; its success block refreshes only the selected members.
+// The bridge checks the stored roster, sends ADDMEM, applies the reply's
+// invitation log to the roster and sends MEMBER for the invitee.
+func TestMatrixInviteInManagedGroupSendsOnlyAddMemAndMember(t *testing.T) {
+	kc, backend, matrix := newManagedFeedGroup(t)
+	backend.inviteLog = invitationLog(t, 5000, 300, 6000)
+	backend.members = []chatmeta.Member{{UserID: 6000, Nickname: "Six"}}
+	var feeds []*membershipFeed
+	kc.refreshMembership = func(_ kakaoClient, _ int64, feed *membershipFeed) { feeds = append(feeds, feed) }
+	msg := matrixInviteOf(t, kc, 6000, "$invite6000:test")
+	if _, err := kc.HandleMatrixMembership(t.Context(), msg); err != nil {
+		t.Fatalf("invite rejected: %v", err)
+	}
+	if calls := sourceCalls(backend); len(calls) != 0 || backend.invites != 1 {
+		t.Fatalf("invite source requests = %v, ADDMEM = %d", calls, backend.invites)
+	}
+	if len(feeds) != 1 || feeds[0] == nil || !slices.Equal(feeds[0].invitees, []int64{6000}) {
+		t.Fatalf("applied feeds = %+v, want the reply's invitation", feeds)
+	}
+	if _, ok := kc.managedMembershipChange(t.Context(), backend, 5000, false, feeds[0]); !ok {
+		t.Fatal("invitation feed was not applied")
+	}
+	if got := matrixMembership(matrix, "@kakao_6000:test"); got != event.MembershipJoin {
+		t.Fatalf("invitee ghost membership = %q, want join", got)
+	}
+	drainMetadataRefresh(t, kc, backend)
+	if calls := sourceCalls(backend); !slices.Equal(calls, []string{"Members(5000,1)"}) {
+		t.Fatalf("invite source requests = %v, want one MEMBER", calls)
+	}
+}
+
+// The picker never offers a stored member, so inviting one sends nothing.
+func TestMatrixInviteOfStoredMemberSendsNothing(t *testing.T) {
+	kc, backend, _ := newManagedFeedGroup(t)
+	var feeds []*membershipFeed
+	kc.refreshMembership = func(_ kakaoClient, _ int64, feed *membershipFeed) { feeds = append(feeds, feed) }
+	if _, err := kc.HandleMatrixMembership(t.Context(), matrixInviteOf(t, kc, 2000, "$invite2000:test")); err != nil {
+		t.Fatalf("invite rejected: %v", err)
+	}
+	if calls := sourceCalls(backend); len(calls) != 0 || backend.invites != 0 || len(feeds) != 0 {
+		t.Fatalf("calls = %v, ADDMEM = %d, refreshes = %d", calls, backend.invites, len(feeds))
+	}
+}
+
+// A confirmed reply without an invitation log cannot update the roster, so
+// the bridge falls back to reading it.
+func TestMatrixInviteReplyWithoutLogReadsRoster(t *testing.T) {
+	kc, backend, _ := newManagedFeedGroup(t)
+	var feeds []*membershipFeed
+	kc.refreshMembership = func(_ kakaoClient, _ int64, feed *membershipFeed) { feeds = append(feeds, feed) }
+	if _, err := kc.HandleMatrixMembership(t.Context(), matrixInviteOf(t, kc, 6000, "$invite6000:test")); err != nil {
+		t.Fatalf("invite rejected: %v", err)
+	}
+	if backend.invites != 1 || len(feeds) != 1 || feeds[0] != nil {
+		t.Fatalf("ADDMEM = %d, refreshes = %+v, want one roster read", backend.invites, feeds)
 	}
 }
