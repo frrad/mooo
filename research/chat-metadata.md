@@ -256,6 +256,48 @@ it calls `MEMBER` for the unknown IDs, stores the member-list ID set, and
 reports the `MEMBER` outcome. The traced blocks do not persist the response
 `token` or `type`.
 
+## `GETMETAS` (login meta revision gate)
+
+Static trace of the official Mac 26.8.0 client, 2026-10-15.
+
+**Trigger.** The login handler starts each login with an empty ordered set of
+chat IDs that need metas. For every `LCHATLIST` chat-data entry it upserts the
+room from the chat data, then compares the chat data's `metaMaxRevision`
+(`mmr`) with the stored room's `metaMaxRevision`. The room value is computed:
+the maximum (`@max.int64Value`) of the revisions of the room's stored chat
+metas, one per stored meta type. When the chat data's value is greater, the
+chat ID is added to the set. When the last `LCHATLIST` page arrives (`eof`),
+the client starts sending `GETMETAS`.
+
+| Request field | Type |
+| --- | --- |
+| `cs` | int64 array (Mac `LocoGetMetasRequest`) |
+
+| Response wire key | Property | Type |
+| --- | --- | --- |
+| `mss` | `chatMetaSets` | array of chat-meta sets |
+| set `c` | `chatId` | int64 |
+| set `ms` | `chatMetas` | array of chat-meta objects (property names as keys) |
+
+**Batching.** Each request takes the first 50 IDs of the set and removes them
+before sending. On success the completion sends the next batch until the set
+is empty. A nil or failed response stops the chain: the failed batch is not
+retried and the remaining IDs are not requested on this login. The next login
+recomputes the set from the revisions.
+
+**Consumer.** On success a database block walks the sets. A set whose room is
+not stored is skipped. Otherwise the client merges the room's notice meta from
+the set, then applies each meta through the room's per-meta update: a meta is
+stored when the room has none of its type or the incoming revision is strictly
+greater than the stored one. That update is shared with the `CHGMETA` push
+consumer. Type 14 instead goes through the open-link bot-command update, and
+type 21 also refreshes the chatbot members.
+
+**Gaps.** The notice-meta merge helper is not traced field by field. The
+single-room `GETMETA` (`chatId`, `types`) path exists but has no login caller
+in this trace. Live encoding is checked only by the owned run recorded in the
+bridge documentation.
+
 ## Membership push follow-ups
 
 The `NEWMEM` manager path (see

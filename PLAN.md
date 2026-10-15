@@ -1073,8 +1073,8 @@ above. One PR each, highest account-safety risk first:
 - [ ] (#6, #7) Trace the native recovery delay and carriage route cache
       expiry, then cache the route across reconnects, jitter ticket attempts
       and adopt the native delay.
-- [ ] (#18) Trace the GETMETA chain; replace CHATINFO room-info refreshes with
-      revision-gated GETMETA at login.
+- [x] (#18) Trace the GETMETAS chain; send revision-gated GETMETAS at login
+      instead of discovery room-info CHATINFO.
 - [ ] (#15, #16, #17) After the trigger rework, cap metadata/membership
       retries, read membership once per `!history-group` command, and give
       live inbound media its own pacing lane.
