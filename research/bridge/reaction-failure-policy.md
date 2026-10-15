@@ -25,6 +25,9 @@ selection that a Kakao push has since replaced makes the redaction stale, and
 nothing is sent. Two different stored legacy selections are an inconsistent
 store: removal returns `ErrLookupFailed` and sends nothing. Cancellation follows
 the same single-attempt mutation policy and uses the mutation categories above.
+Owned acceptance (2026-10-15, B bridge, A/B/C group): a Matrix redaction of the
+bridge user's thumbs-up sent one cancel POST and no members read, and the
+reaction disappeared from the stored rows.
 
 The categories describe the observable result at the bridge boundary. They do
 not claim that an HTTP rejection means Kakao's state is unchanged.
