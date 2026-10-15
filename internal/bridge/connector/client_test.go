@@ -303,7 +303,7 @@ func (f *fakeKakao) SendText(ctx context.Context, chatID int64, message string) 
 	return f.sendResp, f.sendErr
 }
 
-func (f *fakeKakao) MarkRead(ctx context.Context, chatID, watermark int64) (syncmsg.Response, error) {
+func (f *fakeKakao) MarkRead(ctx context.Context, chatID, watermark int64, _ client.HeldMessages) (syncmsg.Response, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.marks = append(f.marks, [2]int64{chatID, watermark})

@@ -232,6 +232,18 @@ func (s *memStore) lastRealMessageAtOrBefore(_ context.Context, key networkid.Po
 	return nil, nil
 }
 
+func (s *memStore) messagesBetweenTime(_ context.Context, key networkid.PortalKey, after, through time.Time) ([]*database.Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*database.Message
+	for _, m := range s.portalMessages(key) {
+		if m.Timestamp.After(after) && !m.Timestamp.After(through) {
+			out = append(out, copyMessage(m))
+		}
+	}
+	return out, nil
+}
+
 func (s *memStore) updateMessage(_ context.Context, msg *database.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
