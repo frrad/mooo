@@ -613,34 +613,11 @@ func (kc *KakaoClient) logMessageGap(evt events.MessageGap) {
 		Msg("Kakao message content failed decoding; bridged as a malformed_payload notice")
 }
 
-// unsupportedMessageText renders types without a full converter as text: call
-// records (51), feed/link cards (71) and anything else that carries its own text.
+// unsupportedMessageText renders types without a full converter as text:
+// feed/link cards and anything else that carries its own text.
 func unsupportedMessageText(evt events.UnsupportedMessage) string {
 	switch evt.Type {
-	case 51:
-		var call struct {
-			Type     string `json:"type"`
-			Duration int64  `json:"duration"`
-		}
-		_ = json.Unmarshal([]byte(evt.Attachment), &call)
-		kind := "📞 Call"
-		if strings.HasPrefix(call.Type, "v_") {
-			kind = "🎥 Video call"
-		}
-		switch strings.TrimPrefix(call.Type, "v_") {
-		case "invite":
-			return kind + " started"
-		case "bye":
-			return fmt.Sprintf("%s ended (%s)", kind, time.Duration(call.Duration)*time.Second)
-		case "canceled":
-			return kind + " canceled"
-		case "noanswer":
-			return kind + " missed"
-		case "deny":
-			return kind + " declined"
-		}
-		return kind
-	case 71:
+	case messagetype.Leverage:
 		var card struct {
 			P struct {
 				ME  string `json:"ME"`
