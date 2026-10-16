@@ -156,6 +156,10 @@ uses a JSON request serializer and sends nested JSON objects with content type
 control capture and a clean-room live generate/cancel probe both confirmed this
 profile. The earlier URL-form attribution was incorrect.
 
+The full device's `name` is the macOS Computer Name (falling back to `hw.model`,
+then `""`), `model` is `hw.model`, and `osVersion` is `major.minor.patch`; see
+`DEVICE-NAME.md`.
+
 The device `uuid` is not the locally stored UUID text. For the reviewed Mac
 profile it is:
 
