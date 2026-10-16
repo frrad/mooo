@@ -53,8 +53,16 @@ succeeds. On later runs, the service sees the existing config and exits.
 
 `bbctl` writes no `network` section, so the service adds one with
 `profile_dir: /data/profiles`, and the bridge fills in the remaining defaults
-on first start. The database and logs also land under `data/`, because the
+on first start. It also sets `bridge.portal_event_buffer: 0`, which mooo
+requires; without it the bridge overrides mautrix's default of 64 and logs a
+warning on every start. The database and logs also land under `data/`, because the
 container's working directory is `/data`.
+
+Before the first login, set `network.device_name` in `data/config.yaml` to
+the name KakaoTalk's device list should show, for example
+`Alex's MacBook Pro`, and restart the bridge. In Docker there is no macOS
+Computer Name to fall back to, so leaving it empty registers a device with no
+name.
 
 KakaoTalk does not appear in Beeper's "Add an account" list. Start a chat
 with the bridge bot, `@sh-kakaotalkbot:beeper.local` for the default name, and

@@ -51,6 +51,16 @@ func TestBuildQRGenerateRequestOptionalPreviousID(t *testing.T) {
 	}
 }
 
+func TestBuildQRGenerateRequestSendsEmptyDeviceName(t *testing.T) {
+	request, err := BuildQRGenerateRequest(QRGenerateRequest{Device: FullDevice{Name: "", UUID: "uuid", OSVersion: "os", Model: "model"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(request.Body); got != `{"device":{"model":"model","name":"","osVersion":"os","uuid":"uuid"}}` {
+		t.Fatalf("body = %q", got)
+	}
+}
+
 func TestNewHTTPRequestRejectsUnreviewedRouteAndContentType(t *testing.T) {
 	built, err := BuildQRLoginRequest(QRLoginRequest{ID: "synthetic-id", Device: UUIDOnlyDevice{UUID: "uuid"}})
 	if err != nil {

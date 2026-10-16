@@ -1,0 +1,132 @@
+{
+ "provenance": {
+  "kind": "observed",
+  "client": "KakaoTalk Android 26.8.2 (both phones); records read by the mooo client on the B account's secondary profile",
+  "date": "2026-10-16",
+  "method": "Owned A and B lab emulators. A placed voice and video calls to B in their direct chat, and B placed one call to A. Each call was answered and ended, left ringing, cancelled by the caller, or declined by B. A private probe on B's profile read the resulting chat logs with SYNCMSG. Raw attachments contained call-server addresses and a call token; they were reduced to their key set, event type and duration, then deleted. The attachments here are synthetic with the observed key set. android_receiver_bubble is the text B's Android client displayed.",
+  "doc": "research/calls.md"
+ },
+ "notes": "Every call produced two type-51 chat logs, both authored by the caller: the start (invite or v_invite) when the call was placed, then the outcome when it ended. The chat log's message field held the same JSON as its attachment. duration is whole seconds and was non-zero only for bye and v_bye. The video call's 21 matched both phones' call timers; the answered voice call ended when both emulators hung mid-call, so its 80 has no on-screen timer to compare against.",
+ "cases": [
+  {
+   "name": "voice answered: start",
+   "authored_by_self": false,
+   "type": 51,
+   "attachment": "{\"type\":\"invite\",\"csIP\":\"192.0.2.1\",\"csIP6\":\"2001:db8::1\",\"csPort\":9000,\"multiPort\":[80,443],\"cdrInfo\":3,\"cdrToken\":\"synthetic-token\",\"callId\":\"1000000000000000001\",\"attemptTime\":1,\"conTimeout\":30,\"duration\":0}",
+   "message_equals_attachment": true,
+   "expected_event": "invite",
+   "expected_duration": 0,
+   "android_receiver_bubble": "Voice Call"
+  },
+  {
+   "name": "voice answered: end",
+   "authored_by_self": false,
+   "type": 51,
+   "attachment": "{\"type\":\"bye\",\"csIP\":\"192.0.2.1\",\"csIP6\":\"2001:db8::1\",\"csPort\":9000,\"multiPort\":[80,443],\"cdrInfo\":3,\"cdrToken\":\"synthetic-token\",\"callId\":\"1000000000000000001\",\"attemptTime\":1,\"conTimeout\":30,\"duration\":80,\"recLog\":\"synthetic\"}",
+   "message_equals_attachment": true,
+   "expected_event": "bye",
+   "expected_duration": 80,
+   "android_receiver_bubble": "End voice call\n01:20"
+  },
+  {
+   "name": "voice not answered",
+   "authored_by_self": false,
+   "type": 51,
+   "attachment": "{\"type\":\"noanswer\",\"csIP\":\"192.0.2.1\",\"csIP6\":\"2001:db8::1\",\"csPort\":9000,\"multiPort\":[80,443],\"cdrInfo\":3,\"cdrToken\":\"synthetic-token\",\"callId\":\"1000000000000000001\",\"attemptTime\":1,\"conTimeout\":30,\"duration\":0,\"recLog\":\"synthetic\"}",
+   "message_equals_attachment": true,
+   "expected_event": "noanswer",
+   "expected_duration": 0,
+   "android_receiver_bubble": "Missed Call"
+  },
+  {
+   "name": "voice cancelled by caller",
+   "authored_by_self": false,
+   "type": 51,
+   "attachment": "{\"type\":\"canceled\",\"csIP\":\"192.0.2.1\",\"csIP6\":\"2001:db8::1\",\"csPort\":9000,\"multiPort\":[80,443],\"cdrInfo\":3,\"cdrToken\":\"synthetic-token\",\"callId\":\"1000000000000000001\",\"attemptTime\":1,\"conTimeout\":30,\"duration\":0,\"recLog\":\"synthetic\"}",
+   "message_equals_attachment": true,
+   "expected_event": "canceled",
+   "expected_duration": 0,
+   "android_receiver_bubble": "Missed Call"
+  },
+  {
+   "name": "voice declined by callee",
+   "authored_by_self": false,
+   "type": 51,
+   "attachment": "{\"type\":\"deny\",\"csIP\":\"192.0.2.1\",\"csIP6\":\"2001:db8::1\",\"csPort\":9000,\"multiPort\":[80,443],\"cdrInfo\":3,\"cdrToken\":\"synthetic-token\",\"callId\":\"1000000000000000001\",\"attemptTime\":1,\"conTimeout\":30,\"duration\":0,\"recLog\":\"synthetic\"}",
+   "message_equals_attachment": true,
+   "expected_event": "deny",
+   "expected_duration": 0,
+   "android_receiver_bubble": "Missed Call"
+  },
+  {
+   "name": "video answered: start",
+   "authored_by_self": false,
+   "type": 51,
+   "attachment": "{\"type\":\"v_invite\",\"csIP\":\"192.0.2.1\",\"csIP6\":\"2001:db8::1\",\"csPort\":9000,\"multiPort\":[80,443],\"cdrInfo\":3,\"cdrToken\":\"synthetic-token\",\"callId\":\"1000000000000000001\",\"attemptTime\":1,\"conTimeout\":30,\"duration\":0}",
+   "message_equals_attachment": true,
+   "expected_event": "v_invite",
+   "expected_duration": 0,
+   "android_receiver_bubble": "Video Call"
+  },
+  {
+   "name": "video answered: end",
+   "authored_by_self": false,
+   "type": 51,
+   "attachment": "{\"type\":\"v_bye\",\"csIP\":\"192.0.2.1\",\"csIP6\":\"2001:db8::1\",\"csPort\":9000,\"multiPort\":[80,443],\"cdrInfo\":3,\"cdrToken\":\"synthetic-token\",\"callId\":\"1000000000000000001\",\"attemptTime\":1,\"conTimeout\":30,\"duration\":21,\"recLog\":\"synthetic\"}",
+   "message_equals_attachment": true,
+   "expected_event": "v_bye",
+   "expected_duration": 21,
+   "android_receiver_bubble": "End video call\n00:21"
+  },
+  {
+   "name": "video not answered",
+   "authored_by_self": false,
+   "type": 51,
+   "attachment": "{\"type\":\"v_noanswer\",\"csIP\":\"192.0.2.1\",\"csIP6\":\"2001:db8::1\",\"csPort\":9000,\"multiPort\":[80,443],\"cdrInfo\":3,\"cdrToken\":\"synthetic-token\",\"callId\":\"1000000000000000001\",\"attemptTime\":1,\"conTimeout\":30,\"duration\":0,\"recLog\":\"synthetic\"}",
+   "message_equals_attachment": true,
+   "expected_event": "v_noanswer",
+   "expected_duration": 0,
+   "android_receiver_bubble": "Missed Call"
+  },
+  {
+   "name": "video cancelled by caller",
+   "authored_by_self": false,
+   "type": 51,
+   "attachment": "{\"type\":\"v_canceled\",\"csIP\":\"192.0.2.1\",\"csIP6\":\"2001:db8::1\",\"csPort\":9000,\"multiPort\":[80,443],\"cdrInfo\":3,\"cdrToken\":\"synthetic-token\",\"callId\":\"1000000000000000001\",\"attemptTime\":1,\"conTimeout\":30,\"duration\":0,\"recLog\":\"synthetic\"}",
+   "message_equals_attachment": true,
+   "expected_event": "v_canceled",
+   "expected_duration": 0,
+   "android_receiver_bubble": "Missed Call"
+  },
+  {
+   "name": "video declined by callee",
+   "authored_by_self": false,
+   "type": 51,
+   "attachment": "{\"type\":\"v_deny\",\"csIP\":\"192.0.2.1\",\"csIP6\":\"2001:db8::1\",\"csPort\":9000,\"multiPort\":[80,443],\"cdrInfo\":3,\"cdrToken\":\"synthetic-token\",\"callId\":\"1000000000000000001\",\"attemptTime\":1,\"conTimeout\":30,\"duration\":0,\"recLog\":\"synthetic\"}",
+   "message_equals_attachment": true,
+   "expected_event": "v_deny",
+   "expected_duration": 0,
+   "android_receiver_bubble": "Missed Call"
+  },
+  {
+   "name": "bridge account called and cancelled: start",
+   "authored_by_self": true,
+   "type": 51,
+   "attachment": "{\"type\":\"invite\",\"csIP\":\"192.0.2.1\",\"csIP6\":\"2001:db8::1\",\"csPort\":9000,\"multiPort\":[80,443],\"cdrInfo\":3,\"cdrToken\":\"synthetic-token\",\"callId\":\"1000000000000000001\",\"attemptTime\":1,\"conTimeout\":30,\"duration\":0}",
+   "message_equals_attachment": true,
+   "expected_event": "invite",
+   "expected_duration": 0,
+   "android_receiver_bubble": "Voice Call"
+  },
+  {
+   "name": "bridge account called and cancelled: end",
+   "authored_by_self": true,
+   "type": 51,
+   "attachment": "{\"type\":\"canceled\",\"csIP\":\"192.0.2.1\",\"csIP6\":\"2001:db8::1\",\"csPort\":9000,\"multiPort\":[80,443],\"cdrInfo\":3,\"cdrToken\":\"synthetic-token\",\"callId\":\"1000000000000000001\",\"attemptTime\":1,\"conTimeout\":30,\"duration\":0,\"recLog\":\"synthetic\"}",
+   "message_equals_attachment": true,
+   "expected_event": "canceled",
+   "expected_duration": 0,
+   "android_receiver_bubble": "Cancelled"
+  }
+ ]
+}

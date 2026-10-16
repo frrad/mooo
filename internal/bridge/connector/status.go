@@ -50,6 +50,9 @@ func retriableFetchFailure(err error, message string) bridgev2.MessageStatus {
 // exactly one KakaoTalk message in this chat. Nothing was sent, so the
 // refusal is certain; sending without the relation is left to the user.
 func replyTargetStatus(err error) error {
+	if errors.Is(err, errCallReplyTarget) {
+		return certainRefusal(err, "Replies to KakaoTalk call records are not supported, so the reply was not sent. Send it without the reply to deliver it.")
+	}
 	return certainRefusal(err, "The message you replied to is not a bridged KakaoTalk message in this chat, so the reply was not sent. Send it without the reply to deliver it.")
 }
 

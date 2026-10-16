@@ -47,6 +47,13 @@ services:
         # on start, but its default profile_dir is relative and profile
         # creation requires an absolute path.
         printf 'network:\n    profile_dir: /data/profiles\n' >> /data/config.yaml
+        # bbctl leaves bridge.portal_event_buffer unset, so the bridge would
+        # fill in mautrix's default of 64, then override it to 0 with a
+        # warning on every start. Write the value mooo requires.
+        awk '{ print } /^bridge:$$/ { print "    portal_event_buffer: 0" }' \
+          /data/config.yaml > /data/config.yaml.tmp
+        cat /data/config.yaml.tmp > /data/config.yaml
+        rm /data/config.yaml.tmp
       - bbctl
     command: []
     environment:
