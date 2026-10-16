@@ -435,12 +435,16 @@ func (kc *KakaoClient) convertReply(ctx context.Context, portal *bridgev2.Portal
 	if kc.replySourceMissing(ctx, portal, target) && msg.Source.Message != "" {
 		// The framework drops a relation to an unbridged message. Keep the
 		// context Kakao embedded in the reply as a quote instead.
+		quote := msg.Source.Message
+		if msg.Source.Type == messagetype.Mvoip {
+			quote = callQuote
+		}
 		content := converted.Parts[0].Content
 		body := content.Body
-		content.Body = quotedReplyBody(msg.Source.Message) + "\n\n" + body
+		content.Body = quotedReplyBody(quote) + "\n\n" + body
 		if converted.Parts[0].Type != event.EventSticker {
 			content.Format = event.FormatHTML
-			content.FormattedBody = "<blockquote>" + htmlLines(msg.Source.Message) + "</blockquote>" + htmlLines(body)
+			content.FormattedBody = "<blockquote>" + htmlLines(quote) + "</blockquote>" + htmlLines(body)
 		}
 		return converted, nil
 	}

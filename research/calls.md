@@ -134,8 +134,8 @@ an `m.notice` from the record's author at its send time. The bubble wording
 needs the icon, so the bridge uses the summary instead. "Viewer" is the bridged
 account, so the same record reads "Missed Voice Call" on the callee's bridge
 and "Cancelled Voice Call" on the caller's. Names in `add` records come from
-the bridge's stored member profiles, and the bridged account uses its login
-name. Unknown users render as "(Unknown)", like the official client.
+the bridge's stored member profiles. Anyone without one, including the bridged
+account itself, renders as "(Unknown)".
 
 Deliberate deviations:
 
@@ -144,12 +144,30 @@ Deliberate deviations:
 - An attachment that is not valid UTF-8 is treated as unrecognized. Its text
   is never shown.
 - The bridge uses the Mac chat-list summary rather than the bubble text.
+- An attachment over 64 KiB, or with data after its JSON object, is treated as
+  unrecognized. The official client's behaviour for these is untraced.
+- `member` entries must be positive numbers or numeric strings; other entries
+  are dropped rather than rendered as "(Unknown)", and at most 1000 are kept.
+- The official client would show the bridged account's own name in an `add`
+  record. The bridge has no traced source for it, so it shows "(Unknown)".
 
 Matrix replies to a call record are refused before anything is sent, with a
 message saying replies to KakaoTalk calls are not supported. The official reply
-shape for a call record is untraced, so sending one would be a guess.
+shape for a call record is untraced, so sending one would be a guess. A Matrix
+redaction of the bridged account's own call record is likewise not sent as a
+delete for everyone; it removes the event only from Matrix.
+
+An inbound KakaoTalk reply to a call record that was never bridged would
+normally quote the source text embedded in the reply. For a call record that
+text may be the attachment JSON, so the bridge quotes "KakaoTalk call" instead.
 
 ## Gaps
+
+- What the official client puts in `src_message` when replying to a call
+  record, and whether it allows deleting one for everyone, are untraced.
+- Matrix reactions to a call record are sent like reactions to any message,
+  as they were before this change. The official reaction predicate for call
+  records is untraced.
 
 - Group calls, `add` names, `transferred` and `maintenance` are covered by the
   executed fixture only, not by an owned-account observation.

@@ -13,15 +13,24 @@ import (
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 )
 
-// errCallReplyTarget refuses a Matrix reply to a call record: the official
-// reply shape for one is untraced (research/calls.md).
-var errCallReplyTarget = errors.New("connector: reply target is a KakaoTalk call record")
+var (
+	// errCallReplyTarget refuses a Matrix reply to a call record: the
+	// official reply shape for one is untraced (research/calls.md).
+	errCallReplyTarget = errors.New("connector: reply target is a KakaoTalk call record")
+	// errCallDeleteNotSupported refuses deleting a call record for everyone,
+	// which is untraced in the official client.
+	errCallDeleteNotSupported = errors.New("connector: KakaoTalk call records cannot be deleted from Matrix")
+)
+
+// callQuote replaces the embedded source text of a reply to a call record:
+// that text is the record's attachment JSON, not display text.
+const callQuote = "KakaoTalk call"
 
 // convertCall posts the official Mac chat-list summary of a call record as a
 // notice. "Viewer" in that text is the bridged account.
 func (kc *KakaoClient) convertCall(ctx context.Context, _ *bridgev2.Portal, _ bridgev2.MatrixAPI, msg events.CallMessage) (*bridgev2.ConvertedMessage, error) {
 	body := callSummary(msg, msg.AuthorID == kc.userID, func(userID int64) string { return kc.callMemberName(ctx, userID) })
-	metadata := newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, messagetype.Mvoip, "[call]", 0)
+	metadata := newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, messagetype.Mvoip, "", 0)
 	return messageWithMetadata(event.MsgNotice, body, metadata), nil
 }
 
@@ -75,13 +84,10 @@ func callDuration(seconds int64) string {
 	return fmt.Sprintf("%d:%02d", minutes, seconds)
 }
 
-// callMemberName is a user's stored nickname. The bridged account uses its
-// login name, and anyone else without a stored nickname is "(Unknown)", as in
-// the official client.
+// callMemberName is a user's stored nickname, or "(Unknown)" as in the
+// official client. The bridged account has no stored nickname; its login
+// name is a placeholder carrying the account ID, so it is not used.
 func (kc *KakaoClient) callMemberName(ctx context.Context, userID int64) string {
-	if userID == kc.userID && kc.login != nil && kc.login.RemoteName != "" {
-		return kc.login.RemoteName
-	}
 	record, _, err := kc.readMemberProfile(ctx, userID)
 	if err == nil && record.Profile != nil && record.Profile.Nickname != "" {
 		return record.Profile.Nickname

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -173,5 +174,57 @@ func TestReplyToCallRecordIsRefused(t *testing.T) {
 	}
 	if len(fake.sends) != 0 || len(fake.replies) != 0 {
 		t.Fatal("reply to a call record reached KakaoTalk")
+	}
+}
+
+// The bridged account's own name is not traced, and its login name is a
+// placeholder carrying the numeric account ID; it renders like any unknown
+// member instead.
+func TestCallJoinRecordDoesNotRenderOwnAccountID(t *testing.T) {
+	kc, harness := newTestClient(t, nil)
+	kc.login.RemoteName = placeholderUserName(testSelfID)
+	attachment := `{"type":"add","member":[` + strconv.FormatInt(testSelfID, 10) + `]}`
+	_, converted := bridgeCallRecord(t, kc, harness, callRecordPacket(t, 61, testOtherID, 1700000000, &attachment))
+	if body := convertedBody(t, converted).Body; body != "(Unknown) joined the Voice Call" {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+// A Kakao reply to an unbridged call record must not quote its embedded
+// source text: a call record's message field is its attachment JSON, with
+// call-server addresses and a call token.
+func TestInboundReplyToUnbridgedCallRecordQuotesNoSourceText(t *testing.T) {
+	kc, intent := newReplyFramework(t)
+	fake := &fakeKakao{}
+	secret := `{"type":"bye","csIP":"192.0.2.1","cdrToken":"synthetic-token"}`
+	reply := events.ReplyMessage{ChatID: testChatID, LogID: 212, AuthorID: testOtherID, SentAt: 1700000212, Message: "about that call",
+		Source: events.ReplySource{LogID: 151, UserID: testOtherID, Type: messagetype.Mvoip, Message: secret}}
+	if !kc.handleEvent(fake, reply) {
+		t.Fatal("reply was not committed")
+	}
+	if len(intent.sentContents()) != 1 {
+		t.Fatalf("Matrix events = %d, want 1", len(intent.sentContents()))
+	}
+	got := intent.sentContents()[0]
+	for _, leak := range []string{"192.0.2.1", "synthetic-token", "{"} {
+		if strings.Contains(got.Body, leak) || strings.Contains(got.FormattedBody, leak) {
+			t.Fatalf("reply leaks %q: %q / %q", leak, got.Body, got.FormattedBody)
+		}
+	}
+	if got.Body != "> KakaoTalk call\n\nabout that call" {
+		t.Fatalf("body = %q", got.Body)
+	}
+}
+
+// Deleting a call record for everyone is untraced in the official client,
+// so a Matrix redaction of the account's own call record stays local.
+func TestRedactingOwnCallRecordIsRefused(t *testing.T) {
+	fake := &fakeKakao{}
+	kc := connectedClient(t, fake)
+	target := ownTarget(204, messagetype.Mvoip, time.Now().Add(-time.Hour))
+	err := kc.HandleMatrixMessageRemove(context.Background(), matrixRemove(target, "$redact-call"))
+	requireStatus(t, err, event.MessageStatusFail, true)
+	if !errors.Is(err, errCallDeleteNotSupported) || len(fake.deletes) != 0 {
+		t.Fatalf("err=%v deletes=%d", err, len(fake.deletes))
 	}
 }

@@ -106,6 +106,8 @@ func (kc *KakaoClient) HandleMatrixMessageRemove(ctx context.Context, msg *bridg
 	case meta.Type&messagetype.DeletedAllChatTypeFlag != 0:
 		// Already deleted in KakaoTalk; removing the placeholder is local.
 		return nil
+	case meta.Type == messagetype.Mvoip:
+		return certainRefusal(errCallDeleteNotSupported, "Deleting KakaoTalk call records is not supported; the message was removed only from Matrix.")
 	case meta.AuthorID != kc.userID:
 		return certainRefusal(errDeleteNotAllowed, "KakaoTalk only allows deleting your own messages for everyone; the message was removed only from Matrix.")
 	case time.Since(msg.TargetMessage.Timestamp) > kakaoDeleteWindow:

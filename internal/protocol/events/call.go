@@ -55,9 +55,7 @@ func decodeCall(env chatlog.Envelope) (Event, error) {
 		return call, nil
 	}
 	var a map[string]json.RawMessage
-	decoder := json.NewDecoder(strings.NewReader(value))
-	decoder.UseNumber()
-	if decoder.Decode(&a) != nil || a == nil {
+	if decodeSingleJSON(value, &a) != nil || a == nil {
 		return call, nil
 	}
 	var event string
@@ -139,7 +137,7 @@ func callMembers(raw json.RawMessage) []int64 {
 	var members []int64
 	for _, item := range items {
 		item = bytes.TrimSpace(item)
-		if len(item) == 0 || (item[0] != '"' && item[0] != '-' && (item[0] < '0' || item[0] > '9')) {
+		if len(item) == 0 || (item[0] != '"' && (item[0] < '0' || item[0] > '9')) {
 			continue
 		}
 		if id := callInteger(item); id > 0 && len(members) < maxCallMembers {

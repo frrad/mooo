@@ -139,3 +139,12 @@ func TestCallMessageStringRedactsContent(t *testing.T) {
 		}
 	}
 }
+
+// Like a JSON parser that rejects trailing data, an attachment with content
+// after its object is unrecognized.
+func TestCallWithTrailingDataIsUnrecognized(t *testing.T) {
+	attachment := `{"type":"bye","duration":5} trailing`
+	if call := decodeCallPacket(t, &attachment); call.Event != "" {
+		t.Fatalf("event = %q", call.Event)
+	}
+}
