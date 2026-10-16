@@ -47,6 +47,16 @@ bson_shadow:
 # is off.
 debug_dump_dir: ""
 
+# Name shown for this bridge in KakaoTalk's device list, sent unchanged.
+# Set this unless the bridge runs on macOS: off macOS, including in Docker,
+# leaving it empty registers a device with no name. A Mac-style name blends
+# in best, for example "Alex's MacBook Pro" or "Mac mini".
+# Empty does what the official Mac client does: the macOS Computer Name, then
+# the hardware model (for example "Mac14,2"), then an empty name.
+# Must be valid UTF-8 of at most 4 KiB. Existing profiles keep the name they
+# registered with.
+device_name: ""
+
 # Optional mxc:// URI of an image to publish as the KakaoTalk network icon.
 # It is published as the m.bridge protocol and network avatar_url and used as
 # the avatar of the bridge space and management room when they are created;

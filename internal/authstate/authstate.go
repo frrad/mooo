@@ -284,13 +284,22 @@ func validatePath(path string) (string, error) {
 }
 
 func validateConfig(cfg Config) error {
-	for _, value := range []string{cfg.DeviceName, cfg.AppVersion, cfg.OSVersion, cfg.DeviceModel} {
+	if !validDeviceName(cfg.DeviceName) {
+		return ErrInvalidConfig
+	}
+	for _, value := range []string{cfg.AppVersion, cfg.OSVersion, cfg.DeviceModel} {
 		if strings.TrimSpace(value) == "" || !utf8.ValidString(value) || len(value) > 256 {
 			return ErrInvalidConfig
 		}
 	}
 	return nil
 }
+
+// validDeviceName accepts what the official Mac client can send: any string,
+// including empty, with no length limit (research/device-registration/
+// DEVICE-NAME.md). Invalid UTF-8 cannot come from that client, and JSON
+// encoding would silently replace it, so it is rejected instead.
+func validDeviceName(name string) bool { return utf8.ValidString(name) }
 
 func validateCredentials(c Credentials) error {
 	if c.UserID <= 0 || strings.TrimSpace(c.AccessToken) == "" || len(c.AutoLoginMaterial) == 0 ||
@@ -358,7 +367,7 @@ func translate(err error) error {
 }
 
 func validateIdentity(id Identity) error {
-	if !validUUID(id.DeviceUUID) || strings.TrimSpace(id.DeviceName) == "" || !utf8.ValidString(id.DeviceName) || len(id.DeviceName) > 256 {
+	if !validUUID(id.DeviceUUID) || !validDeviceName(id.DeviceName) {
 		return ErrInvalidConfig
 	}
 	if id.Metadata.Version != MacMetadataVersion || id.Metadata.Platform != "macOS" ||

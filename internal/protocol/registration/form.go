@@ -42,7 +42,11 @@ type FullDevice struct {
 }
 
 func (d FullDevice) validate() error {
-	for _, value := range []string{d.Name, d.UUID, d.OSVersion, d.Model} {
+	// The official Mac client sends an empty name when the host has none.
+	if err := validateOptionalFormString(d.Name); err != nil {
+		return err
+	}
+	for _, value := range []string{d.UUID, d.OSVersion, d.Model} {
 		if err := validateRequiredFormString(value); err != nil {
 			return err
 		}

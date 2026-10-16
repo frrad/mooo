@@ -7,7 +7,9 @@ require (
 	github.com/rs/zerolog v1.35.1
 	go.mau.fi/util v0.10.2-0.20260918225449-a4c0d5b86aa8
 	go.mongodb.org/mongo-driver/v2 v2.9.2
+	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0
+	gopkg.in/yaml.v3 v3.0.1
 	maunium.net/go/mautrix v0.31.1-0.20260929131313-40942319c433
 )
 
@@ -31,8 +33,6 @@ require (
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	maunium.net/go/mauflag v1.0.0 // indirect
 )
