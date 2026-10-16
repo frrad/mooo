@@ -127,15 +127,19 @@ here.
 mooo's QR login creates each new profile with `authstate.Config` and sends the
 stored identity in `registration.FullDevice`
 (`internal/bridge/connector/login.go`, `internal/protocol/registration/form.go`).
-The manual `auth init` command takes the same four values as required flags.
+The manual `auth init` command takes the same four values as required flags,
+and its option parser rejects empty values for every flag.
 
-| Aspect | Official Mac 26.8.0 | mooo `main` | PR frrad/mooo#413 (`device-name-from-hostname`) |
+The middle column is mooo before PR frrad/mooo#413. The last column is mooo
+after it.
+
+| Aspect | Official Mac 26.8.0 | mooo before #413 | mooo after #413 |
 | --- | --- | --- | --- |
-| `name` source | Computer Name | constant `mooo-bridge` | `os.Hostname()`, everything after the first `.` removed |
-| `name` fallback | `hw.model`, then `""` | — | `mooo-bridge` |
-| `name` transforms | none | none | split at first `.`, trim spaces |
-| `name` validation | none (empty allowed) | rejects empty or whitespace-only, invalid UTF-8, or more than 256 bytes | same as `main` |
-| `name` lifetime | read again for every generate | stored in the profile when it is created and reused | same as `main` |
+| `name` source | Computer Name | constant `mooo-bridge` | `network.device_name` when set; otherwise the Computer Name via `scutil --get ComputerName` |
+| `name` fallback | `hw.model`, then `""` | — | `hw.model`, then `""`; always `""` off macOS when unset |
+| `name` transforms | none | none | none |
+| `name` validation | none (empty allowed) | rejects empty or whitespace-only, invalid UTF-8, or more than 256 bytes | valid UTF-8; empty allowed; at most the 4 KiB QR-request field limit |
+| `name` lifetime | read again for every generate | stored in the profile when it is created and reused | same as before #413 |
 | `model` | `hw.model` (e.g. `Mac14,2`) | constant `Mac` | constant `Mac` |
 | `osVersion` | running OS, `major.minor.patch` | constant `26.6.2` | constant `26.6.2` |
 | Requests that carry it | passcode/QR generate only | QR generate only | QR generate only |
@@ -151,43 +155,52 @@ Where mooo matches:
 
 Where mooo differs:
 
-1. **Source.** `mooo-bridge` is a product string that the official client never
-   sends. PR frrad/mooo#413 uses the DNS/kernel host name, a different macOS
-   setting from the Computer Name. On a Mac it gives `Alexs-MacBook-Pro` where
-   the official client sends `Alex’s MacBook Pro`. On Linux or in Docker
-   there is no Computer Name, so any choice there is a deliberate deviation.
-   The PR's claim that the official client "names its device after the
-   computer" is right about intent but wrong about which name.
-2. **Fallback.** The official fallbacks are the model identifier, then `""`.
-   mooo cannot send `""` because `authstate` rejects empty names, and
-   `mooo-bridge` is a mooo-specific placeholder.
-3. **Lifetime.** The official client reads the name again for every generate.
+1. **Source.** Before #413 mooo sent `mooo-bridge`, a product string the
+   official client never sends. An earlier draft of #413 used the DNS/kernel
+   host name, a different macOS setting from the Computer Name: on a Mac it
+   gives `Alexs-MacBook-Pro` where the official client sends
+   `Alex’s MacBook Pro`. #413 follows the official chain when
+   `device_name` is unset, and the operator's value when it is set. The
+   configured value is the portable equivalent of the user-set Computer Name.
+2. **Fallback.** Before #413 mooo could not send `""`, because `authstate`
+   rejected empty names. After #413 it falls back exactly as the official
+   client does, including `""`. Off macOS, and so in Docker, an unset
+   `device_name` always sends `""`; the example config tells operators to set
+   it there.
+3. **Computer Name source API.** mooo reads `scutil --get ComputerName` (the
+   stored SystemConfiguration preference) because it avoids cgo. The official
+   client calls `SCDynamicStoreCopyComputerName` (the dynamic store). They are
+   expected to agree; see gaps.
+4. **Lifetime.** The official client reads the name again for every generate.
    mooo stores it when the profile is created. This matters only if mooo ever
    regenerates for an existing profile. Today each QR login creates a new
    profile, so the difference cannot be seen.
-4. **`model`.** The official client sends a hardware model identifier. mooo
+5. **`model`.** The official client sends a hardware model identifier. mooo
    sends `Mac`, a value the official client never produces. This is the
    largest wire difference in the `device` object, and it is not about the
    name.
-5. **`osVersion`.** mooo sends a constant rather than the host's version. On a
+6. **`osVersion`.** mooo sends a constant rather than the host's version. On a
    Linux host there is no macOS version to report, so a constant is a
    reasonable deliberate choice. It should be kept in step with the pinned
    app version.
 
 ## Recommendations
 
-These are for a follow-up implementation change. This research change does not
-modify mooo code.
+These were written before PR frrad/mooo#413, which implements 1, 2, 4 and the
+fixture half of 6. The maintainer chose official-client behaviour over
+recommendation 3: an empty name is sent rather than a placeholder.
+Recommendation 5 is separate work.
 
 1. Let the operator set the name in bridge configuration (for example
    `device_name`). Use it when it is non-empty, and send it unchanged apart from
-   the existing UTF-8 and length validation. This is the portable equivalent of
-   the user-set Computer Name.
+   UTF-8 validation and the 4 KiB QR-request field limit. This is the portable equivalent of the user-set Computer
+   Name.
 2. When no name is configured and the host is macOS, use the Computer Name
    (`scutil --get ComputerName`, or `SCDynamicStoreCopyComputerName` if cgo is
    acceptable) rather than `os.Hostname()`. Do not remove dots or rewrite the
    value. Then fall back to `hw.model`.
-3. On non-macOS hosts, or when every source is empty, use a non-empty
+3. *Superseded by #413, which sends `""` as the official client does.* On
+   non-macOS hosts, or when every source is empty, use a non-empty
    deliberate default (keeping `mooo-bridge` is fine) and record it as a
    deviation from the official `""`. A host name is acceptable as an
    intermediate fallback, but it should not be described as official parity.
@@ -200,8 +213,37 @@ modify mooo code.
    `hw.model` on macOS or pin a plausible Apple-silicon identifier. Treat this as
    a parity fix with its own regression fixture.
 6. When implementing, have the Go tests read
-   `research/fixtures/device-registration/device-name.json`, and record the
-   `""` fallback as a `mooo_deviation`.
+   `research/fixtures/device-registration/device-name.json`. *The suggestion
+   to record the `""` fallback as a `mooo_deviation` is superseded: #413
+   matches it.*
+
+## mooo live acceptance (2026-10-16)
+
+Method: three fresh QR enrollments of the mooo bridge (PR frrad/mooo#413) on an
+owned disposable account, approved from the owned Android primary (KakaoTalk
+26.8.2), each with its own empty profile directory and bridge database. This
+observes mooo and the server, not the official Mac client, so it is not a
+parity claim for the fallback chain.
+
+| Path | Sent `device.name` | Primary approval and success screens | Primary's Registered Desktops entry | Bridge |
+| --- | --- | --- | --- | --- |
+| `device_name` set to a synthetic Mac-style name | that name | that name, unchanged | that name | `CONNECTED`; reconnected after restart without a new QR |
+| unset, native macOS 26.6.2 | the Computer Name read with `scutil` (typographic apostrophe, spaces) | that exact string | that exact string | `CONNECTED` |
+| unset, Linux container | `""` | `PC` | `PC` | `CONNECTED`; reconnected after restart without a new QR |
+
+Observations:
+
+- The server accepts an empty `device.name` in QR generate and completes
+  enrollment. The primary labels such a device `PC`.
+- The server and primary showed the configured name and the Computer Name
+  exactly as sent, including a typographic apostrophe and spaces.
+- With an empty name, the primary's approval screen used different
+  explanatory text from the named cases. The meaning of that difference is not
+  known.
+- The account's Registered Desktops list allows five entries. Each enrollment
+  added a row; none replaced an existing one.
+
+The lab names and account values are not recorded here.
 
 ## Gaps
 
@@ -212,10 +254,16 @@ modify mooo code.
   `sysctlbyname` in the instrumented debug copy and calls the full `device`
   helper would turn the fixture into `executed`. It would require quitting the
   official client first (see DR-MAC-022), which this session did not do.
-- **Server handling.** It is unknown whether the server limits, trims or
-  rejects long, empty or unusual names; what it shows the primary device for an
-  empty name; and whether re-registering after a rename updates the existing
-  entry or creates a new one (for example through `previousId`).
+- **Server handling.** The live acceptance above shows the server accepts an
+  empty name (shown as `PC`) and keeps spaces and a typographic apostrophe.
+  Whether it limits, trims or rejects long or otherwise unusual names, and
+  whether re-registering after a rename updates the existing entry or creates
+  a new one (for example through `previousId`), is still unknown.
+- **`scutil` versus the dynamic store.** mooo reads the Computer Name with
+  `scutil --get ComputerName`, which reads the stored preference. The official
+  client reads `SCDynamicStoreCopyComputerName`. Whether the two can ever
+  differ (for example right after a rename, before configd updates the
+  dynamic store) has not been tested.
 - **Sandbox behaviour.** It is not proven that the App Store sandbox never makes
   `SCDynamicStoreCopyComputerName` return `NULL`. The observation shows that it
   succeeded at least once on the reviewed build.

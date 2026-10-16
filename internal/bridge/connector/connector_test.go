@@ -6,6 +6,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"maunium.net/go/mautrix/event"
 
 	"github.com/frrad/mooo/internal/authstate"
+	"github.com/frrad/mooo/internal/protocol/registration"
 )
 
 func TestEventDeliveryMustBeInline(t *testing.T) {
@@ -239,5 +241,29 @@ func TestExampleConfigExposesHistoryPacing(t *testing.T) {
 	}
 	if cfg.HistoryPacing.MinimumInterval != 2*time.Second || cfg.HistoryPacing.ErrorBackoff != 30*time.Second || cfg.HistoryPacing.MaxPending != 32 || cfg.HistoryPacing.MaximumDuration != time.Minute {
 		t.Fatalf("example policy did not decode: %+v", cfg.HistoryPacing)
+	}
+}
+
+// A configured name the QR-generate request cannot carry must fail at
+// startup, not after a profile has been created for it.
+func TestStartRejectsDeviceNameTheQRRequestCannotCarry(t *testing.T) {
+	private := t.TempDir()
+	if err := os.Chmod(private, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	newConnector := func(deviceName string) *KakaoConnector {
+		return &KakaoConnector{
+			Bridge: &bridgev2.Bridge{Config: &bridgeconfig.BridgeConfig{PortalEventBuffer: 0}},
+			Config: Config{ProfileDir: private, DeviceName: deviceName},
+		}
+	}
+	if err := newConnector(strings.Repeat("a", registration.MaxFormFieldBytes)).Start(context.Background()); err != nil {
+		t.Fatalf("largest sendable device name rejected: %v", err)
+	}
+	if err := newConnector(strings.Repeat("a", registration.MaxFormFieldBytes+1)).Start(context.Background()); err == nil {
+		t.Fatal("device name larger than the QR request field limit accepted")
+	}
+	if err := newConnector("Mac\xff").Start(context.Background()); err == nil {
+		t.Fatal("invalid UTF-8 device name accepted")
 	}
 }
