@@ -37,13 +37,14 @@ func TestSessionSecureCoalescedEnvelopeDispatchesBothPackets(t *testing.T) {
 	}
 	readDone := make(chan struct{})
 	serverDone := make(chan error, 1)
-	serverStarted, readerFinished, serverFinished := false, false, false
+	serverExited := make(chan struct{})
+	serverStarted, readerFinished := false, false
 	t.Cleanup(func() {
 		_ = clientConn.Close()
 		_ = serverConn.Close()
-		if serverStarted && !serverFinished {
+		if serverStarted {
 			select {
-			case <-serverDone: //nolint:errcheck // the pipe was just closed, so the writer may fail
+			case <-serverExited:
 			case <-time.After(time.Second):
 				t.Errorf("server writer did not stop during cleanup")
 			}
@@ -74,6 +75,7 @@ func TestSessionSecureCoalescedEnvelopeDispatchesBothPackets(t *testing.T) {
 	}
 	serverStarted = true
 	go func() {
+		defer close(serverExited)
 		_, writeErr := serverConn.Write(envelope)
 		serverDone <- writeErr
 	}()
@@ -101,7 +103,6 @@ func TestSessionSecureCoalescedEnvelopeDispatchesBothPackets(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("server writer did not finish")
 	}
-	serverFinished = true
 	_ = clientConn.Close()
 	select {
 	case <-readDone:

@@ -50,7 +50,9 @@ func TestLivePhotoDoesNotWaitBehindPacedMetadataRead(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	metadataDone := make(chan error, 1)
 	go func() {
-		_, err := source.AcquireHistoryBytes(t.Context(), "metadata", func(context.Context) ([]byte, error) {
+		// Not t.Context: cleanup releases this read after that context is
+		// canceled, and the read must still succeed.
+		_, err := source.AcquireHistoryBytes(context.Background(), "metadata", func(context.Context) ([]byte, error) {
 			close(entered)
 			<-release
 			return []byte("metadata"), nil
@@ -64,7 +66,9 @@ func TestLivePhotoDoesNotWaitBehindPacedMetadataRead(t *testing.T) {
 		default:
 			close(release)
 		}
-		<-metadataDone //nolint:errcheck // cleanup runs after t.Context is canceled, so the read may fail
+		if err := <-metadataDone; err != nil {
+			t.Error(err)
+		}
 		if err := source.Shutdown(context.Background()); err != nil {
 			t.Error(err)
 		}
