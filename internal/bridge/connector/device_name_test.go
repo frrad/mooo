@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"testing"
@@ -31,19 +32,19 @@ func TestQRDeviceNameFollowsOfficialMacFixture(t *testing.T) {
 	}
 	for _, tc := range fixture.Cases {
 		t.Run(tc.Name, func(t *testing.T) {
-			computerName := func() (string, bool) {
+			computerName := func(context.Context) (string, bool) {
 				if tc.Input.ComputerName == nil {
 					return "", false
 				}
 				return *tc.Input.ComputerName, true
 			}
-			hardwareModel := func() (string, bool) {
+			hardwareModel := func(context.Context) (string, bool) {
 				if tc.Input.HWModel == nil {
 					return "", false
 				}
 				return *tc.Input.HWModel, true
 			}
-			if got := qrDeviceName("", computerName, hardwareModel); got != tc.Device.Name {
+			if got := qrDeviceName(context.Background(), "", computerName, hardwareModel); got != tc.Device.Name {
 				t.Fatalf("qrDeviceName = %q, want %q", got, tc.Device.Name)
 			}
 		})
@@ -51,11 +52,11 @@ func TestQRDeviceNameFollowsOfficialMacFixture(t *testing.T) {
 }
 
 func TestQRDeviceNameUsesConfiguredNameWithoutReadingTheHost(t *testing.T) {
-	readHost := func() (string, bool) {
+	readHost := func(context.Context) (string, bool) {
 		t.Fatal("a configured device name must not read the host")
 		return "", false
 	}
-	if got := qrDeviceName("  Living-room bridge.local  ", readHost, readHost); got != "  Living-room bridge.local  " {
+	if got := qrDeviceName(context.Background(), "  Living-room bridge.local  ", readHost, readHost); got != "  Living-room bridge.local  " {
 		t.Fatalf("qrDeviceName = %q, want the configured name unchanged", got)
 	}
 }

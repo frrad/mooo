@@ -53,7 +53,8 @@ debug_dump_dir: ""
 # in best, for example "Alex's MacBook Pro" or "Mac mini".
 # Empty does what the official Mac client does: the macOS Computer Name, then
 # the hardware model (for example "Mac14,2"), then an empty name.
-# Existing profiles keep the name they registered with.
+# Must be valid UTF-8 of at most 4 KiB. Existing profiles keep the name they
+# registered with.
 device_name: ""
 
 # Optional mxc:// URI of an image to publish as the KakaoTalk network icon.

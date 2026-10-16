@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"unicode/utf8"
 
 	up "go.mau.fi/util/configupgrade"
 	"maunium.net/go/mautrix/bridgev2"
@@ -21,6 +22,7 @@ import (
 	"github.com/frrad/mooo/internal/authstate"
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/loco"
+	"github.com/frrad/mooo/internal/protocol/registration"
 	"github.com/frrad/mooo/internal/shadow"
 )
 
@@ -77,6 +79,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Str, "bson_shadow", "dump_dir")
 	helper.Copy(up.Str, "network_icon")
 	helper.Copy(up.Str, "debug_dump_dir")
+	helper.Copy(up.Str, "device_name")
 }
 
 // ErrUnsafeEventDelivery reports a bridge configuration under which
@@ -135,6 +138,11 @@ func (kc *KakaoConnector) Start(ctx context.Context) error {
 		if uri, err := id.ParseContentURI(icon); err != nil || !uri.IsValid() {
 			return errors.New("connector: network.network_icon must be an mxc:// content URI")
 		}
+	}
+	// The QR-generate request bounds every field; fail before any profile is
+	// created for a name it cannot carry.
+	if name := kc.Config.DeviceName; !utf8.ValidString(name) || len(name) > registration.MaxFormFieldBytes {
+		return fmt.Errorf("connector: network.device_name must be valid UTF-8 of at most %d bytes", registration.MaxFormFieldBytes)
 	}
 	if dir := kc.Config.DebugDumpDir; dir != "" {
 		if err := prepareDebugDumpDir(dir); err != nil {

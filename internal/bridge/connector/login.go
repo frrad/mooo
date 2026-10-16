@@ -267,7 +267,7 @@ func (l *qrLogin) Start(ctx context.Context) (*bridgev2.LoginStep, error) {
 		return nil, err
 	}
 	store, err := authstate.Create(path, authstate.Config{
-		DeviceName:  qrDeviceName(l.connector.Config.DeviceName, hostComputerName, hostHardwareModel),
+		DeviceName:  qrDeviceName(generationCtx, l.connector.Config.DeviceName, hostComputerName, hostHardwareModel),
 		AppVersion:  "26.8.0",
 		OSVersion:   "26.6.2",
 		DeviceModel: "Mac",
