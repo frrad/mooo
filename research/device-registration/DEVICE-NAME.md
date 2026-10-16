@@ -217,6 +217,34 @@ Recommendation 5 is separate work.
    to record the `""` fallback as a `mooo_deviation` is superseded: #413
    matches it.*
 
+## mooo live acceptance (2026-10-16)
+
+Method: three fresh QR enrollments of the mooo bridge (PR frrad/mooo#413) on an
+owned disposable account, approved from the owned Android primary (KakaoTalk
+26.8.2), each with its own empty profile directory and bridge database. This
+observes mooo and the server, not the official Mac client, so it is not a
+parity claim for the fallback chain.
+
+| Path | Sent `device.name` | Primary approval and success screens | Primary's Registered Desktops entry | Bridge |
+| --- | --- | --- | --- | --- |
+| `device_name` set to a synthetic Mac-style name | that name | that name, unchanged | that name | `CONNECTED`; reconnected after restart without a new QR |
+| unset, native macOS 26.6.2 | the Computer Name read with `scutil` (typographic apostrophe, spaces) | that exact string | that exact string | `CONNECTED` |
+| unset, Linux container | `""` | `PC` | `PC` | `CONNECTED`; reconnected after restart without a new QR |
+
+Observations:
+
+- The server accepts an empty `device.name` in QR generate and completes
+  enrollment. The primary labels such a device `PC`.
+- The server and primary showed the configured name and the Computer Name
+  exactly as sent, including a typographic apostrophe and spaces.
+- With an empty name, the primary's approval screen used different
+  explanatory text from the named cases. The meaning of that difference is not
+  known.
+- The account's Registered Desktops list allows five entries. Each enrollment
+  added a row; none replaced an existing one.
+
+The lab names and account values are not recorded here.
+
 ## Gaps
 
 - **Not executed or observed in isolation.** The fallback order, the empty-string
@@ -226,10 +254,11 @@ Recommendation 5 is separate work.
   `sysctlbyname` in the instrumented debug copy and calls the full `device`
   helper would turn the fixture into `executed`. It would require quitting the
   official client first (see DR-MAC-022), which this session did not do.
-- **Server handling.** It is unknown whether the server limits, trims or
-  rejects long, empty or unusual names; what it shows the primary device for an
-  empty name; and whether re-registering after a rename updates the existing
-  entry or creates a new one (for example through `previousId`).
+- **Server handling.** The live acceptance above shows the server accepts an
+  empty name (shown as `PC`) and keeps spaces and a typographic apostrophe.
+  Whether it limits, trims or rejects long or otherwise unusual names, and
+  whether re-registering after a rename updates the existing entry or creates
+  a new one (for example through `previousId`), is still unknown.
 - **`scutil` versus the dynamic store.** mooo reads the Computer Name with
   `scutil --get ComputerName`, which reads the stored preference. The official
   client reads `SCDynamicStoreCopyComputerName`. Whether the two can ever
