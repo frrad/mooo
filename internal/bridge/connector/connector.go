@@ -50,9 +50,9 @@ type Config struct {
 	// to decode. Off by default; the dumps contain message content.
 	DebugDumpDir string `yaml:"debug_dump_dir"`
 
-	// DeviceName optionally names new QR devices in KakaoTalk's device list.
-	// Empty uses what the official Mac client sends: the macOS Computer Name,
-	// then the hardware model, then an empty name (always empty off macOS).
+	// DeviceName names new QR devices in KakaoTalk's device list, sent
+	// unchanged. Empty follows the official Mac client, which off macOS
+	// means an empty name; see example-config.yaml.
 	DeviceName string `yaml:"device_name"`
 }
 

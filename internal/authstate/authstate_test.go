@@ -67,9 +67,10 @@ func TestCreateRequiresExplicitAbsolutePathAndConfig(t *testing.T) {
 		t.Fatalf("relative path error = %v, want ErrInvalidPath", err)
 	}
 	for name, cfg := range map[string]Config{
-		"missing app":   func() Config { c := testConfig(); c.AppVersion = ""; return c }(),
-		"missing os":    func() Config { c := testConfig(); c.OSVersion = ""; return c }(),
-		"missing model": func() Config { c := testConfig(); c.DeviceModel = ""; return c }(),
+		"invalid UTF-8 name": func() Config { c := testConfig(); c.DeviceName = "Mac\xff"; return c }(),
+		"missing app":        func() Config { c := testConfig(); c.AppVersion = ""; return c }(),
+		"missing os":         func() Config { c := testConfig(); c.OSVersion = ""; return c }(),
+		"missing model":      func() Config { c := testConfig(); c.DeviceModel = ""; return c }(),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Create(testPath(t), cfg); !errors.Is(err, ErrInvalidConfig) {
@@ -80,9 +81,10 @@ func TestCreateRequiresExplicitAbsolutePathAndConfig(t *testing.T) {
 }
 
 // The official Mac client sends an empty device name when the host has no
-// Computer Name or hardware model, so an empty or blank name is valid.
-func TestCreateAcceptsEmptyAndBlankDeviceName(t *testing.T) {
-	for _, name := range []string{"", "   "} {
+// Computer Name or hardware model, and limits the name's length nowhere, so
+// empty, blank and long names are all valid.
+func TestCreateAcceptsEmptyBlankAndLongDeviceNames(t *testing.T) {
+	for _, name := range []string{"", "   ", strings.Repeat("맥", 100)} {
 		cfg := testConfig()
 		cfg.DeviceName = name
 		path := testPath(t)

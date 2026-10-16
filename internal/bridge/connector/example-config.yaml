@@ -47,10 +47,12 @@ bson_shadow:
 # is off.
 debug_dump_dir: ""
 
-# Optional name for new QR devices in KakaoTalk's device list, sent unchanged.
-# Empty, the default, does what the official Mac client does: the macOS
-# Computer Name, then the hardware model (for example "Mac14,2"), then an
-# empty name. Off macOS, including in Docker, empty sends an empty name.
+# Name shown for this bridge in KakaoTalk's device list, sent unchanged.
+# Set this unless the bridge runs on macOS: off macOS, including in Docker,
+# leaving it empty registers a device with no name. A Mac-style name blends
+# in best, for example "Alex's MacBook Pro" or "Mac mini".
+# Empty does what the official Mac client does: the macOS Computer Name, then
+# the hardware model (for example "Mac14,2"), then an empty name.
 # Existing profiles keep the name they registered with.
 device_name: ""
 

@@ -284,7 +284,6 @@ func validatePath(path string) (string, error) {
 }
 
 func validateConfig(cfg Config) error {
-	// The official Mac client sends an empty name when the host has none.
 	if !validDeviceName(cfg.DeviceName) {
 		return ErrInvalidConfig
 	}
@@ -296,7 +295,11 @@ func validateConfig(cfg Config) error {
 	return nil
 }
 
-func validDeviceName(name string) bool { return utf8.ValidString(name) && len(name) <= 256 }
+// validDeviceName accepts what the official Mac client can send: any string,
+// including empty, with no length limit (research/device-registration/
+// DEVICE-NAME.md). Invalid UTF-8 cannot come from that client, and JSON
+// encoding would silently replace it, so it is rejected instead.
+func validDeviceName(name string) bool { return utf8.ValidString(name) }
 
 func validateCredentials(c Credentials) error {
 	if c.UserID <= 0 || strings.TrimSpace(c.AccessToken) == "" || len(c.AutoLoginMaterial) == 0 ||
