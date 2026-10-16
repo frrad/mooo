@@ -1,0 +1,47 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for macOS 26.8.0",
+    "date": "2026-10-16",
+    "method": "Disassembly of the full-device dictionary helper used by passcode and QR generate, its Computer Name, model and OS-version helpers, and every caller. The official client has not run these inputs; DR-OBS-031 corroborates only the computer-name-present case",
+    "doc": "research/device-registration/DEVICE-NAME.md"
+  },
+  "notes": "Inputs are what the macOS sources return: computer_name is SCDynamicStoreCopyComputerName (null = unavailable), hw_model is sysctlbyname(\"hw.model\") (null = size 0 or unavailable), os_version is NSProcessInfo.operatingSystemVersion. Expected output is the full device object minus uuid. All values are synthetic.",
+  "cases": [
+    {
+      "name": "computer name is sent unchanged, with no host-name rewriting",
+      "input": {"computer_name": "Alex’s MacBook Pro", "hw_model": "Mac14,2", "os_version": [26, 6, 2]},
+      "device": {"name": "Alex’s MacBook Pro", "model": "Mac14,2", "osVersion": "26.6.2"}
+    },
+    {
+      "name": "dots and a .local-looking suffix are not stripped",
+      "input": {"computer_name": "studio.local", "hw_model": "Mac14,2", "os_version": [26, 6, 2]},
+      "device": {"name": "studio.local", "model": "Mac14,2", "osVersion": "26.6.2"}
+    },
+    {
+      "name": "long non-ASCII name is neither truncated nor trimmed",
+      "input": {"computer_name": "  회의실 맥미니 — 3층 서쪽 끝 공용 장비 (대여 문의는 총무팀으로)  ", "hw_model": "Mac16,10", "os_version": [26, 6, 2]},
+      "device": {"name": "  회의실 맥미니 — 3층 서쪽 끝 공용 장비 (대여 문의는 총무팀으로)  ", "model": "Mac16,10", "osVersion": "26.6.2"}
+    },
+    {
+      "name": "an empty computer name is returned as-is, without falling back",
+      "input": {"computer_name": "", "hw_model": "Mac14,2", "os_version": [26, 6, 2]},
+      "device": {"name": "", "model": "Mac14,2", "osVersion": "26.6.2"}
+    },
+    {
+      "name": "unavailable computer name falls back to the hardware model identifier",
+      "input": {"computer_name": null, "hw_model": "Mac14,2", "os_version": [26, 6, 2]},
+      "device": {"name": "Mac14,2", "model": "Mac14,2", "osVersion": "26.6.2"}
+    },
+    {
+      "name": "every name source unavailable sends an empty name and an empty model",
+      "input": {"computer_name": null, "hw_model": null, "os_version": [26, 6, 2]},
+      "device": {"name": "", "model": "", "osVersion": "26.6.2"}
+    },
+    {
+      "name": "osVersion always has three numbers",
+      "input": {"computer_name": "Alex’s MacBook Pro", "hw_model": "Mac14,2", "os_version": [27, 0, 0]},
+      "device": {"name": "Alex’s MacBook Pro", "model": "Mac14,2", "osVersion": "27.0.0"}
+    }
+  ]
+}
