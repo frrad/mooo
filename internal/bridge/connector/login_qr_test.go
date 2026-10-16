@@ -34,9 +34,13 @@ type fakeQRBackend struct {
 	pollCalls    int
 	cancelFn     func(context.Context) error
 	pollSequence []qrPollResult
+	generated    []registration.QRGenerateRequest
 }
 
-func (f *fakeQRBackend) Generate(context.Context, registration.QRGenerateRequest) (registration.QRChallenge, error) {
+func (f *fakeQRBackend) Generate(_ context.Context, request registration.QRGenerateRequest) (registration.QRChallenge, error) {
+	f.mu.Lock()
+	f.generated = append(f.generated, request)
+	f.mu.Unlock()
 	return f.challenge, nil
 }
 
@@ -220,6 +224,33 @@ func TestQRLoginApprovalPersistsClientOwnedCredentials(t *testing.T) {
 	}
 	if string(state.Credentials.AutoLoginMaterial) == "" {
 		t.Fatal("auto-login material was not persisted")
+	}
+}
+
+func TestQRLoginGeneratesWithPinnedMacModelAndOSVersion(t *testing.T) {
+	backend := newFakeQRBackend(t, `{"status":0,"user":{"userId":42},"accessToken":"access","refreshToken":"refresh","tokenType":"bearer"}`)
+	login := newQRTestLogin(t, backend)
+	if _, err := login.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	backend.mu.Lock()
+	generated := backend.generated
+	backend.mu.Unlock()
+	if len(generated) != 1 {
+		t.Fatalf("generate requests = %d, want 1", len(generated))
+	}
+	if got := generated[0].Device.Model; got != "Mac17,3" {
+		t.Errorf("device.model = %q, want the pinned hw.model %q", got, "Mac17,3")
+	}
+	if got := generated[0].Device.OSVersion; got != "26.6.2" {
+		t.Errorf("device.osVersion = %q, want the pinned %q", got, "26.6.2")
+	}
+	state, err := login.store.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Identity.Metadata.DeviceModel != "Mac17,3" || state.Identity.Metadata.OSVersion != "26.6.2" {
+		t.Fatalf("stored metadata = %q / %q", state.Identity.Metadata.DeviceModel, state.Identity.Metadata.OSVersion)
 	}
 }
 

@@ -136,8 +136,8 @@ The manual `auth init` command takes the same four values as required flags.
 | `name` transforms | none | none | split at first `.`, trim spaces |
 | `name` validation | none (empty allowed) | rejects empty or whitespace-only, invalid UTF-8, or more than 256 bytes | same as `main` |
 | `name` lifetime | read again for every generate | stored in the profile when it is created and reused | same as `main` |
-| `model` | `hw.model` (e.g. `Mac14,2`) | constant `Mac` | constant `Mac` |
-| `osVersion` | running OS, `major.minor.patch` | constant `26.6.2` | constant `26.6.2` |
+| `model` | `hw.model` (e.g. `Mac14,2`) | constant `Mac17,3` (pinned, see below) | constant `Mac` |
+| `osVersion` | running OS, `major.minor.patch` | constant `26.6.2` (pinned, see below) | constant `26.6.2` |
 | Requests that carry it | passcode/QR generate only | QR generate only | QR generate only |
 | LOCO name field | none | none | none |
 
@@ -165,14 +165,16 @@ Where mooo differs:
    mooo stores it when the profile is created. This matters only if mooo ever
    regenerates for an existing profile. Today each QR login creates a new
    profile, so the difference cannot be seen.
-4. **`model`.** The official client sends a hardware model identifier. mooo
-   sends `Mac`, a value the official client never produces. This is the
-   largest wire difference in the `device` object, and it is not about the
-   name.
-5. **`osVersion`.** mooo sends a constant rather than the host's version. On a
-   Linux host there is no macOS version to report, so a constant is a
-   reasonable deliberate choice. It should be kept in step with the pinned
-   app version.
+4. **`model` and `osVersion` (deliberate).** The official client reads the
+   host's `hw.model` and running macOS version. mooo sends constants instead:
+   `Mac17,3` and `26.6.2`, both read on 2026-10-16 from one real Apple-silicon
+   Mac that runs the pinned 26.8.0 app. Most bridges run on Linux or in Docker,
+   which have neither value, so reading the host would not help them, and a
+   pair taken from one real machine cannot combine a model with a macOS
+   version it never shipped with. A bridge on a real Mac therefore does not
+   report its own hardware or OS. Refresh both values together with the pinned
+   app version. Before this change mooo sent `model: "Mac"`, a value the
+   official client never produces.
 
 ## Recommendations
 
@@ -195,10 +197,8 @@ modify mooo code.
    does.
 4. Prefer a configuration value over Docker `hostname:`. Setting the container
    host name to name the Kakao device couples two unrelated settings.
-5. Separately, reconsider `model: "Mac"`. A real `hw.model`-style identifier
-   matches what the server receives from official clients. Either read
-   `hw.model` on macOS or pin a plausible Apple-silicon identifier. Treat this as
-   a parity fix with its own regression fixture.
+5. Done: `model` and `osVersion` are pinned from one real Mac (difference 4
+   above). A QR login regression test checks the generate request.
 6. When implementing, have the Go tests read
    `research/fixtures/device-registration/device-name.json`, and record the
    `""` fallback as a `mooo_deviation`.

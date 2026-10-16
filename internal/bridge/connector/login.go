@@ -266,11 +266,14 @@ func (l *qrLogin) Start(ctx context.Context) (*bridgev2.LoginStep, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The official client sends the host's running macOS version and its sysctl
+	// hw.model. mooo pins both from one real Mac running this app version, so
+	// they stay a plausible pair on any host. Refresh them with AppVersion.
 	store, err := authstate.Create(path, authstate.Config{
 		DeviceName:  "mooo-bridge",
 		AppVersion:  "26.8.0",
 		OSVersion:   "26.6.2",
-		DeviceModel: "Mac",
+		DeviceModel: "Mac17,3",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("connector: create QR profile: %w", err)
