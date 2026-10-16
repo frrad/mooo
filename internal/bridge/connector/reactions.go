@@ -471,31 +471,55 @@ func (kc *KakaoClient) applyReaction(ctx context.Context, c kakaoClient, reactio
 			return false, nil
 		}
 	}
-	allIgnored := true
+	// An ignored delivery is applied when the database already holds its
+	// postcondition: a duplicate addition's row exists, or a removal's row is
+	// gone. Only an ignored addition with no row (for example, the framework
+	// dropped it) leaves the revision for replay.
+	applied := true
 	for _, delivery := range remotes {
 		if err := ctx.Err(); err != nil {
 			return false, err
+		}
+		syncEvent, isReaction := delivery.(*simplevent.Reaction)
+		if isReaction && syncEvent.Type == bridgev2.RemoteEventReactionRemove {
+			// The framework replaces a user's single reaction while handling
+			// the Matrix event, so an own-reaction echo can plan the removal
+			// of a row that is already gone.
+			row, queryErr := kc.store.reaction(ctx, kc.login.ID, syncEvent.TargetMessage, syncEvent.Sender.Sender, syncEvent.EmojiID)
+			if queryErr != nil {
+				kc.log().Warn().Err(queryErr).Msg("Kakao reaction removal target could not be checked")
+				return false, nil
+			}
+			if row == nil {
+				continue
+			}
 		}
 		result := kc.queue(delivery)
 		if !committable(result) {
 			kc.log().Warn().Err(result.Error).Msg("Kakao reaction update was not confirmed as bridged")
 			return false, nil
 		}
-		if !result.Ignored {
-			allIgnored = false
-		}
-		if syncEvent, ok := delivery.(*simplevent.Reaction); ok && syncEvent.Type == bridgev2.RemoteEventReactionRemove {
+		if isReaction && syncEvent.Type == bridgev2.RemoteEventReactionRemove {
 			row, queryErr := kc.store.reaction(ctx, kc.login.ID, syncEvent.TargetMessage, syncEvent.Sender.Sender, syncEvent.EmojiID)
 			if queryErr != nil || row != nil {
 				kc.log().Warn().Err(queryErr).Msg("Kakao reaction removal was not confirmed in the database")
 				return false, nil
+			}
+		} else if result.Ignored {
+			if !isReaction {
+				applied = false
+				continue
+			}
+			row, queryErr := kc.store.reaction(ctx, kc.login.ID, syncEvent.TargetMessage, syncEvent.Sender.Sender, syncEvent.EmojiID)
+			if queryErr != nil || row == nil {
+				applied = false
 			}
 		}
 	}
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if len(remotes) == 0 || !allIgnored {
+	if applied {
 		appliedRevision := reaction.Revision
 		if syncEvent, ok := remote.(*kakaoReactionSync); ok {
 			appliedRevision = syncEvent.AppliedRevision
