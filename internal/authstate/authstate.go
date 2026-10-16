@@ -284,13 +284,19 @@ func validatePath(path string) (string, error) {
 }
 
 func validateConfig(cfg Config) error {
-	for _, value := range []string{cfg.DeviceName, cfg.AppVersion, cfg.OSVersion, cfg.DeviceModel} {
+	// The official Mac client sends an empty name when the host has none.
+	if !validDeviceName(cfg.DeviceName) {
+		return ErrInvalidConfig
+	}
+	for _, value := range []string{cfg.AppVersion, cfg.OSVersion, cfg.DeviceModel} {
 		if strings.TrimSpace(value) == "" || !utf8.ValidString(value) || len(value) > 256 {
 			return ErrInvalidConfig
 		}
 	}
 	return nil
 }
+
+func validDeviceName(name string) bool { return utf8.ValidString(name) && len(name) <= 256 }
 
 func validateCredentials(c Credentials) error {
 	if c.UserID <= 0 || strings.TrimSpace(c.AccessToken) == "" || len(c.AutoLoginMaterial) == 0 ||
@@ -358,7 +364,7 @@ func translate(err error) error {
 }
 
 func validateIdentity(id Identity) error {
-	if !validUUID(id.DeviceUUID) || strings.TrimSpace(id.DeviceName) == "" || !utf8.ValidString(id.DeviceName) || len(id.DeviceName) > 256 {
+	if !validUUID(id.DeviceUUID) || !validDeviceName(id.DeviceName) {
 		return ErrInvalidConfig
 	}
 	if id.Metadata.Version != MacMetadataVersion || id.Metadata.Platform != "macOS" ||

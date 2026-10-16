@@ -67,7 +67,6 @@ func TestCreateRequiresExplicitAbsolutePathAndConfig(t *testing.T) {
 		t.Fatalf("relative path error = %v, want ErrInvalidPath", err)
 	}
 	for name, cfg := range map[string]Config{
-		"missing name":  func() Config { c := testConfig(); c.DeviceName = ""; return c }(),
 		"missing app":   func() Config { c := testConfig(); c.AppVersion = ""; return c }(),
 		"missing os":    func() Config { c := testConfig(); c.OSVersion = ""; return c }(),
 		"missing model": func() Config { c := testConfig(); c.DeviceModel = ""; return c }(),
@@ -77,6 +76,30 @@ func TestCreateRequiresExplicitAbsolutePathAndConfig(t *testing.T) {
 				t.Fatalf("error = %v, want ErrInvalidConfig", err)
 			}
 		})
+	}
+}
+
+// The official Mac client sends an empty device name when the host has no
+// Computer Name or hardware model, so an empty or blank name is valid.
+func TestCreateAcceptsEmptyAndBlankDeviceName(t *testing.T) {
+	for _, name := range []string{"", "   "} {
+		cfg := testConfig()
+		cfg.DeviceName = name
+		path := testPath(t)
+		if _, err := Create(path, cfg); err != nil {
+			t.Fatalf("Create with device name %q: %v", name, err)
+		}
+		reopened, err := Open(path)
+		if err != nil {
+			t.Fatalf("Open with device name %q: %v", name, err)
+		}
+		state, err := reopened.Snapshot()
+		if err != nil {
+			t.Fatalf("Snapshot with device name %q: %v", name, err)
+		}
+		if state.Identity.DeviceName != name {
+			t.Fatalf("stored device name = %q, want %q", state.Identity.DeviceName, name)
+		}
 	}
 }
 

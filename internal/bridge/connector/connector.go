@@ -49,6 +49,11 @@ type Config struct {
 	// message whose content failed decoding and every media reply that failed
 	// to decode. Off by default; the dumps contain message content.
 	DebugDumpDir string `yaml:"debug_dump_dir"`
+
+	// DeviceName optionally names new QR devices in KakaoTalk's device list.
+	// Empty uses what the official Mac client sends: the macOS Computer Name,
+	// then the hardware model, then an empty name (always empty off macOS).
+	DeviceName string `yaml:"device_name"`
 }
 
 // BSONShadowConfig is the bridge-facing form of shadow.Config.

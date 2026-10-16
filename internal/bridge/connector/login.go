@@ -267,7 +267,7 @@ func (l *qrLogin) Start(ctx context.Context) (*bridgev2.LoginStep, error) {
 		return nil, err
 	}
 	store, err := authstate.Create(path, authstate.Config{
-		DeviceName:  deviceNameFromHost(os.Hostname()),
+		DeviceName:  qrDeviceName(l.connector.Config.DeviceName, hostComputerName, hostHardwareModel),
 		AppVersion:  "26.8.0",
 		OSVersion:   "26.6.2",
 		DeviceModel: "Mac",
@@ -854,15 +854,4 @@ func profileUserID(statePath string) (int64, error) {
 		return 0, errProfileNotAuthorized
 	}
 	return state.Credentials.UserID, nil
-}
-
-// deviceNameFromHost names a new QR device after this machine, as the official
-// Mac client names its device after the computer. It drops any domain suffix
-// such as ".local" and falls back to "mooo-bridge" without a usable name.
-func deviceNameFromHost(host string, err error) string {
-	name, _, _ := strings.Cut(host, ".")
-	if name = strings.TrimSpace(name); err != nil || name == "" {
-		return "mooo-bridge"
-	}
-	return name
 }

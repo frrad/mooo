@@ -3,8 +3,6 @@ services:
     build:
       context: ..
     image: ${MOOO_IMAGE:-mooo-bridge:local}
-    # New devices are named after this hostname in KakaoTalk.
-    hostname: ${MOOO_DEVICE_NAME:-mooo-bridge}
     user: "${MOOO_UID:-10001}:${MOOO_GID:-10001}"
     volumes:
       - ./data:/data
