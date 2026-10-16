@@ -23,8 +23,8 @@ func TestParentEventsRechecksShutdownAdmission(t *testing.T) {
 			returned <- c.Shutdown(ctx)
 		}()
 		close(start)
-		<-returned
-		<-returned
+		<-returned //nolint:errcheck // waits for completion; the result is not under test
+		<-returned //nolint:errcheck // waits for completion; the result is not under test
 		c.mu.Lock()
 		late := c.eventDone != nil
 		c.mu.Unlock()

@@ -240,7 +240,7 @@ func TestSessionLateReplyToAbandonedRequestDisarmsReceiveHeaderTimeout(t *testin
 	request := receiveRequest(t, headers)
 	waitForCondition(t, func() bool { return liveHeaderTimers(clock) == 1 })
 	cancel()
-	<-requestDone
+	<-requestDone //nolint:errcheck // waits for completion; the result is not under test
 
 	writeStatusReply(t, serverConn, request)
 	waitForCondition(t, func() bool { return liveHeaderTimers(clock) == 0 })

@@ -103,7 +103,7 @@ func TestHistoryStoppedDependencyCannotReleaseProfileEarly(t *testing.T) {
 		t.Fatal("profile ownership released before dependency publication", err)
 	}
 	once.Do(func() { close(release) })
-	<-done
+	<-done //nolint:errcheck // waits for completion; the result is not under test
 	if err := c.Shutdown(t.Context()); err != nil {
 		t.Fatal(err)
 	}
