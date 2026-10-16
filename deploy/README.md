@@ -53,6 +53,9 @@ Edit the generated `data/config.yaml`:
 - Set `database.type` to `sqlite3-fk-wal` and `database.uri` to
   `file:/data/mooo-bridge.db?_txlock=immediate`.
 - Set `network.profile_dir` to `/data/profiles`.
+- Set `network.device_name` to the name KakaoTalk's device list should show,
+  for example `Alex's MacBook Pro`. In Docker there is no macOS Computer Name
+  to fall back to, so leaving it empty registers a device with no name.
 - Optionally set `network.network_icon` to the `mxc://` URI of an image you
   uploaded to your homeserver. It becomes the bridge space and bot avatar and
   Beeper's sidebar icon for the account; Beeper's chat-list badge does not use
