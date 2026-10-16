@@ -159,7 +159,7 @@ Where mooo differs:
    official client never sends. An earlier draft of #413 used the DNS/kernel
    host name, a different macOS setting from the Computer Name: on a Mac it
    gives `Alexs-MacBook-Pro` where the official client sends
-   `Alex’s MacBook Pro`. #413 as merged follows the official chain when
+   `Alex’s MacBook Pro`. #413 follows the official chain when
    `device_name` is unset, and the operator's value when it is set. The
    configured value is the portable equivalent of the user-set Computer Name.
 2. **Fallback.** Before #413 mooo could not send `""`, because `authstate`
@@ -193,7 +193,7 @@ Recommendation 5 is separate work.
 
 1. Let the operator set the name in bridge configuration (for example
    `device_name`). Use it when it is non-empty, and send it unchanged apart from
-   UTF-8 validation. This is the portable equivalent of the user-set Computer
+   UTF-8 validation and the 4 KiB QR-request field limit. This is the portable equivalent of the user-set Computer
    Name.
 2. When no name is configured and the host is macOS, use the Computer Name
    (`scutil --get ComputerName`, or `SCDynamicStoreCopyComputerName` if cgo is
