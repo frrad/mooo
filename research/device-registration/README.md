@@ -19,6 +19,9 @@ remain outside the repository under `CLEANROOM.md`.
   result codes, payload handling, and timer policy.
 - `experiments/DR-EXP-003-session-handoff.md` records restore, persistence, LOCO
   handoff, logout, and current-device unregister behavior.
+- `DEVICE-NAME.md` traces where the full device object's `name`, `model`, and
+  `osVersion` come from, compares them with mooo, and lists recommendations.
+- `experiments/DR-EXP-004-device-name-source.md` records that trace.
 
 The remainder of this file is an overview. Where it differs from `PROTOCOL.md`,
 the latter is authoritative for implementation.
