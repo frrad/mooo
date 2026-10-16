@@ -523,17 +523,19 @@ func TestQRLoginCancelInterruptsLongServerPollInterval(t *testing.T) {
 	qrPollInterval = 0
 	t.Cleanup(func() { qrPollInterval = original })
 	done := make(chan error, 1)
+	waitExited := make(chan struct{})
 	t.Cleanup(func() {
 		login.Cancel()
 		select {
-		case <-done:
+		case <-waitExited:
 		case <-time.After(time.Second):
+			t.Error("Wait did not return during cleanup")
 		}
 	})
 	go func() {
+		defer close(waitExited)
 		_, err := login.Wait(context.Background())
 		done <- err
-		close(done)
 	}()
 	intervalDeadline := time.Now().Add(time.Second)
 	for {
@@ -550,7 +552,10 @@ func TestQRLoginCancelInterruptsLongServerPollInterval(t *testing.T) {
 	}
 	login.Cancel()
 	select {
-	case <-done:
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Wait error = %v, want context.Canceled", err)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("cancel did not interrupt long server interval")
 	}
