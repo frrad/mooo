@@ -33,6 +33,7 @@ const (
 	KindContactMessage      Kind = "contact_message"
 	KindMultiPhotoMessage   Kind = "multi_photo_message"
 	KindStickerMessage      Kind = "sticker_message"
+	KindCallMessage         Kind = "call_message"
 	KindMessageGap          Kind = "message_gap"
 	KindUnsupportedMessage  Kind = "unsupported_message"
 	KindReactionChanged     Kind = "reaction_changed"

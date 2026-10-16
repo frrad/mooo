@@ -205,6 +205,7 @@ var messageDecoders = map[int32]func(chatlog.Envelope) (Event, error){
 	messagetype.Vote:            logDecoder(decodeVote),
 	messagetype.Location:        logDecoder(decodeLocation),
 	messagetype.Profile:         logDecoder(decodeProfile),
+	messagetype.Mvoip:           decodeCall,
 	messagetype.Sticker:         decodeSticker,
 	messagetype.AnimatedSticker: decodeSticker,
 	messagetype.Photo:           mediaDecoder(media.DecodePhotoMessage, func(m media.PhotoMessage) Event { return PhotoMessage{Message: m} }),

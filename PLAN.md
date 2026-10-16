@@ -240,7 +240,7 @@ These are scoped capabilities, not full official-client parity.
 | 3 | Live read-receipt and catch-up read-side-effect policy; operator malformed-message recovery; terminal/failure lifecycle acceptance | Routing, unbounded slow recovery with a short-session loop guard, a persisted KICKOUT block, and ownership are implemented; `SYNCMSG cnt=0`, terminal events, Matrix failures and cleanup timeouts need controlled acceptance. The receive-header timeout is implemented (research/reconnect/RECEIVE-HEADER-TIMEOUT.md). Push receipts: not implemented; see docs/code-structure-plan.md A1. |
 | 4 | Reproducible deployment acceptance and Matrix crypto recovery | Docker/configuration exist. Complete standard appservice installation and separate Beeper validation; test key rotation, missing keys/trust transitions and encrypted replies/reactions. |
 | 5 | Broader outbound messaging and interactive content | `HandleMatrixMessage` accepts text/notice/emote and JPEG/PNG photos only; image replies are rejected. Outbound video/audio/files/albums/stickers/cards/polls/posts, edits/deletions and poll/board actions have no supported connector path. |
-| 6 | Eligible unsupported formats and broader chat/contact scope | Link, Schedule, Nudge, SharpSearch, sticker variants, LargeVideo/LargeFile, call/business formats and Open/Team/Secret Chat need independent contracts/fixtures. Friend creation has a bounded API; full friend/contact synchronization remains open. |
+| 6 | Eligible unsupported formats and broader chat/contact scope | Link, Schedule, Nudge, SharpSearch, sticker variants, LargeVideo/LargeFile, business formats and Open/Team/Secret Chat need independent contracts/fixtures. Call records (type 51) are bridged as notices (research/calls.md); group-call records and the reply shape for a call record remain unobserved. Friend creation has a bounded API; full friend/contact synchronization remains open. |
 
 Keep opt-in historical backfill pending its read-side-effect policy. Continue
 Mac-first full-chain protocol research and production-fixture migration alongside
@@ -927,7 +927,7 @@ untraced. Existing-log forwarding/results consumers do not prove an available
 original emitter. See [sharp-search.md](research/sharp-search.md).
 
 Keep type 23 unsupported pending a controlled eligible share. Remaining paid,
-business, call and Open Chat formats still require their own owned emitters and
+business and Open Chat formats still require their own owned emitters and
 fixtures; enum names do not establish E2E support. Operator chat listing and
 contact-photo retrieval have landed. Account C and initial regular-group text
 testing completed afterward; group lifecycle and broader media acceptance

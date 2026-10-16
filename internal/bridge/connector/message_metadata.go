@@ -101,6 +101,9 @@ func replyTargetFor(message *database.Message, portal networkid.PortalKey) (chat
 	if err != nil || chatID != metadata.ChatID || chatID != mustParsePortalID(portal.ID) || logID != metadata.LogID {
 		return chat.ReplyTarget{}, errCrossChatReply
 	}
+	if metadata.Type == messagetype.Mvoip {
+		return chat.ReplyTarget{}, errCallReplyTarget
+	}
 	preview := metadata.Preview
 	if metadata.Type == messagetype.Photo {
 		// Android's reply to a photo sends this summary (observed).

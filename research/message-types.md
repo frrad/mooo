@@ -65,7 +65,7 @@ Naming unsupported constants is intentional and does not enable their payloads.
 | 27 | `MultiPhoto` | Typed URL-based album; resource-only forms remain gaps |
 | 28 | `LargeVideo` | `UnsupportedMessage` notice |
 | 29 | `LargeFile` | `UnsupportedMessage` notice |
-| 51 | `Mvoip` | `UnsupportedMessage` notice |
+| 51 | `Mvoip` | Typed call record shown as the official Mac summary notice ([calls](calls.md)); replies to it are refused |
 | 52 | `VoxRoom` | `UnsupportedMessage` notice |
 | 71 | `Leverage` | `UnsupportedMessage` notice |
 | 72 | `Alimtalk` | `UnsupportedMessage` notice |

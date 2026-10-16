@@ -62,6 +62,8 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, convertLocation)
 	case events.ProfileMessage:
 		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, convertProfile)
+	case events.CallMessage:
+		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, kc.convertCall)
 	case events.TextMessage:
 		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, convertText)
 	case events.ReplyMessage:

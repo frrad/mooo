@@ -1,0 +1,858 @@
+{
+ "provenance": {
+  "kind": "executed",
+  "client": "KakaoTalk for Mac 26.8.0 (arm64)",
+  "date": "2026-10-16",
+  "method": "Isolated logged-out MoooKakaoProbe copy of the official binary, spawned under Frida; for each case NTChatMVoip alloc/init, setAuthorId (the logged-out own user ID 0 when authored_by_self, else a synthetic ID), setAttachment (skipped when attachment is null), -update, then -voipType, -duration, -lastMessage (summary) and -descriptionMessage (bubble). No chat room is attached, so the direct-room branch ran; its English strings equal the group ones. Original preferences were hash-checked unchanged.",
+  "doc": "research/calls.md"
+ },
+ "notes": "Attachments are synthetic. Call-server address fields use documentation addresses (RFC 5737, RFC 3849).",
+ "cases": [
+  {
+   "name": "invite/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"invite\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 2,
+    "duration": 0,
+    "summary": "Voice Call",
+    "bubble": "Voice Call"
+   }
+  },
+  {
+   "name": "invite/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"invite\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 2,
+    "duration": 0,
+    "summary": "Voice Call",
+    "bubble": "Voice Call"
+   }
+  },
+  {
+   "name": "cinvite/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"cinvite\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 3,
+    "duration": 0,
+    "summary": "Voice Call",
+    "bubble": "Voice Call"
+   }
+  },
+  {
+   "name": "cinvite/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"cinvite\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 3,
+    "duration": 0,
+    "summary": "Voice Call",
+    "bubble": "Voice Call"
+   }
+  },
+  {
+   "name": "v_invite/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_invite\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 9,
+    "duration": 0,
+    "summary": "Video Call",
+    "bubble": "Video Call"
+   }
+  },
+  {
+   "name": "v_invite/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_invite\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 9,
+    "duration": 0,
+    "summary": "Video Call",
+    "bubble": "Video Call"
+   }
+  },
+  {
+   "name": "v_cinvite/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_cinvite\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 10,
+    "duration": 0,
+    "summary": "Video Call",
+    "bubble": "Video Call"
+   }
+  },
+  {
+   "name": "v_cinvite/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_cinvite\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 10,
+    "duration": 0,
+    "summary": "Video Call",
+    "bubble": "Video Call"
+   }
+  },
+  {
+   "name": "canceled/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"canceled\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 6,
+    "duration": 0,
+    "summary": "Missed Voice Call",
+    "bubble": "Missed Call"
+   }
+  },
+  {
+   "name": "canceled/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"canceled\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 6,
+    "duration": 0,
+    "summary": "Cancelled Voice Call",
+    "bubble": "Cancelled"
+   }
+  },
+  {
+   "name": "v_canceled/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_canceled\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 13,
+    "duration": 0,
+    "summary": "Missed Video Call",
+    "bubble": "Missed Call"
+   }
+  },
+  {
+   "name": "v_canceled/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_canceled\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 13,
+    "duration": 0,
+    "summary": "Cancelled Video Call",
+    "bubble": "Cancelled"
+   }
+  },
+  {
+   "name": "deny/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"deny\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 4,
+    "duration": 0,
+    "summary": "Missed Voice Call",
+    "bubble": "Missed Call"
+   }
+  },
+  {
+   "name": "deny/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"deny\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 4,
+    "duration": 0,
+    "summary": "No Answer on Voice Call",
+    "bubble": "No Answer"
+   }
+  },
+  {
+   "name": "v_deny/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_deny\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 11,
+    "duration": 0,
+    "summary": "Missed Video Call",
+    "bubble": "Missed Call"
+   }
+  },
+  {
+   "name": "v_deny/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_deny\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 11,
+    "duration": 0,
+    "summary": "No Answer on Video Call",
+    "bubble": "No Answer"
+   }
+  },
+  {
+   "name": "noanswer/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"noanswer\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 5,
+    "duration": 0,
+    "summary": "Missed Voice Call",
+    "bubble": "Missed Call"
+   }
+  },
+  {
+   "name": "noanswer/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"noanswer\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 5,
+    "duration": 0,
+    "summary": "No Answer on Voice Call",
+    "bubble": "No Answer"
+   }
+  },
+  {
+   "name": "v_noanswer/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_noanswer\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 12,
+    "duration": 0,
+    "summary": "Missed Video Call",
+    "bubble": "Missed Call"
+   }
+  },
+  {
+   "name": "v_noanswer/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_noanswer\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 12,
+    "duration": 0,
+    "summary": "No Answer on Video Call",
+    "bubble": "No Answer"
+   }
+  },
+  {
+   "name": "maintenance/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"maintenance\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 1,
+    "duration": 0,
+    "summary": "The service is currently under maintenance. We apologize for any inconvenience.",
+    "bubble": "The service is currently under maintenance. We apologize for any inconvenience."
+   }
+  },
+  {
+   "name": "maintenance/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"maintenance\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 1,
+    "duration": 0,
+    "summary": "The service is currently under maintenance. We apologize for any inconvenience.",
+    "bubble": "The service is currently under maintenance. We apologize for any inconvenience."
+   }
+  },
+  {
+   "name": "transferred/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"transferred\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 100,
+    "duration": 0,
+    "summary": "Switch to Group Voice Call.",
+    "bubble": "Switch to Group Voice Call."
+   }
+  },
+  {
+   "name": "transferred/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"transferred\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 100,
+    "duration": 0,
+    "summary": "Switch to Group Voice Call.",
+    "bubble": "Switch to Group Voice Call."
+   }
+  },
+  {
+   "name": "v_transferred/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_transferred\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 101,
+    "duration": 0,
+    "summary": "Switch to Group Video Call.",
+    "bubble": "Switch to Group Video Call."
+   }
+  },
+  {
+   "name": "v_transferred/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_transferred\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 101,
+    "duration": 0,
+    "summary": "Switch to Group Video Call.",
+    "bubble": "Switch to Group Video Call."
+   }
+  },
+  {
+   "name": "bye/0/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 0,
+    "summary": "Voice Call 0:00",
+    "bubble": "0:00"
+   }
+  },
+  {
+   "name": "bye/0/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 0,
+    "summary": "Voice Call 0:00",
+    "bubble": "0:00"
+   }
+  },
+  {
+   "name": "bye/7/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 7}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 7,
+    "summary": "Voice Call 0:07",
+    "bubble": "0:07"
+   }
+  },
+  {
+   "name": "bye/7/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 7}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 7,
+    "summary": "Voice Call 0:07",
+    "bubble": "0:07"
+   }
+  },
+  {
+   "name": "bye/42/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 42}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 42,
+    "summary": "Voice Call 0:42",
+    "bubble": "0:42"
+   }
+  },
+  {
+   "name": "bye/42/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 42}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 42,
+    "summary": "Voice Call 0:42",
+    "bubble": "0:42"
+   }
+  },
+  {
+   "name": "bye/80/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 80}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 80,
+    "summary": "Voice Call 1:20",
+    "bubble": "1:20"
+   }
+  },
+  {
+   "name": "bye/80/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 80}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 80,
+    "summary": "Voice Call 1:20",
+    "bubble": "1:20"
+   }
+  },
+  {
+   "name": "bye/600/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 600}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 600,
+    "summary": "Voice Call 10:00",
+    "bubble": "10:00"
+   }
+  },
+  {
+   "name": "bye/600/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 600}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 600,
+    "summary": "Voice Call 10:00",
+    "bubble": "10:00"
+   }
+  },
+  {
+   "name": "bye/3599/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 3599}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 3599,
+    "summary": "Voice Call 59:59",
+    "bubble": "59:59"
+   }
+  },
+  {
+   "name": "bye/3599/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 3599}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 3599,
+    "summary": "Voice Call 59:59",
+    "bubble": "59:59"
+   }
+  },
+  {
+   "name": "bye/3600/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 3600}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 3600,
+    "summary": "Voice Call 1:00:00",
+    "bubble": "1:00:00"
+   }
+  },
+  {
+   "name": "bye/3600/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 3600}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 3600,
+    "summary": "Voice Call 1:00:00",
+    "bubble": "1:00:00"
+   }
+  },
+  {
+   "name": "bye/3725/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 3725}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 3725,
+    "summary": "Voice Call 1:02:05",
+    "bubble": "1:02:05"
+   }
+  },
+  {
+   "name": "bye/3725/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 3725}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 3725,
+    "summary": "Voice Call 1:02:05",
+    "bubble": "1:02:05"
+   }
+  },
+  {
+   "name": "bye/36000/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 36000}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 36000,
+    "summary": "Voice Call 10:00:00",
+    "bubble": "10:00:00"
+   }
+  },
+  {
+   "name": "bye/36000/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 36000}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 36000,
+    "summary": "Voice Call 10:00:00",
+    "bubble": "10:00:00"
+   }
+  },
+  {
+   "name": "v_bye/0/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 0,
+    "summary": "Video Call 0:00",
+    "bubble": "0:00"
+   }
+  },
+  {
+   "name": "v_bye/0/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 0,
+    "summary": "Video Call 0:00",
+    "bubble": "0:00"
+   }
+  },
+  {
+   "name": "v_bye/7/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 7}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 7,
+    "summary": "Video Call 0:07",
+    "bubble": "0:07"
+   }
+  },
+  {
+   "name": "v_bye/7/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 7}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 7,
+    "summary": "Video Call 0:07",
+    "bubble": "0:07"
+   }
+  },
+  {
+   "name": "v_bye/42/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 42}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 42,
+    "summary": "Video Call 0:42",
+    "bubble": "0:42"
+   }
+  },
+  {
+   "name": "v_bye/42/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 42}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 42,
+    "summary": "Video Call 0:42",
+    "bubble": "0:42"
+   }
+  },
+  {
+   "name": "v_bye/80/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 80}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 80,
+    "summary": "Video Call 1:20",
+    "bubble": "1:20"
+   }
+  },
+  {
+   "name": "v_bye/80/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 80}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 80,
+    "summary": "Video Call 1:20",
+    "bubble": "1:20"
+   }
+  },
+  {
+   "name": "v_bye/600/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 600}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 600,
+    "summary": "Video Call 10:00",
+    "bubble": "10:00"
+   }
+  },
+  {
+   "name": "v_bye/600/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 600}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 600,
+    "summary": "Video Call 10:00",
+    "bubble": "10:00"
+   }
+  },
+  {
+   "name": "v_bye/3599/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 3599}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 3599,
+    "summary": "Video Call 59:59",
+    "bubble": "59:59"
+   }
+  },
+  {
+   "name": "v_bye/3599/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 3599}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 3599,
+    "summary": "Video Call 59:59",
+    "bubble": "59:59"
+   }
+  },
+  {
+   "name": "v_bye/3600/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 3600}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 3600,
+    "summary": "Video Call 1:00:00",
+    "bubble": "1:00:00"
+   }
+  },
+  {
+   "name": "v_bye/3600/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 3600}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 3600,
+    "summary": "Video Call 1:00:00",
+    "bubble": "1:00:00"
+   }
+  },
+  {
+   "name": "v_bye/3725/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 3725}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 3725,
+    "summary": "Video Call 1:02:05",
+    "bubble": "1:02:05"
+   }
+  },
+  {
+   "name": "v_bye/3725/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 3725}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 3725,
+    "summary": "Video Call 1:02:05",
+    "bubble": "1:02:05"
+   }
+  },
+  {
+   "name": "v_bye/36000/other",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 36000}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 36000,
+    "summary": "Video Call 10:00:00",
+    "bubble": "10:00:00"
+   }
+  },
+  {
+   "name": "v_bye/36000/mine",
+   "authored_by_self": true,
+   "attachment": "{\"type\": \"v_bye\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 36000}",
+   "expected": {
+    "voip_type": 14,
+    "duration": 36000,
+    "summary": "Video Call 10:00:00",
+    "bubble": "10:00:00"
+   }
+  },
+  {
+   "name": "add/empty-member",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"add\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0, \"member\": []}",
+   "expected": {
+    "voip_type": 8,
+    "duration": 0,
+    "summary": " joined the Voice Call",
+    "bubble": " joined the Voice Call"
+   }
+  },
+  {
+   "name": "v_add/empty-member",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"v_add\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0, \"member\": []}",
+   "expected": {
+    "voip_type": 15,
+    "duration": 0,
+    "summary": " joined the Video Call",
+    "bubble": " joined the Video Call"
+   }
+  },
+  {
+   "name": "add/unknown-member",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"add\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0, \"member\": [123456789]}",
+   "expected": {
+    "voip_type": 8,
+    "duration": 0,
+    "summary": "(Unknown) joined the Voice Call",
+    "bubble": "(Unknown) joined the Voice Call"
+   }
+  },
+  {
+   "name": "unknown-type",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"ring\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 0}",
+   "expected": {
+    "voip_type": 0,
+    "duration": 0,
+    "summary": "Please answer the call on your mobile.",
+    "bubble": "Please answer the call on your mobile."
+   }
+  },
+  {
+   "name": "uppercase-type",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"BYE\", \"csIP\": \"192.0.2.1\", \"csIP6\": \"2001:db8::1\", \"csPort\": 9000, \"callId\": \"1000000000000000001\", \"duration\": 80}",
+   "expected": {
+    "voip_type": 0,
+    "duration": 80,
+    "summary": "Please answer the call on your mobile.",
+    "bubble": "Please answer the call on your mobile."
+   }
+  },
+  {
+   "name": "missing-type",
+   "authored_by_self": false,
+   "attachment": "{\"duration\": 5}",
+   "expected": {
+    "voip_type": 0,
+    "duration": 5,
+    "summary": "Please answer the call on your mobile.",
+    "bubble": "Please answer the call on your mobile."
+   }
+  },
+  {
+   "name": "empty-attachment",
+   "authored_by_self": false,
+   "attachment": "",
+   "expected": {
+    "voip_type": 0,
+    "duration": 0,
+    "summary": "Please answer the call on your mobile.",
+    "bubble": "Please answer the call on your mobile."
+   }
+  },
+  {
+   "name": "no-attachment",
+   "authored_by_self": false,
+   "attachment": null,
+   "expected": {
+    "voip_type": 0,
+    "duration": 0,
+    "summary": "Please answer the call on your mobile.",
+    "bubble": "Please answer the call on your mobile."
+   }
+  },
+  {
+   "name": "malformed-json",
+   "authored_by_self": false,
+   "attachment": "{not json",
+   "expected": {
+    "voip_type": 0,
+    "duration": 0,
+    "summary": "Please answer the call on your mobile.",
+    "bubble": "Please answer the call on your mobile."
+   }
+  },
+  {
+   "name": "array-json",
+   "authored_by_self": false,
+   "attachment": "[1,2]",
+   "expected": {
+    "voip_type": 0,
+    "duration": 0,
+    "summary": "Please answer the call on your mobile.",
+    "bubble": "Please answer the call on your mobile."
+   }
+  },
+  {
+   "name": "bye-duration-string",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"bye\", \"duration\": \"80\"}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 80,
+    "summary": "Voice Call 1:20",
+    "bubble": "1:20"
+   }
+  },
+  {
+   "name": "bye-duration-float",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"bye\", \"duration\": 80.9}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 80,
+    "summary": "Voice Call 1:20",
+    "bubble": "1:20"
+   }
+  },
+  {
+   "name": "bye-duration-negative",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"bye\", \"duration\": -5}",
+   "expected": {
+    "voip_type": 7,
+    "duration": -5,
+    "summary": "Voice Call 0:-5",
+    "bubble": "0:-5"
+   }
+  },
+  {
+   "name": "bye-duration-missing",
+   "authored_by_self": false,
+   "attachment": "{\"type\": \"bye\"}",
+   "expected": {
+    "voip_type": 7,
+    "duration": 0,
+    "summary": "Voice Call 0:00",
+    "bubble": "0:00"
+   }
+  },
+  {
+   "name": "type-number",
+   "authored_by_self": false,
+   "attachment": "{\"type\": 7, \"duration\": 80}",
+   "official_result": "the isolated process died during -update; no text was produced",
+   "mooo_deviation": "mooo cannot crash on hostile input; it treats a non-string type as an unrecognized call event, which the official client shows for every other unrecognized type.",
+   "mooo_expected": {
+    "summary": "Please answer the call on your mobile."
+   }
+  }
+ ]
+}

@@ -30,7 +30,7 @@ func TestDeletedFlagKeepsIdentityButWithholdsContent(t *testing.T) {
 func TestNamedUnsupportedMessageTypesPreserveIdentity(t *testing.T) {
 	for _, typ := range []int32{
 		messagetype.AnimatedEmoticon, messagetype.Spritecon, messagetype.AnimatedStickerEx,
-		messagetype.Schedule, messagetype.Mvoip, messagetype.Universal,
+		messagetype.Schedule, messagetype.Universal,
 		messagetype.Text | messagetype.OpenLinkIllegalBlindFlag,
 		messagetype.Text | messagetype.SecretChatTypeFlag,
 		1234567, // Future unknown values remain observable too.
