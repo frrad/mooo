@@ -144,8 +144,8 @@ func TestSessionCloseWaitsForSelectedCompletionBeforeCancelling(t *testing.T) {
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- session.Close() }()
 	select {
-	case <-closeDone: //nolint:errcheck // waits for completion; the result is not under test
-		t.Fatal("close completed before selected completion scheduling")
+	case err := <-closeDone:
+		t.Fatalf("close completed (err=%v) before selected completion scheduling", err)
 	case <-time.After(20 * time.Millisecond):
 	}
 	close(scheduler.release)

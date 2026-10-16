@@ -526,7 +526,7 @@ func TestQRLoginCancelInterruptsLongServerPollInterval(t *testing.T) {
 	t.Cleanup(func() {
 		login.Cancel()
 		select {
-		case <-done: //nolint:errcheck // waits for completion; the result is not under test
+		case <-done: //nolint:errcheck // cleanup only drains; the test body checks the result
 		case <-time.After(time.Second):
 		}
 	})
@@ -550,7 +550,10 @@ func TestQRLoginCancelInterruptsLongServerPollInterval(t *testing.T) {
 	}
 	login.Cancel()
 	select {
-	case <-done: //nolint:errcheck // waits for completion; the result is not under test
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Wait error = %v, want context.Canceled", err)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("cancel did not interrupt long server interval")
 	}

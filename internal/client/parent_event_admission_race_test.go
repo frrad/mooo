@@ -14,17 +14,20 @@ func TestParentEventsRechecksShutdownAdmission(t *testing.T) {
 		close(raw)
 		c := &Client{session: &session{pushes: raw}}
 		start := make(chan struct{})
-		returned := make(chan error, 2)
-		go func() { <-start; _, e := c.Events(context.Background()); returned <- e }()
+		eventsReturned := make(chan struct{})
+		shutdownErr := make(chan error, 1)
+		go func() { <-start; _, _ = c.Events(context.Background()); close(eventsReturned) }()
 		go func() {
 			<-start
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
-			returned <- c.Shutdown(ctx)
+			shutdownErr <- c.Shutdown(ctx)
 		}()
 		close(start)
-		<-returned //nolint:errcheck // waits for completion; the result is not under test
-		<-returned //nolint:errcheck // waits for completion; the result is not under test
+		<-eventsReturned
+		if err := <-shutdownErr; err != nil {
+			t.Fatalf("iteration%d shutdown: %v", i, err)
+		}
 		c.mu.Lock()
 		late := c.eventDone != nil
 		c.mu.Unlock()

@@ -240,7 +240,9 @@ func TestSessionLateReplyToAbandonedRequestDisarmsReceiveHeaderTimeout(t *testin
 	request := receiveRequest(t, headers)
 	waitForCondition(t, func() bool { return liveHeaderTimers(clock) == 1 })
 	cancel()
-	<-requestDone //nolint:errcheck // waits for completion; the result is not under test
+	if err := <-requestDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("abandoned request error = %v, want context.Canceled", err)
+	}
 
 	writeStatusReply(t, serverConn, request)
 	waitForCondition(t, func() bool { return liveHeaderTimers(clock) == 0 })

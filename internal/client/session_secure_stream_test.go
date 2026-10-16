@@ -43,7 +43,7 @@ func TestSessionSecureCoalescedEnvelopeDispatchesBothPackets(t *testing.T) {
 		_ = serverConn.Close()
 		if serverStarted && !serverFinished {
 			select {
-			case <-serverDone: //nolint:errcheck // waits for completion; the result is not under test
+			case <-serverDone: //nolint:errcheck // the pipe was just closed, so the writer may fail
 			case <-time.After(time.Second):
 				t.Errorf("server writer did not stop during cleanup")
 			}

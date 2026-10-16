@@ -152,7 +152,10 @@ func TestSessionQueuedWriterHonorsContextCancellation(t *testing.T) {
 	}
 	_ = clientConn.Close()
 	select {
-	case <-firstDone: //nolint:errcheck // waits for completion; the result is not under test
+	case err := <-firstDone:
+		if err == nil {
+			t.Fatal("first blocked request succeeded after close")
+		}
 	case <-time.After(time.Second):
 		t.Fatal("first blocked request did not finish after close")
 	}
@@ -196,13 +199,19 @@ func TestSessionCanceledWriteRestoresDeadlineForNextRequest(t *testing.T) {
 		second <- err
 	}()
 	select {
-	case <-secondRead: //nolint:errcheck // waits for completion; the result is not under test
+	case err := <-secondRead:
+		if err != nil {
+			t.Fatalf("peer read of next write: %v", err)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("next write remained blocked after canceled write")
 	}
 	cancelSecond()
 	select {
-	case <-second: //nolint:errcheck // waits for completion; the result is not under test
+	case err := <-second:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("next request error = %v, want context.Canceled", err)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("next request did not finish")
 	}
