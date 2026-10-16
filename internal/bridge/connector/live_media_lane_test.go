@@ -64,7 +64,9 @@ func TestLivePhotoDoesNotWaitBehindPacedMetadataRead(t *testing.T) {
 		default:
 			close(release)
 		}
-		<-metadataDone
+		if err := <-metadataDone; err != nil {
+			t.Error(err)
+		}
 		if err := source.Shutdown(context.Background()); err != nil {
 			t.Error(err)
 		}
