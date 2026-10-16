@@ -24,6 +24,10 @@ docker compose pull
 Pin a commit tag instead of `main` when you want an exact, rollback-able
 revision.
 
+A new QR login registers a device named after the container's hostname, shown
+in KakaoTalk's device list. Set `MOOO_DEVICE_NAME` to choose it (default
+`mooo-bridge`).
+
 ## Build and configure
 
 To build locally instead, the build uses the Go toolchain pinned in the Dockerfile, the pure-Go Olm backend, and cgo SQLite. The runtime
