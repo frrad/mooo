@@ -99,6 +99,39 @@ must not recursively renew, retry an ambiguous mutation, or loop on rejection.
 The profile owner lease covers reading the old generation, renewal, atomic state
 replacement, and the subsequent login.
 
+### Web API token expiry (SL-BIN-042)
+
+The authenticated web APIs renew the same credential when a request is rejected
+for an expired access token, independently of LOCO. The official client has
+three HTTP stacks, and all of them share one token-manager renewal:
+
+- katalk JSON client: expiry is HTTP 401 with a JSON body whose
+  `reason.detailCode` is `9503` or whose top-level `status` is `-950`. A 401
+  without either marker is passed to the caller without renewal;
+- talk-pilsner command client (reactions): expiry is HTTP 401 with the response
+  header `talk-served-by: gateway`; the body is not inspected;
+- Swift request retrier: the same 401 body test as the katalk client.
+
+When a request expires, it is queued with its verb and parameters, and renewal
+starts unless one is already running. Requests issued while renewal is in
+flight are queued, not sent. When renewal succeeds, the replacement triple is
+installed and every queued request is replayed with the new Authorization,
+mutations (POST/PUT/PATCH/DELETE) included. On the katalk client each request
+gets one renewal and one replay; a second expiry returns the original failure.
+When renewal fails, every queued request fails. Renewal status `-998` maps to a
+kickout and `-999` to an authentication notice; the token layer itself does not
+log out.
+
+mooo renews and replays once on any web HTTP 401. Concurrent rejections of the
+same token share one renewal: a caller whose rejected token has already been
+replaced only replays. A renewal failure is joined to the 401, with
+`ErrSignedOut` for `-998`/`-999`. A deliberate deviation: mooo does not check
+the expiry markers, so it also renews on an unmarked 401. That costs at most one
+extra renewal per rejected request. A 401 means the server refused the request,
+so the replay cannot apply a mutation twice. Open gaps: the retry cap on the
+pilsner client, JSON `status: -950` returned with a non-401 HTTP status on the
+other katalk clients, and what happens downstream of the `-999` notice.
+
 ### QR validation and results
 
 QR generation returns an opaque server string. The client validates it, parses its

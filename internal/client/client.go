@@ -20,7 +20,6 @@ import (
 	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"github.com/frrad/mooo/internal/protocol/reactions"
 	"github.com/frrad/mooo/internal/protocol/sessionlogin"
-	"github.com/frrad/mooo/internal/protocol/tokenrefresh"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -36,7 +35,9 @@ var errCommitOrder = errors.New("client: event commit is not the next delivered 
 // must make an explicit lifecycle decision so an ambiguous mutation is not
 // repeated.
 type Client struct {
-	mu             sync.Mutex
+	mu sync.Mutex
+	// renewMu serializes credential renewal between connect and web calls.
+	renewMu        sync.Mutex
 	connectActive  bool
 	connectDone    chan struct{}
 	shutdownActive bool
@@ -309,12 +310,8 @@ func (c *Client) connect(ctx context.Context) (*session, error) {
 		if store == nil || !errors.As(err, &status) || status.Status != -950 {
 			return nil, err
 		}
-		if renewErr := c.renewCredentials(ctx); renewErr != nil {
-			var rejected tokenrefresh.RejectedError
-			if errors.As(renewErr, &rejected) && (rejected.Status == -998 || rejected.Status == -999) {
-				return nil, errors.Join(ErrCredentialRenewal, ErrSignedOut, renewErr)
-			}
-			return nil, errors.Join(ErrCredentialRenewal, renewErr)
+		if renewErr := c.renewRejected(ctx, state); renewErr != nil {
+			return nil, renewErr
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -717,63 +714,66 @@ func (c *Client) httpProfile(ctx context.Context) (macweb.Doer, authstate.State,
 // AddFriendByPhone performs the authenticated HTTP mutation without changing
 // the LOCO session lifecycle.
 func (c *Client) AddFriendByPhone(ctx context.Context, request friends.AddByPhoneRequest) (friends.Friend, error) {
-	doer, state, err := c.httpProfile(ctx)
-	if err != nil {
-		return friends.Friend{}, err
-	}
-	return addFriendByPhone(ctx, doer, state, request)
+	return webCall(c, ctx, func(doer macweb.Doer, state authstate.State) (friends.Friend, error) {
+		return addFriendByPhone(ctx, doer, state, request)
+	})
 }
 
 // React applies or cancels one reaction through the authenticated HTTP API.
 // It sends the mutation exactly once and does not require a new LOCO login.
 func (c *Client) React(ctx context.Context, request reactions.Request) (reactions.Response, error) {
-	doer, state, err := c.httpProfile(ctx)
-	if err != nil {
-		return reactions.Response{}, err
-	}
 	if request.RequestID == 0 {
 		request.RequestID = time.Now().UnixMilli()
 	}
-	return sendReaction(ctx, doer, state, request)
+	return webCall(c, ctx, func(doer macweb.Doer, state authstate.State) (reactions.Response, error) {
+		return sendReaction(ctx, doer, state, request)
+	})
 }
 
 // ReactionMembers returns the current user IDs grouped by reaction type for one
 // message. It is a read-only HTTP lookup and does not open a LOCO session.
 func (c *Client) ReactionMembers(ctx context.Context, chatID, logID int64) (reactions.MembersResponse, error) {
-	doer, state, err := c.httpProfile(ctx)
-	if err != nil {
+	if _, _, err := c.httpProfile(ctx); err != nil {
 		return reactions.MembersResponse{}, err
 	}
 	return historyReadJSON(c, ctx, []any{"reaction-members", chatID, logID}, func(ctx context.Context) (reactions.MembersResponse, error) {
-		return reactionMembers(ctx, doer, state, chatID, logID)
+		return webCall(c, ctx, func(doer macweb.Doer, state authstate.State) (reactions.MembersResponse, error) {
+			return reactionMembers(ctx, doer, state, chatID, logID)
+		})
 	})
 }
 
 // ReactionMetaSync reads one page of message metadata (reaction) changes
 // newer than cur, without opening a LOCO session.
 func (c *Client) ReactionMetaSync(ctx context.Context, chatID, cur int64) (reactions.SyncMetaPage, error) {
-	doer, state, err := c.httpProfile(ctx)
+	_, state, err := c.httpProfile(ctx)
 	if err != nil {
 		return reactions.SyncMetaPage{}, err
 	}
-	profile, err := webProfile(state)
-	if err != nil {
+	if _, err := webProfile(state); err != nil {
 		return reactions.SyncMetaPage{}, err
 	}
 	return historyReadJSON(c, ctx, []any{"reaction-meta", chatID, cur}, func(ctx context.Context) (reactions.SyncMetaPage, error) {
-		return reactions.FetchSyncMeta(ctx, doer, profile, chatID, cur)
+		return webCall(c, ctx, func(doer macweb.Doer, state authstate.State) (reactions.SyncMetaPage, error) {
+			profile, err := webProfile(state)
+			if err != nil {
+				return reactions.SyncMetaPage{}, err
+			}
+			return reactions.FetchSyncMeta(ctx, doer, profile, chatID, cur)
+		})
 	})
 }
 
 // MiniReactionDetails returns attribution for the separate mini/custom-
 // reaction data source without opening a LOCO session.
 func (c *Client) MiniReactionDetails(ctx context.Context, chatID, linkID, logID int64) (reactions.DetailsResponse, error) {
-	doer, state, err := c.httpProfile(ctx)
-	if err != nil {
+	if _, _, err := c.httpProfile(ctx); err != nil {
 		return reactions.DetailsResponse{}, err
 	}
 	return historyReadJSON(c, ctx, []any{"mini-details", chatID, linkID, logID}, func(ctx context.Context) (reactions.DetailsResponse, error) {
-		return miniReactionDetails(ctx, doer, state, chatID, linkID, logID)
+		return webCall(c, ctx, func(doer macweb.Doer, state authstate.State) (reactions.DetailsResponse, error) {
+			return miniReactionDetails(ctx, doer, state, chatID, linkID, logID)
+		})
 	})
 }
 

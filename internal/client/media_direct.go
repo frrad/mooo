@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/frrad/mooo/internal/authstate"
+	"github.com/frrad/mooo/internal/protocol/macweb"
 	"github.com/frrad/mooo/internal/protocol/media"
 )
 
@@ -17,19 +19,21 @@ func (c *Client) directPhoto(ctx context.Context, s *session, chatID int64, data
 	fail := func(err error) (media.SendResult, error) {
 		return media.SendResult{}, fmt.Errorf("%w: %w", ErrPhotoNotCreated, err)
 	}
-	doer, state, err := c.httpProfile(ctx)
-	if err != nil {
-		return fail(err)
-	}
-	profile, err := webProfile(state)
-	if err != nil {
-		return fail(err)
-	}
 	image, err := media.PrepareImage(data)
 	if err != nil {
 		return fail(err)
 	}
-	ticket, err := media.PrepareDirectPhoto(ctx, doer, profile, chatID, image)
+	// Only the authorized prepare step can be refused with HTTP 401.
+	var doer macweb.Doer
+	var profile macweb.Profile
+	ticket, err := webCall(c, ctx, func(d macweb.Doer, state authstate.State) (media.PhotoTicket, error) {
+		p, err := webProfile(state)
+		if err != nil {
+			return media.PhotoTicket{}, err
+		}
+		doer, profile = d, p
+		return media.PrepareDirectPhoto(ctx, d, p, chatID, image)
+	})
 	if err != nil {
 		return fail(err)
 	}
