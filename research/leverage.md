@@ -198,6 +198,11 @@ Deliberate deviations (each executed case that differs carries a
   ([group replies](bridge/GROUP-REPLIES.md)). An oversized attachment that
   holds `CAL` is unreadable to mooo and shows the plain summary.
 
+With `network.debug_dump_dir` set, every bridged card's full raw chat log is
+also written there (`gap-partly_displayed-*.json`, owner-only, private
+content), so real samples of other layouts can be collected before their
+content is implemented.
+
 ## Gaps
 
 - Calendar cards (`CAL`) and their summary text.

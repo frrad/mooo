@@ -110,3 +110,36 @@ func TestNilGapObserverAddsNoWork(t *testing.T) {
 	var gaps gapFunc
 	gaps.observe("MSG", events.MessageGap{}, nil)
 }
+
+// A shared card (type 71) is bridged only as its summary and link, so its
+// full raw record is observed too: the debug dump is how samples of the card
+// content are collected. A card that falls back to the unsupported notice is
+// still observed as unsupported.
+func TestGapObserverReceivesPartlyDisplayedLeverageCards(t *testing.T) {
+	var got []GapObservation
+	gaps := newGapFunc(func(o GapObservation) { got = append(got, o) })
+	cardLog, err := bson.Marshal(bson.D{{Key: "logId", Value: int64(101)}, {Key: "type", Value: int32(71)}, {Key: "authorId", Value: int64(8)},
+		{Key: "sendAt", Value: int32(1300)}, {Key: "message", Value: "synthetic card summary"},
+		{Key: "attachment", Value: `{"P":{"TP":"Feed","L":{"LPC":"https://example.com/card"}},"C":{"TI":{"TD":{"T":"synthetic title"}}}}`}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	card := gapTestPacket(t, cardLog)
+	emptyCard := gapTestPacket(t, gapTestChatLog(t, 102, 71, "message", ""))
+	raw := make(chan loco.Packet, 2)
+	raw <- card
+	raw <- emptyCard
+	close(raw)
+	output := make(chan events.Result, 2)
+	decodeEventStreamWithTerminalStop(raw, output, nil, func(int64, int64) {}, nil, nil, gaps)
+
+	if len(got) != 2 {
+		t.Fatalf("observations = %+v, want 2", got)
+	}
+	if got[0].Gap.LogID != 101 || got[0].Gap.Type != 71 || got[0].Gap.AuthorID != 8 || got[0].Gap.SentAt != 1300 || got[0].Gap.Reason != GapReasonPartlyDisplayed || !bytes.Equal(got[0].Body, card.Body) {
+		t.Fatalf("card observation = %+v", got[0])
+	}
+	if got[1].Gap.LogID != 102 || got[1].Gap.Reason != GapReasonUnsupportedType {
+		t.Fatalf("empty card observation = %+v", got[1])
+	}
+}
