@@ -49,7 +49,7 @@ const (
 // notice. An unreadable attachment only loses the link, as in the official
 // client, whose summary does not depend on it.
 func decodeLeverage(env chatlog.Envelope) (Event, error) {
-	unsupported := UnsupportedMessage{ChatID: env.ChatID, LogID: env.LogID, Type: env.Type}
+	unsupported := UnsupportedMessage{ChatID: env.ChatID, LogID: env.LogID, Type: env.Type, AuthorID: env.AuthorID, SentAt: env.SentAt}
 	message, ok := env.Log.Lookup("message").StringValueOK()
 	if !ok || len(message) > maxLeverageText || !validEventString(message) || strings.TrimSpace(message) == "" {
 		return unsupported, nil

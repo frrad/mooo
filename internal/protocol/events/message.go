@@ -176,7 +176,6 @@ type UnsupportedMessage struct {
 	Type     int32
 	AuthorID int64
 	SentAt   int64
-	Message  string
 }
 
 func (UnsupportedMessage) Kind() Kind           { return KindUnsupportedMessage }
@@ -197,9 +196,7 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 	if decode, ok := messageDecoders[env.Type]; ok {
 		return decode(env)
 	}
-	// Keep author and raw text so the bridge can still show something useful.
-	message, _, _ := fields.String(env.Log, "message", "msg")
-	return UnsupportedMessage{ChatID: env.ChatID, LogID: env.LogID, Type: env.Type, AuthorID: env.AuthorID, SentAt: env.SentAt, Message: message}, nil
+	return UnsupportedMessage{ChatID: env.ChatID, LogID: env.LogID, Type: env.Type, AuthorID: env.AuthorID, SentAt: env.SentAt}, nil
 }
 
 // messageDecoders maps each supported chatLog.type to its content decoder.

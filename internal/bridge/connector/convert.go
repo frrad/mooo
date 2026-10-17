@@ -99,9 +99,10 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 			Body: malformedPayloadNotice(evt.Reason), Metadata: metadata,
 		}, convertNoticeWithMetadata)
 	case events.UnsupportedMessage:
-		notice := unsupportedMessageText(evt)
+		// The metadata keeps author 0 so the notice is never a reply target:
+		// the bridge cannot build the official reply to a type it cannot read.
 		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, noticeData{
-			Body: notice, Metadata: newKakaoMessageMetadata(evt.ChatID, evt.LogID, evt.AuthorID, evt.Type, "", 0),
+			Body: unsupportedNotice(evt.Type, kc.debugDumpDir != ""), Metadata: newKakaoMessageMetadata(evt.ChatID, evt.LogID, 0, evt.Type, "", 0),
 		}, convertNoticeWithMetadata)
 	case events.MemberAdded:
 		return kc.memberChange(evt.ChatID, evt.LogID, 0, evt.Members, true)
@@ -614,11 +615,13 @@ func (kc *KakaoClient) logMessageGap(evt events.MessageGap) {
 		Msg("Kakao message content failed decoding; bridged as a malformed_payload notice")
 }
 
-// unsupportedMessageText shows a type without a converter as its own text
-// when it carries one, and as the generic notice otherwise.
-func unsupportedMessageText(evt events.UnsupportedMessage) string {
-	if evt.Message != "" {
-		return evt.Message
+// unsupportedNotice names the type and says where its raw content can be
+// found: the gap observer dumps every unsupported message when
+// network.debug_dump_dir is set.
+func unsupportedNotice(messageType int32, dumping bool) string {
+	notice := fmt.Sprintf("A KakaoTalk message of unsupported type %d was sent.", messageType)
+	if dumping {
+		return notice + " Its raw content was written to the bridge's private debug dump directory."
 	}
-	return fmt.Sprintf("A KakaoTalk message of unsupported type %d was sent.", evt.Type)
+	return notice + " Set network.debug_dump_dir in the bridge config to keep a private copy of messages like this."
 }
