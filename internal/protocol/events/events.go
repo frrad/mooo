@@ -34,6 +34,7 @@ const (
 	KindMultiPhotoMessage   Kind = "multi_photo_message"
 	KindStickerMessage      Kind = "sticker_message"
 	KindCallMessage         Kind = "call_message"
+	KindLeverageMessage     Kind = "leverage_message"
 	KindMessageGap          Kind = "message_gap"
 	KindUnsupportedMessage  Kind = "unsupported_message"
 	KindReactionChanged     Kind = "reaction_changed"

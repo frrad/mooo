@@ -1,0 +1,1708 @@
+{
+ "provenance": {
+  "kind": "executed",
+  "client": "KakaoTalk for Mac 26.8.0 (arm64)",
+  "date": "2026-10-16",
+  "method": "Isolated logged-out MoooKakaoProbe copy of the official binary, spawned under Frida. For each case: NTChatLeverage alloc/init, setAuthorId (the logged-out own user ID 0 when authored_by_self, else a synthetic ID), setMessage (skipped when message is null), setAttachment (skipped when attachment is null), setStatus 1; then -lastMessage: NO (summary) and YES (export_summary, the reply src_message source), -subtype, -availableForReply/-availableForReaction (the NTChatMessage base predicates, which need a chat room, were replaced with YES so only the type-71 override decides), and from +[KAOLeverageMessageData leverageDataWithUserMessage:] -subtypeString, -availablePulicLinkUrlString (the tap link), -isMobileOnlyMessage, -lockable, -adultOnly, and +[KAOLeverageMessageCellView subTypeViewClassWithMessage:leverageMessageData:] (bubble_view). A case that killed the process is recorded as crashed and the run restarted after it. +[NTChatMessage classWithType:message:chatId:] returned NTChatLeverage for both 71 and 73. Original preferences were hash-checked unchanged.",
+  "doc": "research/leverage.md"
+ },
+ "notes": "Inputs are synthetic. Unless mooo_expected says otherwise, mooo bridges summary as the message body, appends public_link (the tap link) on its own line, and allows a Matrix reply exactly when reply_available is true and a Matrix reaction exactly when reaction_available is true. No chat room is attached, so the growable rule (BC, Plus chats only) never applied. The logged-out harness has no adult verification, so reply_available is false for ADULT cards; a verified account would see Reply.",
+ "cases": [
+  {
+   "name": "feed/other",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "feed/mine",
+   "authored_by_self": true,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "profile/other",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Profile\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"PR\": {\"TH\": {\"THU\": \"https://example.com/p.jpg\", \"W\": 200, \"H\": 200}, \"TD\": {\"T\": \"Synthetic Channel\", \"D\": \"Synthetic description\"}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}, \"TI\": {\"TD\": {\"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"SB\": 2112}, \"BUL\": [{\"BU\": {\"T\": \"Home\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Profile",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageProfileMessageView"
+   }
+  },
+  {
+   "name": "tp/List",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"List\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"HD\": {\"TD\": {\"T\": \"Synthetic list\"}}, \"ITL\": [{\"TD\": {\"T\": \"a\"}}], \"BUL\": []}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "List",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageListMessageView"
+   }
+  },
+  {
+   "name": "tp/Commerce",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Commerce\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Commerce",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageCommerceItemMessageView"
+   }
+  },
+  {
+   "name": "tp/Music",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Music\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Music",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMusicMessageView"
+   }
+  },
+  {
+   "name": "tp/TalkMusic",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"TalkMusic\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "TalkMusic",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageTalkMusicMessageView"
+   }
+  },
+  {
+   "name": "tp/MelonMusic",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"MelonMusic\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "MelonMusic",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMelonMusicMessageView"
+   }
+  },
+  {
+   "name": "tp/MelonList",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"MelonList\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "MelonList",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMelonListMessageView"
+   }
+  },
+  {
+   "name": "tp/Noti",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Noti\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Noti",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageNotifyMessageView"
+   }
+  },
+  {
+   "name": "tp/Carousel",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Carousel\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Carousel_(null)",
+    "reply_available": true,
+    "reaction_available": false,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMessageView"
+   }
+  },
+  {
+   "name": "tp/_Cover",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"_Cover\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "_Cover",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageCoverMessageView"
+   }
+  },
+  {
+   "name": "tp/_Brand",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"_Brand\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "_Brand",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageBrandMessageView"
+   }
+  },
+  {
+   "name": "tp/FEED",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"FEED\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "FEED",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "tp/feed",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "tp/Unknownzz",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Unknownzz\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Unknownzz",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMessageView"
+   }
+  },
+  {
+   "name": "tp/empty",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMessageView"
+   }
+  },
+  {
+   "name": "tp/missing",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": null,
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMessageView"
+   }
+  },
+  {
+   "name": "tp/number",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": 1, \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "crashed": true
+   },
+   "mooo_deviation": "A non-string TP killed the official process. mooo does not read TP, so the card renders normally.",
+   "mooo_expected": {
+    "kind": "leverage",
+    "summary": "Synthetic card summary",
+    "link": "https://example.com/card",
+    "reply": true,
+    "reaction": true
+   }
+  },
+  {
+   "name": "message-differs-from-ME",
+   "authored_by_self": false,
+   "message": "Chat log message text",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Attachment ME text\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Chat log message text",
+    "export_summary": "Chat log message text",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "ME-missing",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "message-empty",
+   "authored_by_self": false,
+   "message": "",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "",
+    "export_summary": "",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   },
+   "mooo_deviation": "The official summary is empty; an empty Matrix message is not useful, so the generic unsupported notice is kept.",
+   "mooo_expected": {
+    "kind": "unsupported"
+   }
+  },
+  {
+   "name": "message-nil",
+   "authored_by_self": false,
+   "message": null,
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": null,
+    "export_summary": null,
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   },
+   "mooo_deviation": "The official summary is nil; treated like an empty summary.",
+   "mooo_expected": {
+    "kind": "unsupported"
+   }
+  },
+  {
+   "name": "message-multiline-long",
+   "authored_by_self": false,
+   "message": "Line one\nLine two xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Line one\nLine two xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "export_summary": "Line one\nLine two xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "message-whitespace",
+   "authored_by_self": false,
+   "message": "   ",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "   ",
+    "export_summary": "   ",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   },
+   "mooo_deviation": "The official summary is only whitespace; treated like an empty summary.",
+   "mooo_expected": {
+    "kind": "unsupported"
+   }
+  },
+  {
+   "name": "attachment-nil",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": null,
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": null,
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMessageView"
+   }
+  },
+  {
+   "name": "attachment-empty",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": null,
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMessageView"
+   }
+  },
+  {
+   "name": "attachment-not-json",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "not json",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": null,
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMessageView"
+   }
+  },
+  {
+   "name": "attachment-array",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "[]",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": null,
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMessageView"
+   }
+  },
+  {
+   "name": "attachment-empty-object",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": null,
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMessageView"
+   }
+  },
+  {
+   "name": "P-missing",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": null,
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMessageView"
+   }
+  },
+  {
+   "name": "C-missing",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "P-not-object",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": \"x\", \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "crashed": true
+   },
+   "mooo_deviation": "A non-object P killed the official process. mooo ignores it: the summary is shown with no link and replies are allowed.",
+   "mooo_expected": {
+    "kind": "leverage",
+    "summary": "Synthetic card summary",
+    "link": null,
+    "reply": true,
+    "reaction": true
+   }
+  },
+  {
+   "name": "lock",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"LOCK\": true}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": false,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": true,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageLockMessageView"
+   }
+  },
+  {
+   "name": "adult",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": true, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": false,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": true,
+    "bubble_view": "KAOLeverageAdultMessageView"
+   },
+   "mooo_deviation": "The official link opens only after adult verification, which the bridge cannot check; the link is omitted.",
+   "mooo_expected": {
+    "kind": "leverage",
+    "summary": "Synthetic card summary",
+    "link": null,
+    "reply": false,
+    "reaction": true
+   }
+  },
+  {
+   "name": "lock-false-string",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"LOCK\": \"false\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "forward-false",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": false, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "vm-newer",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"99.0.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "vm-missing",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "desktop-expose-false",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": false, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": true,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMobileMessageView"
+   }
+  },
+  {
+   "name": "link-lcm",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LCM\": \"https://example.com/mac\", \"LPC\": \"https://example.com/pc\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/mac",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "link-lpc-only",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/pc\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/pc",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "link-lmo-only",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LMO\": \"https://example.com/mo\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "link-lcm-empty",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LCM\": \"\", \"LPC\": \"https://example.com/pc\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/pc",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "link-http",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"http://example.com/pc\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "http://example.com/pc",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "link-custom-scheme",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"kakaotalk://example\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "kakaotalk://example",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   },
+   "mooo_deviation": "Only http and https links are bridged, as the official tap handler opens only those directly.",
+   "mooo_expected": {
+    "kind": "leverage",
+    "summary": "Synthetic card summary",
+    "link": null,
+    "reply": true,
+    "reaction": true
+   }
+  },
+  {
+   "name": "link-lat-app",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LAT\": \"app\", \"LPC\": \"https://example.com/pc\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "link-lat-web",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LAT\": \"web\", \"LPC\": \"https://example.com/pc\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/pc",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "link-lat-weblink",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LAT\": \"weblink\", \"LPC\": \"https://example.com/pc\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/pc",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "link-laa",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LAA\": true, \"LPC\": \"https://example.com/pc\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/pc",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   },
+   "mooo_deviation": "The official client opens an authorized (LAA) link with account authorization; the bridge cannot, so the link is omitted.",
+   "mooo_expected": {
+    "kind": "leverage",
+    "summary": "Synthetic card summary",
+    "link": null,
+    "reply": true,
+    "reaction": true
+   }
+  },
+  {
+   "name": "link-spaces",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/a b?q=1#f\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/a b?q=1#f",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   },
+   "mooo_deviation": "The official tap handler percent-encodes an unparseable URL; mooo omits links containing spaces or control characters instead.",
+   "mooo_expected": {
+    "kind": "leverage",
+    "summary": "Synthetic card summary",
+    "link": null,
+    "reply": true,
+    "reaction": true
+   }
+  },
+  {
+   "name": "link-missing",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "link-not-object",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": \"https://example.com/x\", \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "cal-empty-object",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}, \"CAL\": {}}",
+   "expected": {
+    "summary": "",
+    "export_summary": "",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   },
+   "mooo_deviation": "A CAL key switches the official summary to the calendar formatter, which mooo has not traced; the generic unsupported notice is kept.",
+   "mooo_expected": {
+    "kind": "unsupported"
+   }
+  },
+  {
+   "name": "status/0",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "status/1",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "status/2",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "status/3",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "status/4",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "status/5",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "alimtalk-SID",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"alimtalk\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "bot-SR-sender",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"x\", \"SR\": \"sender\"}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "pc-missing",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "lock-1",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"LOCK\": 1}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": false,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": true,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageLockMessageView"
+   }
+  },
+  {
+   "name": "lock-str-true",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"LOCK\": \"true\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": false,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": true,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageLockMessageView"
+   }
+  },
+  {
+   "name": "lock-str-yes",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"LOCK\": \"yes\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": false,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": true,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageLockMessageView"
+   }
+  },
+  {
+   "name": "lock-str-0",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"LOCK\": \"0\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "lock-0",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"LOCK\": 0}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "lock-str-space-t",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"LOCK\": \"  t\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": false,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": true,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageLockMessageView"
+   }
+  },
+  {
+   "name": "lock-str-minus1",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"LOCK\": \"-1\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": false,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": true,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageLockMessageView"
+   }
+  },
+  {
+   "name": "lock-str-007",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"LOCK\": \"007\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": false,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": true,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageLockMessageView"
+   }
+  },
+  {
+   "name": "lock-str-Y",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"LOCK\": \"Y\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": false,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": true,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageLockMessageView"
+   }
+  },
+  {
+   "name": "lock-str-no",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"LOCK\": \"no\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "adult-1",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": 1, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": false,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": true,
+    "bubble_view": "KAOLeverageAdultMessageView"
+   },
+   "mooo_deviation": "The official link opens only after adult verification, which the bridge cannot check; the link is omitted.",
+   "mooo_expected": {
+    "kind": "leverage",
+    "summary": "Synthetic card summary",
+    "link": null,
+    "reply": false,
+    "reaction": true
+   }
+  },
+  {
+   "name": "adult-str-Y",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": \"Y\", \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": false,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": true,
+    "bubble_view": "KAOLeverageAdultMessageView"
+   },
+   "mooo_deviation": "The official link opens only after adult verification, which the bridge cannot check; the link is omitted.",
+   "mooo_expected": {
+    "kind": "leverage",
+    "summary": "Synthetic card summary",
+    "link": null,
+    "reply": false,
+    "reaction": true
+   }
+  },
+  {
+   "name": "adult-false",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "pc-str-1",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": \"1\", \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "pc-0",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": 0, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": true,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMobileMessageView"
+   }
+  },
+  {
+   "name": "pc-str-false",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": \"false\", \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": true,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMobileMessageView"
+   }
+  },
+  {
+   "name": "sw-true",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"SW\": true}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   },
+   "mooo_deviation": "The official client shows a warning dialog before opening a soft-warning (SW) link; the bridge cannot, so the link is omitted.",
+   "mooo_expected": {
+    "kind": "leverage",
+    "summary": "Synthetic card summary",
+    "link": null,
+    "reply": true,
+    "reaction": true
+   }
+  },
+  {
+   "name": "alimtalk-pc-false",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"plusfriend_alimtalk\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": false, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"ALM\": true}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMobileMessageView"
+   }
+  },
+  {
+   "name": "alimtalk-pc-true",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"plusfriend_alimtalk\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\", \"ALM\": true}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": null,
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageMobileMessageView"
+   }
+  },
+  {
+   "name": "cal-null",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}, \"CAL\": null}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "cal-string",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}, \"CAL\": \"x\"}",
+   "expected": {
+    "crashed": true
+   },
+   "mooo_deviation": "A non-object CAL killed the official process; mooo keeps the generic unsupported notice.",
+   "mooo_expected": {
+    "kind": "unsupported"
+   }
+  },
+  {
+   "name": "cal-object-type",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}, \"CAL\": {\"type\": \"share\", \"subject\": \"Synthetic event\"}}",
+   "expected": {
+    "summary": "",
+    "export_summary": " : Synthetic event",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   },
+   "mooo_deviation": "A CAL key switches the official summary to the calendar formatter, which mooo has not traced; the generic unsupported notice is kept.",
+   "mooo_expected": {
+    "kind": "unsupported"
+   }
+  },
+  {
+   "name": "link-lat-WEB-upper",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LAT\": \"WEB\", \"LPC\": \"https://example.com/pc\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/pc",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "link-lat-empty",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LAT\": \"\", \"LPC\": \"https://example.com/pc\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/pc",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  },
+  {
+   "name": "link-lcm-number",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LCM\": 5, \"LPC\": \"https://example.com/pc\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "crashed": true
+   },
+   "mooo_deviation": "A non-string LCM killed the official process. mooo ignores it and falls back to LPC.",
+   "mooo_expected": {
+    "kind": "leverage",
+    "summary": "Synthetic card summary",
+    "link": "https://example.com/pc",
+    "reply": true,
+    "reaction": true
+   }
+  },
+  {
+   "name": "link-lcm-whitespace",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LCM\": \" \", \"LPC\": \"https://example.com/pc\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": " ",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   },
+   "mooo_deviation": "The official public link is a single space, which is not an http(s) URL; no link is bridged.",
+   "mooo_expected": {
+    "kind": "leverage",
+    "summary": "Synthetic card summary",
+    "link": null,
+    "reply": true,
+    "reaction": true
+   }
+  },
+  {
+   "name": "tp-number-zero-safe",
+   "authored_by_self": false,
+   "message": "Synthetic card summary",
+   "attachment": "{\"P\": {\"TP\": \"Feed\", \"ME\": \"Synthetic card summary\", \"SID\": \"synthetic\", \"DID\": \"https://example.com/card\", \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}, \"VA\": \"6.0.0\", \"VI\": \"5.9.8\", \"VW\": \"2.5.1\", \"VM\": \"2.2.0\", \"FW\": true, \"KV\": false, \"BC\": false, \"AD\": false, \"ADULT\": false, \"PC\": true, \"A\": {\"version\": 3, \"code\": \"synthetic\", \"createdAt\": 1700000000}, \"RF\": \"pv\"}, \"C\": {\"THC\": 1, \"THL\": [{\"TH\": {\"THU\": \"https://example.com/t.jpg\", \"W\": 800, \"H\": 600}}], \"TI\": {\"TD\": {\"T\": \"Synthetic title\", \"D\": \"Synthetic description\"}, \"FT\": false}, \"SO\": {\"LK\": 0, \"CM\": 0, \"SH\": 3}, \"BUL\": [{\"BU\": {\"T\": \"Open\", \"HL\": false}, \"L\": {\"LPC\": \"https://example.com/card\", \"LMO\": \"https://example.com/card\"}}]}}",
+   "expected": {
+    "summary": "Synthetic card summary",
+    "export_summary": "Synthetic card summary",
+    "subtype": "Feed",
+    "reply_available": true,
+    "reaction_available": true,
+    "public_link": "https://example.com/card",
+    "mobile_only": false,
+    "lockable": false,
+    "adult_only": false,
+    "bubble_view": "KAOLeverageFeedMessageView"
+   }
+  }
+ ]
+}

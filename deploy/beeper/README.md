@@ -79,7 +79,9 @@ To debug a "could not be displayed (malformed_payload: …)" notice, an
 that fails, opt in to raw dumps by setting
 `network.debug_dump_dir: /data/debug-dumps` in `data/config.yaml` and
 restarting the bridge. Each such message or reply is then also written to
-`data/debug-dumps/` on the host. The dumps contain private message content and
+`data/debug-dumps/` on the host. Shared cards, which the bridge shows only as
+their text and link, are dumped in full too (`gap-partly_displayed-*.json`),
+so samples of their content can be collected. The dumps contain private message content and
 upload tokens, so keep them out of Git and delete them when you're done.
 
 Upgrades, backups and restart behavior are as described in the
