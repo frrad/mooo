@@ -171,13 +171,12 @@ func (m PhotoMessage) String() string {
 func (m PhotoMessage) GoString() string { return m.String() }
 
 type UnsupportedMessage struct {
-	ChatID     int64
-	LogID      int64
-	Type       int32
-	AuthorID   int64
-	SentAt     int64
-	Message    string
-	Attachment string
+	ChatID   int64
+	LogID    int64
+	Type     int32
+	AuthorID int64
+	SentAt   int64
+	Message  string
 }
 
 func (UnsupportedMessage) Kind() Kind           { return KindUnsupportedMessage }
@@ -200,8 +199,7 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 	}
 	// Keep author and raw text so the bridge can still show something useful.
 	message, _, _ := fields.String(env.Log, "message", "msg")
-	attachment, _, _ := fields.String(env.Log, "attachment")
-	return UnsupportedMessage{ChatID: env.ChatID, LogID: env.LogID, Type: env.Type, AuthorID: env.AuthorID, SentAt: env.SentAt, Message: message, Attachment: attachment}, nil
+	return UnsupportedMessage{ChatID: env.ChatID, LogID: env.LogID, Type: env.Type, AuthorID: env.AuthorID, SentAt: env.SentAt, Message: message}, nil
 }
 
 // messageDecoders maps each supported chatLog.type to its content decoder.

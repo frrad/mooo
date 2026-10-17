@@ -2,7 +2,6 @@ package connector
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -615,29 +614,9 @@ func (kc *KakaoClient) logMessageGap(evt events.MessageGap) {
 		Msg("Kakao message content failed decoding; bridged as a malformed_payload notice")
 }
 
-// unsupportedMessageText renders types without a full converter as text:
-// feed/link cards and anything else that carries its own text.
+// unsupportedMessageText shows a type without a converter as its own text
+// when it carries one, and as the generic notice otherwise.
 func unsupportedMessageText(evt events.UnsupportedMessage) string {
-	switch evt.Type {
-	case messagetype.Leverage:
-		var card struct {
-			P struct {
-				ME  string `json:"ME"`
-				SNM string `json:"SNM"`
-			} `json:"P"`
-		}
-		_ = json.Unmarshal([]byte(evt.Attachment), &card)
-		text := card.P.ME
-		if text == "" {
-			text = evt.Message
-		}
-		if text != "" {
-			if card.P.SNM != "" {
-				return fmt.Sprintf("[%s] %s", card.P.SNM, text)
-			}
-			return text
-		}
-	}
 	if evt.Message != "" {
 		return evt.Message
 	}
