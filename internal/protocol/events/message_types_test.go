@@ -35,6 +35,9 @@ func TestNamedUnsupportedMessageTypesPreserveIdentity(t *testing.T) {
 		messagetype.Text | messagetype.SecretChatTypeFlag,
 		messagetype.Mvoip | messagetype.OpenLinkIllegalBlindFlag,
 		messagetype.Mvoip | messagetype.SecretChatTypeFlag,
+		messagetype.Leverage | messagetype.OpenLinkIllegalBlindFlag,
+		messagetype.Leverage | messagetype.SecretChatTypeFlag,
+		messagetype.PlusLeverage,
 		1234567, // Future unknown values remain observable too.
 	} {
 		p := packet(t, "MSG", bson.D{{Key: "chatId", Value: int64(42)}, {Key: "chatLog", Value: bson.D{{Key: "logId", Value: int64(99)}, {Key: "type", Value: typ}}}})

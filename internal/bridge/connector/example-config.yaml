@@ -40,8 +40,9 @@ bson_shadow:
 
 # Optional private directory for debugging. When set, the bridge writes raw
 # data here: every message that becomes a "malformed_payload" or "unsupported
-# type" notice, every reply with an attachment that cannot be displayed, and
-# every media upload reply that fails to decode. The bridge creates the directory
+# type" notice, every reply with an attachment that cannot be displayed, every
+# shared card (shown only as its text and link; the dump holds the full card),
+# and every media upload reply that fails to decode. The bridge creates the directory
 # with mode 0700 if it is missing. Dumps contain private message content and
 # upload tokens; never commit or share them unsanitized. Empty, the default,
 # is off.

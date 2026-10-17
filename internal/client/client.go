@@ -85,9 +85,10 @@ type OpenOptions struct {
 	// shadow comparison is wired in only through this field.
 	PacketObserver func(loco.Packet)
 	// GapObserver, when set, receives each message that decoded to an
-	// events.MessageGap, an events.UnsupportedMessage, or a reply whose
-	// attachment is neither absent nor a sticker, with the raw BSON it came
-	// from. Nil, the default, adds no work. Debug tooling such as the bridge's
+	// events.MessageGap, an events.UnsupportedMessage, a reply whose
+	// attachment is neither absent nor a sticker, or a shared card
+	// (events.LeverageMessage, bridged only as its summary and link), with
+	// the raw BSON it came from. Nil, the default, adds no work. Debug tooling such as the bridge's
 	// gap dump is wired in only through this field.
 	GapObserver func(GapObservation)
 }
@@ -109,6 +110,10 @@ type GapObservation struct {
 const (
 	GapReasonUnsupportedType            = "unsupported_type"
 	GapReasonUnsupportedReplyAttachment = "unsupported_reply_attachment"
+	// GapReasonPartlyDisplayed is a message mooo displays only in part, such
+	// as a shared card shown as its summary and link. Its raw body is the
+	// sample for implementing the rest.
+	GapReasonPartlyDisplayed = "partly_displayed"
 )
 
 // gapFunc reports an event to the GapObserver when it is a gap. A nil gapFunc
@@ -138,6 +143,9 @@ func newGapFunc(observer func(GapObservation)) gapFunc {
 			}
 			gap = events.MessageGap{ChatID: event.ChatID, LogID: event.LogID, AuthorID: event.AuthorID, SentAt: event.SentAt,
 				Type: messagetype.Reply, Reason: GapReasonUnsupportedReplyAttachment}
+		case events.LeverageMessage:
+			gap = events.MessageGap{ChatID: event.ChatID, LogID: event.LogID, AuthorID: event.AuthorID, SentAt: event.SentAt,
+				Type: messagetype.Leverage, Reason: GapReasonPartlyDisplayed}
 		default:
 			return
 		}
