@@ -232,10 +232,6 @@ func (kc *KakaoClient) managedMembershipChange(ctx context.Context, c kakaoClien
 	if p != nil && p.RoomType == database.RoomTypeDM {
 		return false, false
 	}
-	// A group without a room has no Matrix membership to converge.
-	if !create && (p == nil || p.MXID == "") {
-		return true, true
-	}
 	var roster []int64
 	applicable := false
 	if feed != nil {
@@ -269,7 +265,9 @@ func (kc *KakaoClient) handleMembershipEvent(ctx context.Context, c kakaoClient,
 		}
 		return kc.managedMembershipChange(ctx, c, notice.ChatID, true, &feed)
 	case events.MemberRemoved:
-		return kc.managedMembershipChange(ctx, c, notice.ChatID, false, &membershipFeed{leaver: notice.UserID})
+		// A group without a room converges by creating one, as login
+		// discovery would; a refresh that cannot create it stays paused.
+		return kc.managedMembershipChange(ctx, c, notice.ChatID, true, &membershipFeed{leaver: notice.UserID})
 	}
 	return false, false
 }

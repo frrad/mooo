@@ -2,11 +2,17 @@ package connector
 
 import (
 	"context"
+	"slices"
 	"testing"
 
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
 	"maunium.net/go/mautrix/bridgev2"
+	"maunium.net/go/mautrix/bridgev2/networkid"
+	"maunium.net/go/mautrix/bridgev2/simplevent"
+	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 )
 
 func TestGroupSelfRemovalBlocksOutboundEvenWhenMatrixLeaveFails(t *testing.T) {
@@ -140,13 +146,146 @@ func TestSelfLeaveDoesNotUseAdmissionQueue(t *testing.T) {
 	}
 }
 
-func TestMemberRemovalInRoomlessGroupIsAccepted(t *testing.T) {
-	kc, backend, _ := newGroupCreationFramework(t)
-	const roomless = 7777 // a Kakao group that was never bridged
-	if !kc.handleEvent(backend, events.MemberRemoved{ChatID: roomless, LogID: 9, UserID: testOtherID}) {
+// roomCreatingQueue stands in for bridgev2 handling the membership resync: an
+// event that may create a portal binds a room for a group without one and
+// joins the ghosts its chat info lists; any other event for a group without a
+// room is dropped, as bridgev2 drops it.
+func roomCreatingQueue(t *testing.T, kc *KakaoClient, matrix *groupCreationMatrix, created *[]networkid.PortalID) func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+	return func(evt bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+		resync, ok := evt.(*simplevent.ChatResync)
+		if !ok {
+			return bridgev2.EventHandlingResultSuccess
+		}
+		portal, err := kc.login.Bridge.GetPortalByKey(t.Context(), resync.PortalKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if portal.MXID == "" {
+			if !resync.ShouldCreatePortal() {
+				return bridgev2.EventHandlingResultIgnored
+			}
+			portal.MXID = id.RoomID("!created-" + string(portal.ID) + ":test")
+			if err = portal.Save(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			*created = append(*created, portal.ID)
+		}
+		info, err := resync.GetChatInfo(t.Context(), portal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		matrix.mu.Lock()
+		defer matrix.mu.Unlock()
+		matrix.members = map[id.UserID]*event.MemberEventContent{
+			"@owner:test": {Membership: event.MembershipJoin},
+			"@bot:test":   {Membership: event.MembershipJoin},
+		}
+		for user := range info.Members.MemberMap {
+			matrix.members[id.UserID("@kakao_"+string(user)+":test")] = &event.MemberEventContent{Membership: event.MembershipJoin}
+		}
+		return bridgev2.EventHandlingResultSuccess
+	}
+}
+
+// A member leaving a regular group that has no room creates the room from the
+// fresh source roster, as login discovery would, rather than leaving the
+// group paused with nothing to converge.
+func TestMemberRemovalInRoomlessGroupCreatesRoom(t *testing.T) {
+	kc, backend, matrix := newGroupCreationFramework(t)
+	// After the removal, the source roster no longer lists 4000.
+	backend.memberList = chatmeta.MemberListResponse{MemberIDs: []int64{1000, 2000}}
+	var created []networkid.PortalID
+	kc.queue = roomCreatingQueue(t, kc, matrix, &created)
+	var states []status.BridgeState
+	kc.sendState = func(state status.BridgeState) { states = append(states, state) }
+
+	if !kc.handleEvent(backend, events.MemberRemoved{ChatID: 5000, LogID: 9, UserID: 4000}) {
 		t.Fatal("member removal in a group without a room was rejected")
 	}
-	if err := kc.sourceBlocked[roomless]; err != nil {
-		t.Fatalf("roomless group blocked: %v", err)
+
+	if !slices.Equal(created, []networkid.PortalID{"5000"}) {
+		t.Fatalf("created rooms = %v, want the group's room", created)
+	}
+	portal, err := kc.store.portalByKey(t.Context(), makePortalKey(5000, kc.login.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if portal == nil || portal.MXID != "!created-5000:test" {
+		t.Fatalf("group portal = %+v, want it bound to the created room", portal)
+	}
+	if err = kc.checkSourceAccess(t.Context(), 5000); err != nil {
+		t.Fatalf("group stayed paused after its room was created: %v", err)
+	}
+	if roster := kc.verifiedRoster(t.Context(), 5000); !slices.Equal(roster, []int64{1000, 2000}) {
+		t.Fatalf("verified roster = %v, want the fresh source roster", roster)
+	}
+	if got := matrixMembership(matrix, "@kakao_4000:test"); got != "" {
+		t.Fatalf("departed member's ghost membership = %q, want none", got)
+	}
+	for _, state := range states {
+		if state.Error == stateGroupMembershipPending {
+			t.Fatalf("bridge reported %s for a converged group", state.Error)
+		}
+	}
+	if len(backend.commits) != 1 {
+		t.Fatalf("commits = %v, want the removal committed", backend.commits)
+	}
+}
+
+// Before removals could create a room, a removal in a group without a room
+// persisted a pause on a portal row with no room and never cleared it. The
+// next removal must create the room and clear that pause, so the group's
+// messages are delivered again.
+func TestMemberRemovalClearsPauseLeftOnRoomlessGroup(t *testing.T) {
+	kc, backend, matrix := newGroupCreationFramework(t)
+	backend.memberList = chatmeta.MemberListResponse{MemberIDs: []int64{1000, 2000}}
+	if _, err := kc.pauseGroupMembership(t.Context(), 5000); err != nil {
+		t.Fatal(err)
+	}
+	// A restart forgets the volatile block; the persisted pause remains.
+	kc.sourceBlocked = nil
+	if err := kc.checkSourceAccess(t.Context(), 5000); err == nil {
+		t.Fatal("setup: the persisted pause did not block the group")
+	}
+	var created []networkid.PortalID
+	kc.queue = roomCreatingQueue(t, kc, matrix, &created)
+	kc.sendState = func(status.BridgeState) {}
+
+	if !kc.handleEvent(backend, events.MemberRemoved{ChatID: 5000, LogID: 9, UserID: 4000}) {
+		t.Fatal("member removal in a paused group without a room was rejected")
+	}
+
+	if !slices.Equal(created, []networkid.PortalID{"5000"}) {
+		t.Fatalf("created rooms = %v, want the group's room", created)
+	}
+	if err := kc.checkSourceAccess(t.Context(), 5000); err != nil {
+		t.Fatalf("pause was not cleared: %v", err)
+	}
+	if !kc.handleEvent(backend, events.TextMessage{ChatID: 5000, LogID: 10, AuthorID: 2000, Message: "synthetic after unpause"}) {
+		t.Fatal("message in the unpaused group was rejected")
+	}
+}
+
+// A removal whose roster refresh fails still leaves the group paused and
+// reports the pending state, so forwarding never resumes on a stale roster.
+func TestMemberRemovalInRoomlessGroupStaysPausedWhenRoomIsNotCreated(t *testing.T) {
+	kc, backend, _ := newGroupCreationFramework(t)
+	backend.memberList = chatmeta.MemberListResponse{MemberIDs: []int64{1000, 2000}}
+	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult { return bridgev2.EventHandlingResultFailed }
+	var states []status.BridgeState
+	kc.sendState = func(state status.BridgeState) { states = append(states, state) }
+
+	if kc.handleEvent(backend, events.MemberRemoved{ChatID: 5000, LogID: 9, UserID: 4000}) {
+		t.Fatal("removal was accepted although the room was not created")
+	}
+
+	if err := kc.checkSourceAccess(t.Context(), 5000); err == nil {
+		t.Fatal("group was unpaused without a converged room")
+	}
+	if len(states) == 0 || states[len(states)-1].Error != stateGroupMembershipPending {
+		t.Fatalf("states = %+v, want the membership-pending state", states)
+	}
+	if len(backend.commits) != 0 {
+		t.Fatalf("commits = %v, want the removal left uncommitted", backend.commits)
 	}
 }
