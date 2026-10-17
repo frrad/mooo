@@ -18,6 +18,7 @@ import (
 
 	"github.com/frrad/mooo/internal/protocol/events"
 	"github.com/frrad/mooo/internal/protocol/macweb"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"github.com/frrad/mooo/internal/protocol/reactions"
 )
 
@@ -119,6 +120,9 @@ func validateMatrixReaction(kc *KakaoClient, msg *bridgev2.MatrixReaction) (reac
 	if (msg.TargetMessage.Room.ID != "" && msg.TargetMessage.Room.ID != msg.Portal.ID) ||
 		(msg.TargetMessage.Room.Receiver != "" && msg.TargetMessage.Room.Receiver != kc.login.ID) {
 		return reactions.Request{}, legacyReaction{}, errReactionTarget
+	}
+	if metadata != nil && metadata.Type == messagetype.Leverage && metadata.ReactionUnavailable {
+		return reactions.Request{}, legacyReaction{}, certainRefusal(errLeverageReactionTarget, "KakaoTalk does not allow reactions to carousel cards, so the reaction was not sent.")
 	}
 	entry, ok := reactionForEmoji(msg.Content.RelatesTo.Key)
 	if !ok {

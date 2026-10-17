@@ -27,6 +27,9 @@ type LeverageMessage struct {
 	// ReplyUnavailable is set for locked and adult-only cards, on which the
 	// official client offers no Reply.
 	ReplyUnavailable bool
+	// ReactionUnavailable is set for carousel cards, on which the official
+	// client offers no reaction.
+	ReactionUnavailable bool
 }
 
 func (LeverageMessage) Kind() Kind           { return KindLeverageMessage }
@@ -67,6 +70,9 @@ func decodeLeverage(env chatlog.Envelope) (Event, error) {
 	if json.Unmarshal(attachment["P"], &public) != nil {
 		return card, nil
 	}
+	// The Mac lower-cases TP to pick the layout. Its other no-reaction case,
+	// a "growable" card, exists only in Plus chats (research/leverage.md).
+	card.ReactionUnavailable = strings.ToLower(leverageString(public["TP"])) == "carousel"
 	locked, adult := leverageBool(public["LOCK"]), leverageBool(public["ADULT"])
 	card.ReplyUnavailable = locked || adult
 	// The Mac shows no link on mobile-only (PC false), alimtalk, locked and

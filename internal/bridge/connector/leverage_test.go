@@ -108,15 +108,17 @@ func TestExecutedLeverageCardsBridgeTheOfficialSummary(t *testing.T) {
 			Message        *string `json:"message"`
 			Attachment     *string `json:"attachment"`
 			Expected       struct {
-				Summary        *string `json:"summary"`
-				ReplyAvailable bool    `json:"reply_available"`
-				PublicLink     *string `json:"public_link"`
+				Summary           *string `json:"summary"`
+				ReplyAvailable    bool    `json:"reply_available"`
+				ReactionAvailable bool    `json:"reaction_available"`
+				PublicLink        *string `json:"public_link"`
 			} `json:"expected"`
 			MoooExpected *struct {
-				Kind    string  `json:"kind"`
-				Summary string  `json:"summary"`
-				Link    *string `json:"link"`
-				Reply   bool    `json:"reply"`
+				Kind     string  `json:"kind"`
+				Summary  string  `json:"summary"`
+				Link     *string `json:"link"`
+				Reply    bool    `json:"reply"`
+				Reaction bool    `json:"reaction"`
 			} `json:"mooo_expected"`
 		} `json:"cases"`
 	}
@@ -127,12 +129,12 @@ func TestExecutedLeverageCardsBridgeTheOfficialSummary(t *testing.T) {
 	kc, harness := newTestClient(t, nil)
 	for i, c := range fixture.Cases {
 		t.Run(c.Name, func(t *testing.T) {
-			kind, summary, link, reply := "leverage", "", c.Expected.PublicLink, c.Expected.ReplyAvailable
+			kind, summary, link, reply, reaction := "leverage", "", c.Expected.PublicLink, c.Expected.ReplyAvailable, c.Expected.ReactionAvailable
 			if c.Expected.Summary != nil {
 				summary = *c.Expected.Summary
 			}
 			if m := c.MoooExpected; m != nil {
-				kind, summary, link, reply = m.Kind, m.Summary, m.Link, m.Reply
+				kind, summary, link, reply, reaction = m.Kind, m.Summary, m.Link, m.Reply, m.Reaction
 			}
 			author := testOtherID
 			if c.AuthoredBySelf {
@@ -151,6 +153,9 @@ func TestExecutedLeverageCardsBridgeTheOfficialSummary(t *testing.T) {
 				body += "\n" + *link
 			}
 			requireLeverageCard(t, kc, msg, converted, author, logID, sendAt, body, reply)
+			if metadata := converted.Parts[0].DBMetadata.(*KakaoMessageMetadata); metadata.ReactionUnavailable == reaction {
+				t.Errorf("reactionUnavailable = %v, want reaction %v", metadata.ReactionUnavailable, reaction)
+			}
 		})
 	}
 }
@@ -314,4 +319,42 @@ func TestRedactingOwnLeverageCardIsRefused(t *testing.T) {
 	if !errors.Is(err, errLeverageDeleteNotSupported) || len(fake.deletes) != 0 {
 		t.Fatalf("err=%v deletes=%d", err, len(fake.deletes))
 	}
+}
+
+// The official client offers no reaction on carousel cards, so a Matrix
+// reaction to one is refused before anything reaches KakaoTalk; a feed card
+// in the same chat still takes reactions.
+func TestReactionToCarouselLeverageCardIsRefused(t *testing.T) {
+	message := "Synthetic card summary"
+	for _, c := range []struct {
+		tp      string
+		refused bool
+	}{{"Carousel", true}, {"CAROUSEL", true}, {"Feed", false}} {
+		attachment := `{"P":{"TP":"` + c.tp + `","L":{"LPC":"https://example.com/card"}},"C":{}}`
+		kc, harness := newTestClient(t, nil)
+		_, converted := bridgeLeverageCard(t, kc, harness, leverageCardPacket(t, 11, testOtherID, 1700000000, &message, &attachment))
+		target := &database.Message{
+			ID: makeMessageID(testChatID, 11), Room: makePortalKey(testChatID, kc.login.ID),
+			SenderID: makeUserID(testOtherID), Metadata: converted.Parts[0].DBMetadata,
+		}
+		_, _, err := validateMatrixReaction(kc, leverageReaction(kc, target))
+		if !c.refused {
+			if err != nil {
+				t.Fatalf("%s: reaction refused: %v", c.tp, err)
+			}
+			continue
+		}
+		var statusErr bridgev2.MessageStatus
+		if !errors.Is(err, errLeverageReactionTarget) || !errors.As(err, &statusErr) || !statusErr.IsCertain || statusErr.Status != event.MessageStatusFail || !strings.Contains(statusErr.Message, "carousel") {
+			t.Fatalf("%s: status = %+v (err %v)", c.tp, statusErr, err)
+		}
+	}
+}
+
+func leverageReaction(kc *KakaoClient, target *database.Message) *bridgev2.MatrixReaction {
+	msg := &bridgev2.MatrixReaction{TargetMessage: target}
+	msg.Portal = &bridgev2.Portal{Portal: &database.Portal{PortalKey: makePortalKey(testChatID, kc.login.ID)}}
+	msg.Event = &event.Event{Sender: kc.login.UserMXID}
+	msg.Content = &event.ReactionEventContent{RelatesTo: event.RelatesTo{Type: event.RelAnnotation, Key: "👍"}}
+	return msg
 }

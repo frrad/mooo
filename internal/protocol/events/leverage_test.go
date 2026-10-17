@@ -92,17 +92,19 @@ func TestExecutedLeverageCardsDecodeLikeTheMacModel(t *testing.T) {
 			Message    *string `json:"message"`
 			Attachment *string `json:"attachment"`
 			Expected   struct {
-				Crashed        bool    `json:"crashed"`
-				Summary        *string `json:"summary"`
-				ReplyAvailable bool    `json:"reply_available"`
-				PublicLink     *string `json:"public_link"`
+				Crashed           bool    `json:"crashed"`
+				Summary           *string `json:"summary"`
+				ReplyAvailable    bool    `json:"reply_available"`
+				ReactionAvailable bool    `json:"reaction_available"`
+				PublicLink        *string `json:"public_link"`
 			} `json:"expected"`
 			Deviation    string `json:"mooo_deviation"`
 			MoooExpected *struct {
-				Kind    string  `json:"kind"`
-				Summary string  `json:"summary"`
-				Link    *string `json:"link"`
-				Reply   bool    `json:"reply"`
+				Kind     string  `json:"kind"`
+				Summary  string  `json:"summary"`
+				Link     *string `json:"link"`
+				Reply    bool    `json:"reply"`
+				Reaction bool    `json:"reaction"`
 			} `json:"mooo_expected"`
 		} `json:"cases"`
 	}
@@ -112,7 +114,7 @@ func TestExecutedLeverageCardsDecodeLikeTheMacModel(t *testing.T) {
 	}
 	for _, c := range fixture.Cases {
 		t.Run(c.Name, func(t *testing.T) {
-			kind, summary, link, reply := "leverage", "", "", c.Expected.ReplyAvailable
+			kind, summary, link, reply, reaction := "leverage", "", "", c.Expected.ReplyAvailable, c.Expected.ReactionAvailable
 			if c.Expected.Summary != nil {
 				summary = *c.Expected.Summary
 			}
@@ -123,7 +125,7 @@ func TestExecutedLeverageCardsDecodeLikeTheMacModel(t *testing.T) {
 				t.Fatal("a deviation needs both mooo_deviation and mooo_expected")
 			}
 			if m := c.MoooExpected; m != nil {
-				kind, summary, link, reply = m.Kind, m.Summary, "", m.Reply
+				kind, summary, link, reply, reaction = m.Kind, m.Summary, "", m.Reply, m.Reaction
 				if m.Link != nil {
 					link = *m.Link
 				}
@@ -136,8 +138,8 @@ func TestExecutedLeverageCardsDecodeLikeTheMacModel(t *testing.T) {
 				return
 			}
 			card := requireLeverage(t, e)
-			if card.Summary != summary || card.Link != link || card.ReplyUnavailable == reply {
-				t.Fatalf("summary %q link %q replyUnavailable %v; want %q %q reply %v", card.Summary, card.Link, card.ReplyUnavailable, summary, link, reply)
+			if card.Summary != summary || card.Link != link || card.ReplyUnavailable == reply || card.ReactionUnavailable == reaction {
+				t.Fatalf("summary %q link %q replyUnavailable %v reactionUnavailable %v; want %q %q reply %v reaction %v", card.Summary, card.Link, card.ReplyUnavailable, card.ReactionUnavailable, summary, link, reply, reaction)
 			}
 		})
 	}

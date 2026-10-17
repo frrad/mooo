@@ -42,6 +42,9 @@ type KakaoMessageMetadata struct {
 	Revision int64 `json:"revision,omitempty"`
 	// ReplyUnavailable marks a source the official client offers no Reply on.
 	ReplyUnavailable bool `json:"reply_unavailable,omitempty"`
+	// ReactionUnavailable marks a target the official client offers no
+	// reaction on.
+	ReactionUnavailable bool `json:"reaction_unavailable,omitempty"`
 }
 
 func (m KakaoMessageMetadata) String() string {

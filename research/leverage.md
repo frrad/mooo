@@ -128,7 +128,10 @@ account authorization.
 
 - Reply and thread: allowed unless `LOCK` is true, or `ADULT` is true and the
   account is not adult-verified.
-- Reaction: allowed unless the card is "growable" or a carousel.
+- Reaction: allowed unless the card is a carousel (`TP` "carousel" in any
+  case, executed) or "growable". Growable (static) means `BC` is true and the
+  card is not verified (`KV`), locked, adult-gated or mobile-only, in a Plus
+  (channel) chat; in any other chat a card is never growable.
 - Share (forward): requires a sent status, a forwardable card (`FW`), not
   growable, and not an alimtalk card.
 - `LOCK`, `ADULT`, `PC`, `SW`, `LAA` and `ALM` are read with `boolValue`:
@@ -159,12 +162,14 @@ summary is stored as the reply preview.
 A Matrix reply to a card sends `src_type` 71 and the summary as `src_message`,
 with the same extra keys as the observed official reply. Replies to locked or
 adult-only cards are refused before anything is sent, with a message saying
-KakaoTalk does not allow them. A Matrix redaction of the bridged account's own
-card is not sent as a delete for everyone (untraced); it removes the event only
-from Matrix. The observed fixture's `mooo_link` values are mooo's own
-application of the Mac link rule to the observed attachments (Android cannot
-show the Mac link); link parity rests on the executed fixture. An inbound KakaoTalk reply to a card that was never bridged quotes
-its `src_message`, as the official client does.
+KakaoTalk does not allow them. Matrix reactions to a carousel card are refused
+before anything is sent, as the official client offers none. A Matrix redaction
+of the bridged account's own card is not sent as a delete for everyone
+(untraced); it removes the event only from Matrix. The observed fixture's
+`mooo_link` values are mooo's own application of the Mac link rule to the
+observed attachments (Android cannot show the Mac link); link parity rests on
+the executed fixture. An inbound KakaoTalk reply to a card that was never
+bridged quotes its `src_message`, as the official client does.
 
 Deliberate deviations (each executed case that differs carries a
 `mooo_deviation` in the fixture):
@@ -202,9 +207,8 @@ Deliberate deviations (each executed case that differs carries a
   own links) are not bridged.
 - Cards from third-party share templates, locked, adult and carousel cards
   are covered by the executed fixture only.
-- Matrix reactions to a card are sent like reactions to any message. The
-  official client refuses reactions on growable and carousel cards; the
-  bridge does not.
+- Matrix reactions to a growable card in a Plus chat are not refused; the
+  bridge does not track whether a chat is a Plus chat.
 - Whether the official client allows deleting a card for everyone is
   untraced.
 - How the Mac shows a card in a notification was not traced.

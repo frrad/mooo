@@ -6,7 +6,7 @@
   "method": "Isolated logged-out MoooKakaoProbe copy of the official binary, spawned under Frida. For each case: NTChatLeverage alloc/init, setAuthorId (the logged-out own user ID 0 when authored_by_self, else a synthetic ID), setMessage (skipped when message is null), setAttachment (skipped when attachment is null), setStatus 1; then -lastMessage: NO (summary) and YES (export_summary, the reply src_message source), -subtype, -availableForReply/-availableForReaction (the NTChatMessage base predicates, which need a chat room, were replaced with YES so only the type-71 override decides), and from +[KAOLeverageMessageData leverageDataWithUserMessage:] -subtypeString, -availablePulicLinkUrlString (the tap link), -isMobileOnlyMessage, -lockable, -adultOnly, and +[KAOLeverageMessageCellView subTypeViewClassWithMessage:leverageMessageData:] (bubble_view). A case that killed the process is recorded as crashed and the run restarted after it. +[NTChatMessage classWithType:message:chatId:] returned NTChatLeverage for both 71 and 73. Original preferences were hash-checked unchanged.",
   "doc": "research/leverage.md"
  },
- "notes": "Inputs are synthetic. Unless mooo_expected says otherwise, mooo bridges summary as the message body, appends public_link (the tap link) on its own line, and allows a Matrix reply exactly when reply_available is true. The logged-out harness has no adult verification, so reply_available is false for ADULT cards; a verified account would see Reply.",
+ "notes": "Inputs are synthetic. Unless mooo_expected says otherwise, mooo bridges summary as the message body, appends public_link (the tap link) on its own line, and allows a Matrix reply exactly when reply_available is true and a Matrix reaction exactly when reaction_available is true. No chat room is attached, so the growable rule (BC, Plus chats only) never applied. The logged-out harness has no adult verification, so reply_available is false for ADULT cards; a verified account would see Reply.",
  "cases": [
   {
    "name": "feed/other",
@@ -345,7 +345,8 @@
     "kind": "leverage",
     "summary": "Synthetic card summary",
     "link": "https://example.com/card",
-    "reply": true
+    "reply": true,
+    "reaction": true
    }
   },
   {
@@ -607,7 +608,8 @@
     "kind": "leverage",
     "summary": "Synthetic card summary",
     "link": null,
-    "reply": true
+    "reply": true,
+    "reaction": true
    }
   },
   {
@@ -650,7 +652,8 @@
     "kind": "leverage",
     "summary": "Synthetic card summary",
     "link": null,
-    "reply": false
+    "reply": false,
+    "reaction": true
    }
   },
   {
@@ -855,7 +858,8 @@
     "kind": "leverage",
     "summary": "Synthetic card summary",
     "link": null,
-    "reply": true
+    "reply": true,
+    "reaction": true
    }
   },
   {
@@ -934,7 +938,8 @@
     "kind": "leverage",
     "summary": "Synthetic card summary",
     "link": null,
-    "reply": true
+    "reply": true,
+    "reaction": true
    }
   },
   {
@@ -959,7 +964,8 @@
     "kind": "leverage",
     "summary": "Synthetic card summary",
     "link": null,
-    "reply": true
+    "reply": true,
+    "reaction": true
    }
   },
   {
@@ -1384,7 +1390,8 @@
     "kind": "leverage",
     "summary": "Synthetic card summary",
     "link": null,
-    "reply": false
+    "reply": false,
+    "reaction": true
    }
   },
   {
@@ -1409,7 +1416,8 @@
     "kind": "leverage",
     "summary": "Synthetic card summary",
     "link": null,
-    "reply": false
+    "reply": false,
+    "reaction": true
    }
   },
   {
@@ -1506,7 +1514,8 @@
     "kind": "leverage",
     "summary": "Synthetic card summary",
     "link": null,
-    "reply": true
+    "reply": true,
+    "reaction": true
    }
   },
   {
@@ -1647,7 +1656,8 @@
     "kind": "leverage",
     "summary": "Synthetic card summary",
     "link": "https://example.com/pc",
-    "reply": true
+    "reply": true,
+    "reaction": true
    }
   },
   {
@@ -1672,7 +1682,8 @@
     "kind": "leverage",
     "summary": "Synthetic card summary",
     "link": null,
-    "reply": true
+    "reply": true,
+    "reaction": true
    }
   },
   {
