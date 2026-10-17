@@ -1,0 +1,231 @@
+{
+  "provenance": {
+    "kind": "executed",
+    "client": "KakaoTalk for Mac 26.8.0 (arm64)",
+    "date": "2026-10-16",
+    "method": "Isolated logged-out MoooKakaoProbe copy of the official binary, spawned under Frida (private harness mac_sticker_exec.py, crash-tolerant). For each case: the model class the client maps the type to, alloc/init, setType, setChatId, setLogId, setAuthorId (the logged-out own user ID 0 when authored_by_self, else a synthetic ID), setMessage, setSentAt (now minus age_seconds), setAttachment, -update, setStatus 1. Outputs: the emoticon model's -text, the chat-message presenter's reply summary (the source summary the reply composer puts in src_message before cutting it to 100 UTF-16 units), -availableForModify, and the reply model's -attachOnly. For -availableForModify only, the message's chat room was a synthetic object answering type 0 and status 1 (any other selector answers 0). The English localized label for a sticker without text is 'Emoticon'. Rendering through the chat-log view crashed off-screen and is not part of this fixture. Original preferences were hash-checked unchanged.",
+    "doc": "research/stickers.md"
+  },
+  "type_classes": "The client maps types 6, 12, 20, 22 and 25 to its emoticon model family; 12 is the static sticker and 20 the animated sticker.",
+  "cases": [
+    {
+      "name": "sticker-alone",
+      "input": {
+        "type": 12,
+        "message": "",
+        "attachment": {
+          "path": "synthetic-sticker.png",
+          "emoticonItemPath": "synthetic/item",
+          "name": "(Emoticons)",
+          "type": "image/png"
+        },
+        "authored_by_self": true,
+        "age_seconds": 0
+      },
+      "expected": {
+        "reply_summary": "Emoticon",
+        "editable": false,
+        "text": ""
+      },
+      "mooo_deviation": "The Mac quotes a sticker without text with its localized emoticon label ('Emoticon' in English). mooo stores its own placeholder as the reply preview and sends it as src_message; adopting the localized label is a recorded follow-up, not part of the sticker-with-text work.",
+      "mooo_expected": "[sticker]"
+    },
+    {
+      "name": "sticker-with-text",
+      "input": {
+        "type": 12,
+        "message": "mooo synthetic caption",
+        "attachment": {
+          "path": "synthetic-sticker.png",
+          "emoticonItemPath": "synthetic/item",
+          "name": "(Emoticons)",
+          "type": "image/png"
+        },
+        "authored_by_self": true,
+        "age_seconds": 0
+      },
+      "expected": {
+        "reply_summary": "mooo synthetic caption",
+        "editable": true,
+        "text": "mooo synthetic caption"
+      }
+    },
+    {
+      "name": "sticker-with-text-other-author",
+      "input": {
+        "type": 12,
+        "message": "mooo synthetic caption",
+        "attachment": {
+          "path": "synthetic-sticker.png",
+          "emoticonItemPath": "synthetic/item",
+          "name": "(Emoticons)",
+          "type": "image/png"
+        },
+        "authored_by_self": false,
+        "age_seconds": 0
+      },
+      "expected": {
+        "reply_summary": "mooo synthetic caption",
+        "editable": false,
+        "text": "mooo synthetic caption"
+      }
+    },
+    {
+      "name": "sticker-with-text-older-than-24h",
+      "input": {
+        "type": 12,
+        "message": "mooo synthetic caption",
+        "attachment": {
+          "path": "synthetic-sticker.png",
+          "emoticonItemPath": "synthetic/item",
+          "name": "(Emoticons)",
+          "type": "image/png"
+        },
+        "authored_by_self": true,
+        "age_seconds": 90000
+      },
+      "expected": {
+        "reply_summary": "mooo synthetic caption",
+        "editable": false,
+        "text": "mooo synthetic caption"
+      }
+    },
+    {
+      "name": "animated-alone",
+      "input": {
+        "type": 20,
+        "message": "",
+        "attachment": {
+          "path": "synthetic-anim.webp",
+          "name": "(Emoticons)",
+          "type": "animated-emoticon/digital-item"
+        },
+        "authored_by_self": true,
+        "age_seconds": 0
+      },
+      "expected": {
+        "reply_summary": "Emoticon",
+        "editable": false,
+        "text": ""
+      },
+      "mooo_deviation": "The Mac quotes a sticker without text with its localized emoticon label ('Emoticon' in English). mooo stores its own placeholder as the reply preview and sends it as src_message; adopting the localized label is a recorded follow-up, not part of the sticker-with-text work. The connector test serves no animated resource, so mooo's placeholder here is the unavailable-sticker one.",
+      "mooo_expected": "[sticker unavailable]"
+    },
+    {
+      "name": "animated-with-text",
+      "input": {
+        "type": 20,
+        "message": "mooo synthetic caption",
+        "attachment": {
+          "path": "synthetic-anim.webp",
+          "name": "(Emoticons)",
+          "type": "animated-emoticon/digital-item"
+        },
+        "authored_by_self": true,
+        "age_seconds": 0
+      },
+      "expected": {
+        "reply_summary": "mooo synthetic caption",
+        "editable": true,
+        "text": "mooo synthetic caption"
+      }
+    },
+    {
+      "name": "text",
+      "input": {
+        "type": 1,
+        "message": "mooo synthetic text",
+        "attachment": {},
+        "authored_by_self": true,
+        "age_seconds": 0
+      },
+      "expected": {
+        "reply_summary": "mooo synthetic text",
+        "editable": true,
+        "text": "mooo synthetic text"
+      }
+    },
+    {
+      "name": "reply-sticker-with-text",
+      "input": {
+        "type": 26,
+        "message": "mooo synthetic reply",
+        "attachment": {
+          "src_logId": 900,
+          "src_userId": 987654321,
+          "src_type": 12,
+          "src_message": "mooo synthetic caption",
+          "attach_type": 12,
+          "attach_content": {
+            "name": "(Emoticons)",
+            "path": "synthetic-sticker.png",
+            "type": "image/png"
+          }
+        },
+        "authored_by_self": true,
+        "age_seconds": 0
+      },
+      "expected": {
+        "reply_summary": "mooo synthetic reply",
+        "editable": true,
+        "attach_only": false
+      }
+    },
+    {
+      "name": "reply-sticker-with-text-attach-only-false",
+      "input": {
+        "type": 26,
+        "message": "mooo synthetic reply",
+        "attachment": {
+          "src_logId": 900,
+          "src_userId": 987654321,
+          "src_type": 12,
+          "src_message": "mooo synthetic caption",
+          "attach_only": false,
+          "attach_type": 12,
+          "attach_content": {
+            "name": "(Emoticons)",
+            "path": "synthetic-sticker.png",
+            "type": "image/png"
+          }
+        },
+        "authored_by_self": true,
+        "age_seconds": 0
+      },
+      "expected": {
+        "reply_summary": "mooo synthetic reply",
+        "editable": true,
+        "attach_only": false
+      }
+    },
+    {
+      "name": "reply-sticker-alone",
+      "input": {
+        "type": 26,
+        "message": "(Emoticons)",
+        "attachment": {
+          "src_logId": 900,
+          "src_userId": 987654321,
+          "src_type": 1,
+          "src_message": "mooo synthetic text",
+          "attach_only": true,
+          "attach_type": 12,
+          "attach_content": {
+            "name": "(Emoticons)",
+            "path": "synthetic-sticker.png",
+            "type": "image/png"
+          }
+        },
+        "authored_by_self": true,
+        "age_seconds": 0
+      },
+      "expected": {
+        "reply_summary": "Emoticon",
+        "editable": false,
+        "attach_only": true
+      },
+      "mooo_deviation": "The Mac quotes a sticker without text with its localized emoticon label ('Emoticon' in English). mooo stores its own placeholder as the reply preview and sends it as src_message; adopting the localized label is a recorded follow-up, not part of the sticker-with-text work.",
+      "mooo_expected": "[sticker]"
+    }
+  ]
+}
