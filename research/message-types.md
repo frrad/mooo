@@ -67,9 +67,9 @@ Naming unsupported constants is intentional and does not enable their payloads.
 | 29 | `LargeFile` | `UnsupportedMessage` notice |
 | 51 | `Mvoip` | Typed call record shown as the official Mac summary notice ([calls](calls.md)); replies to it are refused |
 | 52 | `VoxRoom` | `UnsupportedMessage` notice |
-| 71 | `Leverage` | `UnsupportedMessage` notice |
+| 71 | `Leverage` | Typed shared card (channel profile/post, share template) shown as its chat-log text plus web link ([leverage](leverage.md)); calendar cards stay a notice |
 | 72 | `Alimtalk` | `UnsupportedMessage` notice |
-| 73 | `PlusLeverage` | `UnsupportedMessage` notice |
+| 73 | `PlusLeverage` | `UnsupportedMessage` notice (the Mac uses the type-71 model for it; unobserved) |
 | 81 | `Plus` | `UnsupportedMessage` notice |
 | 82 | `PlusEvent` | `UnsupportedMessage` notice |
 | 83 | `PlusViral` | `UnsupportedMessage` notice |
@@ -106,7 +106,8 @@ to the Mac sound-sticker accessor; the name alone does not establish that every
 instance has audio. Spritecon and AnimatedStickerEx are separate unsupported
 values; do not assign them the existing type-12/20 decoder without tracing their
 attachments, resources and consumers. Opaque historical/product names such as
-CJ20121212 and Leverage are retained without invented semantic descriptions.
+CJ20121212 is retained without an invented semantic description; Leverage
+is traced in [leverage.md](leverage.md).
 
 Audio/files, contact/profile/location cards, resource-only multi-photo messages,
 schedules/votes/posts and their OpenLink variants, call-related models and

@@ -40,6 +40,8 @@ type KakaoMessageMetadata struct {
 	MiniReactionRevision int64 `json:"mini_reaction_revision,omitempty"`
 	// Revision is the KakaoTalk edit revision of the bridged content.
 	Revision int64 `json:"revision,omitempty"`
+	// ReplyUnavailable marks a source the official client offers no Reply on.
+	ReplyUnavailable bool `json:"reply_unavailable,omitempty"`
 }
 
 func (m KakaoMessageMetadata) String() string {
@@ -103,6 +105,9 @@ func replyTargetFor(message *database.Message, portal networkid.PortalKey) (chat
 	}
 	if metadata.Type == messagetype.Mvoip {
 		return chat.ReplyTarget{}, errCallReplyTarget
+	}
+	if metadata.Type == messagetype.Leverage && metadata.ReplyUnavailable {
+		return chat.ReplyTarget{}, errLeverageReplyTarget
 	}
 	preview := metadata.Preview
 	if metadata.Type == messagetype.Photo {

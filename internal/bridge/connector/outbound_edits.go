@@ -110,6 +110,8 @@ func (kc *KakaoClient) HandleMatrixMessageRemove(ctx context.Context, msg *bridg
 		return certainRefusal(errCallDeleteNotSupported, "Deleting KakaoTalk call records is not supported; the message was removed only from Matrix.")
 	case meta.AuthorID != kc.userID:
 		return certainRefusal(errDeleteNotAllowed, "KakaoTalk only allows deleting your own messages for everyone; the message was removed only from Matrix.")
+	case meta.Type == messagetype.Leverage:
+		return certainRefusal(errLeverageDeleteNotSupported, "Deleting shared KakaoTalk cards is not supported; the message was removed only from Matrix.")
 	case time.Since(msg.TargetMessage.Timestamp) > kakaoDeleteWindow:
 		return certainRefusal(errDeleteNotAllowed, "KakaoTalk only allows deleting messages for everyone for 24 hours; the message was removed only from Matrix.")
 	}

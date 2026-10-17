@@ -53,6 +53,9 @@ func replyTargetStatus(err error) error {
 	if errors.Is(err, errCallReplyTarget) {
 		return certainRefusal(err, "Replies to KakaoTalk call records are not supported, so the reply was not sent. Send it without the reply to deliver it.")
 	}
+	if errors.Is(err, errLeverageReplyTarget) {
+		return certainRefusal(err, "KakaoTalk does not allow replies to locked or adult-only cards, so the reply was not sent. Send it without the reply to deliver it.")
+	}
 	return certainRefusal(err, "The message you replied to is not a bridged KakaoTalk message in this chat, so the reply was not sent. Send it without the reply to deliver it.")
 }
 

@@ -1,0 +1,75 @@
+{
+ "provenance": {
+  "kind": "observed",
+  "client": "KakaoTalk Android 26.8.2 (both phones); records read by the mooo client on the B account's secondary profile",
+  "date": "2026-10-16",
+  "method": "Owned A and B lab emulators, A-B direct chat. A opened a followed business channel and used its profile menu item \"Send to KakaoTalk Friends\", then the Share button under one of its posts, sending each to B. B long-pressed the profile card, chose Reply and sent a synthetic text, then forwarded the post card back with the Share icon beside the bubble. A private probe on B's profile read each new chat log with SYNCMSG. Raw records were reduced to their key structure, then deleted. Every string except the template wording and the TP, SID, RF and version fields is synthetic here; numbers are synthetic except counts and versions. android_chat_list is the preview B's Android chat list showed.",
+  "doc": "research/leverage.md"
+ },
+ "notes": "In all three cards the chat log message equals P.ME and is a Korean sentence naming the channel, although both phones use English. The forwarded card is a new type-71 log authored by the forwarder, with the same message and C object; only P.RF changed (to chat_ln). The reply preview on B showed the message text, and the reply's src_message carried it unchanged.",
+ "cards": [
+  {
+   "name": "channel profile shared by A",
+   "authored_by_self": false,
+   "type": 71,
+   "message": "채널 'Synthetic Channel'의 프로필을 공유했습니다.",
+   "attachment": "{\"C\":{\"PR\":{\"TH\":{\"THU\":\"https://example.com/image.jpg\",\"W\":400,\"H\":400},\"BG\":{\"THU\":\"https://example.com/image.jpg\",\"W\":400,\"H\":400},\"TD\":{\"T\":\"Synthetic Channel\",\"D\":\"Synthetic description\"},\"L\":{\"LPC\":\"https://example.com/channel\",\"LMO\":\"https://example.com/channel\"}},\"RK\":false,\"TI\":{\"TD\":{\"D\":\"Synthetic description\"},\"FT\":false},\"SO\":{\"SB\":1000},\"BUL\":[{\"BU\":{\"T\":\"채널 홈\",\"HL\":false},\"L\":{\"LPC\":\"https://example.com/channel\",\"LMO\":\"https://example.com/channel\"}}]},\"P\":{\"TP\":\"Profile\",\"ME\":\"채널 'Synthetic Channel'의 프로필을 공유했습니다.\",\"SID\":\"plusfriend\",\"DID\":\"https://example.com/channel\",\"L\":{\"LPC\":\"https://example.com/channel\",\"LMO\":\"https://example.com/channel\"},\"VA\":\"6.0.0\",\"VI\":\"5.9.8\",\"VW\":\"2.5.1\",\"VM\":\"2.2.0\",\"FW\":true,\"KV\":false,\"BC\":false,\"AD\":false,\"ADULT\":false,\"PC\":true,\"A\":{\"version\":3,\"code\":\"synthetic\",\"createdAt\":1700000000},\"RF\":\"pf\"}}",
+   "message_equals_P_ME": true,
+   "expected": {
+    "android_chat_list": "채널 'Synthetic Channel'의 프로필을 공유했습니다.",
+    "android_bubble": "profile card: channel image, channel name, description, subscriber count, one \"채널 홈\" (channel home) button, and a Share icon beside the bubble",
+    "reply": true,
+    "mooo_link": "https://example.com/channel",
+    "mooo_body": "채널 'Synthetic Channel'의 프로필을 공유했습니다.\nhttps://example.com/channel"
+   }
+  },
+  {
+   "name": "channel post shared by A",
+   "authored_by_self": false,
+   "type": 71,
+   "message": "채널 'Synthetic Channel'의 게시글을 공유했습니다.",
+   "attachment": "{\"C\":{\"THC\":2,\"THL\":[{\"TH\":{\"THU\":\"https://example.com/image.jpg\",\"W\":400,\"H\":400}},{\"TH\":{\"THU\":\"https://example.com/image.jpg\",\"W\":400,\"H\":400}}],\"PR\":{\"TH\":{\"THU\":\"https://example.com/image.jpg\",\"W\":400,\"H\":400},\"BG\":{\"THU\":\"https://example.com/image.jpg\",\"W\":400,\"H\":400},\"TD\":{\"T\":\"Synthetic Channel\",\"D\":\"Synthetic description\"},\"L\":{\"LPC\":\"https://example.com/channel\",\"LMO\":\"https://example.com/channel\"}},\"RK\":false,\"TI\":{\"TD\":{\"T\":\"Synthetic title\",\"D\":\"Synthetic description\"},\"FT\":false},\"SO\":{\"LK\":0,\"CM\":0,\"SH\":3},\"BUL\":[{\"BU\":{\"T\":\"Synthetic title\",\"HL\":false},\"L\":{\"LCA\":\"kakaoplus://example/channel\",\"LCI\":\"kakaoplus://example/channel\",\"LPC\":\"https://example.com/channel/post\",\"LMO\":\"https://example.com/channel/post\"}},{\"BU\":{\"T\":\"채널 홈\",\"HL\":false},\"L\":{\"LPC\":\"https://example.com/channel\",\"LMO\":\"https://example.com/channel\"}}]},\"P\":{\"TP\":\"Feed\",\"ME\":\"채널 'Synthetic Channel'의 게시글을 공유했습니다.\",\"SID\":\"plusfriend\",\"DID\":\"https://example.com/channel/post\",\"L\":{\"LCA\":\"kakaoplus://example/channel\",\"LCI\":\"kakaoplus://example/channel\",\"LPC\":\"https://example.com/channel/post\",\"LMO\":\"https://example.com/channel/post\"},\"VA\":\"6.0.0\",\"VI\":\"5.9.8\",\"VW\":\"2.5.1\",\"VM\":\"2.2.0\",\"FW\":true,\"KV\":false,\"BC\":false,\"AD\":false,\"ADULT\":false,\"PC\":true,\"A\":{\"version\":3,\"code\":\"synthetic\",\"createdAt\":1700000000},\"RF\":\"pv\"}}",
+   "message_equals_P_ME": true,
+   "expected": {
+    "android_chat_list": "채널 'Synthetic Channel'의 게시글을 공유했습니다.",
+    "android_bubble": "feed card: channel header, post title and description, two thumbnails, two buttons, and a Share icon beside the bubble",
+    "reply": true,
+    "mooo_link": "https://example.com/channel/post",
+    "mooo_body": "채널 'Synthetic Channel'의 게시글을 공유했습니다.\nhttps://example.com/channel/post"
+   }
+  },
+  {
+   "name": "post card forwarded by B with the bubble Share button",
+   "authored_by_self": true,
+   "type": 71,
+   "message": "채널 'Synthetic Channel'의 게시글을 공유했습니다.",
+   "attachment": "{\"C\":{\"THC\":2,\"THL\":[{\"TH\":{\"THU\":\"https://example.com/image.jpg\",\"W\":400,\"H\":400}},{\"TH\":{\"THU\":\"https://example.com/image.jpg\",\"W\":400,\"H\":400}}],\"PR\":{\"TH\":{\"THU\":\"https://example.com/image.jpg\",\"W\":400,\"H\":400},\"BG\":{\"THU\":\"https://example.com/image.jpg\",\"W\":400,\"H\":400},\"TD\":{\"T\":\"Synthetic Channel\",\"D\":\"Synthetic description\"},\"L\":{\"LPC\":\"https://example.com/channel\",\"LMO\":\"https://example.com/channel\"}},\"RK\":false,\"TI\":{\"TD\":{\"T\":\"Synthetic title\",\"D\":\"Synthetic description\"},\"FT\":false},\"SO\":{\"LK\":0,\"CM\":0,\"SH\":3},\"BUL\":[{\"BU\":{\"T\":\"Synthetic title\",\"HL\":false},\"L\":{\"LCA\":\"kakaoplus://example/channel\",\"LCI\":\"kakaoplus://example/channel\",\"LPC\":\"https://example.com/channel/post\",\"LMO\":\"https://example.com/channel/post\"}},{\"BU\":{\"T\":\"채널 홈\",\"HL\":false},\"L\":{\"LPC\":\"https://example.com/channel\",\"LMO\":\"https://example.com/channel\"}}]},\"P\":{\"TP\":\"Feed\",\"ME\":\"채널 'Synthetic Channel'의 게시글을 공유했습니다.\",\"SID\":\"plusfriend\",\"DID\":\"https://example.com/channel/post\",\"L\":{\"LCA\":\"kakaoplus://example/channel\",\"LCI\":\"kakaoplus://example/channel\",\"LPC\":\"https://example.com/channel/post\",\"LMO\":\"https://example.com/channel/post\"},\"VA\":\"6.0.0\",\"VI\":\"5.9.8\",\"VW\":\"2.5.1\",\"VM\":\"2.2.0\",\"FW\":true,\"KV\":false,\"BC\":false,\"AD\":false,\"ADULT\":false,\"PC\":true,\"A\":{\"version\":3,\"code\":\"synthetic\",\"createdAt\":1700000000},\"RF\":\"chat_ln\"}}",
+   "message_equals_P_ME": true,
+   "expected": {
+    "android_bubble": "same feed card as the original",
+    "reply": true,
+    "mooo_link": "https://example.com/channel/post",
+    "mooo_body": "채널 'Synthetic Channel'의 게시글을 공유했습니다.\nhttps://example.com/channel/post"
+   }
+  }
+ ],
+ "reply": {
+  "name": "official Android reply by B to the channel profile card",
+  "type": 26,
+  "message": "mooo-lev71-reply-1",
+  "extra_keys": [
+   "src_logId",
+   "src_message",
+   "src_spoilers",
+   "src_type",
+   "src_userId"
+  ],
+  "src_type": 71,
+  "src_message": "채널 'Synthetic Channel'의 프로필을 공유했습니다.",
+  "src_spoilers": [],
+  "src_message_equals_source_message": true,
+  "src_logId_matches_source": true,
+  "src_userId_matches_source_author": true,
+  "android_reply_preview": "Reply to <author nickname> / 채널 'Synthetic Channel'의 프로필을 공유했습니다."
+ }
+}
