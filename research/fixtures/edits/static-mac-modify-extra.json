@@ -1,0 +1,69 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for Mac 26.8.0 (arm64)",
+    "date": "2026-10-16",
+    "method": "Annotated disassembly of the chatting controller's modify method and its caller in the composer send path. The method starts from the composer's extra (empty here: no mentions, spoilers, links or decorations), and for an emoticon-family message (types 6, 12, 20, 22, 25) or a reply copies each listed key that is present in the original parsed attachment, then sends MODIFYMSG with the original type. Other types send the composer extra unchanged. Edit eligibility (availableForModify) was executed: see research/fixtures/stickers/executed-mac-sticker-text.json. Attachments are synthetic.",
+    "doc": "research/bridge/GROUP-EDITS-DELETIONS.md"
+  },
+  "emoticon_keys": ["url", "name", "sound", "path", "path2", "scon", "alt", "xconVersion", "width", "height"],
+  "reply_keys": ["src_logId", "src_userId", "src_linkId", "src_type", "attach_only", "attach_type", "attach_content", "src_message", "src_mentions"],
+  "cases": [
+    {
+      "name": "text",
+      "type": 1,
+      "message": "synthetic text",
+      "attachment": "",
+      "extra": {}
+    },
+    {
+      "name": "sticker-with-text",
+      "type": 12,
+      "message": "synthetic caption",
+      "attachment": {"path": "synthetic/emot_001.png", "emoticonItemPath": "synthetic/emot_001.png", "name": "(Emoticons)", "type": "image/png"},
+      "extra": {"path": "synthetic/emot_001.png", "name": "(Emoticons)"}
+    },
+    {
+      "name": "animated-sticker-with-text-all-keys",
+      "type": 20,
+      "message": "synthetic caption",
+      "attachment": {"url": "synthetic-url", "name": "(Emoticons)", "sound": "synthetic.mp3", "path": "synthetic/anim_001.webp", "path2": "synthetic/anim_002.webp", "scon": "synthetic.scon", "alt": "synthetic alt", "xconVersion": 2, "width": 360, "height": 360, "type": "animated-emoticon/digital-item"},
+      "extra": {"url": "synthetic-url", "name": "(Emoticons)", "sound": "synthetic.mp3", "path": "synthetic/anim_001.webp", "path2": "synthetic/anim_002.webp", "scon": "synthetic.scon", "alt": "synthetic alt", "xconVersion": 2, "width": 360, "height": 360}
+    },
+    {
+      "name": "sticker-without-text",
+      "type": 12,
+      "message": "",
+      "attachment": {"path": "synthetic/emot_001.png", "name": "(Emoticons)", "type": "image/png"},
+      "not_editable": true
+    },
+    {
+      "name": "reply-text",
+      "type": 26,
+      "message": "synthetic reply",
+      "attachment": {"src_logId": 400, "src_userId": 2000, "src_type": 1, "src_message": "synthetic source", "src_mentions": [], "src_spoilers": []},
+      "extra": {"src_logId": 400, "src_userId": 2000, "src_type": 1, "src_message": "synthetic source", "src_mentions": []}
+    },
+    {
+      "name": "reply-sticker-with-text",
+      "type": 26,
+      "message": "synthetic reply",
+      "attachment": {"src_logId": 401, "src_userId": 2000, "src_type": 12, "src_message": "synthetic caption", "attach_type": 12, "attach_content": {"name": "(Emoticons)", "type": "image/png", "path": "synthetic/emot_002.png"}, "emoticonItemPath": "synthetic/emot_002.png", "src_spoilers": []},
+      "extra": {"src_logId": 401, "src_userId": 2000, "src_type": 12, "src_message": "synthetic caption", "attach_type": 12, "attach_content": {"name": "(Emoticons)", "type": "image/png", "path": "synthetic/emot_002.png"}}
+    },
+    {
+      "name": "reply-sticker-attach-only",
+      "type": 26,
+      "message": "(Emoticons)",
+      "attachment": {"src_logId": 400, "src_userId": 2000, "src_type": 1, "src_message": "synthetic source", "attach_only": true, "attach_type": 12, "attach_content": {"name": "(Emoticons)", "type": "image/png", "path": "synthetic/emot_002.png"}},
+      "not_editable": true
+    },
+    {
+      "name": "photo",
+      "type": 2,
+      "message": "",
+      "attachment": {"url": "synthetic-url"},
+      "not_editable": true
+    }
+  ]
+}
