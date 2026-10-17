@@ -61,3 +61,27 @@ func TestDeleteMessageReportsServerRefusalAsStatus(t *testing.T) {
 	}
 	waitBackends(t, backend)
 }
+
+func TestEditSourceReadsTheTargetWithOneGetMessages(t *testing.T) {
+	session, backend := scriptedSession(t, func(server *testloco.Peer) error {
+		request, err := server.Read()
+		if err != nil {
+			return err
+		}
+		body := bson.Raw(request.Body)
+		if request.Header.Method != "GETMSGS" || body.Lookup("logIds", "0").Int64() != 101 || body.Lookup("chatIds", "0").Int64() != 42 {
+			return errors.New("unexpected GETMSGS")
+		}
+		return server.WriteBSON(request.Header.PacketID, "GETMSGS", statusDocument(bson.E{Key: "chatLogs", Value: bson.A{bson.D{
+			{Key: "logId", Value: int64(101)}, {Key: "chatId", Value: int64(42)}, {Key: "authorId", Value: int64(2000)}, {Key: "type", Value: int32(12)},
+			{Key: "message", Value: "synthetic caption"}, {Key: "attachment", Value: `{"path":"synthetic/emot_001.png"}`},
+		}}}))
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	source, err := session.EditSource(ctx, 42, 101)
+	if err != nil || source.Type != messagetype.Sticker || source.AuthorID != 2000 || source.Message != "synthetic caption" || source.Attachment != `{"path":"synthetic/emot_001.png"}` {
+		t.Fatalf("source = %+v, err = %v", source, err)
+	}
+	waitBackends(t, backend)
+}

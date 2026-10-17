@@ -29,6 +29,21 @@ func (c *Client) ModifyMessage(ctx context.Context, request chat.ModifyRequest) 
 	})
 }
 
+// EditSource reads logID's current chat log with one GETMSGS, the original
+// an edit of a sticker's text or a reply is built on.
+func (s *session) EditSource(ctx context.Context, chatID, logID int64) (chat.EditSource, error) {
+	return call(s, ctx, chat.GetMessagesCommand, chat.GetMessagesRequest{ChatID: chatID, LogIDs: []int64{logID}}, func(body []byte) (chat.EditSource, error) {
+		return chat.DecodeEditSource(body, logID)
+	})
+}
+
+// EditSource reads logID's current chat log through the current session.
+func (c *Client) EditSource(ctx context.Context, chatID, logID int64) (chat.EditSource, error) {
+	return withSession(c, ctx, func(session *session) (chat.EditSource, error) {
+		return session.EditSource(ctx, chatID, logID)
+	})
+}
+
 // DeleteMessage deletes one own message for everyone through the current session.
 func (c *Client) DeleteMessage(ctx context.Context, request chat.DeleteRequest) error {
 	_, err := withSession(c, ctx, func(session *session) (struct{}, error) {

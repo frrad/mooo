@@ -207,8 +207,9 @@ Matrix reply to the sticker part then reached Kakao as type 26 with
 
 Remaining gaps:
 
-- Matrix edits of a sticker's text, and of replies, are still refused by the
-  bridge. Supporting them needs the original attachment for `extra`.
+- Matrix edits of a sticker's text and of replies are now sent (see
+  [edits](bridge/GROUP-EDITS-DELETIONS.md)). Sticker kinds other than 12 and
+  20 are never bridged as editable text, so they stay refused.
 - The Mac's on-screen position of the text bubble relative to the sticker
   (layout code untraced; rendering the view off-screen in the harness
   crashed).

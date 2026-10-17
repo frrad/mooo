@@ -70,6 +70,7 @@ type outboundAPI interface {
 	SendUpload(ctx context.Context, chatID int64, upload media.Upload) (media.SendResult, error)
 	SendAlbum(ctx context.Context, chatID int64, photos [][]byte, caption string) (chat.WriteResponse, error)
 	ModifyMessage(ctx context.Context, request chat.ModifyRequest) (int64, error)
+	EditSource(ctx context.Context, chatID, logID int64) (chat.EditSource, error)
 	DeleteMessage(ctx context.Context, request chat.DeleteRequest) error
 	MarkRead(ctx context.Context, chatID, watermark int64, held client.HeldMessages) (syncmsg.Response, error)
 	CreateChat(context.Context, chat.CreateRequest) (chat.CreateResponse, error)
