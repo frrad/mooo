@@ -1,0 +1,17 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-16",
+    "method": "Owned A selected one free Kakao Friends Classic static sticker in the owned A/B direct chat, typed a synthetic caption into the composer under the sticker preview and tapped Send once. B's scoped read-only SYNCMSG probe recorded the single resulting chat log: its type, message and attachment keys and values. A's and B's official clients both rendered that one log as the sticker followed by a text bubble. Paths are synthetic; the message is the synthetic caption that was sent.",
+    "doc": "research/stickers.md"
+  },
+  "type": 12,
+  "message": "mooo-sticker-text-1",
+  "attachment": {
+    "path": "synthetic/emot_direct_001.png",
+    "emoticonItemPath": "synthetic/emot_direct_001.png",
+    "name": "(Emoticons)",
+    "type": "image/png"
+  }
+}

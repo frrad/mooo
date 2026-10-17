@@ -100,6 +100,49 @@ cursor. This does not establish Element/Beeper animation playback, sound sticker
 paid-pack entitlement behavior, outbound stickers, or full official-client parity.
 
 
+## Sticker sent with text (2026-10-16)
+
+Controlled owned-account experiment, Android 26.8.2 on owned A and B. A
+selected the first Kakao Friends Classic item in the A/B direct chat. With
+the sticker preview open, A typed a synthetic caption into the composer and
+tapped Send once. B's scoped read-only SYNCMSG probe saw exactly one log:
+type 12, `message` set to the caption, and the same attachment keys as a
+sticker sent alone (`path`, `emoticonItemPath`, `name` "(Emoticons)", `type`).
+A sticker sent alone has an empty `message`, as in the observed group fixture.
+Both official clients render that one log as the sticker with the text in a
+bubble below it.
+
+When B replied to that log from Android, the reply carried `src_type` 12 and
+the caption as `src_message`. B's reply contained a second sticker and its own
+text; that is recorded in [image and sticker replies](bridge/GROUP-IMAGE-REPLIES.md).
+
+Fixture: [`fixtures/stickers/observed-direct-sticker-with-text.json`](fixtures/stickers/observed-direct-sticker-with-text.json)
+(provenance `observed`; paths are synthetic).
+
+The decoder had ignored `message` on types 12 and 20, so the bridge sent only
+the sticker (regression). It now reads `message` as an optional string. A
+present non-string value, invalid UTF-8 or a NUL turns the log into a
+malformed-payload gap. A sticker with text becomes two Matrix events: the
+`m.sticker` (empty part ID, as for a sticker alone) and then an `m.text` (part
+`text`). The event is an upsert. A redelivered message that has only its
+sticker row, such as one bridged before this fix or a send that stopped after
+the sticker, gets the missing text without repeating the sticker. A sticker
+resource failure still produces its notice, and the text is still sent. Both
+parts store the caption as their reply preview, so a Matrix reply to either
+part sends `src_type` 12 and the caption as `src_message`, matching Android.
+
+Live acceptance used B's bridge profile, catching up the two logs above while
+offline. The tester's encrypted Matrix transcript showed A's ghost sending a
+360×360 PNG `m.sticker` and then the caption, followed by B's text and its
+sticker, both replying to the first sticker. A Matrix reply to the bridged
+caption reached Kakao as type 26 with `src_type` 12 and the caption as
+`src_message`, with the correct source log. A's official client showed the
+quote correctly.
+
+Untraced: whether the Mac client's sticker model reads `message`, editing a
+sticker's text (the bridge applies edits only to type 1 and 26), and text
+with animated (type 20) stickers, which was not sent but shares the decoder.
+
 ## Additional free-pack availability audit (2026-10-09)
 
 A controlled owned-account Android 26.8.2 experiment selected the first item in
