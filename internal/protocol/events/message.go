@@ -175,9 +175,11 @@ func (m PhotoMessage) String() string {
 func (m PhotoMessage) GoString() string { return m.String() }
 
 type UnsupportedMessage struct {
-	ChatID int64
-	LogID  int64
-	Type   int32
+	ChatID   int64
+	LogID    int64
+	Type     int32
+	AuthorID int64
+	SentAt   int64
 }
 
 func (UnsupportedMessage) Kind() Kind           { return KindUnsupportedMessage }
@@ -198,7 +200,7 @@ func decodeMessage(packet loco.Packet) (Event, error) {
 	if decode, ok := messageDecoders[env.Type]; ok {
 		return decode(env)
 	}
-	return UnsupportedMessage{ChatID: env.ChatID, LogID: env.LogID, Type: env.Type}, nil
+	return UnsupportedMessage{ChatID: env.ChatID, LogID: env.LogID, Type: env.Type, AuthorID: env.AuthorID, SentAt: env.SentAt}, nil
 }
 
 // messageDecoders maps each supported chatLog.type to its content decoder.

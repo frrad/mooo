@@ -143,8 +143,15 @@ func TestExecutedLeverageCardsBridgeTheOfficialSummary(t *testing.T) {
 			logID, sendAt := int64(1000+i), int32(1700000000+i)
 			msg, converted := bridgeLeverageCard(t, kc, harness, leverageCardPacket(t, logID, author, sendAt, c.Message, c.Attachment))
 			if kind == "unsupported" {
-				if body := convertedBody(t, converted).Body; body != "A KakaoTalk message of unsupported type 71 was sent." {
+				if body := convertedBody(t, converted).Body; body != "A KakaoTalk message of unsupported type 71 was sent. Set network.debug_dump_dir in the bridge config to keep a private copy of messages like this." {
 					t.Fatalf("body = %q", body)
+				}
+				wantSender := bridgev2.EventSender{Sender: makeUserID(author)}
+				if author == testSelfID {
+					wantSender = kc.selfSender()
+				}
+				if msg.GetSender() != wantSender || !msg.GetTimestamp().Equal(time.Unix(int64(sendAt), 0)) {
+					t.Errorf("sender = %+v, timestamp = %v; want the card's author and time", msg.GetSender(), msg.GetTimestamp())
 				}
 				return
 			}
