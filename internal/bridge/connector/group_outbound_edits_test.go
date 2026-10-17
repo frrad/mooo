@@ -111,7 +111,7 @@ func TestMatrixEditIsRejectedBeforeAnySendWhenKakaoWouldRefuse(t *testing.T) {
 		{"another member's message", other},
 		{"older than 24 hours", ownTarget(201, messagetype.Text, time.Now().Add(-25*time.Hour))},
 		{"photo", ownTarget(201, messagetype.Photo, time.Now())},
-		{"reply", ownTarget(201, messagetype.Reply, time.Now())},
+		{"reply the server no longer returns", ownTarget(201, messagetype.Reply, time.Now())},
 		{"deleted", ownTarget(201, messagetype.Text|messagetype.DeletedAllChatTypeFlag, time.Now())},
 	}
 	for _, tc := range cases {

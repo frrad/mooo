@@ -74,6 +74,42 @@ Each change was preceded by a failing production-path test.
   nothing and the edit was lost; it is now read by position with `GETMSGS`,
   like the Mac client, before the edit is queued, and a failed read leaves
   the feed uncommitted.
+- **Sticker text edits (regression, 2026-10-16).** Edits of a sticker sent
+  with text were ignored because the edited message was not a text. The text
+  part is now edited and the sticker part keeps its event; see
+  [stickers](../stickers.md#mac-client-2680-parity-2026-10-16).
+- **Matrix edits of sticker text and replies (2026-10-16).** The bridge
+  had refused every Matrix edit except a plain text. The Mac lets its user
+  edit the text of their own sticker with text (types 12 and 20) and of
+  their own reply unless it is attachment-only (executed:
+  [`fixtures/stickers/executed-mac-sticker-text.json`](../fixtures/stickers/executed-mac-sticker-text.json)).
+  Its `MODIFYMSG` `extra` starts from the composer's extra and adds each of
+  these keys the original attachment has (static:
+  [`fixtures/edits/static-mac-modify-extra.json`](../fixtures/edits/static-mac-modify-extra.json)).
+  For an emoticon the keys are `url`, `name`, `sound`, `path`, `path2`,
+  `scon`, `alt`, `xconVersion`, `width` and `height`. For a reply they are
+  `src_logId`, `src_userId`, `src_linkId`, `src_type`, `attach_only`,
+  `attach_type`, `attach_content`, `src_message` and `src_mentions`. Other
+  keys are dropped. A plain text keeps the composer extra alone.
+  - A Matrix edit of a sticker's text part (`text`) or a reply's text part
+    (empty part ID) now reads the target with one `GETMSGS`, because mooo
+    keeps no raw copy of the attachment. It checks that the target's author
+    and type still match, builds `extra` with that recipe and sends one
+    `MODIFYMSG` with the original type. An edit of a sticker part, of a
+    sticker without text or of an attachment-only reply is refused before
+    anything is sent. So is an edit whose target the server does not
+    return. A failed read is a certain failure because nothing was sent.
+    The message's other parts take the new revision and reply preview.
+  - Deliberate deviation: the extra `GETMSGS` read per sticker or reply edit
+    (the Mac uses its stored copy). The bridge sends no mentions, spoilers
+    or links in `extra`, as for text edits.
+  - Observed live (owned A/B, Android 26.8.2 as the official clients:
+    [`fixtures/edits/observed-direct-outbound-sticker-reply-edits.json`](../fixtures/edits/observed-direct-outbound-sticker-reply-edits.json)).
+    A Matrix edit of B's own sticker with text and one of B's own sticker
+    reply with text each produced one feed-25 log and the edited message.
+    Its sticker keys, or its `src_*` and `attach_*` keys, were kept. The
+    server also kept `emoticonItemPath`, which the request did not carry.
+    A's official client showed both labelled Edited, with their stickers.
 - **Catch-up ceiling (regression).** With no message after an offline edit,
   catch-up never ran because the ceiling came from LOGINLIST `l`; the next
   live message then committed past the edit feed. Resume targets now use the

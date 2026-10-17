@@ -1,0 +1,31 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2 (A and B) with a mooo bridge build on B's secondary-device profile",
+    "date": "2026-10-16",
+    "method": "In the owned A/B direct chat, B's phone sent one free Kakao Friends Classic sticker with a synthetic text (sticker case), and B had earlier sent a sticker reply with text (reply case). With the bridge running, the Matrix tester sent one m.replace of each message's bridged text part. The bridge read each target with GETMSGS and sent one MODIFYMSG built with research/fixtures/edits/static-mac-modify-extra.json's recipe. After stopping the bridge, B's scoped read-only SYNCMSG probe read both targets and their feed-25 logs; the reply showed its new text about two minutes after the edit. A's official client showed both messages labelled Edited, with the new text and the sticker still displayed. Values are synthetic; only key sets were compared.",
+    "doc": "research/bridge/GROUP-EDITS-DELETIONS.md"
+  },
+  "cases": [
+    {
+      "name": "sticker-with-text",
+      "type": 12,
+      "original_attachment_keys": ["emoticonItemPath", "name", "path", "type"],
+      "sent_extra_keys": ["name", "path"],
+      "edited_attachment_keys": ["emoticonItemPath", "name", "path"],
+      "feed": {"feedType": 25, "targetRevision": 1},
+      "official_render": "sticker then the edited text, labelled Edited"
+    },
+    {
+      "name": "reply-with-sticker-and-text",
+      "type": 26,
+      "original_attachment_keys": ["attach_content", "attach_type", "emoticonItemPath", "src_logId", "src_message", "src_spoilers", "src_type", "src_userId"],
+      "sent_extra_keys": ["attach_content", "attach_type", "src_logId", "src_message", "src_type", "src_userId"],
+      "edited_attachment_keys": ["attach_content", "attach_type", "emoticonItemPath", "src_logId", "src_message", "src_type", "src_userId"],
+      "edited_attach_content_keys": ["name", "path", "type"],
+      "feed": {"feedType": 25, "targetRevision": 1},
+      "official_render": "quote and the edited reply text labelled Edited, then the sticker"
+    }
+  ],
+  "notes": "The server kept emoticonItemPath although the request did not carry it; the sticker's type key and the reply's src_spoilers, which the Mac recipe does not copy, were absent after the edit."
+}

@@ -69,9 +69,12 @@ func (kc *KakaoClient) remoteEventFor(evt events.Event) bridgev2.RemoteEvent {
 	case events.TextMessage:
 		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, convertText)
 	case events.ReplyMessage:
+		if evt.Attachment.Sticker != nil && !evt.Attachment.Only && evt.Message != "" {
+			return namedPartsEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, []networkid.PartID{"", replyStickerPartID}, kc.convertStickerTextReply)
+		}
 		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, kc.convertReply)
 	case events.StickerMessage:
-		return messageEvent(kc, evt.Position(), evt.AuthorID, evt.SentAt, evt, convertSticker)
+		return kc.stickerEvent(evt)
 	case events.ContactMessage:
 		return messageEvent(kc, evt.Position(), evt.Message.AuthorID, evt.Message.SentAt, evt, convertContact)
 	case events.FileMessage:
@@ -431,8 +434,40 @@ func (kc *KakaoClient) convertReply(ctx context.Context, portal *bridgev2.Portal
 	if err != nil {
 		return nil, err
 	}
-	if msg.Source.LogID <= 0 {
-		return converted, nil
+	return kc.relateReply(ctx, portal, msg, converted), nil
+}
+
+// replyStickerPartID is the sticker part of a reply that carries a sticker
+// and text. The text keeps the empty part ID of a plain reply.
+const replyStickerPartID networkid.PartID = "sticker"
+
+// convertStickerTextReply converts a reply carrying a sticker and text into
+// the text followed by the sticker, as the official client renders it
+// (observed), skipping parts already bridged.
+func (kc *KakaoClient) convertStickerTextReply(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.ReplyMessage, existing map[networkid.PartID]bool) (*bridgev2.ConvertedMessage, error) {
+	converted := &bridgev2.ConvertedMessage{}
+	if !existing[""] {
+		converted.Parts = append(converted.Parts, messageWithMetadata(event.MsgText, msg.Message, newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, messagetype.Reply, msg.Message, 0)).Parts[0])
+	}
+	if !existing[replyStickerPartID] {
+		part, err := stickerPart(ctx, portal, intent, events.StickerMessage{ChatID: msg.ChatID, LogID: msg.LogID, AuthorID: msg.AuthorID, SentAt: msg.SentAt, Type: msg.Attachment.Type, Attachment: *msg.Attachment.Sticker})
+		if err != nil {
+			return nil, err
+		}
+		metadata := part.DBMetadata.(*KakaoMessageMetadata)
+		metadata.Type = messagetype.Reply
+		metadata.Preview = truncateReplyPreview(msg.Message)
+		part.ID = replyStickerPartID
+		converted.Parts = append(converted.Parts, part)
+	}
+	return kc.relateReply(ctx, portal, msg, converted), nil
+}
+
+// relateReply relates converted reply parts to their source, or quotes the
+// source Kakao embedded in the reply when the source was never bridged.
+func (kc *KakaoClient) relateReply(ctx context.Context, portal *bridgev2.Portal, msg events.ReplyMessage, converted *bridgev2.ConvertedMessage) *bridgev2.ConvertedMessage {
+	if msg.Source.LogID <= 0 || len(converted.Parts) == 0 {
+		return converted
 	}
 	target := networkid.MessageOptionalPartID{MessageID: makeMessageID(msg.ChatID, msg.Source.LogID)}
 	if kc.replySourceMissing(ctx, portal, target) && msg.Source.Message != "" {
@@ -449,20 +484,21 @@ func (kc *KakaoClient) convertReply(ctx context.Context, portal *bridgev2.Portal
 			content.Format = event.FormatHTML
 			content.FormattedBody = "<blockquote>" + htmlLines(quote) + "</blockquote>" + htmlLines(body)
 		}
-		return converted, nil
+		return converted
 	}
 	converted.ReplyTo = &target
-	return converted, nil
+	return converted
 }
 
 // replyContent converts what a reply carries: its text, a supported sticker,
-// or an explicit notice for an attachment the bridge cannot render.
+// or an explicit notice for an attachment the bridge cannot render. A reply
+// with both a sticker and text goes through convertStickerTextReply.
 func replyContent(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.ReplyMessage) (*bridgev2.ConvertedMessage, error) {
 	metadata := newKakaoMessageMetadata(msg.ChatID, msg.LogID, msg.AuthorID, messagetype.Reply, msg.Message, 0)
 	switch {
 	case msg.Attachment.Type == 0:
 		return messageWithMetadata(event.MsgText, msg.Message, metadata), nil
-	case msg.Attachment.Sticker != nil && msg.Attachment.Only:
+	case msg.Attachment.Sticker != nil:
 		part, err := stickerPart(ctx, portal, intent, events.StickerMessage{ChatID: msg.ChatID, LogID: msg.LogID, AuthorID: msg.AuthorID, SentAt: msg.SentAt, Type: msg.Attachment.Type, Attachment: *msg.Attachment.Sticker})
 		if err != nil {
 			return nil, err
@@ -472,10 +508,6 @@ func replyContent(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.
 			partMetadata.Type = messagetype.Reply
 		}
 		return &bridgev2.ConvertedMessage{Parts: []*bridgev2.ConvertedMessagePart{part}}, nil
-	case msg.Attachment.Sticker != nil:
-		// Not observed: a sticker with its own text. Keep the text visible and
-		// mark the sticker explicitly rather than dropping either.
-		return messageWithMetadata(event.MsgText, msg.Message+"\n\n(KakaoTalk sticker)", metadata), nil
 	default:
 		notice := fmt.Sprintf("A KakaoTalk reply contained an attachment that cannot be displayed (type %d).", msg.Attachment.Type)
 		if msg.Attachment.Only || msg.Message == "" {

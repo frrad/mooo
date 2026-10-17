@@ -100,6 +100,123 @@ cursor. This does not establish Element/Beeper animation playback, sound sticker
 paid-pack entitlement behavior, outbound stickers, or full official-client parity.
 
 
+## Sticker sent with text (2026-10-16)
+
+Controlled owned-account experiment, Android 26.8.2 on owned A and B. A
+selected the first Kakao Friends Classic item in the A/B direct chat. With
+the sticker preview open, A typed a synthetic caption into the composer and
+tapped Send once. B's scoped read-only SYNCMSG probe saw exactly one log:
+type 12, `message` set to the caption, and the same attachment keys as a
+sticker sent alone (`path`, `emoticonItemPath`, `name` "(Emoticons)", `type`).
+A sticker sent alone has an empty `message`, as in the observed group fixture.
+Both official clients render that one log as the sticker with the text in a
+bubble below it.
+
+When B replied to that log from Android, the reply carried `src_type` 12 and
+the caption as `src_message`. B's reply contained a second sticker and its own
+text; that is recorded in [image and sticker replies](bridge/GROUP-IMAGE-REPLIES.md).
+
+Fixture: [`fixtures/stickers/observed-direct-sticker-with-text.json`](fixtures/stickers/observed-direct-sticker-with-text.json)
+(provenance `observed`; paths are synthetic).
+
+The decoder had ignored `message` on types 12 and 20, so the bridge sent only
+the sticker (regression). It now reads `message` as an optional string. A
+present non-string value, invalid UTF-8 or a NUL turns the log into a
+malformed-payload gap. A sticker with text becomes two Matrix events: the
+`m.sticker` (empty part ID, as for a sticker alone) and then an `m.text` (part
+`text`). The event is an upsert. A redelivered message that has only its
+sticker row, such as one bridged before this fix or a send that stopped after
+the sticker, gets the missing text without repeating the sticker. A sticker
+resource failure still produces its notice, and the text is still sent. Both
+parts store the caption as their reply preview, so a Matrix reply to either
+part sends `src_type` 12 and the caption as `src_message`, matching Android.
+
+Live acceptance used B's bridge profile, catching up the two logs above while
+offline. The tester's encrypted Matrix transcript showed A's ghost sending a
+360×360 PNG `m.sticker` and then the caption, followed by B's text and its
+sticker, both replying to the first sticker. A Matrix reply to the bridged
+caption reached Kakao as type 26 with `src_type` 12 and the caption as
+`src_message`, with the correct source log. A's official client showed the
+quote correctly.
+
+### Mac client (26.8.0) parity, 2026-10-16
+
+Method: static reading of the authorized macOS 26.8.0 arm64 binary (private
+Ghidra project and annotated disassembly), plus an executed harness: the
+isolated, logged-out probe copy of the official binary ran synthetic inputs
+through the client's own sticker model, reply presenter and edit predicate
+under Frida. Fixture:
+[`fixtures/stickers/executed-mac-sticker-text.json`](fixtures/stickers/executed-mac-sticker-text.json)
+(provenance `executed`). The client maps types 6, 12, 20, 22 and 25 to one
+emoticon model family; 12 is the static sticker and 20 the animated sticker.
+
+1. **Model and rendering.** The emoticon model's text is the chat log's
+   `message` (executed: empty for a sticker alone, the text otherwise, for
+   types 12 and 20). The chat-log view (static) adds a text bubble and the
+   sticker view when that text is non-empty and the sticker view alone when
+   it is empty, so the Mac shows both, as Android does. The vertical order
+   comes from layout code that was not traced; the bridge keeps the observed
+   order (sticker, then text).
+2. **Reply summary.** The reply composer's `src_message` is the presenter's
+   summary of the source, cut to 100 UTF-16 units (static). Executed: a type-12
+   or type-20 source with text is summarized as its text, the same as Android
+   sends. A sticker without text is summarized with the localized emoticon
+   label ("Emoticon" in English), and a reply carrying a sticker and text by
+   its reply text. The executed fixture is read by a connector test that
+   checks the bridge stores these summaries as reply previews. For a sticker
+   without text mooo keeps its own `[sticker]` preview (recorded deviation).
+3. **Composer.** The Mac can send a sticker with text (static). The emoticon
+   send puts the typed text in `message` and the emoticon fields (`name`,
+   `path`, and for some kinds `path2`, `scon`, `width`, `height`,
+   `xconVersion`, `sound`, `kid`) in the attachment. This is the shape Android
+   sends. A reply carrying an emoticon sets `attach_type`, `attach_content`
+   and `attach_only` to whether the text is empty. With text, the Mac
+   therefore sends `attach_only: false`, where Android leaves the key out; the
+   decoder treats both the same.
+4. **Editing.** Executed: the Mac allows editing a sticker of type 12 or 20
+   when it has text, is the user's own and is less than 24 hours old. It also
+   allows editing a reply carrying a sticker and text. It refuses a sticker
+   without text and an attachment-only sticker reply. Static: an emoticon
+   edit sends `MODIFYMSG` with the new text. Its `extra` is the original
+   attachment's sticker keys (`url`, `name`, `sound`, `path`, `path2`, `scon`,
+   `alt`, `xconVersion`, `width`, `height`), so the sticker is kept.
+
+Observed on Android 26.8.2 the same day: A long-pressed its own sticker with
+text and the menu offered Edit. The edit composer holds only the text and
+shows no send control while it is empty. After one edit, B read a type-0
+feed log with `feedType` 25, the sticker's `logId`, `targetRevision` 1 and
+`hidden` true. `GETMSGS` returned the sticker as type 12 with the new text
+and the same sticker path. A `SYNCMSG` read seconds after the edit still
+returned the old text; a read a few minutes later returned the new text.
+Fixture: [`fixtures/stickers/observed-direct-sticker-text-edit.json`](fixtures/stickers/observed-direct-sticker-text-edit.json)
+(provenance `observed`).
+
+The bridge ignored edits whose message was not a text or reply, so Matrix
+kept a sticker's old text (regression). An edit of a sticker now edits only
+the text part (`text`); the sticker event is not edited. The sticker part
+gets the new revision and reply preview without a Matrix event, so a later
+reply quotes the new text, as the Mac summary does. For a reply carrying a
+sticker, the edit targets the text part (empty part ID) by ID, and the
+sticker part is updated the same way. A sticker edit without text is ignored.
+
+Live acceptance used B's bridge profile, catching up A's edit while offline.
+The tester's encrypted transcript showed one Matrix edit (`m.replace`, new
+text) of the sticker's text event; the sticker event was not edited. A tester
+Matrix reply to the sticker part then reached Kakao as type 26 with
+`src_type` 12, the edited text as `src_message` and the correct source log.
+
+Remaining gaps:
+
+- Matrix edits of a sticker's text and of replies are now sent (see
+  [edits](bridge/GROUP-EDITS-DELETIONS.md)). Sticker kinds other than 12 and
+  20 are never bridged as editable text, so they stay refused.
+- The Mac's on-screen position of the text bubble relative to the sticker
+  (layout code untraced; rendering the view off-screen in the harness
+  crashed).
+- No live Mac send or edit of a sticker with text was observed. The Mac
+  findings are static and executed only.
+- Type 20 with text was executed on the Mac model but not sent live.
+
 ## Additional free-pack availability audit (2026-10-09)
 
 A controlled owned-account Android 26.8.2 experiment selected the first item in

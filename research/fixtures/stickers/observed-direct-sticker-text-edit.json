@@ -1,0 +1,27 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-16",
+    "method": "Owned A long-pressed its own sticker-with-text log (observed-direct-sticker-with-text.json) in the owned A/B direct chat about 30 minutes after sending it. The menu offered Edit. The edit composer showed only the text; with the field emptied no send control was shown. A typed a synthetic replacement and sent it once; A's client then labelled the message Edited. B's scoped read-only SYNCMSG probe recorded the feed log, and a read-only GETMSGS for the target recorded the edited log. Log IDs and the sticker path are synthetic. The edited log's sticker path equalled the original's; other attachment keys were not compared, so only path is listed.",
+    "doc": "research/stickers.md"
+  },
+  "feed": {
+    "type": 0,
+    "message": {
+      "feedType": 25,
+      "logId": 401,
+      "targetRevision": 1,
+      "hidden": true
+    }
+  },
+  "edited": {
+    "logId": 401,
+    "type": 12,
+    "message": "mooo-sticker-text-edit-1",
+    "attachment": {
+      "path": "synthetic/emot_direct_001.png"
+    }
+  },
+  "syncmsg": "A SYNCMSG read seconds after the edit returned the target with its original text; a read a few minutes later returned it with the edited text. Both reads returned the feed log after the target's replies."
+}
