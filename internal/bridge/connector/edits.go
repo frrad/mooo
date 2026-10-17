@@ -38,13 +38,25 @@ func (e *kakaoEdit) GetTargetMessage() networkid.MessageID {
 
 // ConvertEdit replaces the bridged text when the edit is newer than the
 // stored revision and comes from the message's author. Anything else, and
-// edits of non-text messages, is ignored rather than repeated.
+// edits of messages without text, is ignored rather than repeated. A message
+// bridged as several parts (a sticker with text, or a reply carrying a
+// sticker) has only its text part edited in Matrix; the other parts keep
+// their event and take the new revision and reply preview.
 func (e *kakaoEdit) ConvertEdit(_ context.Context, _ *bridgev2.Portal, _ bridgev2.MatrixAPI, existing []*database.Message) (*bridgev2.ConvertedEdit, error) {
-	if len(existing) == 0 || existing[0] == nil {
+	text, textPartID, ok := editedText(e.edit.Modified, e.edit.TargetLogID)
+	if !ok {
+		return nil, fmt.Errorf("%w: edited content is not text", bridgev2.ErrIgnoringRemoteEvent)
+	}
+	var target *database.Message
+	for _, part := range existing {
+		if part != nil && part.PartID == textPartID {
+			target = part
+		}
+	}
+	if target == nil {
 		return nil, fmt.Errorf("%w: edit target not bridged", bridgev2.ErrIgnoringRemoteEvent)
 	}
-	part := existing[0]
-	stored, ok := part.Metadata.(*KakaoMessageMetadata)
+	stored, ok := target.Metadata.(*KakaoMessageMetadata)
 	if !ok || stored == nil {
 		return nil, fmt.Errorf("%w: edit target has no Kakao metadata", bridgev2.ErrIgnoringRemoteEvent)
 	}
@@ -54,29 +66,47 @@ func (e *kakaoEdit) ConvertEdit(_ context.Context, _ *bridgev2.Portal, _ bridgev
 	if stored.Revision >= e.edit.TargetRevision {
 		return nil, fmt.Errorf("%w: edit revision already applied", bridgev2.ErrIgnoringRemoteEvent)
 	}
-	text, ok := editedText(e.edit.Modified, e.edit.TargetLogID)
-	if !ok {
-		return nil, fmt.Errorf("%w: edited content is not text", bridgev2.ErrIgnoringRemoteEvent)
-	}
 	updated := *stored
 	updated.Revision = e.edit.TargetRevision
 	updated.Preview = text
-	part.Metadata = &updated
-	return &bridgev2.ConvertedEdit{ModifiedParts: []*bridgev2.ConvertedEditPart{{
-		Part:    part,
+	target.Metadata = &updated
+	converted := &bridgev2.ConvertedEdit{ModifiedParts: []*bridgev2.ConvertedEditPart{{
+		Part:    target,
 		Type:    event.EventMessage,
 		Content: &event.MessageEventContent{MsgType: event.MsgText, Body: text},
-	}}}, nil
+	}}}
+	for _, part := range existing {
+		if part == nil || part == target {
+			continue
+		}
+		meta, ok := part.Metadata.(*KakaoMessageMetadata)
+		if !ok || meta == nil {
+			continue
+		}
+		companion := *meta
+		companion.Revision = e.edit.TargetRevision
+		companion.Preview = truncateReplyPreview(text)
+		part.Metadata = &companion
+		converted.ModifiedParts = append(converted.ModifiedParts, &bridgev2.ConvertedEditPart{
+			Part: part, Type: event.EventMessage, Content: &event.MessageEventContent{}, DontBridge: true,
+		})
+	}
+	return converted, nil
 }
 
-func editedText(modified events.Event, target int64) (string, bool) {
+// editedText returns the edited text and the part that shows it. A sticker
+// edit carries the whole type-12/20 log with its new text (observed); its
+// text is the sticker's text part.
+func editedText(modified events.Event, target int64) (string, networkid.PartID, bool) {
 	switch m := modified.(type) {
 	case events.TextMessage:
-		return m.Message, m.LogID == target
+		return m.Message, "", m.LogID == target
 	case events.ReplyMessage:
-		return m.Message, m.LogID == target
+		return m.Message, "", m.LogID == target
+	case events.StickerMessage:
+		return m.Message, stickerTextPartID, m.LogID == target && m.Message != ""
 	default:
-		return "", false
+		return "", "", false
 	}
 }
 

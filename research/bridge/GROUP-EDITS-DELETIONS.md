@@ -74,6 +74,10 @@ Each change was preceded by a failing production-path test.
   nothing and the edit was lost; it is now read by position with `GETMSGS`,
   like the Mac client, before the edit is queued, and a failed read leaves
   the feed uncommitted.
+- **Sticker text edits (regression, 2026-10-16).** Edits of a sticker sent
+  with text were ignored because the edited message was not a text. The text
+  part is now edited and the sticker part keeps its event; see
+  [stickers](../stickers.md#mac-client-2680-parity-2026-10-16).
 - **Catch-up ceiling (regression).** With no message after an offline edit,
   catch-up never ran because the ceiling came from LOGINLIST `l`; the next
   live message then committed past the edit feed. Resume targets now use the

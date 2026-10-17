@@ -151,7 +151,7 @@ func TestCatchUpEditFetchesTheEditedMessageBeforeQueueing(t *testing.T) {
 	if last := source.fetchRequests[len(source.fetchRequests)-1]; len(last) != 2 || last[0] != testChatID || last[1] != 201 {
 		t.Fatalf("GETMSGS request = %v", last)
 	}
-	if text, ok := editedText(got.edit.Modified, 201); !ok || text != "synthetic second edit" {
+	if text, _, ok := editedText(got.edit.Modified, 201); !ok || text != "synthetic second edit" {
 		t.Fatalf("modified = %#v", got.edit.Modified)
 	}
 }
