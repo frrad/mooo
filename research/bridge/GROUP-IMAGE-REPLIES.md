@@ -45,6 +45,15 @@ recorded key sets, value kinds, `src_type`, `src_message`, `attach_type`,
 `attach_content` with `name`, `path` and `type`. Android's reply composer also
 hides the media button, matching the Mac.
 
+`research/fixtures/replies/observed-direct-sticker-text-reply.json`
+(2026-10-16): in the owned A/B direct chat, B (Android 26.8.2) replied to A's
+sticker-with-text message with another sticker and typed text. The single
+type-26 log has `message` = the typed text, `attach_type` 12, an
+`attach_content` object (`name`, `type`, `path`), `emoticonItemPath`, and **no
+`attach_only` key**. `src_type` is 12 and `src_message` is the source's text.
+B's official client rendered the quote and text bubble with the sticker below
+it. See [stickers](../stickers.md#sticker-sent-with-text-2026-10-16).
+
 ## Production changes and regressions
 
 Each change was preceded by a failing production-path test.
@@ -56,8 +65,12 @@ Each change was preceded by a failing production-path test.
   when the source is not bridged). The reply's stored type stays 26.
 - **Unsupported reply attachments** become an explicit notice that names the
   attach type and still relates to the source; text alongside such an
-  attachment stays visible with a marker. A sticker with its own text (not
-  observed) keeps the text and marks the sticker. Nothing is silently dropped.
+  attachment stays visible with a marker. Nothing is silently dropped.
+- **Sticker replies with text** (observed 2026-10-16, below) were sent as the
+  text plus a "(KakaoTalk sticker)" marker. They now become the reply text
+  (empty part ID) and then the `m.sticker` (part `sticker`). Both relate to
+  the source, and both store the reply's text as their preview. A row bridged
+  before this fix has only the text, so redelivery adds just the sticker.
 - **Reply to a photo.** A Matrix reply to a bridged photo sent `src_message`
   "[image]"; it now sends "Photo", including for rows stored with the older
   preview.

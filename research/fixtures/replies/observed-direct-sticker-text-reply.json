@@ -1,0 +1,21 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk Android 26.8.2",
+    "date": "2026-10-16",
+    "method": "In the owned A/B direct chat, owned B long-pressed A's sticker-with-text message (research/fixtures/stickers/observed-direct-sticker-with-text.json), chose Reply, selected one free Kakao Friends Classic static sticker, typed a synthetic caption and tapped Send once. B's scoped read-only SYNCMSG probe recorded the single resulting chat log's type, message and attachment keys and values. B's official client rendered the reply bubble (quote and text) followed by the sticker. Identifiers and paths are synthetic; the messages are the synthetic texts that were sent.",
+    "doc": "research/bridge/GROUP-IMAGE-REPLIES.md"
+  },
+  "type": 26,
+  "message": "mooo-sticker-text-reply-1",
+  "attachment": {
+    "src_userId": 2000,
+    "src_logId": 3000000000000000201,
+    "src_type": 12,
+    "attach_type": 12,
+    "attach_content": {"name": "(Emoticons)", "type": "image/png", "path": "synthetic/emot_direct_002.png"},
+    "src_message": "mooo-sticker-text-1",
+    "src_spoilers": [],
+    "emoticonItemPath": "synthetic/emot_direct_002.png"
+  }
+}

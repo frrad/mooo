@@ -92,9 +92,13 @@ func (m ReplyMessage) String() string {
 
 func (m ReplyMessage) GoString() string { return m.String() }
 
+// StickerMessage is a type 12/20 sticker. Message is the text sent with the
+// sticker, empty for a sticker alone; both official clients render it below
+// the sticker.
 type StickerMessage struct {
 	ChatID, LogID, AuthorID, SentAt int64
 	Type                            int32
+	Message                         string
 	Attachment                      media.StickerAttachment
 }
 
@@ -256,7 +260,11 @@ func decodeSticker(env chatlog.Envelope) (Event, error) {
 	if err != nil {
 		return nil, ErrMalformedEvent
 	}
-	return StickerMessage{ChatID: env.ChatID, LogID: env.LogID, AuthorID: env.AuthorID, SentAt: env.SentAt, Type: env.Type, Attachment: attachment}, nil
+	message, _, err := fields.String(env.Log, "message")
+	if err != nil || !validEventString(message) {
+		return nil, ErrMalformedEvent
+	}
+	return StickerMessage{ChatID: env.ChatID, LogID: env.LogID, AuthorID: env.AuthorID, SentAt: env.SentAt, Type: env.Type, Message: message, Attachment: attachment}, nil
 }
 
 func decodeReply(chatID, logID int64, chatLog bson.Raw) (Event, error) {
