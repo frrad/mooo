@@ -95,6 +95,27 @@ func TestDoRejectsNon2xxWithCode(t *testing.T) {
 	}
 }
 
+func TestStatusErrorKeepsOnlyKakaoCodeAndReason(t *testing.T) {
+	for _, tc := range []struct {
+		body, want string
+	}{
+		{`{"status":400,"code":"90008","reason":"INVALID_REQUEST"}`, "macweb: unexpected HTTP status 400 (code 90008, INVALID_REQUEST)"},
+		{`{"code":-401,"reason":"token abc.def=="}`, "macweb: unexpected HTTP status 400 (code -401, )"},
+		{`{"reason":"사용자 오류","access_token":"secret-token"}`, "macweb: unexpected HTTP status 400"},
+		{`<html>secret-token</html>`, "macweb: unexpected HTTP status 400"},
+		{``, "macweb: unexpected HTTP status 400"},
+	} {
+		_, err := Do(respond(http.StatusBadRequest, tc.body), newRequest(t), 1024)
+		var statusErr *StatusError
+		if !errors.As(err, &statusErr) || err.Error() != tc.want {
+			t.Fatalf("body %q: error = %q, want %q", tc.body, err, tc.want)
+		}
+		if strings.Contains(err.Error(), "secret") {
+			t.Fatalf("body %q leaked into %q", tc.body, err)
+		}
+	}
+}
+
 func TestDoChecksSizeBeforeStatus(t *testing.T) {
 	_, err := Do(respond(http.StatusInternalServerError, strings.Repeat("x", 11)), newRequest(t), 10)
 	if !errors.Is(err, ErrResponseTooLarge) || errors.Is(err, ErrStatus) {

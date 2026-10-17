@@ -6,6 +6,7 @@
 package macweb
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -36,10 +37,46 @@ var (
 // StatusError reports a non-2xx HTTP status. errors.Is(err, ErrStatus) holds.
 type StatusError struct {
 	Code int
+	// KakaoCode and Reason are the code and reason fields of a JSON error
+	// body, which say why Kakao refused. Nothing else of the body is kept,
+	// since it can carry tokens or account details.
+	KakaoCode, Reason string
 }
 
 func (e *StatusError) Error() string {
-	return "macweb: unexpected HTTP status " + strconv.Itoa(e.Code)
+	msg := "macweb: unexpected HTTP status " + strconv.Itoa(e.Code)
+	if e.KakaoCode != "" || e.Reason != "" {
+		msg += " (code " + e.KakaoCode + ", " + e.Reason + ")"
+	}
+	return msg
+}
+
+// errorFields takes the code and reason fields of a JSON error body. Each is
+// kept only if it is a short identifier, as Kakao's are (90008,
+// INVALID_REQUEST); free text could carry account data.
+func errorFields(body []byte) (code, reason string) {
+	var v struct {
+		Code   json.RawMessage `json:"code"`
+		Reason json.RawMessage `json:"reason"`
+	}
+	if json.Unmarshal(body, &v) != nil {
+		return "", ""
+	}
+	return identifier(v.Code), identifier(v.Reason)
+}
+
+func identifier(raw json.RawMessage) string {
+	s := strings.Trim(string(raw), `"`)
+	if s == "" || len(s) > 32 {
+		return ""
+	}
+	for _, r := range s {
+		plain := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_-.", r)
+		if !plain {
+			return ""
+		}
+	}
+	return s
 }
 
 func (e *StatusError) Is(target error) bool { return target == ErrStatus }
@@ -110,7 +147,8 @@ func Do(d Doer, req *http.Request, maxBody int64) ([]byte, error) {
 		return nil, ErrResponseTooLarge
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &StatusError{Code: resp.StatusCode}
+		code, reason := errorFields(body)
+		return nil, &StatusError{Code: resp.StatusCode, KakaoCode: code, Reason: reason}
 	}
 	return body, nil
 }
