@@ -139,3 +139,14 @@ func TestSelfLeaveDoesNotUseAdmissionQueue(t *testing.T) {
 		t.Fatal("direct leave failed to remove both identities")
 	}
 }
+
+func TestMemberRemovalInRoomlessGroupIsAccepted(t *testing.T) {
+	kc, backend, _ := newGroupCreationFramework(t)
+	const roomless = 7777 // a Kakao group that was never bridged
+	if !kc.handleEvent(backend, events.MemberRemoved{ChatID: roomless, LogID: 9, UserID: testOtherID}) {
+		t.Fatal("member removal in a group without a room was rejected")
+	}
+	if err := kc.sourceBlocked[roomless]; err != nil {
+		t.Fatalf("roomless group blocked: %v", err)
+	}
+}

@@ -232,6 +232,10 @@ func (kc *KakaoClient) managedMembershipChange(ctx context.Context, c kakaoClien
 	if p != nil && p.RoomType == database.RoomTypeDM {
 		return false, false
 	}
+	// A group without a room has no Matrix membership to converge.
+	if !create && (p == nil || p.MXID == "") {
+		return true, true
+	}
 	var roster []int64
 	applicable := false
 	if feed != nil {
@@ -243,6 +247,7 @@ func (kc *KakaoClient) managedMembershipChange(ctx context.Context, c kakaoClien
 		err = kc.refreshGroupMembership(ctx, c, chatID, create)
 	}
 	if err != nil {
+		kc.log().Warn().Err(err).Int64("kakao_chat_id", chatID).Msg("Group membership refresh failed")
 		if !errors.Is(err, errSourceAccessRemoved) {
 			kc.scheduleMembershipRetry(chatID, 1)
 		}
