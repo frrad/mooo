@@ -1,0 +1,333 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for Mac 26.8.0 field model; mooo diagnostic extraction rules",
+    "date": "2026-10-17",
+    "method": "Synthetic bodies built from the field names, types and value ranges in research/web-error-bodies.md (WEB-BIN-001, WEB-LIVE-001, and the body reported in frrad/mooo#424). safe_to_log follows that document's extraction rules, which are a mooo implementation decision: the official client logs nothing from these bodies and has no equivalent function.",
+    "doc": "research/web-error-bodies.md"
+  },
+  "rules": [
+    "Extract only from a body that is exactly one UTF-8 JSON object with no duplicate keys at any depth and no trailing data. Otherwise extract nothing.",
+    "status: a JSON integer literal (no fraction or exponent) from -9999999 to 9999999.",
+    "reason: a string matching ^[A-Z][A-Z_]{0,63}$ after JSON unescaping.",
+    "reason.detailCode: when reason is an object, its detailCode under the status rule. Nothing else is read from the object.",
+    "code: a string matching ^[0-9]{1,7}$, or a JSON integer under the status rule. A string stays a string.",
+    "Only top-level status, reason, code and reason.detailCode are ever extracted. Every other field, nested object or rejected value is dropped.",
+    "A field absent from safe_to_log must be absent from the diagnostic, not rendered as an empty value or the literal text null."
+  ],
+  "cases": [
+    {
+      "name": "reported-pilsner-400-code-and-reason",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"code\":\"90008\",\"reason\":\"INVALID_REQUEST\"}",
+      "safe_to_log": {"code": "90008", "reason": "INVALID_REQUEST"},
+      "never_log": []
+    },
+    {
+      "name": "code-only",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"code\":\"90008\"}",
+      "safe_to_log": {"code": "90008"},
+      "never_log": []
+    },
+    {
+      "name": "reason-only",
+      "http_status": 401,
+      "headers": {"content-type": "application/json", "talk-served-by": "gateway"},
+      "body": "{\"reason\":\"UNAUTHENTICATED\",\"message\":\"Synthetic temporary error. Please try again later.\"}",
+      "safe_to_log": {"reason": "UNAUTHENTICATED"},
+      "never_log": ["message"]
+    },
+    {
+      "name": "katalk-status-with-korean-message",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-500,\"message\":\"합성 오류 안내입니다. \\n\\n잠시 후 다시 시도해 주세요.\"}",
+      "safe_to_log": {"status": -500},
+      "never_log": ["message"]
+    },
+    {
+      "name": "katalk-status-and-reason-object",
+      "http_status": 401,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-950,\"reason\":{\"detailCode\":9503,\"message\":\"Synthetic nested text\"}}",
+      "safe_to_log": {"status": -950, "reason.detailCode": 9503},
+      "never_log": ["reason.message"]
+    },
+    {
+      "name": "phone-number-as-code",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"code\":\"01000000000\",\"reason\":\"INVALID_REQUEST\"}",
+      "safe_to_log": {"reason": "INVALID_REQUEST"},
+      "never_log": ["code"],
+      "note": "Eleven digits: over the seven-digit limit."
+    },
+    {
+      "name": "formatted-phone-number-as-code",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"code\":\"010-0000-0000\"}",
+      "safe_to_log": {},
+      "never_log": ["code"]
+    },
+    {
+      "name": "international-phone-number-as-reason",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"reason\":\"+821000000000\"}",
+      "safe_to_log": {},
+      "never_log": ["reason"]
+    },
+    {
+      "name": "user-id-as-status",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":4000000000001}",
+      "safe_to_log": {},
+      "never_log": ["status"]
+    },
+    {
+      "name": "user-id-as-integer-code",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"code\":400000000001,\"reason\":\"NOT_FOUND\"}",
+      "safe_to_log": {"reason": "NOT_FOUND"},
+      "never_log": ["code"]
+    },
+    {
+      "name": "token-like-mixed-case-reason",
+      "http_status": 401,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"reason\":\"SyNtHeTiC0123456789abcdefABCDEF-_xyz\"}",
+      "safe_to_log": {},
+      "never_log": ["reason"]
+    },
+    {
+      "name": "token-like-uppercase-reason-over-limit",
+      "http_status": 401,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"reason\":\"SYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETIC\"}",
+      "safe_to_log": {},
+      "never_log": ["reason"],
+      "note": "72 characters: over the 64-character limit."
+    },
+    {
+      "name": "lowercase-reason",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"reason\":\"invalid_request\"}",
+      "safe_to_log": {},
+      "never_log": ["reason"],
+      "note": "Every observed reason is upper case; anything else may be free text."
+    },
+    {
+      "name": "reason-with-free-text",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"reason\":\"INVALID_REQUEST: friend 010-0000-0000 not found\"}",
+      "safe_to_log": {},
+      "never_log": ["reason"]
+    },
+    {
+      "name": "escaped-underscore-in-reason",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"reason\":\"INVALID\\u005fREQUEST\"}",
+      "safe_to_log": {"reason": "INVALID_REQUEST"},
+      "never_log": [],
+      "note": "The rule applies to the decoded string, not the raw bytes."
+    },
+    {
+      "name": "empty-reason",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"reason\":\"\",\"code\":\"\"}",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "html-gateway-page",
+      "http_status": 502,
+      "headers": {"content-type": "text/html"},
+      "body": "<html><head><title>502 Bad Gateway</title></head><body><center><h1>502 Bad Gateway</h1></center></body></html>",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "plain-text-404",
+      "http_status": 404,
+      "headers": {"content-type": "text/plain; charset=utf-8"},
+      "body": "404 Not Found",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "empty-body",
+      "http_status": 404,
+      "headers": {},
+      "body": "",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "whitespace-body",
+      "http_status": 503,
+      "headers": {},
+      "body": " \r\n",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "null-fields",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":null,\"code\":null,\"reason\":null}",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "boolean-fields",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":true,\"code\":false,\"reason\":true}",
+      "safe_to_log": {},
+      "never_log": [],
+      "note": "The Mac client would read status true as 1; mooo extracts nothing."
+    },
+    {
+      "name": "string-status",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":\"-500\"}",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "fractional-status",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-500.0}",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "exponent-status",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-5e2}",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "status-at-bound",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-9999999}",
+      "safe_to_log": {"status": -9999999},
+      "never_log": []
+    },
+    {
+      "name": "status-over-bound",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-10000000}",
+      "safe_to_log": {},
+      "never_log": ["status"]
+    },
+    {
+      "name": "negative-code-string",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"code\":\"-401\"}",
+      "safe_to_log": {},
+      "never_log": ["code"],
+      "note": "No negative string code has been observed; the digits-only rule drops it."
+    },
+    {
+      "name": "duplicate-top-level-key",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"reason\":\"INVALID_REQUEST\",\"reason\":\"UNAUTHENTICATED\"}",
+      "safe_to_log": {},
+      "never_log": [],
+      "note": "Decoders disagree on which duplicate wins, so the body is not trusted."
+    },
+    {
+      "name": "duplicate-nested-key",
+      "http_status": 401,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-950,\"reason\":{\"detailCode\":9503,\"detailCode\":1}}",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "top-level-array",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "[{\"status\":-500}]",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "trailing-data",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-500}{\"status\":0}",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "byte-order-mark",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "﻿{\"status\":-500}",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "nested-error-object",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"error\":{\"code\":\"90008\",\"reason\":\"INVALID_REQUEST\",\"message\":\"Synthetic nested text\"}}",
+      "safe_to_log": {},
+      "never_log": ["error"],
+      "note": "No nested error envelope has been observed; only top-level fields are read."
+    },
+    {
+      "name": "kage-msg-only",
+      "http_status": 404,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"msg\":\"Synthetic upload key not found\"}",
+      "safe_to_log": {},
+      "never_log": ["msg"]
+    },
+    {
+      "name": "katalk-ui-fields-and-account-token",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":27,\"message\":\"Synthetic user-facing text.\",\"title\":\"Synthetic title\",\"errUrl\":\"https://example.invalid/help?token=synthetic-not-a-token\",\"errUrlLabel\":\"Synthetic label\",\"linkUrl\":\"https://example.invalid/link\",\"loginFailedAccountToken\":\"synthetic-not-a-token\"}",
+      "safe_to_log": {"status": 27},
+      "never_log": ["message", "title", "errUrl", "errUrlLabel", "linkUrl", "loginFailedAccountToken"]
+    },
+    {
+      "name": "friend-data-beside-status",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":0,\"friend\":{\"userId\":4000000000001,\"phoneNumber\":\"010-0000-0000\",\"nickName\":\"Synthetic Friend\"}}",
+      "safe_to_log": {"status": 0},
+      "never_log": ["friend"]
+    },
+    {
+      "name": "message-that-looks-like-fields",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"message\":\"{\\\"code\\\":\\\"90008\\\",\\\"reason\\\":\\\"INVALID_REQUEST\\\"}\"}",
+      "safe_to_log": {},
+      "never_log": ["message"],
+      "note": "Fields are read from the decoded object, never by searching the text."
+    }
+  ]
+}

@@ -1,0 +1,170 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "curl with the KakaoTalk for Mac 26.8.0 A and User-Agent headers; no account and no credential",
+    "date": "2026-10-17",
+    "method": "Experiment WEB-LIVE-001 in research/web-error-bodies.md: fifteen single requests to katalk.kakao.com and talk-pilsner.kakao.com, either without an Authorization header or with the literal non-credential value invalid-invalid. Keys, key order, value types, numeric values, HTTP status and the content-type and talk-served-by headers are as observed. Free-text message values are replaced with synthetic text of the same language and shape; ids in request paths are synthetic.",
+    "doc": "research/web-error-bodies.md"
+  },
+  "cases": [
+    {
+      "name": "pilsner-gateway-401-no-authorization",
+      "family": "talk-pilsner",
+      "request": "GET /messaging/chats/{chatId}/bubble/reactions/{logId}/members without Authorization",
+      "http_status": 401,
+      "headers": {"content-type": "application/json", "talk-served-by": "gateway"},
+      "body": "{\"reason\":\"UNAUTHENTICATED\",\"message\":\"Synthetic temporary error. Please try again later.\"}",
+      "safe_to_log": {"reason": "UNAUTHENTICATED"},
+      "never_log": ["message"]
+    },
+    {
+      "name": "pilsner-gateway-401-invalid-authorization",
+      "family": "talk-pilsner",
+      "request": "GET /messaging/chats/{chatId}/bubble/reactions/{logId}/members with Authorization invalid-invalid",
+      "http_status": 401,
+      "headers": {"content-type": "application/json", "talk-served-by": "gateway"},
+      "body": "{\"reason\":\"UNAUTHENTICATED\",\"message\":\"Synthetic temporary error. Please try again later.\"}",
+      "safe_to_log": {"reason": "UNAUTHENTICATED"},
+      "never_log": ["message"]
+    },
+    {
+      "name": "pilsner-gateway-401-prepare",
+      "family": "talk-pilsner",
+      "request": "POST /messaging/files/v1/prepare with JSON body {} and no Authorization",
+      "http_status": 401,
+      "headers": {"content-type": "application/json", "talk-served-by": "gateway"},
+      "body": "{\"reason\":\"UNAUTHENTICATED\",\"message\":\"Synthetic temporary error. Please try again later.\"}",
+      "safe_to_log": {"reason": "UNAUTHENTICATED"},
+      "never_log": ["message"]
+    },
+    {
+      "name": "pilsner-gateway-401-method-not-checked-first",
+      "family": "talk-pilsner",
+      "request": "DELETE /messaging/files/v1/prepare without Authorization",
+      "http_status": 401,
+      "headers": {"content-type": "application/json", "talk-served-by": "gateway"},
+      "body": "{\"reason\":\"UNAUTHENTICATED\",\"message\":\"Synthetic temporary error. Please try again later.\"}",
+      "safe_to_log": {"reason": "UNAUTHENTICATED"},
+      "never_log": ["message"],
+      "note": "The gateway rejects authentication before it checks the method."
+    },
+    {
+      "name": "pilsner-gateway-401-korean-request",
+      "family": "talk-pilsner",
+      "request": "GET /messaging/chats/{chatId}/bubble/reactions/{logId}/members, A mac/26.8.0/ko, Accept-Language ko, no Authorization",
+      "http_status": 401,
+      "headers": {"content-type": "application/json", "talk-served-by": "gateway"},
+      "body": "{\"reason\":\"UNAUTHENTICATED\",\"message\":\"Synthetic temporary error. Please try again later.\"}",
+      "safe_to_log": {"reason": "UNAUTHENTICATED"},
+      "never_log": ["message"],
+      "note": "The gateway message stayed English for a Korean request."
+    },
+    {
+      "name": "pilsner-gateway-401-katalk-path-on-pilsner",
+      "family": "talk-pilsner",
+      "request": "GET /emoticon/chat/rx/log-details?chatId={chatId}&logId={logId} on talk-pilsner with Authorization invalid-invalid",
+      "http_status": 401,
+      "headers": {"content-type": "application/json", "talk-served-by": "gateway"},
+      "body": "{\"reason\":\"UNAUTHENTICATED\",\"message\":\"Synthetic temporary error. Please try again later.\"}",
+      "safe_to_log": {"reason": "UNAUTHENTICATED"},
+      "never_log": ["message"]
+    },
+    {
+      "name": "pilsner-unknown-path-plain-text-404",
+      "family": "talk-pilsner",
+      "request": "GET /does/not/exist without Authorization",
+      "http_status": 404,
+      "headers": {"content-type": "text/plain; charset=utf-8"},
+      "body": "404 Not Found",
+      "safe_to_log": {},
+      "never_log": [],
+      "note": "Not JSON. The talk-served-by header was absent."
+    },
+    {
+      "name": "katalk-200-status-500-english-message",
+      "family": "katalk",
+      "request": "POST /mac/friends/add_by_phonenumber.json, empty form body, no Authorization",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-500,\"message\":\"Synthetic network notice line one. \\n\\nSynthetic line two about Wi-Fi. \\n\\nSynthetic apology.\"}",
+      "safe_to_log": {"status": -500},
+      "never_log": ["message"],
+      "note": "The rejection is carried on HTTP 200, so macweb.Do returns the body as success and only the endpoint decoder sees status -500."
+    },
+    {
+      "name": "katalk-200-status-500-korean-message",
+      "family": "katalk",
+      "request": "POST /mac/friends/add_by_phonenumber.json, A mac/26.8.0/ko, Accept-Language ko, empty form body, no Authorization",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-500,\"message\":\"합성 네트워크 안내 문장입니다. \\n\\n합성 와이파이 안내입니다. \\n\\n합성 사과 문장입니다.\"}",
+      "safe_to_log": {"status": -500},
+      "never_log": ["message"],
+      "note": "katalk localizes message by the language in the A header."
+    },
+    {
+      "name": "katalk-200-status-500-english-message-korean-a-header",
+      "family": "katalk",
+      "request": "GET /mac/friends/add_by_phonenumber.json, A mac/26.8.0/ko, Accept-Language en, no Authorization",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-500,\"message\":\"합성 네트워크 안내 문장입니다. \\n\\n합성 와이파이 안내입니다. \\n\\n합성 사과 문장입니다.\"}",
+      "safe_to_log": {"status": -500},
+      "never_log": ["message"],
+      "note": "Korean text came back although Accept-Language was en: the A header language wins. GET was accepted on this POST route."
+    },
+    {
+      "name": "katalk-401-status-950-invalid-authorization",
+      "family": "katalk",
+      "request": "POST /mac/friends/add_by_phonenumber.json, empty form body, Authorization invalid-invalid",
+      "http_status": 401,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-950}",
+      "safe_to_log": {"status": -950},
+      "never_log": [],
+      "note": "Matches the Mac client's katalk expiry marker (HTTP 401 with status -950)."
+    },
+    {
+      "name": "katalk-renew-200-status-500-no-message",
+      "family": "katalk-auth",
+      "request": "POST /mac/account/renew_token.json, empty form body, no Authorization",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-500}",
+      "safe_to_log": {"status": -500},
+      "never_log": []
+    },
+    {
+      "name": "katalk-renew-200-status-400-invalid-authorization",
+      "family": "katalk-auth",
+      "request": "POST /mac/account/renew_token.json, empty form body, Authorization invalid-invalid",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-400}",
+      "safe_to_log": {"status": -400},
+      "never_log": [],
+      "note": "Renewal rejection is carried on HTTP 200; no refresh token was sent."
+    },
+    {
+      "name": "katalk-unknown-path-empty-404",
+      "family": "katalk",
+      "request": "GET /mac/does_not_exist.json without Authorization",
+      "http_status": 404,
+      "headers": {},
+      "body": "",
+      "safe_to_log": {},
+      "never_log": [],
+      "note": "Empty body and no content-type."
+    },
+    {
+      "name": "katalk-pilsner-path-on-katalk-empty-404",
+      "family": "katalk",
+      "request": "GET /emoticon/chat/rx/log-details?chatId={chatId}&logId={logId} on katalk with Authorization invalid-invalid",
+      "http_status": 404,
+      "headers": {},
+      "body": "",
+      "safe_to_log": {},
+      "never_log": []
+    }
+  ]
+}
