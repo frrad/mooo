@@ -37,32 +37,50 @@ var (
 // StatusError reports a non-2xx HTTP status. errors.Is(err, ErrStatus) holds.
 type StatusError struct {
 	Code int
-	// KakaoCode and Reason are the code and reason fields of a JSON error
-	// body, which say why Kakao refused. Nothing else of the body is kept,
-	// since it can carry tokens or account details.
-	KakaoCode, Reason string
+	// KakaoStatus, KakaoCode, Reason and DetailCode are the status, code,
+	// reason and reason.detailCode fields of a JSON error body, which say why
+	// Kakao refused. katalk sends status and an object reason, the
+	// talk-pilsner gateway a string reason (research/web-error-bodies.md).
+	// Nothing else of the body is kept, since it can carry user-facing text
+	// or account details.
+	KakaoStatus, KakaoCode, Reason, DetailCode string
 }
 
 func (e *StatusError) Error() string {
 	msg := "macweb: unexpected HTTP status " + strconv.Itoa(e.Code)
-	if e.KakaoCode != "" || e.Reason != "" {
-		msg += " (code " + e.KakaoCode + ", " + e.Reason + ")"
+	var fields []string
+	for _, f := range [...]struct{ name, value string }{
+		{"status", e.KakaoStatus}, {"code", e.KakaoCode},
+		{"reason", e.Reason}, {"detailCode", e.DetailCode},
+	} {
+		if f.value != "" {
+			fields = append(fields, f.name+" "+f.value)
+		}
+	}
+	if len(fields) > 0 {
+		msg += " (" + strings.Join(fields, ", ") + ")"
 	}
 	return msg
 }
 
-// errorFields takes the code and reason fields of a JSON error body. Each is
-// kept only if it is a short identifier, as Kakao's are (90008,
-// INVALID_REQUEST); free text could carry account data.
-func errorFields(body []byte) (code, reason string) {
+// errorFields fills the Kakao fields of e from a JSON error body. Each is
+// kept only if it is a short identifier; free text could carry account data.
+func (e *StatusError) errorFields(body []byte) {
 	var v struct {
+		Status json.RawMessage `json:"status"`
 		Code   json.RawMessage `json:"code"`
 		Reason json.RawMessage `json:"reason"`
 	}
 	if json.Unmarshal(body, &v) != nil {
-		return "", ""
+		return
 	}
-	return identifier(v.Code), identifier(v.Reason)
+	e.KakaoStatus, e.KakaoCode, e.Reason = identifier(v.Status), identifier(v.Code), identifier(v.Reason)
+	var reason struct {
+		DetailCode json.RawMessage `json:"detailCode"`
+	}
+	if json.Unmarshal(v.Reason, &reason) == nil {
+		e.DetailCode = identifier(reason.DetailCode)
+	}
 }
 
 func identifier(raw json.RawMessage) string {
@@ -147,8 +165,9 @@ func Do(d Doer, req *http.Request, maxBody int64) ([]byte, error) {
 		return nil, ErrResponseTooLarge
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		code, reason := errorFields(body)
-		return nil, &StatusError{Code: resp.StatusCode, KakaoCode: code, Reason: reason}
+		statusErr := &StatusError{Code: resp.StatusCode}
+		statusErr.errorFields(body)
+		return nil, statusErr
 	}
 	return body, nil
 }
