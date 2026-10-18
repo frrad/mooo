@@ -1,0 +1,150 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for Mac 26.8.0 (arm64)",
+    "date": "2026-10-17",
+    "method": "Experiment WEB-BIN-001 in research/web-error-bodies.md: read-only Ghidra traces of the katalk MaldiveError constructors, the token manager's status check and 401 predicate, the error-domain mapper, the add-by-phone callbacks and the talk-pilsner client's accepted statuses and its bridge into MaldiveError. Bodies are synthetic; expected values are what the traced code reads.",
+    "doc": "research/web-error-bodies.md"
+  },
+  "fields": {
+    "status": "katalk result. Read with valueForKey/objectForKeyedSubscript, accepted only as an NSNumber, converted with integerValue (64-bit) in the status check and intValue (32-bit) in the 401 predicate. 0 is success.",
+    "message": "katalk human text. Becomes the error's localized failure reason, which the client shows to the user. Absent message falls back to a localized generic text.",
+    "reason": "katalk: dictionary whose detailCode is read in the 401 predicate. talk-pilsner gateway: string (observed, not read by the traced Mac code).",
+    "errUrl": "Copied into the error for the UI.",
+    "errUrlLabel": "Copied into the error for the UI.",
+    "title": "Copied into the error for the UI.",
+    "linkUrl": "Copied into the error for the UI.",
+    "loginFailedAccountToken": "Read only for status 27; handed to an account web view as a token."
+  },
+  "cases": [
+    {
+      "name": "katalk-200-status-zero",
+      "client": "katalk status-checking client",
+      "http_status": 200,
+      "body": "{\"status\":0}",
+      "official": {"outcome": "success"}
+    },
+    {
+      "name": "katalk-200-nonzero-status-with-message",
+      "client": "katalk status-checking client",
+      "http_status": 200,
+      "body": "{\"status\":-500,\"message\":\"Synthetic user-facing text.\"}",
+      "official": {"outcome": "failure", "error_domain": "Maldive", "error_code": -500, "failure_reason": "message", "keeps_response": true}
+    },
+    {
+      "name": "katalk-200-missing-status",
+      "client": "katalk status-checking client",
+      "http_status": 200,
+      "body": "{\"result\":true}",
+      "official": {"outcome": "failure", "error_domain": "Maldive", "error_code": 0, "failure_reason": "localized generic text", "keeps_response": true},
+      "note": "A missing or non-NSNumber status is a failure with code 0, not a success."
+    },
+    {
+      "name": "katalk-200-string-status",
+      "client": "katalk status-checking client",
+      "http_status": 200,
+      "body": "{\"status\":\"-500\"}",
+      "official": {"outcome": "failure", "error_domain": "Maldive", "error_code": 0, "keeps_response": true},
+      "note": "A string is not an NSNumber, so it is treated like a missing status."
+    },
+    {
+      "name": "katalk-200-boolean-status",
+      "client": "katalk status-checking client",
+      "http_status": 200,
+      "body": "{\"status\":true}",
+      "official": {"outcome": "failure", "error_domain": "Maldive", "error_code": 1, "keeps_response": true},
+      "note": "Foundation decodes JSON true as an NSNumber, so the isKindOfClass check passes and integerValue gives 1. mooo should not copy this; see the synthetic suite."
+    },
+    {
+      "name": "katalk-maldive-client-passes-nonzero-status-to-caller",
+      "client": "katalk maldive client (ignoreStatusSuccessCode)",
+      "http_status": 200,
+      "body": "{\"status\":-500,\"message\":\"Synthetic user-facing text.\"}",
+      "official": {"outcome": "success callback with the body; the caller checks status"},
+      "note": "Add-by-phone uses this client. Its success callback forwards the dictionary unchanged."
+    },
+    {
+      "name": "katalk-401-expiry-by-status",
+      "client": "katalk maldive client",
+      "http_status": 401,
+      "body": "{\"status\":-950}",
+      "official": {"outcome": "renew once, then replay", "expired": true}
+    },
+    {
+      "name": "katalk-401-expiry-by-reason-detail-code",
+      "client": "katalk maldive client",
+      "http_status": 401,
+      "body": "{\"status\":-500,\"reason\":{\"detailCode\":9503}}",
+      "official": {"outcome": "renew once, then replay", "expired": true}
+    },
+    {
+      "name": "katalk-401-reason-string-is-not-expiry",
+      "client": "katalk maldive client",
+      "http_status": 401,
+      "body": "{\"reason\":\"UNAUTHENTICATED\"}",
+      "official": {"outcome": "success callback with the body", "expired": false},
+      "note": "detailCode is read only when reason is a dictionary; a 401 without a marker reaches the caller as a success."
+    },
+    {
+      "name": "katalk-status-27-account-token",
+      "client": "katalk status-checking client",
+      "http_status": 200,
+      "body": "{\"status\":27,\"message\":\"Synthetic user-facing text.\",\"loginFailedAccountToken\":\"synthetic-not-a-token\"}",
+      "official": {"outcome": "failure", "error_domain": "Maldive", "error_code": 27, "failure_reason": "message", "keeps_response": true, "token_handed_to_ui": "loginFailedAccountToken"}
+    },
+    {
+      "name": "katalk-ui-link-fields",
+      "client": "katalk status-checking client",
+      "http_status": 200,
+      "body": "{\"status\":-500,\"message\":\"Synthetic user-facing text.\",\"title\":\"Synthetic title\",\"errUrl\":\"https://example.invalid/help\",\"errUrlLabel\":\"Synthetic label\",\"linkUrl\":\"https://example.invalid/link\"}",
+      "official": {"outcome": "failure", "error_domain": "Maldive", "error_code": -500, "failure_reason": "message", "copied_to_error": ["errUrl", "errUrlLabel", "title", "linkUrl", "response"]}
+    },
+    {
+      "name": "katalk-non-accepted-status-body-ignored",
+      "client": "katalk maldive client",
+      "http_status": 400,
+      "body": "{\"status\":-400,\"message\":\"Synthetic user-facing text.\"}",
+      "official": {"outcome": "failure", "error": "the HTTP library's error, domain and code copied unchanged", "reads_body": false},
+      "note": "The maldive client accepts only 2xx and 401. The shared error conversion copies the library error and reads no body field. Whether any caller reads the library's failing-response data is an open gap."
+    },
+    {
+      "name": "pilsner-200-nonzero-status-through-bridge",
+      "client": "talk-pilsner client bridged into MaldiveError",
+      "http_status": 200,
+      "body": "{\"status\":-805}",
+      "official": {"outcome": "failure", "error_domain": "Maldive", "error_code": -805, "keeps_response": true},
+      "note": "-805 is a synthetic value, not a known pilsner status."
+    },
+    {
+      "name": "pilsner-200-status-zero-through-bridge",
+      "client": "talk-pilsner client bridged into MaldiveError",
+      "http_status": 200,
+      "body": "{\"status\":0}",
+      "official": {"outcome": "success"}
+    },
+    {
+      "name": "pilsner-200-no-status-through-bridge",
+      "client": "talk-pilsner client bridged into MaldiveError",
+      "http_status": 200,
+      "body": "{\"result\":true}",
+      "official": {"outcome": "success"},
+      "note": "Unlike the katalk status check, the bridge treats a missing status as 0."
+    },
+    {
+      "name": "pilsner-400-body-dropped-by-bridge",
+      "client": "talk-pilsner client bridged into MaldiveError",
+      "http_status": 400,
+      "body": "{\"code\":\"90008\",\"reason\":\"INVALID_REQUEST\"}",
+      "official": {"outcome": "failure", "error_domain": "Maldive", "error_code": -500, "keeps_response": false, "reads_body": false},
+      "note": "Any non-200 status or client error becomes code -500 with no response. The body shape is the one reported in frrad/mooo#424, not observed here."
+    },
+    {
+      "name": "pilsner-401-gateway-expiry",
+      "client": "talk-pilsner client",
+      "http_status": 401,
+      "headers": {"talk-served-by": "gateway"},
+      "body": "{\"reason\":\"UNAUTHENTICATED\",\"message\":\"Synthetic temporary error.\"}",
+      "official": {"outcome": "renew, then resubmit", "expired": true, "reads_body": false}
+    }
+  ]
+}

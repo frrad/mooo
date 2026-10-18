@@ -43,4 +43,6 @@ non-sensitive experiment identifier.
   recovered passcode and QR state machines, evidence, and open experiments.
 - `credential-storage/` determines how candidate macOS preference values are
   transformed and, if applicable, specifies a versioned local recovery recipe.
+- `web-error-bodies.md` records the katalk and talk-pilsner web API error
+  bodies, which fields the Mac client reads, and which are safe to log.
 - `CLEANROOM.md` defines provenance and contamination controls.
