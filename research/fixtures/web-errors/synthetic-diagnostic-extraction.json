@@ -1,0 +1,76 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for Mac 26.8.0 field model; mooo diagnostic extraction rules",
+    "date": "2026-10-17",
+    "method": "Every body mirrors one recorded in research/web-error-bodies.md: an unauthenticated response observed in WEB-LIVE-001 (observed-unauthenticated.json, with message text replaced by synthetic text of the same language and shape), the body reported in frrad/mooo#424 (WEB-REP-001), or a katalk body shape traced from the Mac client in WEB-BIN-001 (static-mac-error-model.json). No case is invented to stress a parser. safe_to_log follows that document's extraction rules, which are a mooo implementation decision: the official client logs nothing from these bodies and has no equivalent function.",
+    "doc": "research/web-error-bodies.md"
+  },
+  "rules": [
+    "Extract only from a body that is exactly one UTF-8 JSON object with no duplicate keys at any depth and no trailing data. Otherwise extract nothing.",
+    "status: a JSON integer literal (no fraction or exponent) from -9999999 to 9999999.",
+    "reason: a string matching ^[A-Z][A-Z_]{0,63}$ after JSON unescaping.",
+    "reason.detailCode: when reason is an object, its detailCode under the status rule. Nothing else is read from the object.",
+    "code: a string matching ^[0-9]{1,7}$, or a JSON integer under the status rule. A string stays a string.",
+    "Only top-level status, reason, code and reason.detailCode are ever extracted. Every other field, nested object or rejected value is dropped.",
+    "A field absent from safe_to_log must be absent from the diagnostic, not rendered as an empty value or the literal text null."
+  ],
+  "cases": [
+    {
+      "name": "reported-pilsner-400-code-and-reason",
+      "http_status": 400,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"code\":\"90008\",\"reason\":\"INVALID_REQUEST\"}",
+      "safe_to_log": {"code": "90008", "reason": "INVALID_REQUEST"},
+      "never_log": []
+    },
+    {
+      "name": "reason-only",
+      "http_status": 401,
+      "headers": {"content-type": "application/json", "talk-served-by": "gateway"},
+      "body": "{\"reason\":\"UNAUTHENTICATED\",\"message\":\"Synthetic temporary error. Please try again later.\"}",
+      "safe_to_log": {"reason": "UNAUTHENTICATED"},
+      "never_log": ["message"]
+    },
+    {
+      "name": "katalk-status-with-korean-message",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-500,\"message\":\"합성 오류 안내입니다. \\n\\n잠시 후 다시 시도해 주세요.\"}",
+      "safe_to_log": {"status": -500},
+      "never_log": ["message"]
+    },
+    {
+      "name": "katalk-status-and-reason-object",
+      "http_status": 401,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":-500,\"reason\":{\"detailCode\":9503}}",
+      "safe_to_log": {"status": -500, "reason.detailCode": 9503},
+      "never_log": []
+    },
+    {
+      "name": "plain-text-404",
+      "http_status": 404,
+      "headers": {"content-type": "text/plain; charset=utf-8"},
+      "body": "404 Not Found",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "empty-body",
+      "http_status": 404,
+      "headers": {},
+      "body": "",
+      "safe_to_log": {},
+      "never_log": []
+    },
+    {
+      "name": "katalk-ui-fields-and-account-token",
+      "http_status": 200,
+      "headers": {"content-type": "application/json"},
+      "body": "{\"status\":27,\"message\":\"Synthetic user-facing text.\",\"title\":\"Synthetic title\",\"errUrl\":\"https://example.invalid/help\",\"errUrlLabel\":\"Synthetic label\",\"linkUrl\":\"https://example.invalid/link\",\"loginFailedAccountToken\":\"synthetic-not-a-token\"}",
+      "safe_to_log": {"status": 27},
+      "never_log": ["message", "title", "errUrl", "errUrlLabel", "linkUrl", "loginFailedAccountToken"]
+    }
+  ]
+}

@@ -243,6 +243,7 @@ func (kc *KakaoClient) managedMembershipChange(ctx context.Context, c kakaoClien
 		err = kc.refreshGroupMembership(ctx, c, chatID, create)
 	}
 	if err != nil {
+		kc.log().Warn().Err(err).Int64("kakao_chat_id", chatID).Msg("Group membership refresh failed")
 		if !errors.Is(err, errSourceAccessRemoved) {
 			kc.scheduleMembershipRetry(chatID, 1)
 		}
@@ -264,7 +265,9 @@ func (kc *KakaoClient) handleMembershipEvent(ctx context.Context, c kakaoClient,
 		}
 		return kc.managedMembershipChange(ctx, c, notice.ChatID, true, &feed)
 	case events.MemberRemoved:
-		return kc.managedMembershipChange(ctx, c, notice.ChatID, false, &membershipFeed{leaver: notice.UserID})
+		// A group without a room converges by creating one, as login
+		// discovery would; a refresh that cannot create it stays paused.
+		return kc.managedMembershipChange(ctx, c, notice.ChatID, true, &membershipFeed{leaver: notice.UserID})
 	}
 	return false, false
 }
