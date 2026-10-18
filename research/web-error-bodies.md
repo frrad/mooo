@@ -14,9 +14,11 @@ Fixtures:
 - [`fixtures/web-errors/static-mac-error-model.json`](fixtures/web-errors/static-mac-error-model.json):
   what the Mac client reads from a body and what it does with it (WEB-BIN-001).
 - [`fixtures/web-errors/synthetic-diagnostic-extraction.json`](fixtures/web-errors/synthetic-diagnostic-extraction.json):
-  adversarial bodies for a parser that pulls a safe diagnostic code and reason
-  out of an error body, with the expected result under the rules in
-  [Extracting a safe diagnostic](#extracting-a-safe-diagnostic).
+  seven error bodies, each mirroring one observed in WEB-LIVE-001, reported in
+  WEB-REP-001 or traced from the Mac client in WEB-BIN-001, with the diagnostic
+  a parser should pull out of each under the rules in
+  [Extracting a safe diagnostic](#extracting-a-safe-diagnostic). Message and
+  token values are synthetic; no body is invented to stress a parser.
 
 No mooo code consumes these yet. Following
 [parity-fixtures.md](parity-fixtures.md), they wait here until the parser that
@@ -212,7 +214,7 @@ use `macweb`.
 - **Observed:** katalk returns empty 404 bodies without a content type;
   talk-pilsner returns `text/plain` "404 Not Found". No HTML page was seen, but
   a CDN or load balancer in front of either host could return one (for example
-  a 502 page); the synthetic suite includes that case.
+  a 502 page).
 - **Mac katalk:** a status outside 2xx/401 never reaches the JSON reader. A 2xx
   body that is not JSON fails in the HTTP library's JSON serializer
   (library behaviour, not traced in this binary).
