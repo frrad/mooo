@@ -1,9 +1,12 @@
 package macweb
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 )
@@ -92,6 +95,66 @@ func TestDoRejectsNon2xxWithCode(t *testing.T) {
 	var statusErr *StatusError
 	if !errors.Is(err, ErrStatus) || !errors.As(err, &statusErr) || statusErr.Code != http.StatusUnauthorized {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+// TestStatusErrorFixtureBodies feeds the non-2xx bodies in the web error
+// fixtures through Do. 2xx bodies never reach StatusError: each endpoint
+// decoder checks their status itself.
+func TestStatusErrorFixtureBodies(t *testing.T) {
+	raw, err := os.ReadFile("../../../research/fixtures/web-errors/synthetic-diagnostic-extraction.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Cases []struct {
+			Name       string                     `json:"name"`
+			HTTPStatus int                        `json:"http_status"`
+			Body       string                     `json:"body"`
+			SafeToLog  map[string]json.RawMessage `json:"safe_to_log"`
+			NeverLog   []string                   `json:"never_log"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range fixture.Cases {
+		if tc.HTTPStatus >= 200 && tc.HTTPStatus < 300 {
+			continue
+		}
+		t.Run(tc.Name, func(t *testing.T) {
+			_, err := Do(respond(tc.HTTPStatus, tc.Body), newRequest(t), 1024)
+			var statusErr *StatusError
+			if !errors.As(err, &statusErr) || statusErr.Code != tc.HTTPStatus {
+				t.Fatalf("error = %v, want *StatusError with code %d", err, tc.HTTPStatus)
+			}
+			want := map[string]string{}
+			for key, value := range tc.SafeToLog {
+				want[key] = strings.Trim(string(value), `"`)
+			}
+			got := map[string]string{}
+			for key, value := range map[string]string{
+				"status": statusErr.KakaoStatus, "code": statusErr.KakaoCode,
+				"reason": statusErr.Reason, "reason.detailCode": statusErr.DetailCode,
+			} {
+				if value != "" {
+					got[key] = value
+				}
+			}
+			if !maps.Equal(got, want) {
+				t.Fatalf("fields = %v, want %v", got, want)
+			}
+			for _, key := range tc.NeverLog {
+				var body map[string]any
+				_ = json.Unmarshal([]byte(tc.Body), &body)
+				if text, ok := body[key].(string); ok && strings.Contains(err.Error(), text) {
+					t.Fatalf("%s leaked into %q", key, err)
+				}
+			}
+			if strings.Contains(err.Error(), ", )") || strings.Contains(err.Error(), "(code ,") {
+				t.Fatalf("error %q renders an absent field", err)
+			}
+		})
 	}
 }
 
