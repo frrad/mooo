@@ -60,7 +60,9 @@ func replyTargetStatus(err error) error {
 }
 
 // outboundSendError classifies a failed single Kakao send for Matrix. A
-// server status reply or unsupported upload redirect is a certain refusal.
+// server status reply or unsupported upload redirect is a certain refusal,
+// and an upload that failed before streaming any bytes certainly created no
+// message.
 // Any other failure may have been delivered; it is never retried or shown as retriable,
 // because a manual resend could duplicate a delivered message.
 func outboundSendError(err error) error {
@@ -73,6 +75,9 @@ func outboundSendError(err error) error {
 	var statusErr client.StatusError
 	if errors.As(err, &statusErr) {
 		return certainSendFailure(err, "KakaoTalk refused this message.")
+	}
+	if errors.Is(err, client.ErrUploadNotSent) {
+		return certainSendFailure(err, "The upload to KakaoTalk failed before any of the attachment was sent; it was not sent.")
 	}
 	return uncertainFailure(err, "KakaoTalk did not confirm this message, and it may have been delivered. Check KakaoTalk before sending it again.")
 }

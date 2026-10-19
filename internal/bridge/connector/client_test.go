@@ -81,10 +81,12 @@ type fakeKakao struct {
 	uploads       []media.Upload
 	uploadResp    media.SendResult
 	uploadErr     error
-	albums        []sentAlbum
-	albumResp     chat.WriteResponse
-	albumErr      error
-	modifies      []chat.ModifyRequest
+	// uploadDeadline is the context deadline SendUpload last ran under.
+	uploadDeadline time.Time
+	albums         []sentAlbum
+	albumResp      chat.WriteResponse
+	albumErr       error
+	modifies       []chat.ModifyRequest
 	// editSources serves EditSource reads by log ID.
 	editSources        map[int64]chat.EditSource
 	editSourceErr      error

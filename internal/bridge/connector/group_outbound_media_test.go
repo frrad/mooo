@@ -24,6 +24,7 @@ import (
 
 func (f *fakeKakao) SendUpload(ctx context.Context, chatID int64, upload media.Upload) (media.SendResult, error) {
 	f.uploads = append(f.uploads, upload)
+	f.uploadDeadline, _ = ctx.Deadline()
 	return f.uploadResp, f.uploadErr
 }
 
