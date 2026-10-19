@@ -49,7 +49,9 @@ Android's ending-offset/form ordering did not resolve that harness error.
 4. Derive the multipart filename from `resource`'s last path component. POST
    `offset` as decimal text followed by `file_1` with that filename, the image
    MIME type and exactly the next chunk. The Mac uploader sends the starting
-   offset; Android 26.8.2 sends file first and the ending offset. mooo follows
+   offset; Android 26.8.2 sends file first and the ending offset (a later
+   trace read it as the starting offset; see gap G5 of the
+   [file/video doc](SHIP-REDIRECT-FILE-VIDEO.md)). mooo follows
    the independently traced Mac ordering/offset, which passed live acceptance.
    Send no account Authorization or account cookies to the signed upload URL.
 5. Intermediate chunk responses contain an `offset` string. Require progress to
@@ -76,8 +78,10 @@ Android's ending-offset/form ordering did not resolve that harness error.
 
 The current implementation supports this evidenced Kage photo strategy. Tenth,
 processing-readiness polling and legacy unchunked tickets fail closed before a
-message write. File/video and album alternate strategies remain separate work;
-this does not claim parity for those strategies or the official manual-resume UI.
+message write. Files and video follow
+[SHIP redirect for files and video](SHIP-REDIRECT-FILE-VIDEO.md), which also adds
+the ready poll. Albums remain separate work, and this does not claim parity for
+the official manual-resume UI.
 
 ## Official Mac chain and persistence
 

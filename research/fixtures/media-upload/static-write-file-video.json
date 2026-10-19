@@ -1,0 +1,65 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk for Mac 26.8.0 arm64; KakaoTalk for Android 26.8.2 as a supplement",
+    "date": "2026-10-19",
+    "method": "Ghidra read of the Mac direct-upload coordinator, prepare builder, media-key selection, shared write-data consumer with its file and video classes, and the shared caption-extra consumer; JADX read of the Android WriteMediaJob and MediaForm serializers. The two clients agree on every field listed here. Not executed.",
+    "doc": "research/bridge/SHIP-REDIRECT-FILE-VIDEO.md"
+  },
+  "prepare": {
+    "endpoint": "https://talk-pilsner.kakao.com/messaging/files/v1/prepare",
+    "media_type_by_message_type": {"2": "image", "3": "video", "18": "file"},
+    "fields": ["chatId", "mediaType", "size", "extension"],
+    "extension_rule": "the local name's extension, NFC-normalized and lowercased; an empty extension fails before any request"
+  },
+  "ready": {
+    "endpoint": "https://talk-pilsner.kakao.com/messaging/files/v1/ready",
+    "fields": ["resource", "resourceType", "chatId", "mediaType", "uploadKey", "prevStatus", "jobId"],
+    "first_prev_status": 0,
+    "ready_status": 1,
+    "default_interval_ms": 5000,
+    "default_max_wait_seconds": 600,
+    "illegal_content_code": "90025"
+  },
+  "kage_part_content_type": "the preferred MIME type for the extension, else application/octet-stream",
+  "write_cases": [
+    {
+      "name": "file",
+      "input": {
+        "chat_id": 5000, "message_id": 7, "type": 18,
+        "resource": "synthetic/bucket/object/server-file.dat", "resource_type": "vk", "upload_key": "synthetic0",
+        "name": "synthetic report.dat", "sha1_hex": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "expected": {
+        "type": 18,
+        "media_key": "file",
+        "media": {
+          "resource": "synthetic/bucket/object/server-file.dat",
+          "resourceType": "vk",
+          "hfac": "synthetic0",
+          "name": "synthetic report.dat",
+          "checksum": "0123456789abcdef0123456789abcdef01234567"
+        },
+        "extra": null
+      }
+    },
+    {
+      "name": "video with caption",
+      "input": {
+        "chat_id": 5000, "message_id": 7, "type": 3,
+        "resource": "synthetic/bucket/object/server-video.mp4", "resource_type": "vk", "upload_key": "synthetic0",
+        "caption": "synthetic caption"
+      },
+      "expected": {
+        "type": 3,
+        "media_key": "video",
+        "media": {
+          "resource": "synthetic/bucket/object/server-video.mp4",
+          "resourceType": "vk",
+          "hfac": "synthetic0"
+        },
+        "extra": {"cmt": "synthetic caption"}
+      }
+    }
+  ]
+}
