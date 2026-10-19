@@ -1,0 +1,25 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "KakaoTalk server storage of a video sent by mooo Client.SendUpload over the SHIP-redirected HTTP upload, owned disposable Mac-profile account",
+    "date": "2026-10-19",
+    "method": "Four captioned ffmpeg test-pattern videos were sent through prepare, Kage chunks, the ready poll and WRITEMEDIA type 3. A private harness recorded the returned chat log's attachment key set and value kinds, compared checksum length, size, width, height, duration and caption with the source, and downloaded one stored copy for ffprobe. All values below are synthetic except the observed shapes: cs is an empty string, s is the server's remuxed size (17,261 stored for 17,281 uploaded), and w/h/d match the source.",
+    "doc": "research/bridge/SHIP-REDIRECT-FILE-VIDEO.md"
+  },
+  "uploaded_size": 17281,
+  "attachment": {
+    "tk": "synthetic-http-video-token",
+    "url": "https://talk.kakaocdn.net/synthetic/http-video.mp4",
+    "expire": 4102444800,
+    "cs": "",
+    "s": 17261,
+    "d": 3,
+    "w": 320,
+    "h": 240,
+    "cmt": "synthetic redirected video caption",
+    "rsc": "synthetic/bucket/object/server-video.mp4",
+    "rt": "vk",
+    "hfac": "synthetic0"
+  },
+  "expected": "Decodes as a video with its caption and dimensions, and downloads with only the size bound checked. With cs present, a mismatching SHA-1 still fails the download."
+}

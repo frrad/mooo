@@ -135,3 +135,44 @@ func TestVideoRedirectCannotLeaveAllowedOrigins(t *testing.T) {
 		t.Fatal("unsafe redirect followed")
 	}
 }
+
+// Regression: a video sent over the HTTP upload (SHIP redirect) is stored
+// with an empty cs and a remuxed size. It decoded as invalid, so history and
+// live delivery showed a gap instead of the video. It must decode with its
+// caption and download with only the size bound checked.
+func TestObservedHTTPUploadVideoWithEmptyChecksum(t *testing.T) {
+	raw, err := os.ReadFile("../../../research/fixtures/video/observed-http-upload-shape.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Provenance struct {
+			Kind string `json:"kind"`
+		} `json:"provenance"`
+		Attachment map[string]any `json:"attachment"`
+	}
+	if json.Unmarshal(raw, &f) != nil || f.Provenance.Kind != "observed" || f.Attachment["cs"] != "" {
+		t.Fatal("fixture invalid")
+	}
+	m, err := DecodeVideoMessage(decodeEnvelope(t, videoBody(t, f.Attachment)))
+	if err != nil {
+		t.Fatalf("HTTP-upload video rejected: %v", err)
+	}
+	a := m.Attachment
+	if a.Checksum != "" || a.Size != 17261 || a.Width != 320 || a.Height != 240 || a.Duration != 3 || a.Comment != "synthetic redirected video caption" {
+		t.Fatalf("metadata lost: %+v", a)
+	}
+	data := videoEnvelope()
+	a.Size = int64(len(data))
+	client := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(data)), Request: req}, nil
+	})}
+	got, err := DownloadVideo(context.Background(), client, a)
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("empty-checksum download: %v", err)
+	}
+	a.Size++
+	if _, err = DownloadVideo(context.Background(), client, a); err != ErrDownload {
+		t.Fatalf("short response with empty checksum: %v", err)
+	}
+}

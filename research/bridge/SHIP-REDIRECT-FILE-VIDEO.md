@@ -238,7 +238,10 @@ is a manual or scheduled resume of the stored resource.
   advances only after a 2xx). The Mac's starting offset is the observed one.
 - **G6.** Large types 28/29, the Drawer route and the secret-chat variant were
   not followed.
-- **G7.** A video stored through the HTTP upload has an empty `cs` and a
-  server-remuxed size. mooo's inbound video decoder rejects the empty checksum,
-  so such videos, including those official clients send from redirected
-  accounts, reach Matrix as gaps.
+- **G7 (resolved).** A video stored through the HTTP upload has an empty `cs`
+  and a server-remuxed size. mooo's inbound video decoder used to reject the
+  empty checksum, so such videos reached Matrix as gaps.
+  - It now accepts an empty `cs`, as the official clients do: neither one reads
+    a received video's or file's `cs` (see [video](../video.md)).
+  - A live resend decoded as a video with its caption, and its download passed.
+  - mooo still verifies a non-empty `cs`.
