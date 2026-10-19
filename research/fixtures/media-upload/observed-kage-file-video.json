@@ -1,0 +1,101 @@
+{
+  "provenance": {
+    "kind": "observed",
+    "client": "mooo private lab probe (SHIP, prepare, Kage upload, ready) on the owned disposable B Mac-profile account",
+    "date": "2026-10-19",
+    "method": "One receipted run sent SHIP for four synthetic uploads (random 64 KiB and 9 MiB .dat files, 17,281-byte and 25,367,829-byte ffmpeg test-pattern .mp4 videos), then prepare with mediaType file or video, every Kage chunk with the starting offset and the resource-derived file_1 filename, and for video the ready poll. No WRITEMEDIA was sent, so no message was created. Only key names, value types, protocol constants and the result of comparing returned values with the expected ones were recorded; tickets, resources and filenames are replaced with synthetic values.",
+    "doc": "research/bridge/SHIP-REDIRECT-FILE-VIDEO.md"
+  },
+  "ship": {
+    "keys": ["k", "vh", "p", "rd", "status"],
+    "status": 0,
+    "rd": true
+  },
+  "prepare_response_keys": ["chunkSize", "needReady", "resource", "resourceType", "uploadKey", "url"],
+  "upload_url_host": "kage.talk.kakao.com",
+  "upload_url_path_prefix": "/offset-up/",
+  "cases": [
+    {
+      "name": "small file",
+      "media_type": "file",
+      "extension": "dat",
+      "part_content_type": "application/octet-stream",
+      "size": 65536,
+      "resource": "synthetic/bucket/object/server-file.dat",
+      "prepare": {"resourceType": "vk", "chunkSize": 4194304, "needReady": false},
+      "requests": [{"offset": 0, "bytes": 65536}],
+      "responses": [
+        {"msg": "ok", "info": [{"filename": "server-file.dat", "length": 65536, "content_type": "etc/dat"}]}
+      ],
+      "ready": []
+    },
+    {
+      "name": "three-chunk file",
+      "media_type": "file",
+      "extension": "dat",
+      "part_content_type": "application/octet-stream",
+      "size": 9437184,
+      "resource": "synthetic/bucket/object/server-file.dat",
+      "prepare": {"resourceType": "vk", "chunkSize": 4194304, "needReady": false},
+      "requests": [
+        {"offset": 0, "bytes": 4194304},
+        {"offset": 4194304, "bytes": 4194304},
+        {"offset": 8388608, "bytes": 1048576}
+      ],
+      "responses": [
+        {"offset": "4194304", "msg": "ok"},
+        {"offset": "8388608", "msg": "ok"},
+        {"msg": "ok", "info": [{"filename": "server-file.dat", "length": 9437184, "content_type": "etc/dat"}]}
+      ],
+      "ready": []
+    },
+    {
+      "name": "small video",
+      "media_type": "video",
+      "extension": "mp4",
+      "part_content_type": "video/mp4",
+      "size": 17281,
+      "resource": "synthetic/bucket/object/server-video.mp4",
+      "prepare": {"resourceType": "vk", "chunkSize": 4194304, "needReady": true},
+      "requests": [{"offset": 0, "bytes": 17281}],
+      "responses": [{"msg": "ok"}],
+      "ready": [
+        {"prevStatus": 0, "response": {"status": 5, "interval": 1000, "maxWaitSeconds": 600}},
+        {"prevStatus": 5, "response": {"status": 1, "interval": 1000, "maxWaitSeconds": 600}}
+      ]
+    },
+    {
+      "name": "seven-chunk video",
+      "media_type": "video",
+      "extension": "mp4",
+      "part_content_type": "video/mp4",
+      "size": 25367829,
+      "resource": "synthetic/bucket/object/server-video.mp4",
+      "prepare": {"resourceType": "vk", "chunkSize": 4194304, "needReady": true},
+      "requests": [
+        {"offset": 0, "bytes": 4194304},
+        {"offset": 4194304, "bytes": 4194304},
+        {"offset": 8388608, "bytes": 4194304},
+        {"offset": 12582912, "bytes": 4194304},
+        {"offset": 16777216, "bytes": 4194304},
+        {"offset": 20971520, "bytes": 4194304},
+        {"offset": 25165824, "bytes": 202005}
+      ],
+      "responses": [
+        {"offset": "4194304", "msg": "ok"},
+        {"offset": "8388608", "msg": "ok"},
+        {"offset": "12582912", "msg": "ok"},
+        {"offset": "16777216", "msg": "ok"},
+        {"offset": "20971520", "msg": "ok"},
+        {"offset": "25165824", "msg": "ok"},
+        {"msg": "ok"}
+      ],
+      "ready": [
+        {"prevStatus": 0, "response": {"status": 5, "interval": 1000, "maxWaitSeconds": 600}},
+        {"prevStatus": 5, "response": {"status": 5, "interval": 1000, "maxWaitSeconds": 600}},
+        {"prevStatus": 5, "response": {"status": 5, "interval": 1000, "maxWaitSeconds": 600}},
+        {"prevStatus": 5, "response": {"status": 1, "interval": 1000, "maxWaitSeconds": 600}}
+      ]
+    }
+  ]
+}
