@@ -46,7 +46,7 @@ func TestDirectPhotoWriteExecutedModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	in := fixture.Input
-	body, err := (DirectPhotoWriteRequest{ChatID: in.ChatID, MessageID: in.MessageID, Image: Image{Width: in.Width, Height: in.Height}, Ticket: PhotoTicket{Resource: in.Resource, ResourceType: in.ResourceType, UploadKey: in.UploadKey}, Caption: in.Caption}).MarshalBSON()
+	body, err := (DirectPhotoWriteRequest{ChatID: in.ChatID, MessageID: in.MessageID, Image: Image{Width: in.Width, Height: in.Height}, Ticket: DirectTicket{Resource: in.Resource, ResourceType: in.ResourceType, UploadKey: in.UploadKey}, Caption: in.Caption}).MarshalBSON()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestDirectPhotoUploadObservedFilename(t *testing.T) {
 	if err = json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	ticket := PhotoTicket{URL: "https://kage.talk.kakao.com/offset-up/synthetic/ready/?signature=synthetic", Resource: fixture.Resource, ResourceType: "vk", UploadKey: "synthetic0", ChunkSize: 4194304}
+	ticket := DirectTicket{URL: "https://kage.talk.kakao.com/offset-up/synthetic/ready/?signature=synthetic", Resource: fixture.Resource, ResourceType: "vk", UploadKey: "synthetic0", ChunkSize: 4194304}
 	data := []byte("synthetic image bytes")
 	doer := directDoerFunc(func(req *http.Request) (*http.Response, error) {
 		mr, err := req.MultipartReader()
@@ -116,19 +116,19 @@ func TestDirectPhotoUploadObservedFilename(t *testing.T) {
 		}
 		return &http.Response{StatusCode: fixture.Accepted.Status, Body: io.NopCloser(bytes.NewReader(fixture.Accepted.Body))}, nil
 	})
-	if err := UploadDirectPhoto(context.Background(), doer, directTestProfile(), ticket, Image{Data: data, Extension: "jpg"}); err != nil {
+	if err := UploadDirect(context.Background(), doer, directTestProfile(), ticket, ImageDirectMedia(Image{Data: data, Extension: "jpg"})); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestDirectPhotoRejectsUnsafeTicketBeforeUpload(t *testing.T) {
-	base := PhotoTicket{URL: "https://kage.talk.kakao.com/offset-up/synthetic/ready/", Resource: "synthetic/photo.jpg", ResourceType: "vk", UploadKey: "synthetic0", ChunkSize: 4194304}
-	for name, change := range map[string]func(*PhotoTicket){"http": func(t *PhotoTicket) { t.URL = "http://kage.talk.kakao.com/offset-up/a/" }, "other host": func(t *PhotoTicket) { t.URL = "https://example.com/offset-up/a/" }, "userinfo": func(t *PhotoTicket) { t.URL = "https://user@kage.talk.kakao.com/offset-up/a/" }, "fragment": func(t *PhotoTicket) { t.URL += "#secret" }, "route": func(t *PhotoTicket) { t.URL = "https://kage.talk.kakao.com/download/a" }, "filename header": func(t *PhotoTicket) { t.Resource = "synthetic/bad%0D%0Aname.jpg" }, "resource URL": func(t *PhotoTicket) { t.Resource = "https://example.com/file.jpg" }, "ready": func(t *PhotoTicket) { t.NeedReady = true }, "other strategy": func(t *PhotoTicket) { t.ResourceType = "vt" }} {
+	base := DirectTicket{URL: "https://kage.talk.kakao.com/offset-up/synthetic/ready/", Resource: "synthetic/photo.jpg", ResourceType: "vk", UploadKey: "synthetic0", ChunkSize: 4194304}
+	for name, change := range map[string]func(*DirectTicket){"http": func(t *DirectTicket) { t.URL = "http://kage.talk.kakao.com/offset-up/a/" }, "other host": func(t *DirectTicket) { t.URL = "https://example.com/offset-up/a/" }, "userinfo": func(t *DirectTicket) { t.URL = "https://user@kage.talk.kakao.com/offset-up/a/" }, "fragment": func(t *DirectTicket) { t.URL += "#secret" }, "route": func(t *DirectTicket) { t.URL = "https://kage.talk.kakao.com/download/a" }, "filename header": func(t *DirectTicket) { t.Resource = "synthetic/bad%0D%0Aname.jpg" }, "resource URL": func(t *DirectTicket) { t.Resource = "https://example.com/file.jpg" }, "other strategy": func(t *DirectTicket) { t.ResourceType = "vt" }} {
 		t.Run(name, func(t *testing.T) {
 			ticket := base
 			change(&ticket)
 			called := false
-			err := UploadDirectPhoto(context.Background(), directDoerFunc(func(*http.Request) (*http.Response, error) { called = true; return nil, errors.New("unexpected call") }), directTestProfile(), ticket, Image{Data: []byte("synthetic"), Extension: "jpg"})
+			err := UploadDirect(context.Background(), directDoerFunc(func(*http.Request) (*http.Response, error) { called = true; return nil, errors.New("unexpected call") }), directTestProfile(), ticket, ImageDirectMedia(Image{Data: []byte("synthetic"), Extension: "jpg"}))
 			if err == nil || called {
 				t.Fatal("unsafe ticket reached transport")
 			}
@@ -138,8 +138,8 @@ func TestDirectPhotoRejectsUnsafeTicketBeforeUpload(t *testing.T) {
 
 func TestDirectPhotoTransportErrorsDoNotExposeSignedURL(t *testing.T) {
 	secret := "synthetic-sensitive-signed-url"
-	ticket := PhotoTicket{URL: "https://kage.talk.kakao.com/offset-up/synthetic/ready/?credential=" + secret, Resource: "synthetic/photo.jpg", ResourceType: "vk", UploadKey: "synthetic0", ChunkSize: 4194304}
-	err := UploadDirectPhoto(context.Background(), directDoerFunc(func(req *http.Request) (*http.Response, error) { return nil, errors.New(req.URL.String()) }), directTestProfile(), ticket, Image{Data: []byte("synthetic"), Extension: "jpg"})
+	ticket := DirectTicket{URL: "https://kage.talk.kakao.com/offset-up/synthetic/ready/?credential=" + secret, Resource: "synthetic/photo.jpg", ResourceType: "vk", UploadKey: "synthetic0", ChunkSize: 4194304}
+	err := UploadDirect(context.Background(), directDoerFunc(func(req *http.Request) (*http.Response, error) { return nil, errors.New(req.URL.String()) }), directTestProfile(), ticket, ImageDirectMedia(Image{Data: []byte("synthetic"), Extension: "jpg"}))
 	if !errors.Is(err, macweb.ErrTransport) || strings.Contains(err.Error(), secret) {
 		t.Fatalf("unsafe transport error: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestDirectPhotoObservedChunkProgress(t *testing.T) {
 	for i := range data {
 		data[i] = byte(i >> 16)
 	}
-	ticket := PhotoTicket{URL: "https://kage.talk.kakao.com/offset-up/synthetic/ready/", Resource: fixture.Resource, ResourceType: "vk", UploadKey: "synthetic0", ChunkSize: fixture.ChunkSize}
+	ticket := DirectTicket{URL: "https://kage.talk.kakao.com/offset-up/synthetic/ready/", Resource: fixture.Resource, ResourceType: "vk", UploadKey: "synthetic0", ChunkSize: fixture.ChunkSize}
 	calls := 0
 	doer := directDoerFunc(func(req *http.Request) (*http.Response, error) {
 		if calls >= len(fixture.Requests) {
@@ -195,7 +195,7 @@ func TestDirectPhotoObservedChunkProgress(t *testing.T) {
 		calls++
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(resp))}, nil
 	})
-	if err := UploadDirectPhoto(context.Background(), doer, directTestProfile(), ticket, Image{Data: data, Extension: "png"}); err != nil {
+	if err := UploadDirect(context.Background(), doer, directTestProfile(), ticket, ImageDirectMedia(Image{Data: data, Extension: "png"})); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 2 {
@@ -204,12 +204,12 @@ func TestDirectPhotoObservedChunkProgress(t *testing.T) {
 }
 
 func TestDirectPhotoInvalidAcknowledgementStopsRemainingChunks(t *testing.T) {
-	ticket := PhotoTicket{URL: "https://kage.talk.kakao.com/offset-up/synthetic/ready/", Resource: "synthetic/photo.png", ResourceType: "vk", UploadKey: "synthetic0", ChunkSize: 4}
+	ticket := DirectTicket{URL: "https://kage.talk.kakao.com/offset-up/synthetic/ready/", Resource: "synthetic/photo.png", ResourceType: "vk", UploadKey: "synthetic0", ChunkSize: 4}
 	calls := 0
-	err := UploadDirectPhoto(context.Background(), directDoerFunc(func(*http.Request) (*http.Response, error) {
+	err := UploadDirect(context.Background(), directDoerFunc(func(*http.Request) (*http.Response, error) {
 		calls++
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"offset":"1","msg":"ok"}`))}, nil
-	}), directTestProfile(), ticket, Image{Data: []byte("synthetic bytes"), Extension: "png"})
+	}), directTestProfile(), ticket, ImageDirectMedia(Image{Data: []byte("synthetic bytes"), Extension: "png"}))
 	if !errors.Is(err, ErrInvalidOffset) || calls != 1 {
 		t.Fatalf("acknowledgement %v; calls %d", err, calls)
 	}

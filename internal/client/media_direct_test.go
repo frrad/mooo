@@ -132,7 +132,7 @@ func TestClientDirectPhotoFailuresBeforeWriteAreCertainAndNotRetried(t *testing.
 	}{
 		{"prepare refusal", 503, 200, `{"url":"https://kage.talk.kakao.com/offset-up/a/b/","resource":"synthetic/server.jpg","resourceType":"vk","uploadKey":"synthetic0","chunkSize":4194304,"needReady":false}`},
 		{"upload refusal", 200, 404, `{"url":"https://kage.talk.kakao.com/offset-up/a/b/","resource":"synthetic/server.jpg","resourceType":"vk","uploadKey":"synthetic0","chunkSize":4194304,"needReady":false}`},
-		{"untraced ready strategy", 200, 200, `{"url":"https://kage.talk.kakao.com/offset-up/a/b/","resource":"synthetic/server.jpg","resourceType":"vk","uploadKey":"synthetic0","chunkSize":4194304,"needReady":true}`},
+		{"untraced Tenth strategy", 200, 200, `{"url":"https://kage.talk.kakao.com/offset-up/a/b/","resource":"synthetic/server.jpg","resourceType":"vt","uploadKey":"synthetic0","chunkSize":4194304,"needReady":false}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			release := make(chan struct{})

@@ -76,6 +76,9 @@ func outboundSendError(err error) error {
 	if errors.As(err, &statusErr) {
 		return certainSendFailure(err, "KakaoTalk refused this message.")
 	}
+	if errors.Is(err, media.ErrUploadFiltered) {
+		return certainRefusal(err, "KakaoTalk refused the content of this attachment; it was not sent.")
+	}
 	if errors.Is(err, client.ErrUploadNotSent) {
 		return certainSendFailure(err, "The upload to KakaoTalk failed before any of the attachment was sent; it was not sent.")
 	}
