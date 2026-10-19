@@ -15,9 +15,10 @@ upload tickets, URLs, packet captures, and message contents are excluded.
    LOCO host and port. Treat all three as sensitive ephemeral state.
 4. Open a new LOCO v3 encrypted connection to that endpoint and send `POST`
    once with the key, account/chat IDs, media properties, and client metadata.
-5. Honor the server's optional byte offset. Encrypt and stream the remaining
-   bytes as one LOCO secure envelope, then wait for the server-pushed `COMPLETE`
-   packet. `COMPLETE` contains the created `chatLog`; no separate `WRITE` is
+5. Honor the server's optional byte offset. Stream the remaining bytes as
+   consecutive LOCO secure frames of at most 4096 plaintext bytes each (the
+   macOS client's chunk size; see [media upload stream](media-upload-stream.md)),
+   then wait for the server-pushed `COMPLETE` packet. `COMPLETE` contains the created `chatLog`; no separate `WRITE` is
    needed for this flow.
 
 No stage is retried automatically. A disconnect or timeout after `SHIP`, `POST`,

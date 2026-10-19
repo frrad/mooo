@@ -69,9 +69,11 @@ inferred.
   trailer chain for upload; both are observed to work live, but the official
   selection logic is untraced.
 - The HTTP-path failure branches (403/404/410), the full expiry-error
-  classifier, the on-disk cache recipe, the default upload size limit, the
+  classifier, the on-disk cache recipe, the
   SHIP-redirect follow-up, status meanings beyond in-progress/failed, the
-  notification text and the caption display surface.
+  notification text and the caption display surface. (The default upload
+  size limit, 20 MiB for photos, is now traced in
+  [media upload stream](../media-upload-stream.md).)
 
 ## Observed fixture
 

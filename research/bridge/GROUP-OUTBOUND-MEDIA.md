@@ -36,9 +36,11 @@ unless marked.
   `mtl`, `sl`, `csl`, optional per-photo captions `cmtl`, and the sender's
   local paths as `imageUrls`. Albums hold 2 to 30 photos (jpg, jpeg, png, gif,
   bmp, webp); a lone leftover photo is sent singly.
-- **Limits** come from server configuration: images 20 MiB (`upMaxSize`),
-  files and video 300 MiB (`videoUpMaxSize`), with separate large-media paths
-  above a threshold.
+- **Limits** come from the `GETCONF` `trailer` object: images `upMaxSize`,
+  files and video `videoUpMaxSize`, large media `largeUpMaxSize`. When a value
+  is not positive, the built-in defaults are 20 MiB, 300 MiB and 1 GiB. They
+  are checked before `SHIP`. Derivation and the large-media gate:
+  [media upload stream](../media-upload-stream.md).
 - **Failures.** No server status is special-cased and nothing is retried;
   the message is marked failed with a manual resend. Albums resume per photo
   on a manual resend.
