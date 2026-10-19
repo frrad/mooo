@@ -90,5 +90,8 @@ func TestReadStreamRejectsFrameRunningPastStream(t *testing.T) {
 	if err := backend.Wait(3 * time.Second); err != nil {
 		t.Fatalf("ReadStream accepted an overlong frame: %v", err)
 	}
-	<-written
+	// The peer reads the whole frame before rejecting it, so the write completes.
+	if err := <-written; err != nil {
+		t.Fatal(err)
+	}
 }

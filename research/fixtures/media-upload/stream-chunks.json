@@ -1,56 +1,94 @@
 {
   "provenance": {
     "kind": "static",
-    "client": "KakaoTalk for Mac 26.8.0 arm64",
+    "client": "KakaoTalk for Mac 26.8.0 arm64 (frame plans, limits); KakaoTalk for Android 26.8.2 (frame bound)",
     "date": "2026-10-19",
-    "method": "Ghidra disassembly of LocoTrailerAgent writeFile:offset:, writeBinaryData and socket:didWriteDataWithTag:, the trailer upload operation's response callback, and the Swift upload-limit accessors with their fallback constants",
+    "method": "Ghidra disassembly of the macOS LocoTrailerAgent write path, the trailer upload and album response callbacks, and the Swift upload-limit accessors with their fallback constants; JADX read of the Android 26.8.2 POST job, V2SL sink/source and buffered-sink loop for the cross-platform frame bounds",
     "doc": "research/media-upload-stream.md"
   },
   "chunk_size": 4096,
+  "chunk_size_note": "chunk_size is the macOS value; Android sends 8192-byte frames",
+  "android_chunk_size": 8192,
+  "max_frame_plaintext": 131040,
+  "max_frame_plaintext_note": "Android's V2SL receive side rejects a length prefix above 131068 (12-byte nonce + ciphertext + 16-byte tag)",
   "stream_cases": [
     {
       "name": "small file in one frame",
       "file_size": 10,
       "post_offset": 0,
-      "expected": {"streams": true, "full_frames": 0, "tail_frame": 10}
+      "expected": {
+        "streams": true,
+        "full_frames": 0,
+        "tail_frame": 10
+      }
     },
     {
       "name": "exactly one chunk",
       "file_size": 4096,
       "post_offset": 0,
-      "expected": {"streams": true, "full_frames": 1, "tail_frame": 0}
+      "expected": {
+        "streams": true,
+        "full_frames": 1,
+        "tail_frame": 0
+      }
     },
     {
       "name": "chunks count from the offset, not from file boundaries",
       "file_size": 8193,
       "post_offset": 4097,
-      "expected": {"streams": true, "full_frames": 1, "tail_frame": 0}
+      "expected": {
+        "streams": true,
+        "full_frames": 1,
+        "tail_frame": 0
+      }
     },
     {
       "name": "remainder of one byte over a single-frame cap",
       "file_size": 16777239,
       "post_offset": 1,
-      "expected": {"streams": true, "full_frames": 4096, "tail_frame": 22}
+      "expected": {
+        "streams": true,
+        "full_frames": 4096,
+        "tail_frame": 22
+      }
     },
     {
       "name": "issue 428 video size",
       "file_size": 22276883,
       "post_offset": 0,
-      "expected": {"streams": true, "full_frames": 5438, "tail_frame": 2835}
+      "expected": {
+        "streams": true,
+        "full_frames": 5438,
+        "tail_frame": 2835
+      }
     },
     {
       "name": "offset at the end sends nothing and waits for COMPLETE",
       "file_size": 4096,
       "post_offset": 4096,
-      "expected": {"streams": false, "full_frames": 0, "tail_frame": 0, "reads_complete": true}
+      "expected": {
+        "streams": false,
+        "full_frames": 0,
+        "tail_frame": 0,
+        "reads_complete": true
+      }
     },
     {
       "name": "offset past the end",
       "file_size": 4096,
       "post_offset": 4097,
-      "expected": {"streams": false, "full_frames": 0, "tail_frame": 0, "reads_complete": false, "fails": false},
+      "expected": {
+        "streams": false,
+        "full_frames": 0,
+        "tail_frame": 0,
+        "reads_complete": false,
+        "fails": false
+      },
       "mooo_deviation": "The official client neither streams nor reads and is left waiting; mooo rejects the offset before sending any bytes.",
-      "mooo_expected": {"streams": false, "fails": true}
+      "mooo_expected": {
+        "streams": false,
+        "fails": true
+      }
     }
   ],
   "limit_defaults": {
@@ -61,27 +99,55 @@
   "limit_cases": [
     {
       "name": "no server values",
-      "trailer": {"upMaxSize": 0, "videoUpMaxSize": 0, "largeUpMaxSize": 0},
+      "trailer": {
+        "upMaxSize": 0,
+        "videoUpMaxSize": 0,
+        "largeUpMaxSize": 0
+      },
       "large_media_eligible": false,
-      "expected": {"image_max": 20971520, "file_and_video_max": 314572800}
+      "expected": {
+        "image_max": 20971520,
+        "file_and_video_max": 314572800
+      }
     },
     {
       "name": "negative server values fall back",
-      "trailer": {"upMaxSize": -1, "videoUpMaxSize": -1, "largeUpMaxSize": -1},
+      "trailer": {
+        "upMaxSize": -1,
+        "videoUpMaxSize": -1,
+        "largeUpMaxSize": -1
+      },
       "large_media_eligible": true,
-      "expected": {"image_max": 20971520, "file_and_video_max": 1073741824}
+      "expected": {
+        "image_max": 20971520,
+        "file_and_video_max": 1073741824
+      }
     },
     {
       "name": "positive server values win",
-      "trailer": {"upMaxSize": 10485760, "videoUpMaxSize": 104857600, "largeUpMaxSize": 2147483648},
+      "trailer": {
+        "upMaxSize": 10485760,
+        "videoUpMaxSize": 104857600,
+        "largeUpMaxSize": 2147483648
+      },
       "large_media_eligible": false,
-      "expected": {"image_max": 10485760, "file_and_video_max": 104857600}
+      "expected": {
+        "image_max": 10485760,
+        "file_and_video_max": 104857600
+      }
     },
     {
       "name": "large media only when caller, client and Drawer subscription all allow it",
-      "trailer": {"upMaxSize": 10485760, "videoUpMaxSize": 104857600, "largeUpMaxSize": 2147483648},
+      "trailer": {
+        "upMaxSize": 10485760,
+        "videoUpMaxSize": 104857600,
+        "largeUpMaxSize": 2147483648
+      },
       "large_media_eligible": true,
-      "expected": {"image_max": 10485760, "file_and_video_max": 2147483648}
+      "expected": {
+        "image_max": 10485760,
+        "file_and_video_max": 2147483648
+      }
     }
   ]
 }
