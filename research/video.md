@@ -35,10 +35,15 @@ with the generated video.mp4 filename retained. Resource-only attachments and
 alternate high-quality selection remain gaps; types 28/29 are unchanged.
 
 mooo policy bounds: 64 KiB attachment, 64 MiB media, 8192 per metadata dimension,
-24-hour duration and 16 KiB caption. Require a bounded token, SHA-1 and allowlisted
-URL; reject duplicate JSON fields. Check expiry before fetching, redirects before
-following, exact bytes/checksum and bounded ISO BMFF top-level framing with ftyp,
-moov and mdat. Framing validation is not codec decoding or playback parity.
+24-hour duration and 16 KiB caption. Require a bounded token and allowlisted URL,
+and a `cs` that is either SHA-1 hex or empty; reject duplicate JSON fields. Check
+expiry before fetching, redirects before following, exact bytes, the checksum when
+`cs` is present, and bounded ISO BMFF top-level framing with ftyp, moov and mdat.
+A video sent over the HTTP upload is stored with `cs: ""` and a remuxed size
+([fixture](fixtures/video/observed-http-upload-shape.json)). Neither official
+client reads a received video's `cs`: the Mac's LocoChatLogVideo maps no checksum
+key and no download path hashes the bytes, and Android's chat-log model ignores it
+(static, high confidence). Verifying a present `cs` is mooo's own stricter check. Framing validation is not codec decoding or playback parity.
 Deterministic invalid/expired/checksum resources become notices; transient fetch
 or Matrix upload failures preserve the uncommitted delivery position.
 

@@ -55,8 +55,12 @@ func DecodeVideoMessage(env chatlog.Envelope) (VideoMessage, error) {
 	return VideoMessage{ChatID: env.ChatID, LogID: env.LogID, AuthorID: env.AuthorID, SentAt: env.SentAt, Attachment: a}, nil
 }
 
+// validVideoAttachment accepts an empty cs: the server stores a video sent
+// over the HTTP upload with cs "" and a remuxed size
+// (research/fixtures/video/observed-http-upload-shape.json). A present cs
+// must be SHA-1 hex, and the download then verifies it.
 func validVideoAttachment(a VideoAttachment) bool {
-	if a.Token == "" || len(a.Token) > 512 || validateDownloadURL(a.URL) != nil || a.Size <= 0 || a.Size > MaxVideoBytes || a.Width <= 0 || a.Width > 8192 || a.Height <= 0 || a.Height > 8192 || a.Duration < 0 || a.Duration > 24*60*60 || len(a.Checksum) != 40 || len(a.Comment) > 16<<10 || !utf8.ValidString(a.Comment) || strings.ContainsRune(a.Comment, 0) {
+	if a.Token == "" || len(a.Token) > 512 || validateDownloadURL(a.URL) != nil || a.Size <= 0 || a.Size > MaxVideoBytes || a.Width <= 0 || a.Width > 8192 || a.Height <= 0 || a.Height > 8192 || a.Duration < 0 || a.Duration > 24*60*60 || (a.Checksum != "" && len(a.Checksum) != 40) || len(a.Comment) > 16<<10 || !utf8.ValidString(a.Comment) || strings.ContainsRune(a.Comment, 0) {
 		return false
 	}
 	_, err := hex.DecodeString(a.Checksum)
