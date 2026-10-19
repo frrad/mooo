@@ -360,8 +360,10 @@ recommendations; the rest are needed for correctness.
 [`fixtures/media-upload/stream-chunks.json`](fixtures/media-upload/stream-chunks.json)
 (provenance `static`). It holds the expected 4096-byte frame plans for
 synthetic sizes and offsets, the offset edge cases (with the deliberate
-deviation for an offset past the end), and the size-limit fallbacks. mooo
-has no code that consumes it yet; the #428 fix should.
+deviation for an offset past the end), and the size-limit fallbacks.
+`TestSendUploadStreamsFixtureFramePlans` in `internal/client` runs every
+stream case through mooo's real upload path. The size-limit cases have no
+consumer yet: mooo does not read GETCONF.
 
 ## Evidence and confidence
 

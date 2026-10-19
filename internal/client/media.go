@@ -51,20 +51,25 @@ func (s *session) SendUpload(ctx context.Context, chatID int64, upload media.Upl
 }
 
 func (s *session) trailerUpload(ctx context.Context, shipBody, data []byte, post func(key string) ([]byte, error)) (media.SendResult, error) {
-	shipPacket, err := s.request(ctx, media.ShipCommand, shipBody)
+	notSent := func(err error) (media.SendResult, error) {
+		return media.SendResult{}, fmt.Errorf("%w: %w", ErrUploadNotSent, err)
+	}
+	shipCtx, cancel := context.WithTimeout(ctx, mediaReplyTimeout)
+	shipPacket, err := s.request(shipCtx, media.ShipCommand, shipBody)
+	cancel()
 	if err != nil {
-		return media.SendResult{}, err
+		return notSent(err)
 	}
 	ship, err := media.DecodeShipResponse(shipPacket.Body)
 	if err != nil {
-		return media.SendResult{}, err
+		return notSent(err)
 	}
 	if ship.Redirect {
-		return media.SendResult{}, media.ErrUploadRedirect
+		return notSent(media.ErrUploadRedirect)
 	}
 	postBody, err := post(ship.Key)
 	if err != nil {
-		return media.SendResult{}, err
+		return notSent(err)
 	}
 	complete, err := s.uploadToMediaServer(ctx, ship.Host, ship.Port, media.PostCommand, postBody, data)
 	if err != nil {
@@ -132,78 +137,104 @@ func (s *session) SendAlbum(ctx context.Context, chatID int64, photos [][]byte, 
 	return chat.DecodeWriteResponse(reply.Body)
 }
 
-const (
-	// mediaStreamChunk is the plaintext size of each secure frame in an upload
-	// stream. It must not exceed loco.DefaultMaxBody.
-	mediaStreamChunk = 1 << 20
-	// mediaIdleTimeout bounds each media connection stage when the caller's
-	// context has no deadline.
-	mediaIdleTimeout = 60 * time.Second
+// ErrUploadNotSent marks a media upload that failed before any of its bytes
+// reached the media server. The server creates the chat message only after
+// the whole stream and COMPLETE, so no message exists.
+var ErrUploadNotSent = errors.New("client: media upload failed before any bytes were sent")
+
+// mediaStreamChunk is the plaintext size of each secure frame in an upload
+// stream, as the Mac client sends it (research/media-upload-stream.md).
+const mediaStreamChunk = 4096
+
+var (
+	// mediaReplyTimeout bounds the SHIP and POST replies, like the Mac's
+	// receive-header timer.
+	mediaReplyTimeout = 20 * time.Second
+	// mediaStallTimeout bounds one stream frame's write, like the Mac's
+	// out-segment watchdog: a stalled upload fails, a slow one does not.
+	mediaStallTimeout = 10 * time.Second
+	// mediaCompleteTimeout bounds the wait for COMPLETE after the last byte.
+	// The Mac waits without a timer; a bridge needs an answer, and a timeout
+	// here is ambiguous.
+	mediaCompleteTimeout = 60 * time.Second
 )
 
 // uploadToMediaServer sends one POST or MPOST on a new dedicated media
-// connection, streams the bytes from the server's offset and returns the
-// server's COMPLETE packet.
+// connection, streams the bytes from the server's offset in mediaStreamChunk
+// frames and returns the server's COMPLETE packet. A failure before any byte
+// is streamed wraps ErrUploadNotSent. The caller's context deadline, when
+// earlier, caps every stage.
 func (s *session) uploadToMediaServer(ctx context.Context, host string, port int, command string, postBody, data []byte) (loco.Packet, error) {
+	notSent := func(err error) (loco.Packet, error) {
+		return loco.Packet{}, fmt.Errorf("%w: %w", ErrUploadNotSent, err)
+	}
+	within := func(timeout time.Duration) time.Time {
+		deadline := time.Now().Add(timeout)
+		if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+			return ctxDeadline
+		}
+		return deadline
+	}
 	dial := s.mediaDial
 	if dial == nil {
 		dial = dialSecure
 	}
 	upload, err := dial(ctx, host, port)
 	if err != nil {
-		return loco.Packet{}, fmt.Errorf("client: media connect: %w", err)
+		return notSent(fmt.Errorf("client: media connect: %w", err))
 	}
 	defer func() { _ = upload.close() }()
 	// Cancellation closes the dedicated media connection, interrupting a
-	// blocked write or a wait for COMPLETE. The outcome remains ambiguous.
+	// blocked write or a wait for COMPLETE. The outcome remains ambiguous
+	// once bytes have been streamed.
 	stopCancel := context.AfterFunc(ctx, func() { _ = upload.close() })
 	defer stopCancel()
-	// Without a context deadline each stage gets mediaIdleTimeout, renewed
-	// for every stream chunk so a large file on a slow uplink is not cut off.
-	ctxDeadline, hasDeadline := ctx.Deadline()
-	extendDeadline := func() {
-		if hasDeadline {
-			_ = upload.c.SetDeadline(ctxDeadline)
-		} else {
-			_ = upload.c.SetDeadline(time.Now().Add(mediaIdleTimeout))
-		}
-	}
-	extendDeadline()
+	_ = upload.c.SetDeadline(within(mediaReplyTimeout))
 	postPacket, pending, err := upload.request(1, command, postBody)
 	if err != nil {
-		return loco.Packet{}, fmt.Errorf("client: media %s: %w", command, err)
+		return notSent(fmt.Errorf("client: media %s: %w", command, err))
 	}
 	status, err := loco.Status(postPacket)
 	if err != nil {
-		return loco.Packet{}, protocolErr(command, "status")
+		return notSent(protocolErr(command, "status"))
 	}
 	if status != 0 {
-		return loco.Packet{}, StatusError{Command: command, Status: status}
+		return notSent(StatusError{Command: command, Status: status})
 	}
 	offset, err := media.DecodePostOffset(postPacket.Body, len(data))
 	if err != nil {
-		return loco.Packet{}, err
+		return notSent(err)
 	}
-	// One secure frame holds at most loco.DefaultMaxBody bytes, so the file
-	// is streamed as a sequence of frames.
-	for rest := data[offset:]; len(rest) > 0; {
+	// An offset at the end streams nothing; the server may still complete
+	// the upload, so later failures are ambiguous.
+	for rest, streamed := data[offset:], false; len(rest) > 0; {
 		n := min(len(rest), mediaStreamChunk)
 		encrypted, err := upload.secure.Encrypt(rest[:n])
 		if err != nil {
-			return loco.Packet{}, fmt.Errorf("client: media encrypt: %w", err)
+			err = fmt.Errorf("client: media encrypt: %w", err)
+			if !streamed {
+				return notSent(err)
+			}
+			return loco.Packet{}, err
 		}
-		extendDeadline()
-		if err := writeAll(upload.c, encrypted); err != nil {
-			return loco.Packet{}, fmt.Errorf("client: media stream: %w", err)
+		_ = upload.c.SetDeadline(within(mediaStallTimeout))
+		written, err := writeAllCount(upload.c, encrypted)
+		if err != nil {
+			err = fmt.Errorf("client: media stream: %w", err)
+			if !streamed && written == 0 {
+				return notSent(err)
+			}
+			return loco.Packet{}, err
 		}
+		streamed = true
 		rest = rest[n:]
 	}
-	extendDeadline()
 	for _, packet := range pending {
 		if packet.Header.Method == media.CompleteCommand {
 			return packet, nil
 		}
 	}
+	_ = upload.c.SetDeadline(within(mediaCompleteTimeout))
 	for range requestLimit {
 		packet, err := upload.read()
 		if err != nil {
@@ -225,11 +256,6 @@ func decodeMediaComplete(packet loco.Packet) (media.SendResult, error) {
 		return media.SendResult{}, StatusError{Command: media.CompleteCommand, Status: status}
 	}
 	return media.DecodeComplete(packet.Body)
-}
-
-func writeAll(conn interface{ Write([]byte) (int, error) }, data []byte) error {
-	_, err := writeAllCount(conn, data)
-	return err
 }
 
 func writeAllCount(conn interface{ Write([]byte) (int, error) }, data []byte) (int, error) {

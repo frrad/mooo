@@ -22,6 +22,14 @@ var matrixImageDownloader = downloadMatrixImageBounded
 
 const matrixUploadTransferTimeout = 3 * time.Minute
 
+// kakaoUploadTimeout caps sending a file or video to KakaoTalk after it has
+// been fetched from Matrix. The client bounds each stage and fails a stalled
+// stream; this backstop only has to outlast a slow but progressing upload,
+// so it grows with the size at a 64 KiB/s floor.
+func kakaoUploadTimeout(size int) time.Duration {
+	return 2*time.Minute + time.Duration(size/(64<<10))*time.Second
+}
+
 var matrixUploadDownloader = func(ctx context.Context, intent bridgev2.MatrixAPI, uri id.ContentURIString, fileInfo *event.EncryptedFileInfo) ([]byte, error) {
 	return downloadMatrixMediaBounded(ctx, intent, uri, fileInfo, media.MaxUploadBytes)
 }
@@ -130,8 +138,8 @@ func (kc *KakaoClient) sendMatrixImage(ctx context.Context, c outboundAPI, inten
 // or video. Name, type and size are checked before the download, the bytes
 // are validated before the durable reservation, and the upload runs once.
 func (kc *KakaoClient) sendMatrixUpload(ctx context.Context, c outboundAPI, intent bridgev2.MatrixAPI, chatID int64, content *event.MessageEventContent, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
-	ctx, release := kc.outboundCtx(ctx, matrixUploadTransferTimeout)
-	defer release()
+	fetchCtx, releaseFetch := kc.outboundCtx(ctx, matrixUploadTransferTimeout)
+	defer releaseFetch()
 	name, caption := content.FileName, ""
 	if name == "" {
 		name = content.Body
@@ -144,7 +152,7 @@ func (kc *KakaoClient) sendMatrixUpload(ctx context.Context, c outboundAPI, inte
 	if _, err := media.ClassifyUpload(name, caption); err != nil {
 		return nil, uploadRejectedStatus(err)
 	}
-	data, err := matrixUploadDownloader(ctx, intent, content.URL, content.File)
+	data, err := matrixUploadDownloader(fetchCtx, intent, content.URL, content.File)
 	if err != nil {
 		return nil, retriableFetchFailure(errors.New("download Matrix file failed"), "The file could not be fetched from Matrix, so it was not sent to KakaoTalk.")
 	}
@@ -152,6 +160,8 @@ func (kc *KakaoClient) sendMatrixUpload(ctx context.Context, c outboundAPI, inte
 	if err != nil {
 		return nil, uploadRejectedStatus(err)
 	}
+	ctx, release := kc.outboundCtx(ctx, kakaoUploadTimeout(len(data)))
+	defer release()
 	if err := begin(ctx); err != nil {
 		return nil, err
 	}
