@@ -151,6 +151,30 @@ func (p *Peer) ReadPayload() ([]byte, error) {
 	return p.Secure.Decrypt(raw)
 }
 
+// ReadStream reads secure frames until size decrypted bytes have arrived, as
+// a media peer reads an upload stream that the sender split into several
+// frames. It returns the bytes and each frame's plaintext length, and fails
+// if a frame would run past size.
+func (p *Peer) ReadStream(size int) ([]byte, []int, error) {
+	if size < 0 {
+		return nil, nil, errors.New("ReadStream needs a nonnegative size")
+	}
+	data := make([]byte, 0, size)
+	var frames []int
+	for len(data) < size {
+		payload, err := p.ReadPayload()
+		if err != nil {
+			return data, frames, err
+		}
+		if len(payload) > size-len(data) {
+			return data, frames, fmt.Errorf("frame of %d bytes runs past the %d-byte stream", len(payload), size)
+		}
+		data = append(data, payload...)
+		frames = append(frames, len(payload))
+	}
+	return data, frames, nil
+}
+
 // Expect reads one request, requires its method, passes its BSON body to
 // check when check is not nil, and answers with reply under the request's
 // packet ID.
