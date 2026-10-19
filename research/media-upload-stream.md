@@ -16,8 +16,9 @@ Sources, in order of weight:
    [group photos](bridge/GROUP-PHOTOS.md) and
    [group outbound media](bridge/GROUP-OUTBOUND-MEDIA.md).
 
-No public prior art was consulted, and no new live experiment ran for this
-note (see gap G1). Addresses, pseudocode and decompiled code stay in the
+No public prior art was consulted. One live experiment ran on the disposable
+B account (section 9); the server redirected every request, so it observed
+the redirect rather than the stream (gap G1). Addresses, pseudocode and decompiled code stay in the
 private lab notes.
 
 This note covers what happens after `SHIP`: the dedicated media connection,
@@ -260,7 +261,50 @@ above zero; otherwise a built-in default applies (high confidence):
   (`ErrAlbumNotCreated`). That is a deliberate, safer deviation from the
   Mac.
 
-## 9. Requirements for mooo
+## 9. Live observation: the server redirects files and video (2026-10-19)
+
+Method: one receipted lab process on the owned disposable B secondary
+profile, sending into the owned A–B direct chat. A private shim drove mooo's
+real SHIP request and recorded only BSON key names and value types. Six
+uploads were planned:
+
+- R1/R2: 20 MiB in 4096-byte and 1 MiB frames.
+- R3/R4: abort after 8 MiB, then resume with the same ticket.
+- R5: a 64 KiB file with an idle stream.
+- R6: a 17 MiB invalid `.mp4`.
+
+The files were synthetic random `.dat` files (type 18) and one `.mp4`
+(type 3). An earlier attempt with `.bin` names stopped locally on the
+built-in deny list after login, before any request.
+
+Result: **every SHIP returned status 0 with `rd: true`**, for both sizes of
+file and for the video. As the official client does, the probe then stopped
+before opening a media connection, so nothing was streamed and no message
+was created. The reply also carried `k`, `vh` and `p` fields. Their values
+were not recorded; the 2026-10-13 photo redirect had them empty.
+
+What this means:
+
+- On 2026-10-13 this account was already redirected for photos
+  ([SHIP redirect](bridge/SHIP-REDIRECT.md)). It is now redirected for files
+  and video too.
+- The official Mac client, on `rd`, skips the LOCO trailer entirely. It uses
+  the HTTP path (prepare, chunked Kage `offset-up` upload with the server's
+  `chunkSize` (4 MiB when observed), then `WRITEMEDIA`). mooo implements that
+  path only for single photos. For files and video, mooo refuses before
+  `POST` with the existing "upload method not supported" notice.
+- The #428 report (trailer path, `ciphertext too large`) came from a
+  different, non-redirected account. So both paths are live, and which one
+  applies is the server's choice per request.
+- The trailer stream could therefore not be observed on this account the
+  official way. Writing to the trailer endpoint despite `rd` would test
+  behavior the official client never shows, so it was not done.
+
+Fixture:
+[`fixtures/media-upload/observed-ship-redirect-file-video.json`](fixtures/media-upload/observed-ship-redirect-file-video.json)
+(provenance `observed`).
+
+## 10. Requirements for mooo
 
 Implementation-neutral checks for the #428 fix. "Should" items are
 recommendations; the rest are needed for correctness.
@@ -301,7 +345,11 @@ recommendations; the rest are needed for correctness.
    and ticket reuse are out of scope; mooo has no resend button.
 9. **Albums.** Keep failing on a nonzero per-photo `COMPLETE`, and stream
    each photo in frames the same way.
-10. **Tests.** A regression test should upload more than one frame's worth of
+10. **Respect the redirect.** Keep stopping before `POST` when SHIP says
+    `rd: true`, for files and video as well as photos. The trailer fix does
+    not help redirected accounts. A large video there needs an HTTP (Kage)
+    file/video uploader, which is separate work.
+11. **Tests.** A regression test should upload more than one frame's worth of
     bytes through the real upload path. It should check the reassembled
     bytes and that every frame respects requirement 2 (`ReadStream` returns
     each frame's size), and that `COMPLETE` is handled. The static fixture
@@ -334,14 +382,15 @@ has no code that consumes it yet; the #428 fix should.
 | Android: offset bounds and file checks; int32 offset read | Android POST job and its file-stream helper | high |
 | Android: failure classifier; size/Drawer checks before upload | Android send request | medium |
 | Server accepted a ~180 KB single frame from mooo | earlier owned acceptance (group photos) | medium (frame size inferred from the file) |
+| Server redirects SHIP for files (64 KiB and 20 MiB) and video (17 MiB) on the disposable account | live owned-account observation, section 9 | high for this account and date |
 | mooo threshold 16,777,238 remaining bytes; failure after POST; wrong bridge status | throwaway test through the real upload function | high |
 
 ## Gaps
 
-- **G1.** No live multi-frame upload from mooo, no resume observation, and
-  no measurement of the server's frame bound or idle timeout. A prepared
-  experiment on the disposable accounts was not run (it needs the
-  maintainer's go-ahead in this session).
+- **G1.** No live multi-frame trailer upload, no resume observation, and no
+  measurement of the server's frame bound or idle timeout. The 2026-10-19
+  run was redirected (section 9). Observing the trailer stream needs an
+  account the server does not redirect.
 - **G2.** No consumer found for GETCONF `inSegTimeout`/`outSegTimeout`, and
   Swift code that might read them was not searched exhaustively.
 - **G3.** The trigger for the upload manager's cancel-all, and whether
