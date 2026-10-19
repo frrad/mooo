@@ -25,9 +25,14 @@ const matrixUploadTransferTimeout = 3 * time.Minute
 // kakaoUploadTimeout caps sending a file or video to KakaoTalk after it has
 // been fetched from Matrix. The client bounds each stage and fails a stalled
 // stream; this backstop only has to outlast a slow but progressing upload,
-// so it grows with the size at a 64 KiB/s floor.
-func kakaoUploadTimeout(size int) time.Duration {
-	return 2*time.Minute + time.Duration(size/(64<<10))*time.Second
+// so it grows with the size at a 64 KiB/s floor. A video sent over the HTTP
+// upload may also wait up to 10 minutes for the server to process it.
+func kakaoUploadTimeout(upload media.Upload) time.Duration {
+	timeout := 2*time.Minute + time.Duration(len(upload.Data)/(64<<10))*time.Second
+	if upload.Type == messagetype.Video {
+		timeout += 10 * time.Minute
+	}
+	return timeout
 }
 
 var matrixUploadDownloader = func(ctx context.Context, intent bridgev2.MatrixAPI, uri id.ContentURIString, fileInfo *event.EncryptedFileInfo) ([]byte, error) {
@@ -160,7 +165,7 @@ func (kc *KakaoClient) sendMatrixUpload(ctx context.Context, c outboundAPI, inte
 	if err != nil {
 		return nil, uploadRejectedStatus(err)
 	}
-	ctx, release := kc.outboundCtx(ctx, kakaoUploadTimeout(len(data)))
+	ctx, release := kc.outboundCtx(ctx, kakaoUploadTimeout(upload))
 	defer release()
 	if err := begin(ctx); err != nil {
 		return nil, err

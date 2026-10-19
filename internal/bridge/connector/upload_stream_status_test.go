@@ -9,6 +9,7 @@ import (
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/media"
+	"github.com/frrad/mooo/internal/protocol/messagetype"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/event"
 )
@@ -49,8 +50,8 @@ func TestUploadStatusAndStreamFailuresKeepTheirClassification(t *testing.T) {
 // progressing upload, not the 3-minute Matrix fetch deadline: a 64 MiB file
 // at the 64 KiB/s floor needs about 17 minutes.
 func TestUploadSendDeadlineGrowsWithFileSize(t *testing.T) {
-	if got := kakaoUploadTimeout(media.MaxUploadBytes); got < 17*time.Minute {
-		t.Fatalf("kakaoUploadTimeout(64 MiB) = %v, want at least 17m", got)
+	if got := kakaoUploadTimeout(media.Upload{Type: messagetype.File, Data: make([]byte, media.MaxUploadBytes)}); got < 17*time.Minute {
+		t.Fatalf("kakaoUploadTimeout(64 MiB file) = %v, want at least 17m", got)
 	}
 	data := make([]byte, 8<<20)
 	fake := &fakeKakao{uploadResp: uploadChatLog(t, 150)}
@@ -64,7 +65,28 @@ func TestUploadSendDeadlineGrowsWithFileSize(t *testing.T) {
 	if fake.uploadDeadline.IsZero() {
 		t.Fatal("SendUpload ran without a deadline")
 	}
-	if got := fake.uploadDeadline.Sub(started); got < kakaoUploadTimeout(len(data))-time.Minute || got <= matrixUploadTransferTimeout {
-		t.Fatalf("SendUpload deadline %v after start, want about %v", got, kakaoUploadTimeout(len(data)))
+	want := kakaoUploadTimeout(fake.uploads[0])
+	if got := fake.uploadDeadline.Sub(started); got < want-time.Minute || got <= matrixUploadTransferTimeout {
+		t.Fatalf("SendUpload deadline %v after start, want about %v", got, want)
+	}
+}
+
+// A redirected video may wait up to 10 minutes for the server to process it
+// before WRITEMEDIA, so its backstop allows for that on top of the transfer.
+func TestUploadSendDeadlineAllowsVideoReadyWait(t *testing.T) {
+	file := kakaoUploadTimeout(media.Upload{Type: messagetype.File, Data: make([]byte, 1<<20)})
+	video := kakaoUploadTimeout(media.Upload{Type: messagetype.Video, Data: make([]byte, 1<<20)})
+	if video-file != 10*time.Minute {
+		t.Fatalf("video backstop %v, file %v: want 10m more for the ready wait", video, file)
+	}
+}
+
+// The server's content filter refusal during the ready wait is a certain
+// refusal with its own reason, not "may have been delivered".
+func TestUploadContentFilterReportsCertainRefusal(t *testing.T) {
+	err := outboundSendError(errors.Join(client.ErrUploadNotSent, media.ErrUploadFiltered))
+	var status bridgev2.MessageStatus
+	if !errors.As(err, &status) || !status.IsCertain || !strings.Contains(status.Message, "refused the content") {
+		t.Fatalf("content filter status %v", err)
 	}
 }

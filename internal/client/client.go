@@ -692,9 +692,14 @@ func (c *Client) SendImage(ctx context.Context, chatID int64, data []byte, capti
 }
 
 // SendUpload sends one prepared file or video through the current session.
+// When SHIP redirects it, the file goes over the HTTP upload instead.
 func (c *Client) SendUpload(ctx context.Context, chatID int64, upload media.Upload) (media.SendResult, error) {
 	return withSession(c, ctx, func(session *session) (media.SendResult, error) {
-		return session.SendUpload(ctx, chatID, upload)
+		result, err := session.SendUpload(ctx, chatID, upload)
+		if !errors.Is(err, media.ErrUploadRedirect) {
+			return result, err
+		}
+		return c.directUpload(ctx, session, chatID, upload)
 	})
 }
 

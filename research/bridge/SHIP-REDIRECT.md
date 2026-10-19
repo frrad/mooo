@@ -76,12 +76,13 @@ Android's ending-offset/form ordering did not resolve that harness error.
    not-sent, even if storage received bytes. A lost or malformed write reply is
    ambiguous; do not retry any upload or write automatically.
 
-The current implementation supports this evidenced Kage photo strategy. Tenth,
-processing-readiness polling and legacy unchunked tickets fail closed before a
-message write. Files and video follow
-[SHIP redirect for files and video](SHIP-REDIRECT-FILE-VIDEO.md), which also adds
-the ready poll. Albums remain separate work, and this does not claim parity for
-the official manual-resume UI.
+The current implementation supports this evidenced Kage photo strategy. Tenth
+and legacy unchunked tickets fail closed before a message write. When prepare
+returns `needReady: true`, mooo polls the ready endpoint before WRITEMEDIA,
+for photos as for files and video; see
+[SHIP redirect for files and video](SHIP-REDIRECT-FILE-VIDEO.md), which covers
+both. Albums remain separate work, and this does not claim parity for the
+official manual-resume UI.
 
 ## Official Mac chain and persistence
 

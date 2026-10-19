@@ -154,6 +154,35 @@ comparisons. Results
 - Each file's `info` named the resource filename and the full length.
 - No Tenth strategy was offered.
 
+### Production acceptance (2026-10-19)
+
+After the implementation landed in mooo, a private harness sent through the
+production `Client.SendUpload` on the same account, into the owned A–B direct
+chat:
+
+- **A 6 MiB file (two chunks).** WRITEMEDIA type 18 returned a position. The
+  stored attachment carries `name`, `cs`, `s`, `k`, `url`, `rsc`, `rt` and
+  `hfac`. mooo's history read decoded the message as a file, and the download
+  was byte-identical.
+- **Four videos with captions (25 MB/7 chunks, 12 MB/3 chunks, 17 KB twice).**
+  Each polled ready and then received a WRITEMEDIA type 3 position. The stored
+  attachment carries `cmt` (the exact caption), `tk`, `url`, `s`, `w`, `h`, `d`,
+  `rsc`, `rt`, `hfac` and `expire`.
+  - The server re-muxes the video. The stored size differs slightly from the
+    upload, and `cs` is an **empty string**.
+  - `w`, `h` and `d` match the source.
+  - A downloaded 17 KB copy had the same stream as the upload (h264, 320×240,
+    3.0 s, 75 frames).
+- **One transient failure.** The first attempt of the 25 MB video failed with a
+  transport error before any bytes were sent. It was reported as certainly not
+  sent and not retried; the next attempt succeeded.
+- **Not covered:** this run did not check how the official recipient displays
+  the messages.
+
+The empty `cs` matters for receiving: mooo's video decoder required a 40-digit
+checksum, so it read these stored videos as undecodable gaps. That is separate
+from sending; see gap G7.
+
 ## 7. Failure and certainty
 
 The server creates the message only on WRITEMEDIA. Both clients fail before
@@ -200,9 +229,8 @@ is a manual or scheduled resume of the stored resource.
 - **G2.** The Mac's source for the file `name` and for `size` (set when the file
   message is created) was not traced. mooo uses the Matrix file name and the byte
   length.
-- **G3.** WRITEMEDIA for file and video has not been observed. The live
-  acceptance of the implementation should confirm it, including the recipient's
-  view.
+- **G3.** WRITEMEDIA for file and video passed live through mooo (section 6).
+  The official recipient's view was not checked.
 - **G4.** The meaning of ready statuses 0 and 2-4 beyond Android's names, and
   whether the server ever returns `jobId` for a Kage upload.
 - **G5.** The [photo doc](SHIP-REDIRECT.md) says Android sends the ending offset.
@@ -210,3 +238,7 @@ is a manual or scheduled resume of the stored resource.
   advances only after a 2xx). The Mac's starting offset is the observed one.
 - **G6.** Large types 28/29, the Drawer route and the secret-chat variant were
   not followed.
+- **G7.** A video stored through the HTTP upload has an empty `cs` and a
+  server-remuxed size. mooo's inbound video decoder rejects the empty checksum,
+  so such videos, including those official clients send from redirected
+  accounts, reach Matrix as gaps.
