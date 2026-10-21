@@ -146,7 +146,10 @@ These killed the official process: a non-string `TP`, a non-object `P`, a
 non-object `CAL` string, and a non-string `LCM`. A nil message gives a nil
 summary; an empty one gives an empty summary.
 
-## Implementation
+## Initial summary implementation
+
+The following describes the initial implementation. Carousel Feed support below
+extends it; other layouts retain this summary-only path.
 
 mooo decodes type 71 into `events.LeverageMessage`: the chat log's `message`
 as the summary, the Mac tap link when it is a plain http(s) URL, and whether
@@ -225,3 +228,58 @@ right. Its renderer read `P.ME`, which equalled `message` in every observed
 card, but the official clients use `message`: a card where the two differ
 shows `message`. `P.SNM` did not appear in the observed channel cards and is
 not read by the Mac's text or link paths that were traced.
+
+## Carousel Feed rendering (issue #434, 2026-10-20)
+
+The issue supplied a synthetic reproduction of a received five-card channel
+advertisement. `synthetic-carousel.json` preserves that structure with placeholder
+values; its static provenance records the reported shape, not official rendering
+parity. `P.VENDOR` and the attachment are serialized as JSON strings by the
+regression test before constructing the BSON `MSG`.
+
+Reproduction: on the pre-fix production decoder and queued bridge converter,
+`TestCarouselIssue434PreservesFiveCards` failed with one part instead of eleven.
+The decoder discarded `C`, so card headings, descriptions, images and actions
+never reached the converter. No live account or advertisement was needed to
+reproduce that loss.
+
+The same synthetic attachment was run through the existing isolated, logged-out
+Mac 26.8.0 Frida model harness (`mac_lev_exec.py`). It returned
+`subtypeString=Carousel_Feed`, available data/version true, reply true and
+reaction false; the cell-class method returned `KAOLeverageMessageView`.
+The original preferences remained unchanged. This establishes model acceptance
+and predicates only: we did not render a visible official bubble, retrieve live
+ad media, or verify this change in a logged-in Beeper client. No public prior art
+was consulted.
+
+Bridge policy now retains `C.CIL` for `TP=Carousel`, `CTP=Feed`, and emits the
+summary followed by each card's text and images in source order. `HD.TD.T` is the
+heading, `TI.TD.T` the description, `THL[].TH.THU/W/H` the image metadata, and
+`BUL[].BU.T/L` the labeled actions. Advertisement cards receive an explicit ad
+label; every part retains the original summary as its reply preview and the
+existing reply/reaction restrictions. Stable named parts resume a partial Matrix
+delivery without duplicating the summary or completed cards.
+
+Plain web actions use the existing Mac link rule, with `LMO` as an additional
+bridge fallback when no desktop target exists. App-only actions show the label
+and “Open in KakaoTalk”; no app URL is executed or rewritten into an invented web
+URL. Authorized actions remain unavailable. Locked, adult, mobile-only, alimtalk
+and soft-warning cards keep the summary-only behavior, including no image fetch.
+
+Images use the existing uncredentialed HTTPS Kakao CDN downloader: redirect
+validation, a 4 MiB limit, JPEG/PNG decoding and pixel bounds. Successful images
+are uploaded through MatrixAPI (including encrypted-media output) with the
+supplied dimensions. Other hosts are presented as image links, so the fixture's
+example.com placeholders cause no network request. Failed image downloads keep
+an explicit unavailable-image link without dropping the card; upload failures
+remain sanitized transient errors. A shared transfer timeout bounds the whole
+carousel. Image download failure fallback is final for that delivered part;
+there is no automatic later media replacement.
+
+Malformed optional fields are ignored independently. The existing 64 KiB
+attachment cap remains; a carousel has at most ten cards, three images and five
+buttons per card. More than ten cards leaves summary-only output, and additional
+images/buttons are omitted. These bounds and text/media fallbacks are mooo
+policy, not claims of official-client parity. `partly_displayed` diagnostics
+remain appropriate: other layouts, unsupported fields and exact native layout
+are still not reproduced.

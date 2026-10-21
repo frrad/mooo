@@ -15,11 +15,13 @@ import (
 // profile or post, or another service's share template (research/leverage.md).
 // The official clients show the chat log's message as the card's text in the
 // chat list, the reply preview and a reply's src_message; the bubble itself is
-// a rich card. Only that text, the card's web link and the reply rule are kept.
+// a rich card. Carousel Feed content is retained for the bridge.
 type LeverageMessage struct {
 	ChatID, LogID, AuthorID, SentAt int64
 	// Summary is the chat log's message field.
 	Summary string
+	Ad      bool
+	Cards   []LeverageCard
 	// Link is the http(s) URL the Mac client opens when the card is tapped,
 	// or empty when there is none or it cannot be opened without the official
 	// client (adult verification, authorization, a warning dialog).
@@ -82,6 +84,10 @@ func decodeLeverage(env chatlog.Envelope) (Event, error) {
 		return card, nil
 	}
 	card.Link = leverageLink(public["L"])
+	card.Ad = leverageBool(public["AD"])
+	if card.ReactionUnavailable {
+		card.Cards = leverageCarousel(attachment["C"])
+	}
 	return card, nil
 }
 
@@ -158,4 +164,109 @@ func leverageBool(raw json.RawMessage) bool {
 	}
 	f, err := strconv.ParseFloat(string(raw), 64)
 	return err == nil && f != 0
+}
+
+// LeverageCard is the bounded, displayable subset of a Carousel/Feed item.
+// It excludes signatures, vendor data and executable app actions.
+type LeverageCard struct {
+	Heading, Description string
+	Images               []LeverageImage
+	Actions              []LeverageAction
+}
+type LeverageImage struct {
+	URL           string
+	Width, Height int
+	Action        LeverageAction
+}
+type LeverageAction struct {
+	Label, URL  string
+	OpenInKakao bool
+}
+
+func leverageObject(raw json.RawMessage) map[string]json.RawMessage {
+	var value map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &value)
+	return value
+}
+func leverageText(raw json.RawMessage) string {
+	s := leverageString(raw)
+	if len(s) > maxLeverageText || !validEventString(s) {
+		return ""
+	}
+	return s
+}
+func leverageAction(raw json.RawMessage) LeverageAction {
+	link := leverageObject(raw)
+	a := LeverageAction{URL: leverageLink(raw)}
+	if leverageBool(link["LAA"]) {
+		return LeverageAction{}
+	}
+	// Mobile web is a bridge fallback, not the Mac client's tap policy.
+	if a.URL == "" && leverageString(link["LCM"]) == "" && leverageString(link["LPC"]) == "" {
+		if mobile := leverageString(link["LMO"]); mobile != "" {
+			b, _ := json.Marshal(map[string]json.RawMessage{"LPC": link["LMO"], "LAT": link["LAT"]})
+			a.URL = leverageLink(b)
+		}
+	}
+	a.OpenInKakao = a.URL == "" && (leverageString(link["LCA"]) != "" || leverageString(link["LCI"]) != "")
+	return a
+}
+func leverageCarousel(raw json.RawMessage) []LeverageCard {
+	content := leverageObject(raw)
+	if !strings.EqualFold(leverageString(content["CTP"]), "Feed") {
+		return nil
+	}
+	var items []json.RawMessage
+	if json.Unmarshal(content["CIL"], &items) != nil || len(items) > 10 {
+		return nil
+	}
+	cards := make([]LeverageCard, 0, len(items))
+	for _, item := range items {
+		fields := leverageObject(item)
+		if fields == nil {
+			continue
+		}
+		text := func(key string) string { return leverageText(leverageObject(leverageObject(fields[key])["TD"])["T"]) }
+		c := LeverageCard{Heading: text("HD"), Description: text("TI")}
+		var images []json.RawMessage
+		_ = json.Unmarshal(fields["THL"], &images)
+		if len(images) > 3 {
+			images = images[:3]
+		}
+		for _, rawImage := range images {
+			img := leverageObject(rawImage)
+			th := leverageObject(img["TH"])
+			// Reuse the plain-web validator; download policy is stricter at transfer.
+			b, _ := json.Marshal(map[string]json.RawMessage{"LPC": th["THU"]})
+			u := leverageLink(b)
+			if u == "" {
+				continue
+			}
+			var w, h int
+			_ = json.Unmarshal(th["W"], &w)
+			_ = json.Unmarshal(th["H"], &h)
+			if w < 0 || w > 8192 {
+				w = 0
+			}
+			if h < 0 || h > 8192 {
+				h = 0
+			}
+			c.Images = append(c.Images, LeverageImage{URL: u, Width: w, Height: h, Action: leverageAction(img["L"])})
+		}
+		var buttons []json.RawMessage
+		_ = json.Unmarshal(fields["BUL"], &buttons)
+		if len(buttons) > 5 {
+			buttons = buttons[:5]
+		}
+		for _, button := range buttons {
+			b := leverageObject(button)
+			a := leverageAction(b["L"])
+			a.Label = leverageText(leverageObject(b["BU"])["T"])
+			if a.Label != "" {
+				c.Actions = append(c.Actions, a)
+			}
+		}
+		cards = append(cards, c)
+	}
+	return cards
 }

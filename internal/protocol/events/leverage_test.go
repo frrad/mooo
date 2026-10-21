@@ -229,3 +229,43 @@ func TestLeverageMessageRedactsContent(t *testing.T) {
 }
 
 func ptr(s string) *string { return &s }
+
+func TestCarouselFieldsAndRestrictions(t *testing.T) {
+	summary := "(광고) synthetic summary"
+	content := `"C":{"CTP":"Feed","CIL":[{"HD":{"TD":{"T":"Heading"}},"TI":{"TD":{"T":"Description"}},"THL":[{"TH":{"THU":"https://example.com/image.png","W":800,"H":600}}],"BUL":[{"BU":{"T":"Mobile web"},"L":{"LMO":"https://example.com/mobile"}},{"BU":{"T":"App"},"L":{"LCI":"kakaoplus://example"}},{"BU":{"T":"Auth"},"L":{"LPC":"https://example.com/auth","LAA":true}}]}]}`
+	for _, gate := range []string{``, `,"LOCK":true`, `,"ADULT":true`, `,"PC":false`, `,"ALM":true`, `,"SW":true`} {
+		att := `{"P":{"TP":"Carousel","AD":true` + gate + `},` + content + `}`
+		card := requireLeverage(t, decodeLeveragePacket(t, &summary, &att))
+		if !card.ReactionUnavailable {
+			t.Fatal("carousel reaction rule lost")
+		}
+		if gate != "" {
+			if len(card.Cards) != 0 {
+				t.Fatalf("gate %s disclosed content", gate)
+			}
+			continue
+		}
+		if !card.Ad || len(card.Cards) != 1 {
+			t.Fatal("card/ad lost")
+		}
+		c := card.Cards[0]
+		if c.Heading != "Heading" || c.Description != "Description" || len(c.Images) != 1 || c.Images[0].Width != 800 || c.Images[0].Height != 600 || len(c.Actions) != 3 || c.Actions[0].URL != "https://example.com/mobile" || !c.Actions[1].OpenInKakao || c.Actions[2].URL != "" || c.Actions[2].OpenInKakao {
+			t.Fatalf("content mismatch: %#v", c)
+		}
+	}
+}
+
+func TestCarouselMalformedOptionalFields(t *testing.T) {
+	summary := "summary"
+	for _, content := range []string{`null`, `[]`, `{"CTP":"List","CIL":[{}]}`, `{"CTP":"Feed","CIL":"bad"}`} {
+		att := `{"P":{"TP":"Carousel"},"C":` + content + `}`
+		if c := requireLeverage(t, decodeLeveragePacket(t, &summary, &att)); len(c.Cards) != 0 || c.Summary != summary {
+			t.Fatal("bad content handling")
+		}
+	}
+	att := `{"P":{"TP":"Carousel"},"C":{"CTP":"Feed","CIL":[null,7,{"HD":{"TD":{"T":42}},"TI":[],"THL":[null,{"TH":{"THU":"javascript:alert(1)"}},{"TH":{"THU":"https://example.com/image","W":-1,"H":99999}}],"BUL":[null,{"BU":{"T":"Bad"},"L":{"LPC":"javascript:alert(1)"}}]}]}}`
+	c := requireLeverage(t, decodeLeveragePacket(t, &summary, &att))
+	if len(c.Cards) != 1 || c.Cards[0].Heading != "" || len(c.Cards[0].Images) != 1 || c.Cards[0].Images[0].Width != 0 || c.Cards[0].Images[0].Height != 0 || c.Cards[0].Actions[0].URL != "" {
+		t.Fatalf("malformed data retained: %#v", c.Cards)
+	}
+}
