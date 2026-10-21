@@ -1,0 +1,295 @@
+{
+  "provenance": {
+    "kind": "static",
+    "client": "KakaoTalk type-71 shape reported in issue #434 (build unspecified)",
+    "date": "2026-10-20",
+    "method": "Synthetic issue reproduction; rendering expectations are mooo policy, not official-client parity",
+    "doc": "research/leverage.md"
+  },
+  "source": "MSG",
+  "kakao_type": 71,
+  "gap_reason": "partly_displayed",
+  "decoded_body": {
+    "chatId": 1001,
+    "logId": 2003,
+    "authorNickname": "Example Grocery",
+    "chatLog": {
+      "logId": 2003,
+      "chatId": 1001,
+      "authorId": 3001,
+      "type": 71,
+      "sendAt": 1735689600,
+      "message": "(광고)[01/01-01/07, 2025]",
+      "attachment": {
+        "P": {
+          "BC": false,
+          "VW": "2.5.6",
+          "AD": true,
+          "KV": false,
+          "VA": "6.3.0",
+          "ADULT": false,
+          "SID": "plusfriend_message",
+          "FW": false,
+          "PC": true,
+          "VI": "6.3.0",
+          "VM": "2.2.8",
+          "ME": "(광고)[01/01-01/07, 2025]",
+          "VENDOR": {
+            "sendId": "4001",
+            "sId": "plusfriend_message",
+            "pfId": "3001",
+            "direct": false,
+            "longTermMessage": true,
+            "sendDatetime": "2025-01-01 09:00:00",
+            "messageId": "4001"
+          },
+          "TP": "Carousel",
+          "DID": "https://example.com/messages/4001",
+          "A": {
+            "version": 3,
+            "code": "synthetic-signature",
+            "createdAt": 1735689600000
+          }
+        },
+        "C": {
+          "CIL": [
+            {
+              "BUT": 0,
+              "TI": {
+                "TD": {
+                  "T": "Check out this week’s sales!"
+                },
+                "FT": true
+              },
+              "BUL": [
+                {
+                  "BU": {
+                    "T": "세일 보기",
+                    "HL": false,
+                    "SR": "both"
+                  },
+                  "L": {
+                    "LPC": "https://example.com/cards/1",
+                    "LMO": "https://example.com/cards/1"
+                  }
+                },
+                {
+                  "BU": {
+                    "T": "공유하기",
+                    "HL": false,
+                    "SR": "both"
+                  },
+                  "L": {
+                    "LCI": "kakaoplus://plusfriend/share/https://example.com/messages/4001/items/5001",
+                    "LCA": "kakaoplus://plusfriend/share/https://example.com/messages/4001/items/5001"
+                  }
+                }
+              ],
+              "THL": [
+                {
+                  "TH": {
+                    "THU": "https://example.com/images/card-1.jpg",
+                    "W": 800,
+                    "H": 600
+                  },
+                  "L": {
+                    "LPC": "https://example.com/cards/1",
+                    "LMO": "https://example.com/cards/1"
+                  }
+                }
+              ],
+              "HD": {
+                "TD": {
+                  "T": "[01/01-01/07, 2025]"
+                }
+              },
+              "THC": 1
+            },
+            {
+              "BUT": 0,
+              "TI": {
+                "TD": {
+                  "T": "Anniversary specials this week!"
+                },
+                "FT": true
+              },
+              "BUL": [
+                {
+                  "BU": {
+                    "T": "행사 보기",
+                    "HL": false,
+                    "SR": "both"
+                  },
+                  "L": {
+                    "LCI": "kakaoplus://plusfriend/post/3001/5002?from=msg",
+                    "LCA": "kakaoplus://plusfriend/post/3001/5002?from=msg"
+                  }
+                },
+                {
+                  "BU": {
+                    "T": "온라인 구매",
+                    "HL": false,
+                    "SR": "both"
+                  },
+                  "L": {
+                    "LPC": "https://example.com/cards/2",
+                    "LMO": "https://example.com/cards/2"
+                  }
+                }
+              ],
+              "THL": [
+                {
+                  "TH": {
+                    "THU": "https://example.com/images/card-2.jpg",
+                    "W": 1067,
+                    "H": 800
+                  },
+                  "L": {
+                    "LCI": "kakaoplus://plusfriend/post/3001/5002?from=msg",
+                    "LCA": "kakaoplus://plusfriend/post/3001/5002?from=msg"
+                  }
+                }
+              ],
+              "HD": {
+                "TD": {
+                  "T": "Example Grocery anniversary specials"
+                }
+              },
+              "THC": 1
+            },
+            {
+              "BUT": 0,
+              "TI": {
+                "TD": {
+                  "T": "Fresh fish at special prices!"
+                },
+                "FT": true
+              },
+              "BUL": [
+                {
+                  "BU": {
+                    "T": "행사 보기",
+                    "HL": false,
+                    "SR": "both"
+                  },
+                  "L": {
+                    "LCI": "kakaoplus://plusfriend/post/3001/5003?from=msg",
+                    "LCA": "kakaoplus://plusfriend/post/3001/5003?from=msg"
+                  }
+                }
+              ],
+              "THL": [
+                {
+                  "TH": {
+                    "THU": "https://example.com/images/card-3.jpg",
+                    "W": 801,
+                    "H": 601
+                  },
+                  "L": {
+                    "LCI": "kakaoplus://plusfriend/post/3001/5003?from=msg",
+                    "LCA": "kakaoplus://plusfriend/post/3001/5003?from=msg"
+                  }
+                }
+              ],
+              "HD": {
+                "TD": {
+                  "T": "Fresh fish promotion"
+                }
+              },
+              "THC": 1
+            },
+            {
+              "BUT": 0,
+              "TI": {
+                "TD": {
+                  "T": "Candy for your celebration!"
+                },
+                "FT": true
+              },
+              "BUL": [
+                {
+                  "BU": {
+                    "T": "행사 보기",
+                    "HL": false,
+                    "SR": "both"
+                  },
+                  "L": {
+                    "LCI": "kakaoplus://plusfriend/post/3001/5004?from=msg",
+                    "LCA": "kakaoplus://plusfriend/post/3001/5004?from=msg"
+                  }
+                }
+              ],
+              "THL": [
+                {
+                  "TH": {
+                    "THU": "https://example.com/images/card-4.jpg",
+                    "W": 800,
+                    "H": 600
+                  },
+                  "L": {
+                    "LCI": "kakaoplus://plusfriend/post/3001/5004?from=msg",
+                    "LCA": "kakaoplus://plusfriend/post/3001/5004?from=msg"
+                  }
+                }
+              ],
+              "HD": {
+                "TD": {
+                  "T": "Candy promotion"
+                }
+              },
+              "THC": 1
+            },
+            {
+              "BUT": 0,
+              "TI": {
+                "TD": {
+                  "T": "Popular products at special prices!"
+                },
+                "FT": true
+              },
+              "BUL": [
+                {
+                  "BU": {
+                    "T": "행사 보기",
+                    "HL": false,
+                    "SR": "both"
+                  },
+                  "L": {
+                    "LCI": "kakaoplus://plusfriend/post/3001/5005?from=msg",
+                    "LCA": "kakaoplus://plusfriend/post/3001/5005?from=msg"
+                  }
+                }
+              ],
+              "THL": [
+                {
+                  "TH": {
+                    "THU": "https://example.com/images/card-5.jpg",
+                    "W": 800,
+                    "H": 600
+                  },
+                  "L": {
+                    "LCI": "kakaoplus://plusfriend/post/3001/5005?from=msg",
+                    "LCA": "kakaoplus://plusfriend/post/3001/5005?from=msg"
+                  }
+                }
+              ],
+              "HD": {
+                "TD": {
+                  "T": "Brand week"
+                }
+              },
+              "THC": 1
+            }
+          ],
+          "RK": false,
+          "CTP": "Feed"
+        }
+      },
+      "prevId": 2001,
+      "msgId": 2002,
+      "referer": 0
+    },
+    "noSeen": true,
+    "status": 0
+  }
+}

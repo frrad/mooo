@@ -87,7 +87,7 @@ type OpenOptions struct {
 	// GapObserver, when set, receives each message that decoded to an
 	// events.MessageGap, an events.UnsupportedMessage, a reply whose
 	// attachment is neither absent nor a sticker, or a shared card
-	// (events.LeverageMessage, bridged only as its summary and link), with
+	// (events.LeverageMessage, with a bounded subset of rich content), with
 	// the raw BSON it came from. Nil, the default, adds no work. Debug tooling such as the bridge's
 	// gap dump is wired in only through this field.
 	GapObserver func(GapObservation)
