@@ -24,8 +24,17 @@ and tracks per-image downloaded/expired state and cleanup. Resource-only albums
 (`rscl`/`rtl`/`hfacl` without full URLs) require a separate download path.
 
 The implementation accepts 2–30 photos, aligned required arrays, optional aligned
-bounded comments, JPEG/PNG, allowlisted full/thumbnail URLs and 40-digit SHA-1
-checksums. Limits are deliberate mooo policy: 128 KiB attachment JSON, 16 MiB per
+bounded comments, JPEG/PNG, and allowlisted full/thumbnail URLs. The checksum
+list is optional; when present it must align with the photos, and each nonempty
+entry must be a 40-digit SHA-1 checksum. Missing or empty checksums use the same
+bounded download and image validation as checksum-free single photos. A received
+three-photo album on 2026-10-24 omitted `csl` while retaining full URLs and the
+other required arrays. Replaying its private dump isolated the mandatory checksum
+list as the rejection; synthetic regressions cover decoding and Matrix image
+conversion. The sender's client version was not captured, so this observation
+does not establish version-specific official-client parity.
+
+Limits are deliberate mooo policy: 128 KiB attachment JSON, 16 MiB per
 image, 64 MiB total, 4096 per advertised and actual canvas dimension and 16 KiB per caption. Duplicate
 JSON fields, malformed arrays and resource-only albums become explicit delivery
 gaps rather than partially parsed albums. These bounds are not official parity
