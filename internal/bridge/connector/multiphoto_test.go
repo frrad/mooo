@@ -35,18 +35,30 @@ func (a *albumMatrixAPI) UploadMedia(_ context.Context, _ id.RoomID, data []byte
 }
 func albumMessage(t *testing.T) (events.MultiPhotoMessage, [][]byte) {
 	t.Helper()
+	return albumMessageWithAttachment(t, nil)
+}
+
+func albumMessageWithAttachment(t *testing.T, mutate func(map[string]any)) (events.MultiPhotoMessage, [][]byte) {
+	t.Helper()
 	data, err := os.ReadFile("../../../research/fixtures/multiphoto/observed-shape.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var f struct {
-		Attachment json.RawMessage `json:"attachment"`
-		Photos     [][]byte        `json:"photos_base64"`
+		Attachment map[string]any `json:"attachment"`
+		Photos     [][]byte       `json:"photos_base64"`
 	}
 	if json.Unmarshal(data, &f) != nil {
 		t.Fatal("fixture invalid")
 	}
-	body, err := bson.Marshal(bson.D{{Key: "chatId", Value: testChatID}, {Key: "chatLog", Value: bson.D{{Key: "logId", Value: int64(99)}, {Key: "authorId", Value: testOtherID}, {Key: "type", Value: messagetype.MultiPhoto}, {Key: "attachment", Value: string(f.Attachment)}}}})
+	if mutate != nil {
+		mutate(f.Attachment)
+	}
+	attachment, err := json.Marshal(f.Attachment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := bson.Marshal(bson.D{{Key: "chatId", Value: testChatID}, {Key: "chatLog", Value: bson.D{{Key: "logId", Value: int64(99)}, {Key: "authorId", Value: testOtherID}, {Key: "type", Value: messagetype.MultiPhoto}, {Key: "attachment", Value: string(attachment)}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +103,28 @@ func TestAlbumEncryptedPartsPreserveOrderAndIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestAlbumWithoutChecksumsBridgesAsImages(t *testing.T) {
+	msg, photos := albumMessageWithAttachment(t, func(a map[string]any) { delete(a, "csl") })
+	albumTransport(t, photos)
+	kc, _ := newTestClient(t, nil)
+	remote := kc.remoteEventFor(msg).(bridgev2.RemoteMessage)
+	intent := &albumMatrixAPI{}
+	portal := &bridgev2.Portal{Portal: &database.Portal{MXID: "!synthetic:localhost"}}
+	got, err := remote.ConvertMessage(context.Background(), portal, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Parts) != len(photos) || len(intent.uploads) != len(photos) {
+		t.Fatal("album photos lost")
+	}
+	for i, p := range got.Parts {
+		if p.ID != albumPartID(i) || p.Content.MsgType != event.MsgImage || p.Content.File == nil || !bytes.Equal(intent.uploads[i], photos[i]) {
+			t.Fatalf("photo %d did not bridge as an ordered encrypted image with exact bytes", i)
+		}
+	}
+}
+
 func TestAlbumResumesMissingPartAfterPartialMatrixSuccess(t *testing.T) {
 	msg, photos := albumMessage(t)
 	albumTransport(t, photos)

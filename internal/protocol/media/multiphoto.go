@@ -54,7 +54,7 @@ func DecodeMultiPhotoMessage(env chatlog.Envelope) (MultiPhotoMessage, error) {
 		return MultiPhotoMessage{}, ErrInvalidMessage
 	}
 	n := len(a.URLs)
-	if n < 2 || n > MaxAlbumPhotos || len(a.Keys) != n || len(a.Widths) != n || len(a.Heights) != n || len(a.Sizes) != n || len(a.Checksums) != n || len(a.MIMEs) != n || len(a.Thumbnails) != n || a.Comments != nil && len(a.Comments) != n {
+	if n < 2 || n > MaxAlbumPhotos || len(a.Keys) != n || len(a.Widths) != n || len(a.Heights) != n || len(a.Sizes) != n || a.Checksums != nil && len(a.Checksums) != n || len(a.MIMEs) != n || len(a.Thumbnails) != n || a.Comments != nil && len(a.Comments) != n {
 		return MultiPhotoMessage{}, ErrInvalidMessage
 	}
 	photos := make([]PhotoAttachment, n)
@@ -67,8 +67,13 @@ func DecodeMultiPhotoMessage(env chatlog.Envelope) (MultiPhotoMessage, error) {
 	}
 	var total int64
 	for i := range n {
-		p := PhotoAttachment{Key: a.Keys[i], Width: a.Widths[i], Height: a.Heights[i], Size: a.Sizes[i], Checksum: a.Checksums[i], MediaType: a.MIMEs[i], URL: a.URLs[i], ThumbnailURL: a.Thumbnails[i], ExpiresAt: a.ExpiresAt}
-		if p.Key == "" || len(p.Key) > 512 || p.Width <= 0 || p.Height <= 0 || p.Width > 4096 || p.Height > 4096 || p.Size <= 0 || p.Size > MaxImageBytes || len(p.Checksum) != 40 || photoFormat(p.MediaType) == "" || validateDownloadURL(p.URL) != nil || validateDownloadURL(p.ThumbnailURL) != nil {
+		p := PhotoAttachment{Key: a.Keys[i], Width: a.Widths[i], Height: a.Heights[i], Size: a.Sizes[i], MediaType: a.MIMEs[i], URL: a.URLs[i], ThumbnailURL: a.Thumbnails[i], ExpiresAt: a.ExpiresAt}
+		// Received albums can omit csl, just as single photos can omit cs.
+		// Present lists stay aligned; empty entries use the size/image checks.
+		if a.Checksums != nil {
+			p.Checksum = a.Checksums[i]
+		}
+		if p.Key == "" || len(p.Key) > 512 || p.Width <= 0 || p.Height <= 0 || p.Width > 4096 || p.Height > 4096 || p.Size <= 0 || p.Size > MaxImageBytes || p.Checksum != "" && len(p.Checksum) != 40 || photoFormat(p.MediaType) == "" || validateDownloadURL(p.URL) != nil || validateDownloadURL(p.ThumbnailURL) != nil {
 			return MultiPhotoMessage{}, ErrInvalidMessage
 		}
 		if _, err := hex.DecodeString(p.Checksum); err != nil {

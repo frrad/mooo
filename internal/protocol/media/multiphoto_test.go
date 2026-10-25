@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/frrad/mooo/internal/protocol/messagetype"
@@ -60,6 +61,66 @@ func TestObservedMultiPhotoPreservesOrderedArrays(t *testing.T) {
 		t.Fatal("ordering/URLs collapsed")
 	}
 }
+
+// Regression: a received album omitted csl entirely and became a delivery gap.
+// Exercise the same shape using the existing synthetic image fixture.
+func TestMultiPhotoAllowsAbsentAndEmptyChecksums(t *testing.T) {
+	checksum := strings.Repeat("ab", 20)
+	for _, tc := range []struct {
+		name      string
+		checksums any
+		want      []string
+	}{
+		{name: "absent", want: []string{"", ""}},
+		{name: "null", want: []string{"", ""}},
+		{name: "empty entries", checksums: []string{"", ""}, want: []string{"", ""}},
+		{name: "mixed", checksums: []string{checksum, ""}, want: []string{strings.ToUpper(checksum), ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := albumFixture(t)
+			if tc.name == "absent" {
+				delete(a, "csl")
+			} else {
+				a["csl"] = tc.checksums
+			}
+			got, err := DecodeMultiPhotoMessage(decodeEnvelope(t, albumBody(t, a)))
+			if err != nil {
+				t.Fatalf("album rejected: %v", err)
+			}
+			if len(got.Photos) != len(tc.want) {
+				t.Fatalf("photos = %d, want %d", len(got.Photos), len(tc.want))
+			}
+			for i, want := range tc.want {
+				if got.Photos[i].Checksum != want {
+					t.Fatalf("photo %d checksum = %q, want %q", i, got.Photos[i].Checksum, want)
+				}
+			}
+		})
+	}
+}
+
+func TestMultiPhotoRejectsMalformedChecksumLists(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		checksums any
+	}{
+		{name: "empty list", checksums: []string{}},
+		{name: "short list", checksums: []string{""}},
+		{name: "long list", checksums: []string{"", "", ""}},
+		{name: "invalid length", checksums: []string{"bad", ""}},
+		{name: "invalid hex", checksums: []string{strings.Repeat("g", 40), ""}},
+		{name: "wrong type", checksums: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := albumFixture(t)
+			a["csl"] = tc.checksums
+			if _, err := DecodeMultiPhotoMessage(decodeEnvelope(t, albumBody(t, a))); err != ErrInvalidMessage {
+				t.Fatalf("decode error = %v, want ErrInvalidMessage", err)
+			}
+		})
+	}
+}
+
 func TestMultiPhotoRejectsMisalignedAndUnsafeArrays(t *testing.T) {
 	for _, mutate := range []func(map[string]any){
 		func(a map[string]any) { a["wl"] = []int{64} },
@@ -114,11 +175,18 @@ func TestAlbumDownloadBoundsActualCanvas(t *testing.T) {
 	}
 	data := out.Bytes()
 	sum := sha1.Sum(data)
-	photo := PhotoAttachment{Width: 64, Height: 64, Size: int64(len(data)), Checksum: hex.EncodeToString(sum[:]), MediaType: "image/png", URL: "https://talk.kakaocdn.net/synthetic"}
 	client := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(data)), Request: r}, nil
 	})}
-	if _, err := DownloadAlbumPhoto(context.Background(), client, photo); err != ErrInvalidAttachment {
-		t.Fatal("oversized actual canvas accepted")
+	for _, tc := range []struct{ name, checksum string }{
+		{name: "with checksum", checksum: hex.EncodeToString(sum[:])},
+		{name: "without checksum"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			photo := PhotoAttachment{Width: 64, Height: 64, Size: int64(len(data)), Checksum: tc.checksum, MediaType: "image/png", URL: "https://talk.kakaocdn.net/synthetic"}
+			if _, err := DownloadAlbumPhoto(context.Background(), client, photo); err != ErrInvalidAttachment {
+				t.Fatal("oversized actual canvas accepted")
+			}
+		})
 	}
 }
