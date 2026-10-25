@@ -243,7 +243,7 @@ type chatInfoChangeEvent struct {
 var _ bridgev2.RemoteChatInfoChange = (*chatInfoChangeEvent)(nil)
 var _ bridgev2.RemoteChatResyncWithInfo = (*chatInfoChangeEvent)(nil)
 
-func (evt *chatInfoChangeEvent) GetChatInfoChange(ctx context.Context) (*bridgev2.ChatInfoChange, error) {
+func (evt *chatInfoChangeEvent) GetChatInfoChange(ctx context.Context, _ *bridgev2.Portal) (*bridgev2.ChatInfoChange, error) {
 	if ctx == nil {
 		return nil, bridgev2.ErrNotLoggedIn
 	}

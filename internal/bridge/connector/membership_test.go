@@ -30,7 +30,7 @@ func TestRemoteMemberEventsRefreshSourceMetadata(t *testing.T) {
 			if member.GetType() != bridgev2.RemoteEventChatInfoChange || member.GetPortalKey().ID != "3000" || member.getInfo == nil || member.getChanges == nil {
 				t.Fatalf("member refresh metadata = %+v", member.EventMeta)
 			}
-			if _, err := member.GetChatInfoChange(context.Background()); err != nil {
+			if _, err := member.GetChatInfoChange(context.Background(), nil); err != nil {
 				t.Fatalf("source metadata refresh failed: %v", err)
 			}
 		} else if resync, ok := evt.(*simplevent.ChatResync); !ok || resync.GetType() != bridgev2.RemoteEventChatResync || resync.GetPortalKey().ID != "3000" || resync.GetChatInfoFunc == nil {
@@ -76,7 +76,7 @@ func TestPartialRosterMembershipDeltasRemainExplicit(t *testing.T) {
 	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
 	kc.client = fake
 	added := kc.remoteEventFor(events.MemberAdded{ChatID: testChatID, Members: []events.MemberIdentity{{UserID: 4000}, {UserID: 0}, {UserID: testSelfID}}}).(*chatInfoChangeEvent)
-	change, err := added.GetChatInfoChange(context.Background())
+	change, err := added.GetChatInfoChange(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestPartialRosterMembershipDeltasRemainExplicit(t *testing.T) {
 	}
 
 	removed := kc.remoteEventFor(events.MemberRemoved{ChatID: testChatID, UserID: testOtherID}).(*chatInfoChangeEvent)
-	change, err = removed.GetChatInfoChange(context.Background())
+	change, err = removed.GetChatInfoChange(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestPartialRosterMembershipDeltasRemainExplicit(t *testing.T) {
 	}
 
 	added = kc.remoteEventFor(events.MemberAdded{ChatID: testChatID, Members: []events.MemberIdentity{{UserID: 5000}}}).(*chatInfoChangeEvent)
-	change, err = added.GetChatInfoChange(context.Background())
+	change, err = added.GetChatInfoChange(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestMembershipRefreshRejectsForeignChatMetadata(t *testing.T) {
 	kc, _ := newTestClient(t, func() (kakaoClient, error) { return fake, nil })
 	kc.client = fake
 	evt := kc.remoteEventFor(events.MemberRemoved{ChatID: testChatID, UserID: testOtherID}).(*chatInfoChangeEvent)
-	if _, err := evt.GetChatInfoChange(context.Background()); !errors.Is(err, errChatInfoMismatch) {
+	if _, err := evt.GetChatInfoChange(context.Background(), nil); !errors.Is(err, errChatInfoMismatch) {
 		t.Fatalf("foreign chat refresh error = %v, want chat ID mismatch", err)
 	}
 }
