@@ -3,6 +3,7 @@ package connector
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -210,12 +211,12 @@ type sentAlbum struct {
 	caption string
 }
 
-func galleryContent(n int, caption string) *event.MessageEventContent {
+func galleryContent(n int, caption string) *matrixGalleryContent {
 	images := make([]*event.MessageEventContent, 0, n)
 	for i := range n {
 		images = append(images, &event.MessageEventContent{MsgType: event.MsgImage, Body: fmt.Sprintf("image-%d.png", i), URL: id.ContentURIString(fmt.Sprintf("mxc://example/image-%d", i))})
 	}
-	return &event.MessageEventContent{MsgType: event.MsgBeeperGallery, BeeperGalleryImages: images, BeeperGalleryCaption: caption}
+	return &matrixGalleryContent{Images: images, Caption: caption}
 }
 
 func stubMatrixImageDownloads(t *testing.T, byURI map[id.ContentURIString][]byte) *int {
@@ -240,7 +241,18 @@ func TestOutboundMatrixGalleryBecomesOneAlbumInOrder(t *testing.T) {
 	fake := &fakeKakao{albumResp: chat.WriteResponse{ChatID: testChatID, LogID: 160, SendAt: 1700000160}}
 	kc := connectedClient(t, fake)
 	reservations := 0
-	resp, err := kc.sendMatrixAlbum(context.Background(), fake, &photoMatrixAPI{}, testChatID, galleryContent(2, "synthetic album caption"), func(context.Context) error {
+	// Exercise the real event parser: the removed gallery fields now live in Raw.
+	var evt event.Event
+	if err := json.Unmarshal([]byte(`{"type":"m.room.message","content":{"msgtype":"com.beeper.gallery","body":"fallback","com.beeper.gallery.caption":"synthetic album caption","com.beeper.gallery.images":[{"msgtype":"m.image","body":"first.png","url":"mxc://example/image-0"},{"msgtype":"m.image","body":"second.jpg","url":"mxc://example/image-1"}]}}`), &evt); err != nil {
+		t.Fatal(err)
+	}
+	if err := evt.Content.ParseRaw(event.EventMessage); err != nil {
+		t.Fatal(err)
+	}
+	if evt.Content.AsMessage().MsgType != msgBeeperGallery {
+		t.Fatal("legacy gallery message type was not preserved")
+	}
+	resp, err := kc.sendMatrixGallery(context.Background(), fake, &photoMatrixAPI{}, testChatID, &evt, func(context.Context) error {
 		if len(fake.albums) != 0 {
 			t.Fatal("reservation happened after the source send")
 		}
@@ -272,7 +284,7 @@ func TestOutboundMatrixGalleryRejectsBeforeReservation(t *testing.T) {
 	gif := []byte("GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;")
 	cases := []struct {
 		label      string
-		content    *event.MessageEventContent
+		content    *matrixGalleryContent
 		downloads  map[id.ContentURIString][]byte
 		wantStatus event.MessageStatus
 	}{
@@ -329,4 +341,28 @@ func connectorJPEG(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return out.Bytes()
+}
+
+func TestOutboundMatrixGalleryMalformedFieldsRefusedBeforeSend(t *testing.T) {
+	for _, raw := range []string{
+		`{"com.beeper.gallery.images":"invalid"}`,
+		`{"com.beeper.gallery.caption":42}`,
+		`{}`,
+	} {
+		t.Run(raw, func(t *testing.T) {
+			var evt event.Event
+			if err := json.Unmarshal([]byte(raw), &evt.Content); err != nil {
+				t.Fatal(err)
+			}
+			fake := &fakeKakao{}
+			kc := connectedClient(t, fake)
+			_, err := kc.sendMatrixGallery(context.Background(), fake, &photoMatrixAPI{}, testChatID, &evt, func(context.Context) error {
+				t.Fatal("invalid gallery reserved an outbound send")
+				return nil
+			})
+			if !errors.Is(err, media.ErrInvalidAlbum) || len(fake.albums) != 0 {
+				t.Fatalf("err=%v sends=%d", err, len(fake.albums))
+			}
+		})
+	}
 }

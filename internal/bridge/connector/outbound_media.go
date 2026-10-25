@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"time"
@@ -182,12 +183,33 @@ func (kc *KakaoClient) sendMatrixUpload(ctx context.Context, c outboundAPI, inte
 	return kc.sentMessage(chatID, logID, sendAt, upload.Type, upload.Name), nil
 }
 
+// mautrix v0.32 removed the legacy Beeper gallery types. Keep their wire
+// format locally so existing clients can still send KakaoTalk albums.
+const msgBeeperGallery event.MessageType = "com.beeper.gallery"
+
+type matrixGalleryContent struct {
+	Images  []*event.MessageEventContent `json:"com.beeper.gallery.images"`
+	Caption string                       `json:"com.beeper.gallery.caption"`
+}
+
+func (kc *KakaoClient) sendMatrixGallery(ctx context.Context, c outboundAPI, intent bridgev2.MatrixAPI, chatID int64, evt *event.Event, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
+	if evt == nil {
+		return nil, certainRefusal(media.ErrInvalidAlbum, "The album contains invalid data; it was not sent.")
+	}
+	data, err := evt.Content.MarshalJSON()
+	var gallery matrixGalleryContent
+	if err != nil || json.Unmarshal(data, &gallery) != nil {
+		return nil, certainRefusal(media.ErrInvalidAlbum, "The album contains invalid data; it was not sent.")
+	}
+	return kc.sendMatrixAlbum(ctx, c, intent, chatID, &gallery, begin)
+}
+
 // sendMatrixAlbum sends one Matrix gallery as one KakaoTalk album. Like the
 // Mac client, a single photo is sent as an ordinary photo. Every photo is
 // fetched and validated before the durable reservation, and the album is
 // sent once.
-func (kc *KakaoClient) sendMatrixAlbum(ctx context.Context, c outboundAPI, intent bridgev2.MatrixAPI, chatID int64, content *event.MessageEventContent, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
-	images, caption := content.BeeperGalleryImages, content.BeeperGalleryCaption
+func (kc *KakaoClient) sendMatrixAlbum(ctx context.Context, c outboundAPI, intent bridgev2.MatrixAPI, chatID int64, content *matrixGalleryContent, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
+	images, caption := content.Images, content.Caption
 	if len(images) == 1 && images[0] != nil {
 		single := *images[0]
 		if caption != "" {

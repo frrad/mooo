@@ -751,7 +751,7 @@ func (kc *KakaoClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 			event.MsgFile:  uploadFeatures(event.CapLevelRejected),
 			event.MsgAudio: uploadFeatures(event.CapLevelRejected),
 			event.MsgVideo: uploadFeatures(event.CapLevelFullySupported),
-			event.MsgBeeperGallery: &event.FileFeatures{
+			msgBeeperGallery: &event.FileFeatures{
 				MimeTypes:        map[string]event.CapabilitySupportLevel{"image/jpeg": event.CapLevelPartialSupport, "image/png": event.CapLevelPartialSupport},
 				Caption:          event.CapLevelPartialSupport,
 				MaxCaptionLength: media.MaxCaptionBytes,
@@ -793,7 +793,7 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		return nil, errSourceAccessRemoved
 	}
 	switch msg.Content.MsgType {
-	case event.MsgText, event.MsgNotice, event.MsgEmote, event.MsgImage, event.MsgFile, event.MsgVideo, event.MsgAudio, event.MsgBeeperGallery:
+	case event.MsgText, event.MsgNotice, event.MsgEmote, event.MsgImage, event.MsgFile, event.MsgVideo, event.MsgAudio, msgBeeperGallery:
 	default:
 		return nil, bridgev2.ErrUnsupportedMessageType
 	}
@@ -818,8 +818,11 @@ func (kc *KakaoClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		return kc.withMediaSend(ctx, msg, c, chatID, imageReplyRefusal, oversizedImage(msg.Content), kc.sendMatrixImage)
 	case event.MsgFile, event.MsgVideo, event.MsgAudio:
 		return kc.withMediaSend(ctx, msg, c, chatID, uploadReplyRefusal, nil, kc.sendMatrixUpload)
-	case event.MsgBeeperGallery:
-		return kc.withMediaSend(ctx, msg, c, chatID, uploadReplyRefusal, nil, kc.sendMatrixAlbum)
+	case msgBeeperGallery:
+		return kc.withMediaSend(ctx, msg, c, chatID, uploadReplyRefusal, nil,
+			func(ctx context.Context, c outboundAPI, intent bridgev2.MatrixAPI, chatID int64, _ *event.MessageEventContent, begin func(context.Context) error) (*bridgev2.MatrixMessageResponse, error) {
+				return kc.sendMatrixGallery(ctx, c, intent, chatID, msg.Event, begin)
+			})
 	}
 	return kc.sendMatrixText(ctx, c, chatID, msg)
 }
