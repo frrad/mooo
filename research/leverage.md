@@ -262,7 +262,7 @@ delivery without duplicating the summary or completed cards.
 
 Plain web actions use the existing Mac link rule, with `LMO` as an additional
 bridge fallback when no desktop target exists. App-only actions show the label
-and “Open in KakaoTalk”; no app URL is executed or rewritten into an invented web
+marked “(KakaoTalk only)”; no app URL is executed or rewritten into an invented web
 URL. Authorized actions remain unavailable. Locked, adult, mobile-only, alimtalk
 and soft-warning cards keep the summary-only behavior, including no image fetch.
 
@@ -275,6 +275,32 @@ an explicit unavailable-image link without dropping the card; upload failures
 remain sanitized transient errors. A shared transfer timeout bounds the whole
 carousel. Image download failure fallback is final for that delivered part;
 there is no automatic later media replacement.
+
+### Caption layout (2026-10-28)
+
+The first live carousel (a four-card grocery ad) arrived as nine Matrix events:
+the summary, then a text event and an image event per card, with placeholder
+"Card N image M" captions and raw `Label: URL` lines. The layout was chosen in a
+mockup fed with that message's decoded data, and is now:
+
+- the summary as a bold title, with a dim “Ad ·” prefix when `P.AD` is set. The
+  summary text is never edited: an ad's own leading “(광고)” stays, because
+  nothing structured separates it from the title.
+- one event per card: its first image, captioned (Matrix `body` differing from
+  `filename`, with `formatted_body`) with a dim “i/n ·” counter, the bold
+  heading, the description, web buttons as linked labels one per line and
+  app-only buttons as dim italic labels. Buttons with neither are omitted, as is
+  the image's own tap link. A card without images is a text event; further
+  images are uncaptioned parts `card-N-image-M` (M ≥ 1).
+- part IDs `""`, `card-N`, `card-N-image-M`; a card whose first image cannot be
+  fetched is sent as text with an image link line in the same `card-N` part.
+
+Non-carousel type-71 cards keep the plain summary-and-link text.
+`observed-carousel.json` is that message anonymized (brand, region, IDs, tracker
+tokens and CDN paths replaced; structure, hosts, schemes, image sizes and text
+quirks kept). `TestObservedCarouselGolden` renders it and compares with
+`observed-carousel.matrix.json`; add new carousels that render badly to its list
+and review the golden diff after `-update`.
 
 Malformed optional fields are ignored independently. The existing 64 KiB
 attachment cap remains; a carousel has at most ten cards, three images and five
