@@ -9,12 +9,14 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/frrad/mooo/internal/protocol/events"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
+	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/event"
 )
 
@@ -225,5 +227,50 @@ func TestObservedCarouselGolden(t *testing.T) {
 				t.Fatalf("rendering differs from %s (rerun with -update and review the diff):\n%s", path, out)
 			}
 		})
+	}
+}
+
+// Cards without images are text, further images are uncaptioned, card text is
+// escaped, and a carousel bridged with the earlier card-N-image-0 parts is
+// complete under the caption layout.
+func TestCarouselCaptionPartsAndEarlierLayout(t *testing.T) {
+	data := connectorPNG(t)
+	old := photoHTTPClient
+	photoHTTPClient = &http.Client{Transport: photoRoundTripper(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(data)), Request: req}, nil
+	})}
+	t.Cleanup(func() { photoHTTPClient = old })
+	msg := events.LeverageMessage{ChatID: testChatID, LogID: 12, AuthorID: testOtherID, Summary: "<b>sum</b>", Ad: true, ReactionUnavailable: true, Cards: []events.LeverageCard{
+		{Heading: "<i>h</i>", Description: "a & b", Actions: []events.LeverageAction{{Label: `"go"`, URL: `https://example.com/?q="><x>`}, {Label: "<app>", OpenInKakao: true}, {Label: "dead"}}},
+		{Heading: "two", Images: []events.LeverageImage{{URL: "https://talk.kakaocdn.net/a.png"}, {URL: "https://talk.kakaocdn.net/b.png"}}},
+	}}
+	if got := leveragePartIDs(msg); !slices.Equal(got, []networkid.PartID{"", "card-0", "card-1", "card-1-image-1"}) {
+		t.Fatalf("part IDs = %v", got)
+	}
+	portal := &bridgev2.Portal{Portal: &database.Portal{MXID: "!room:example.com"}}
+	converted, err := convertLeverage(context.Background(), portal, &photoMatrixAPI{}, msg, nil)
+	if err != nil || len(converted.Parts) != 4 {
+		t.Fatalf("parts = %v, %v", converted, err)
+	}
+	for _, part := range converted.Parts {
+		if c := part.Content; strings.Contains(c.FormattedBody, "<b>") || strings.Contains(c.FormattedBody, "<i>") || strings.Contains(c.FormattedBody, "<app>") || strings.Contains(c.FormattedBody, "<x>") || strings.Contains(c.FormattedBody, `"go"`) {
+			t.Fatalf("part %q not escaped: %s", part.ID, c.FormattedBody)
+		}
+	}
+	text, captioned, extra := converted.Parts[1].Content, converted.Parts[2].Content, converted.Parts[3].Content
+	if converted.Parts[1].ID != "card-0" || text.MsgType != event.MsgText || strings.Contains(text.Body, "dead") || !strings.Contains(text.Body, "<app> (KakaoTalk only)") {
+		t.Fatalf("imageless card = %q", text.Body)
+	}
+	if converted.Parts[2].ID != "card-1" || captioned.MsgType != event.MsgImage || captioned.Body == captioned.FileName || !strings.HasPrefix(captioned.Body, "2/2 · two") {
+		t.Fatalf("first image caption = %q", captioned.Body)
+	}
+	if converted.Parts[3].ID != "card-1-image-1" || extra.MsgType != event.MsgImage || extra.Body != extra.FileName || extra.FormattedBody != "" {
+		t.Fatalf("further image = %q %q", extra.Body, extra.FormattedBody)
+	}
+	kc, _ := newTestClient(t, nil)
+	remote := kc.remoteEventFor(msg).(bridgev2.RemoteMessageUpsert)
+	earlier := []*database.Message{{PartID: ""}, {PartID: "card-0"}, {PartID: "card-1"}, {PartID: "card-1-image-0"}, {PartID: "card-1-image-1"}}
+	if res, err := remote.HandleExisting(context.Background(), portal, &photoMatrixAPI{}, earlier); err != nil || res.ContinueMessageHandling {
+		t.Fatal("carousel bridged with the earlier layout re-sent")
 	}
 }

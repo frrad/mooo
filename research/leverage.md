@@ -263,8 +263,9 @@ delivery without duplicating the summary or completed cards.
 Plain web actions use the existing Mac link rule, with `LMO` as an additional
 bridge fallback when no desktop target exists. App-only actions show the label
 marked “(KakaoTalk only)”; no app URL is executed or rewritten into an invented web
-URL. Authorized actions remain unavailable. Locked, adult, mobile-only, alimtalk
-and soft-warning cards keep the summary-only behavior, including no image fetch.
+URL. Authorized actions are not bridged; their buttons are omitted. Locked, adult,
+mobile-only, alimtalk and soft-warning cards keep the summary-only behavior,
+including no image fetch.
 
 Images use the existing uncredentialed HTTPS Kakao CDN downloader: redirect
 validation, a 4 MiB limit, JPEG/PNG decoding and pixel bounds. Successful images
