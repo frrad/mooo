@@ -1,0 +1,53 @@
+{
+  "provenance": {
+    "client": "mooo-bridge carousel rendering",
+    "date": "2026-10-28",
+    "doc": "research/leverage.md",
+    "kind": "static",
+    "method": "Output of TestObservedCarouselGolden. Rendering chosen in a mockup: one image per card with the card text as caption, bold summary with a dim Ad prefix, dim i/n counter, bold heading, web buttons as linked labels one per line, KakaoTalk-only buttons as dim italic labels, no image tap links"
+  },
+  "parts": [
+    {
+      "id": "",
+      "msgtype": "m.text",
+      "body": "Ad · (광고)[10/28-11/03, 2026]",
+      "formatted_body": "<span data-mx-color=\"#8e8e93\">Ad · </span><strong>(광고)[10/28-11/03, 2026]</strong>"
+    },
+    {
+      "id": "card-0",
+      "msgtype": "m.image",
+      "body": "1/4 · [10/28-11/03, 2026]\n예시마트 OO 지역 고객님들!\n이번 주 세일을 확인해보세요.\n세일 보기: http://kko.kakao.com/XXXXXXXXXX/yellowid/m:4001\n공유하기 (KakaoTalk only)",
+      "formatted_body": "<span data-mx-color=\"#8e8e93\">1/4 · </span><strong>[10/28-11/03, 2026]</strong><br>예시마트 OO 지역 고객님들!<br>이번 주 세일을 확인해보세요.<br><a href=\"http://kko.kakao.com/XXXXXXXXXX/yellowid/m:4001\">세일 보기</a><br><em><span data-mx-color=\"#8e8e93\">공유하기 (KakaoTalk only)</span></em>",
+      "filename": "card.png",
+      "w": 801,
+      "h": 601
+    },
+    {
+      "id": "card-1",
+      "msgtype": "m.image",
+      "body": "2/4 · 예시마트 10주년 기념 특가!\n이번주 특가 제품 확인해보세요!\n행사 보기: http://pf.kakao.com/_example/5002",
+      "formatted_body": "<span data-mx-color=\"#8e8e93\">2/4 · </span><strong>예시마트 10주년 기념 특가!</strong><br>이번주 특가 제품 확인해보세요!<br><a href=\"http://pf.kakao.com/_example/5002\">행사 보기</a>",
+      "filename": "card.png",
+      "w": 1067,
+      "h": 800
+    },
+    {
+      "id": "card-2",
+      "msgtype": "m.image",
+      "body": "3/4 · 예시마트 OO점 커밍순!\n예시마트 OO점이 \n곧 여러분을 찾아옵니다!🛒\n자세히 보기 (KakaoTalk only)\n공유하기 (KakaoTalk only)",
+      "formatted_body": "<span data-mx-color=\"#8e8e93\">3/4 · </span><strong>예시마트 OO점 커밍순!</strong><br>예시마트 OO점이 <br>곧 여러분을 찾아옵니다!🛒<br><em><span data-mx-color=\"#8e8e93\">자세히 보기 (KakaoTalk only)</span></em><br><em><span data-mx-color=\"#8e8e93\">공유하기 (KakaoTalk only)</span></em>",
+      "filename": "card.png",
+      "w": 800,
+      "h": 600
+    },
+    {
+      "id": "card-3",
+      "msgtype": "m.image",
+      "body": "4/4 · 예시홍삼 10월 세일 이벤트\n매일 간편하게 챙기는 건강한 활력,\n오직 예시마트에서 특가로 만나보세요!\n행사 보기: http://pf.kakao.com/_example/5004",
+      "formatted_body": "<span data-mx-color=\"#8e8e93\">4/4 · </span><strong>예시홍삼 10월 세일 이벤트</strong><br>매일 간편하게 챙기는 건강한 활력,<br>오직 예시마트에서 특가로 만나보세요!<br><a href=\"http://pf.kakao.com/_example/5004\">행사 보기</a>",
+      "filename": "card.png",
+      "w": 800,
+      "h": 601
+    }
+  ]
+}

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
+	"strings"
 
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/networkid"
@@ -28,16 +30,79 @@ var (
 )
 
 // leveragePartIDs keeps the summary as the default reply target and gives
-// every card/image a stable identity for partial-delivery recovery.
+// every card a stable identity for partial-delivery recovery. A card's first
+// image carries the card's text as its caption, so only further images have
+// parts of their own.
 func leveragePartIDs(msg events.LeverageMessage) []networkid.PartID {
 	parts := []networkid.PartID{""}
 	for i, card := range msg.Cards {
 		parts = append(parts, networkid.PartID(fmt.Sprintf("card-%d", i)))
-		for j := range card.Images {
+		for j := 1; j < len(card.Images); j++ {
 			parts = append(parts, networkid.PartID(fmt.Sprintf("card-%d-image-%d", i, j)))
 		}
 	}
 	return parts
+}
+
+// leverageDim is a grey that reads on both light and dark themes.
+const leverageDim = `<span data-mx-color="#8e8e93">`
+
+// leverageLines builds a message's body and formatted_body line by line.
+type leverageLines struct{ body, html []string }
+
+func (l *leverageLines) add(body, html string) {
+	l.body = append(l.body, body)
+	l.html = append(l.html, html)
+}
+func (l *leverageLines) plain(s string) { l.add(s, htmlLines(s)) }
+func (l *leverageLines) link(label, url string) {
+	l.add(label+": "+url, `<a href="`+html.EscapeString(url)+`">`+html.EscapeString(label)+"</a>")
+}
+func (l leverageLines) content(msgType event.MessageType) *event.MessageEventContent {
+	return &event.MessageEventContent{MsgType: msgType, Body: strings.Join(l.body, "\n"), Format: event.FormatHTML, FormattedBody: strings.Join(l.html, "<br>")}
+}
+
+// leverageSummaryLines renders a carousel's summary as a bold title. The
+// summary text is kept as sent: an ad's own "(광고)" is not stripped, the AD
+// flag only adds a dim "Ad ·" prefix.
+func leverageSummaryLines(msg events.LeverageMessage) leverageLines {
+	var l leverageLines
+	body, prefix := msg.Summary, ""
+	if msg.Ad {
+		body, prefix = "Ad · "+body, leverageDim+"Ad · </span>"
+	}
+	l.add(body, prefix+"<strong>"+htmlLines(msg.Summary)+"</strong>")
+	if msg.Link != "" {
+		l.add(msg.Link, `<a href="`+html.EscapeString(msg.Link)+`">`+html.EscapeString(msg.Link)+"</a>")
+	}
+	return l
+}
+
+// leverageCardLines renders a card as a dim "i/n ·" counter and bold
+// heading, its description, and its buttons: web buttons as links, buttons
+// that only work in the KakaoTalk app as dim italic labels. Buttons with
+// neither are left out.
+func leverageCardLines(card events.LeverageCard, i, n int) leverageLines {
+	var l leverageLines
+	counter := fmt.Sprintf("%d/%d", i+1, n)
+	if card.Heading != "" {
+		l.add(counter+" · "+card.Heading, leverageDim+counter+" · </span><strong>"+htmlLines(card.Heading)+"</strong>")
+	} else {
+		l.add(counter, leverageDim+counter+"</span>")
+	}
+	if card.Description != "" {
+		l.plain(card.Description)
+	}
+	for _, a := range card.Actions {
+		switch {
+		case a.URL != "":
+			l.link(a.Label, a.URL)
+		case a.OpenInKakao:
+			label := a.Label + " (KakaoTalk only)"
+			l.add(label, "<em>"+leverageDim+html.EscapeString(label)+"</span></em>")
+		}
+	}
+	return l
 }
 
 func convertLeverage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, msg events.LeverageMessage, existing map[networkid.PartID]bool) (*bridgev2.ConvertedMessage, error) {
@@ -50,59 +115,38 @@ func convertLeverage(ctx context.Context, portal *bridgev2.Portal, intent bridge
 		return m
 	}
 	converted := &bridgev2.ConvertedMessage{}
-	add := func(partID networkid.PartID, body string) {
-		if existing[partID] {
-			return
-		}
-		part := messageWithMetadata(event.MsgText, body, metadata()).Parts[0]
-		part.ID = partID
-		converted.Parts = append(converted.Parts, part)
+	add := func(partID networkid.PartID, content *event.MessageEventContent) {
+		converted.Parts = append(converted.Parts, &bridgev2.ConvertedMessagePart{ID: partID, Type: event.EventMessage, Content: content, DBMetadata: metadata()})
 	}
-	body := msg.Summary
-	if msg.Ad && len(msg.Cards) > 0 {
-		body = "[Advertisement]\n" + body
-	}
-	if msg.Link != "" {
-		body += "\n" + msg.Link
-	}
-	add("", body)
-	actionText := func(a events.LeverageAction) string {
-		if a.URL != "" {
-			return a.Label + ": " + a.URL
+	if !existing[""] {
+		if len(msg.Cards) == 0 {
+			body := msg.Summary
+			if msg.Link != "" {
+				body += "\n" + msg.Link
+			}
+			part := messageWithMetadata(event.MsgText, body, metadata()).Parts[0]
+			converted.Parts = append(converted.Parts, part)
+		} else {
+			add("", leverageSummaryLines(msg).content(event.MsgText))
 		}
-		if a.OpenInKakao {
-			return a.Label + ": Open in KakaoTalk"
-		}
-		return a.Label + ": Action unavailable in this bridge"
 	}
 	for i, card := range msg.Cards {
-		body := fmt.Sprintf("Card %d/%d", i+1, len(msg.Cards))
-		if card.Heading != "" {
-			body += "\n" + card.Heading
-		}
-		if card.Description != "" {
-			body += "\n" + card.Description
-		}
-		for _, a := range card.Actions {
-			body += "\n" + actionText(a)
-		}
-		add(networkid.PartID(fmt.Sprintf("card-%d", i)), body)
 		for j, image := range card.Images {
 			partID := networkid.PartID(fmt.Sprintf("card-%d-image-%d", i, j))
+			var caption leverageLines
+			if j == 0 {
+				partID = networkid.PartID(fmt.Sprintf("card-%d", i))
+				caption = leverageCardLines(card, i, len(msg.Cards))
+			}
 			if existing[partID] {
 				continue
-			}
-			caption := fmt.Sprintf("Card %d image %d", i+1, j+1)
-			if image.Action.URL != "" || image.Action.OpenInKakao {
-				a := image.Action
-				a.Label = "Image action"
-				caption += "\n" + actionText(a)
 			}
 			// Thumbnail URLs are uncredentialed. Reuse the bounded CDN image
 			// downloader, including redirect and image validation. Other hosts remain
 			// visible links and are never fetched by the bridge.
 			if media.ValidateAvatarURL(image.URL) != nil {
-				add(partID, caption+"\nImage: "+image.URL)
+				caption.link("Image", image.URL)
+				add(partID, caption.content(event.MsgText))
 				continue
 			}
 			data, err := historyResourceBytes(ctx, []any{"leverage-image", image.URL}, func(ctx context.Context) ([]byte, error) {
@@ -112,7 +156,8 @@ func convertLeverage(ctx context.Context, portal *bridgev2.Portal, intent bridge
 				if ctx.Err() != nil {
 					return nil, errLeverageTransfer
 				}
-				add(partID, caption+"\nImage unavailable: "+image.URL)
+				caption.link("Image unavailable", image.URL)
+				add(partID, caption.content(event.MsgText))
 				continue
 			}
 			mime := http.DetectContentType(data)
@@ -124,11 +169,22 @@ func convertLeverage(ctx context.Context, portal *bridgev2.Portal, intent bridge
 			if err != nil {
 				return nil, errLeverageTransfer
 			}
-			content := &event.MessageEventContent{MsgType: event.MsgImage, Body: caption, FileName: name, URL: uri, File: file, Info: &event.FileInfo{Width: image.Width, Height: image.Height, MimeType: mime, Size: len(data)}}
+			// A body that differs from the file name is the image's caption.
+			content := &event.MessageEventContent{MsgType: event.MsgImage, Body: name, FileName: name, URL: uri, File: file, Info: &event.FileInfo{Width: image.Width, Height: image.Height, MimeType: mime, Size: len(data)}}
+			if len(caption.body) > 0 {
+				text := caption.content(event.MsgImage)
+				content.Body, content.Format, content.FormattedBody = text.Body, text.Format, text.FormattedBody
+			}
 			if file != nil {
 				content.URL = ""
 			}
-			converted.Parts = append(converted.Parts, &bridgev2.ConvertedMessagePart{ID: partID, Type: event.EventMessage, Content: content, DBMetadata: metadata()})
+			add(partID, content)
+		}
+		if len(card.Images) == 0 {
+			partID := networkid.PartID(fmt.Sprintf("card-%d", i))
+			if !existing[partID] {
+				add(partID, leverageCardLines(card, i, len(msg.Cards)).content(event.MsgText))
+			}
 		}
 	}
 	return converted, nil
