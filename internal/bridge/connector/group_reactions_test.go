@@ -67,6 +67,34 @@ func TestObservedQuickReactionMiniItemsUseEmoji(t *testing.T) {
 	}
 }
 
+func TestMiniReactionLaughCryLabelUsesEmoji(t *testing.T) {
+	// Synthetic metadata: the screenshots establish the display association,
+	// but do not establish an item ID or which metadata field supplied it.
+	for _, source := range []string{"ko", "en", "title"} {
+		t.Run(source, func(t *testing.T) {
+			item := events.ReactionItem{Kind: 2, ID: "synthetic-laugh-cry", Count: 1}
+			detail := reactions.Detail{Kind: 2, ReactionID: item.ID, UserIDs: []int64{testOtherID}}
+			if source == "title" {
+				detail.ItemMeta = &reactions.ItemMeta{Title: "웃픔"}
+			} else {
+				item.Alt = map[string]string{source: "웃픔"}
+			}
+			users := map[networkid.UserID]*bridgev2.ReactionSyncUser{}
+			err := addMiniReactionUsers(users, reactions.DetailsResponse{Details: []reactions.Detail{detail}}, events.ReactionChanged{Items: []events.ReactionItem{item}}, testSelfID, makeUserLoginID(testSelfID))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := users[makeUserID(testOtherID)].Reactions[0]
+			if got.Emoji != "😂" || got.EmojiID != "kakao:mini:synthetic-laugh-cry" {
+				t.Fatalf("reaction = %+v, want 😂 with original mini identity", got)
+			}
+		})
+	}
+	if _, ok := reactionForEmoji("😂"); ok {
+		t.Fatal("display approximation must not enable an outbound legacy selection")
+	}
+}
+
 // Kakao keeps one legacy selection per user, but mini items are separate. A
 // Matrix reaction replaces only the sender's previous legacy reaction; the
 // same account's mini reaction (for example added on the phone) stays.
