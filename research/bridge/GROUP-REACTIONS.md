@@ -89,6 +89,16 @@ Each change was preceded by a failing production-path test.
   Korean labels. The six observed mini items now use the same emoji as the
   outbound legacy table (❤️ 👍 ✅ 😆 😮 😢); stored identities remain
   `kakao:mini:<item>`. Reactions bridged earlier keep their old key.
+- **Laugh/cry display approximation (2026-11-08).** Maintainer-provided paired
+  screenshots of the same message show the Matrix label `웃픔` and a Kakao
+  Android laughing/crying reaction graphic. Incoming mini reactions whose
+  selected alternative label or metadata title is exactly `웃픔` now display
+  as 😂. This is a bridge display decision, not an exact artwork match or
+  protocol parity claim. The screenshots do not establish the item ID or
+  originating metadata field; tests use synthetic metadata. Other labels and
+  the stored mini identity are unchanged. Previously bridged keys stay as-is.
+  Sending or removing this mini reaction from Matrix remains unsupported;
+  outbound mini mutations are tracked in `PLAN.md`.
 - **One-reaction limit across kinds.** The framework's one-reaction-per-sender
   limit made a Matrix reaction redact the same account's mini reaction (for
   example one added on the phone) although Kakao kept it. The limit is removed;

@@ -92,6 +92,11 @@ func addMiniReactionUsers(users map[networkid.UserID]*bridgev2.ReactionSyncUser,
 		if label == "" {
 			label = fmt.Sprintf("Kakao reaction %s", item.ID)
 		}
+		// Display approximation from paired Kakao/Matrix screenshots. The
+		// item ID is unverified; preserve it and do not infer outbound support.
+		if label == "웃픔" {
+			label = "😂"
+		}
 		if !utf8.ValidString(label) || len(label) > 512 || strings.ContainsAny(label, "\x00\r\n") {
 			return errReactionUnsupported
 		}
