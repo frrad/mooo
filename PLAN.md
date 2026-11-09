@@ -325,6 +325,12 @@ Existing direct-room acceptance does not satisfy a group acceptance gate.
       `/rx/logmetas` batch path, double-puppet attribution for the bridge
       account's phone, offline legacy changes from another device, and long
       resync backlogs.
+- [ ] Two-way 😂 / `웃픔`: [outbound mini investigation](research/bridge/MINI-REACTION-OUTBOUND.md)
+      recovers the separate add/follow/remove path and caller/response leads.
+      Next: execute offline native request captures, verify the exact item ID,
+      add protocol/client and Matrix add/remove integration, then validate the
+      owned-account round trip and failure cases. Incoming display mapping is
+      implemented; outbound mini sending remains unsupported.
 - [x] Group read receipts (PR #281): forward-only per-member receipts, offline
       reads recovered through `CHATONROOM` watermarks, and an owned differential
       showing catch-up's `cnt=0` and `CHATONROOM` produced no visible read
