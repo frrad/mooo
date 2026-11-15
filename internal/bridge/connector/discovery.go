@@ -16,6 +16,14 @@ func (kc *KakaoClient) discoverGroups(ctx context.Context, c kakaoClient) error 
 	if err != nil {
 		return err
 	}
+	deletedIDs, err := c.DeletedChats(ctx)
+	if err != nil {
+		return err
+	}
+	deleted := make(map[int64]struct{}, len(deletedIDs))
+	for _, chatID := range deletedIDs {
+		deleted[chatID] = struct{}{}
+	}
 	seen := make(map[int64]struct{}, len(chats))
 	inventory := map[int64]chatmeta.ChatData{}
 	ordered := make([]int64, 0, len(chats))
@@ -40,10 +48,10 @@ func (kc *KakaoClient) discoverGroups(ctx context.Context, c kakaoClient) error 
 		inventory[chat.ChatID] = chat
 		ordered = append(ordered, chat.ChatID)
 	}
-	// Revoke absent groups before a present room refresh can fail. The complete
-	// inventory has already been validated, so absence is authoritative.
-	kc.log().Debug().Int("inventory_chats", len(chats)).Int("inventory_groups", len(ordered)).Msg("Received full Kakao chat inventory")
-	if err = kc.reconcileMissingGroups(ctx, seen, excluded); err != nil {
+	// Revoke deleted groups before a present room refresh can fail. Absence
+	// alone is not authoritative; see reconcileMissingGroups.
+	kc.log().Debug().Int("inventory_chats", len(chats)).Int("inventory_groups", len(ordered)).Int("inventory_deleted", len(deleted)).Msg("Received full Kakao chat inventory")
+	if err = kc.reconcileMissingGroups(ctx, c, seen, excluded, deleted); err != nil {
 		return err
 	}
 	for _, chatID := range ordered {

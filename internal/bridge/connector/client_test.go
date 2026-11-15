@@ -58,6 +58,7 @@ type fakeKakao struct {
 	mcmRevision        *int32
 	chatInventory      []chatmeta.ChatData
 	chatInventoryErr   error
+	deletedChats       []int64
 	mu                 sync.Mutex
 	connectErr         error
 	// deltaOnly makes the login a -305 one that does not complete recovery.

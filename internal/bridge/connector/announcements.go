@@ -16,8 +16,11 @@ import (
 // names and message cursors. Topics are plaintext Matrix state, even in an
 // encrypted room; this projection is an operator-selected mapping.
 type KakaoPortalMetadata struct {
-	AnnouncementRevision   int64   `json:"announcement_revision,omitempty"`
-	SourceRemoved          bool    `json:"source_removed,omitempty"`
+	AnnouncementRevision int64 `json:"announcement_revision,omitempty"`
+	SourceRemoved        bool  `json:"source_removed,omitempty"`
+	// SourceRemovalReason records the evidence behind SourceRemoved. Empty on
+	// records written before it existed.
+	SourceRemovalReason    string  `json:"source_removal_reason,omitempty"`
 	MembershipPending      bool    `json:"membership_pending,omitempty"`
 	MembershipRoster       []int64 `json:"membership_roster,omitempty"`
 	GroupMembershipManaged bool    `json:"group_membership_managed,omitempty"`

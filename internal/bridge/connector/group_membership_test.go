@@ -146,7 +146,7 @@ func TestSourceRejoinClearsRemovalOnlyWithFreshRosterAndMatrixConvergence(t *tes
 
 func TestMissingManagedGroupPersistsRemovalBeforeVerifyingMatrixLeave(t *testing.T) {
 	ctx := context.Background()
-	kc, _, matrix := newGroupCreationFramework(t)
+	kc, backend, matrix := newGroupCreationFramework(t)
 	p, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(5000, kc.login.ID))
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +158,7 @@ func TestMissingManagedGroupPersistsRemovalBeforeVerifyingMatrixLeave(t *testing
 	}
 	matrix.members["@kakao_1000:test"] = &event.MemberEventContent{Membership: event.MembershipJoin}
 	matrix.failMember = "@kakao_1000:test"
-	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}, nil); !errors.Is(err, errMembershipPending) {
+	if err = kc.reconcileMissingGroups(ctx, backend, map[int64]struct{}{}, nil, map[int64]struct{}{5000: {}}); !errors.Is(err, errMembershipPending) {
 		t.Fatalf("unapplied leave: %v", err)
 	}
 	kc.sourceBlocked = nil
@@ -168,16 +168,21 @@ func TestMissingManagedGroupPersistsRemovalBeforeVerifyingMatrixLeave(t *testing
 	matrix.members[kc.login.UserMXID] = &event.MemberEventContent{Membership: event.MembershipJoin}
 	matrix.failMember = kc.login.UserMXID
 	matrix.members["@kakao_1000:test"] = &event.MemberEventContent{Membership: event.MembershipLeave}
-	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}, nil); !errors.Is(err, errMembershipPending) {
+	if err = kc.reconcileMissingGroups(ctx, backend, map[int64]struct{}{}, nil, nil); !errors.Is(err, errMembershipPending) {
 		t.Fatalf("associated Matrix user still joined: %v", err)
 	}
 	matrix.failMember = ""
 	matrix.members[kc.login.UserMXID] = &event.MemberEventContent{Membership: event.MembershipLeave}
-	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}, nil); err != nil {
+	if err = kc.reconcileMissingGroups(ctx, backend, map[int64]struct{}{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err = kc.checkSourceAccess(ctx, 5000); !errors.Is(err, errSourceAccessRemoved) {
 		t.Fatalf("Matrix leave restored source access: %v", err)
+	}
+	// The deletion evidence arrives once; the persisted reason alone drives the
+	// Matrix leave retries, and a departed account reads no source metadata.
+	if len(backend.metadataCalls) != 0 {
+		t.Fatalf("departed group read source metadata: %v", backend.metadataCalls)
 	}
 }
 

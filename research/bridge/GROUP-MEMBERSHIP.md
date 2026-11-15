@@ -62,13 +62,44 @@ Regular-group inventory refresh and live peer membership notices consume this
 path. Direct-room deltas retain their prior path. Tests cover a departed ghost
 remaining joined despite framework success, durable pending state after reload,
 and source rejoining that cannot resume forwarding until all Matrix identities
-converge. Completed inventory reconciliation now marks previously managed, bound groups
-absent from the inventory as removed before refreshing present groups. It applies
-and independently verifies the creating account's Matrix leave. Regressions
-cover failed Matrix updates, durable removal after reload, and continued
-source blocking after Matrix departure. Unknown legacy room types remain a gap:
-absence alone is not used to infer that an unclassified portal was a regular
-group. Double-puppet roster convergence is not covered by the owned test setup.
+converge. Completed inventory reconciliation marks previously managed, bound
+groups that the inventory lists in `delChatIds` as removed before refreshing
+present groups. It applies and independently verifies the creating account's
+Matrix leave. Regressions cover failed Matrix updates, durable removal after
+reload, and continued source blocking after Matrix departure.
+
+Absence from the inventory is not removal evidence. A 2026-11-15 (UTC) owned
+production restart returned a zero-token, status-zero EOF inventory of one
+chat for an account with four known chats. The bridge still sends the
+committed `chatIds`/`maxIds` pairs; the result is consistent with the server
+omitting chats unchanged since those positions (an inference, not traced).
+A managed group with no traffic for a month was therefore revoked on every
+restart while the account remained a member; the continuity checkpoint showed
+it was never in `delChatIds`. Reconciliation now ignores absence. It still
+revokes a group listed in `delChatIds` or returned in another shape (logging
+that shape), and it persists the reason with the block.
+
+A block with departure evidence (a deletion, a changed shape, a removal feed,
+a fresh roster without the account, or a refused re-verification read) is
+kept without further source reads, since the departed account cannot
+authorize them; each discovery reapplies its Matrix leave in case an earlier
+attempt failed. A block without such evidence (an older record with no reason,
+an absence-based one, or one whose re-verification failed without a server
+answer) is re-verified through the ordinary source-rejoin path. A fresh
+CHATINFO/MEMLIST roster containing the account plus converged Matrix
+membership restores forwarding. A roster containing the account without
+Matrix convergence becomes a pending membership with a scheduled retry. Any
+other failure keeps the group blocked without stopping startup. Older records
+with no reason, including genuine departures, therefore get one such read.
+
+A departure that happens while the bridge is offline is still detected by a
+later removal feed, a fresh roster without the account, or a `delChatIds`
+entry, but no longer by absence alone. The `delChatIds` signal is installed
+into the continuity checkpoint when the session connects, before discovery;
+if startup fails in between, the deletion is not recorded and does not recur.
+Whether a zero-token login with empty `chatIds` returns a complete inventory
+is untested. Unknown legacy room types remain a gap. Double-puppet roster
+convergence is not covered by the owned test setup.
 
 Owned acceptance described below covers peer departure offline and online,
 explicit rejoining, bridge-account departure and rejoining, exact encrypted

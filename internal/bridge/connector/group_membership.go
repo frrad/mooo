@@ -35,6 +35,7 @@ func (kc *KakaoClient) saveMembershipCheckpoint(ctx context.Context, p *bridgev2
 		next.MembershipRoster = slices.Clone(roster)
 		if !pending {
 			next.SourceRemoved = false
+			next.SourceRemovalReason = ""
 		}
 		sourceRemoved = next.SourceRemoved
 	}, func(got *KakaoPortalMetadata) bool {
@@ -100,7 +101,7 @@ func (kc *KakaoClient) convergeGroupMembership(ctx context.Context, p *bridgev2.
 		expected[user] = true
 	}
 	if !expected[makeUserID(kc.userID)] {
-		if err = kc.recordSourceRemoval(ctx, chatID, "absent_from_source_roster"); err != nil {
+		if err = kc.recordSourceRemoval(ctx, chatID, removalAbsentFromRoster); err != nil {
 			return err
 		}
 		return errSourceAccessRemoved

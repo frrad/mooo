@@ -27,6 +27,10 @@ func (f *fakeKakao) ListChats(context.Context) ([]chatmeta.ChatData, error) {
 	return f.chatInventory, f.chatInventoryErr
 }
 
+func (f *fakeKakao) DeletedChats(context.Context) ([]int64, error) {
+	return f.deletedChats, f.chatInventoryErr
+}
+
 // newDiscoveryFramework returns a framework-backed client whose portal for
 // chatID is bound to a Matrix room joined by exactly roster's ghosts, as the
 // framework leaves it after handling the discovery resync. Queued events are
@@ -219,45 +223,109 @@ func TestObservedGroupDiscoveryFixtureUsesProductionBootstrap(t *testing.T) {
 	}
 }
 
-// A managed group the inventory returned in another shape is logged with that
-// shape, distinguishable from one the server omitted. Both are still revoked.
-func TestDiscoveryClassifiesRevokedManagedGroup(t *testing.T) {
+// Absence from the login inventory is not removal evidence: the server omits
+// unchanged chats declared in LOGINLIST chatIds/maxIds even at a zero list
+// token. Only delChatIds or a changed shape revokes. A group an absence-based
+// reading revoked is re-verified against a fresh roster instead of staying
+// blocked, and a group blocked with departure evidence is not read again.
+// Regression for a quiet group revoked on every restart while still joined.
+func TestDiscoveryRevokesManagedGroupOnlyOnDeletionEvidence(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		inventory []chatmeta.ChatData
-		reason    string
-		shape     bool
+		name          string
+		inventory     []chatmeta.ChatData
+		deleted       []int64
+		removedReason *string // non-nil: SourceRemoved with this reason before discovery
+		roster        []int64
+		chatInfoErr   error
+		matrixJoined  bool
+		want          error  // checkSourceAccess after reload
+		wantReason    string // persisted SourceRemovalReason
+		wantLog       []string
+		rereads       bool // a second discovery reads source metadata again
+		wantRetry     bool // a membership retry is queued
 	}{
-		{"omitted", nil, "missing_from_chat_inventory", false},
-		{"linked", []chatmeta.ChatData{{ChatID: 5000, Type: "MultiChat", LinkID: 77}}, "excluded_from_chat_inventory", true},
+		{name: "omitted", wantLog: []string{"absence is not removal evidence"}},
+		{name: "linked", inventory: []chatmeta.ChatData{{ChatID: 5000, Type: "MultiChat", LinkID: 77}}, want: errSourceAccessRemoved, wantReason: removalExcludedInInventory, wantLog: []string{`"kakao_chat_type":"MultiChat"`, `"kakao_link_id":77`}},
+		{name: "deleted", deleted: []int64{5000}, want: errSourceAccessRemoved, wantReason: removalDeletedInInventory, wantLog: []string{`"inventory_deleted":1`}},
+		{name: "legacy removal, still a member", removedReason: ptr(""), matrixJoined: true, wantLog: []string{"forwarding restored"}},
+		{name: "absence removal, still a member", removedReason: ptr(removalMissingFromInventory), matrixJoined: true, wantLog: []string{"forwarding restored"}},
+		{name: "legacy removal, Matrix pending", removedReason: ptr(""), want: errMembershipPending, wantLog: []string{"Matrix membership pending"}, wantRetry: true},
+		{name: "legacy removal, left", removedReason: ptr(""), roster: []int64{2000, 4000}, want: errSourceAccessRemoved, wantReason: removalAbsentFromRoster},
+		{name: "legacy removal, refused", removedReason: ptr(""), chatInfoErr: client.StatusError{Command: "CHATINFO", Status: -805}, want: errSourceAccessRemoved, wantReason: removalRejoinRefused},
+		{name: "legacy removal, unverifiable", removedReason: ptr(""), chatInfoErr: errors.New("synthetic timeout"), want: errSourceAccessRemoved, wantReason: removalRejoinUnverified, rereads: true},
+		{name: "evidence removal", removedReason: ptr(removalEvent), want: errSourceAccessRemoved, wantReason: removalEvent},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			kc, _, _ := newGroupCreationFramework(t)
+			kc, backend, matrix := newGroupCreationFramework(t)
 			var logs bytes.Buffer
 			kc.login.Log = zerolog.New(&logs)
+			kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
+				return bridgev2.EventHandlingResult{Success: true}
+			}
 			p, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(5000, kc.login.ID))
 			if err != nil {
 				t.Fatal(err)
 			}
 			p.MXID = "!selected:test"
-			p.Metadata = &KakaoPortalMetadata{GroupMembershipManaged: true}
+			meta := &KakaoPortalMetadata{GroupMembershipManaged: true, MembershipRoster: []int64{1000, 2000, 4000}}
+			if tc.removedReason != nil {
+				meta.SourceRemoved, meta.SourceRemovalReason = true, *tc.removedReason
+			}
+			p.Metadata = meta
 			if err = p.Save(ctx); err != nil {
 				t.Fatal(err)
 			}
-			if err = kc.discoverGroups(ctx, &fakeKakao{chatInventory: tc.inventory}); err != nil {
+			if tc.matrixJoined {
+				for _, mxid := range []id.UserID{"@kakao_1000:test", "@kakao_2000:test", "@kakao_4000:test"} {
+					matrix.members[mxid] = &event.MemberEventContent{Membership: event.MembershipJoin}
+				}
+			}
+			backend.chatInventory, backend.deletedChats, backend.chatInfoErr = tc.inventory, tc.deleted, tc.chatInfoErr
+			if tc.roster != nil {
+				backend.memberList.MemberIDs = tc.roster
+			}
+			if err = kc.discoverGroups(ctx, backend); err != nil {
+				t.Fatalf("discovery failed: %v", err)
+			}
+			for _, want := range tc.wantLog {
+				if !strings.Contains(logs.String(), want) {
+					t.Fatalf("log %q lacks %s", logs.String(), want)
+				}
+			}
+			kc.sourceBlocked = nil
+			if err = kc.checkSourceAccess(ctx, 5000); !errors.Is(err, tc.want) || tc.want == nil && err != nil {
+				t.Fatalf("source access after reload = %v, want %v", err, tc.want)
+			}
+			kc.metadataRefresh.mu.Lock()
+			_, retry := kc.metadataRefresh.pending[metadataRefreshTask{kind: retryMembership, chatID: 5000}.key()]
+			kc.metadataRefresh.mu.Unlock()
+			if retry != tc.wantRetry {
+				t.Fatalf("membership retry queued = %t, want %t", retry, tc.wantRetry)
+			}
+			saved, err := kc.store.portalByKey(ctx, makePortalKey(5000, kc.login.ID))
+			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(logs.String(), `"source_removal_reason":"`+tc.reason+`"`) {
-				t.Fatalf("log %q lacks reason %s", logs.String(), tc.reason)
+			if got := saved.Metadata.(*KakaoPortalMetadata).SourceRemovalReason; got != tc.wantReason {
+				t.Fatalf("persisted reason = %q, want %q", got, tc.wantReason)
 			}
-			hasShape := strings.Contains(logs.String(), `"kakao_link_id":77`) && strings.Contains(logs.String(), `"kakao_chat_type":"MultiChat"`)
-			if hasShape != tc.shape {
-				t.Fatalf("log %q: inventory shape logged = %t, want %t", logs.String(), hasShape, tc.shape)
+			// The next login no longer carries the deletion; only reasons
+			// without departure evidence may read the source again.
+			backend.mu.Lock()
+			backend.metadataCalls, backend.deletedChats = nil, nil
+			backend.mu.Unlock()
+			if err = kc.discoverGroups(ctx, backend); err != nil {
+				t.Fatalf("second discovery failed: %v", err)
 			}
-			if err = kc.checkSourceAccess(ctx, 5000); !errors.Is(err, errSourceAccessRemoved) {
-				t.Fatalf("revoked group kept source access: %v", err)
+			backend.mu.Lock()
+			reads := len(backend.metadataCalls) != 0
+			backend.mu.Unlock()
+			if reads != tc.rereads {
+				t.Fatalf("second discovery source reads = %t, want %t", reads, tc.rereads)
 			}
 		})
 	}
 }
+
+func ptr[T any](v T) *T { return &v }

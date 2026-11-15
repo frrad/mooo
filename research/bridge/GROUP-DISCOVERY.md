@@ -39,7 +39,10 @@ a link identity are candidates. It resolves fresh room metadata and a complete
 source roster before enabling portal creation, then queues a resync keyed by
 source chat ID and login ID. Duplicate inventory IDs are reduced to one event.
 Incomplete inventory, failed metadata, unsupported room types, missing rosters
-and unsuccessful Matrix handling stop startup before live subscription.
+and unsuccessful Matrix handling stop startup before live subscription. The
+"complete" inventory still omits unchanged chats declared in `chatIds`/`maxIds`,
+so a group's absence revokes nothing; see
+[GROUP-MEMBERSHIP.md](GROUP-MEMBERSHIP.md).
 
 A newly received membership-add event may create a portal only after the same
 source snapshot validation; a removal cannot create one. Existing portals retain
