@@ -19,11 +19,15 @@ func (kc *KakaoClient) discoverGroups(ctx context.Context, c kakaoClient) error 
 	seen := make(map[int64]struct{}, len(chats))
 	inventory := map[int64]chatmeta.ChatData{}
 	ordered := make([]int64, 0, len(chats))
+	// excluded keeps returned chats that are not ordinary groups, so a managed
+	// group that changed shape is distinguishable from one the server omitted.
+	excluded := map[int64]chatmeta.ChatData{}
 	for _, chat := range chats {
 		if inventoryDirectRoom(chat, kc.userID) {
 			kc.enqueueEnrichment(chatSnapshot{data: chat, roster: chat.DisplayUserIDs, deferred: true}, roomMetadataCache{})
 		}
 		if chat.Type != "MultiChat" || chat.LinkID != 0 {
+			excluded[chat.ChatID] = chat
 			continue
 		}
 		if chat.ChatID <= 0 {
@@ -38,7 +42,8 @@ func (kc *KakaoClient) discoverGroups(ctx context.Context, c kakaoClient) error 
 	}
 	// Revoke absent groups before a present room refresh can fail. The complete
 	// inventory has already been validated, so absence is authoritative.
-	if err = kc.reconcileMissingGroups(ctx, seen); err != nil {
+	kc.log().Debug().Int("inventory_chats", len(chats)).Int("inventory_groups", len(ordered)).Msg("Received full Kakao chat inventory")
+	if err = kc.reconcileMissingGroups(ctx, seen, excluded); err != nil {
 		return err
 	}
 	for _, chatID := range ordered {
