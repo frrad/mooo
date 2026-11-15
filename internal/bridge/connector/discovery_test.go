@@ -225,27 +225,35 @@ func TestObservedGroupDiscoveryFixtureUsesProductionBootstrap(t *testing.T) {
 
 // Absence from the login inventory is not removal evidence: the server omits
 // unchanged chats declared in LOGINLIST chatIds/maxIds even at a zero list
-// token. Only delChatIds revokes, and a group an earlier absence-based reading
-// revoked is re-verified against a fresh roster instead of staying blocked.
+// token. Only delChatIds or a changed shape revokes. A group an absence-based
+// reading revoked is re-verified against a fresh roster instead of staying
+// blocked, and a group blocked with departure evidence is not read again.
 // Regression for a quiet group revoked on every restart while still joined.
 func TestDiscoveryRevokesManagedGroupOnlyOnDeletionEvidence(t *testing.T) {
 	for _, tc := range []struct {
-		name           string
-		inventory      []chatmeta.ChatData
-		deleted        []int64
-		alreadyRemoved bool
-		roster         []int64
-		chatInfoErr    error
-		matrixJoined   bool
-		wantBlocked    bool
-		wantLog        []string
+		name          string
+		inventory     []chatmeta.ChatData
+		deleted       []int64
+		removedReason *string // non-nil: SourceRemoved with this reason before discovery
+		roster        []int64
+		chatInfoErr   error
+		matrixJoined  bool
+		want          error  // checkSourceAccess after reload
+		wantReason    string // persisted SourceRemovalReason
+		wantLog       []string
+		rereads       bool // a second discovery reads source metadata again
+		wantRetry     bool // a membership retry is queued
 	}{
 		{name: "omitted", wantLog: []string{"absence is not removal evidence"}},
-		{name: "linked", inventory: []chatmeta.ChatData{{ChatID: 5000, Type: "MultiChat", LinkID: 77}}, wantLog: []string{`"kakao_chat_type":"MultiChat"`, `"kakao_link_id":77`}},
-		{name: "deleted", deleted: []int64{5000}, wantBlocked: true, wantLog: []string{`"source_removal_reason":"deleted_in_chat_inventory"`, `"inventory_deleted":1`}},
-		{name: "revoked earlier, still a member", alreadyRemoved: true, matrixJoined: true, wantLog: []string{"forwarding restored"}},
-		{name: "revoked earlier, left", alreadyRemoved: true, roster: []int64{2000, 4000}, wantBlocked: true, wantLog: []string{`"source_removal_reason":"absent_from_source_roster"`}},
-		{name: "revoked earlier, unverifiable", alreadyRemoved: true, chatInfoErr: errors.New("synthetic CHATINFO failure"), wantBlocked: true, wantLog: []string{`"source_removal_reason":"rejoin_unverified"`}},
+		{name: "linked", inventory: []chatmeta.ChatData{{ChatID: 5000, Type: "MultiChat", LinkID: 77}}, want: errSourceAccessRemoved, wantReason: removalExcludedInInventory, wantLog: []string{`"kakao_chat_type":"MultiChat"`, `"kakao_link_id":77`}},
+		{name: "deleted", deleted: []int64{5000}, want: errSourceAccessRemoved, wantReason: removalDeletedInInventory, wantLog: []string{`"inventory_deleted":1`}},
+		{name: "legacy removal, still a member", removedReason: ptr(""), matrixJoined: true, wantLog: []string{"forwarding restored"}},
+		{name: "absence removal, still a member", removedReason: ptr(removalMissingFromInventory), matrixJoined: true, wantLog: []string{"forwarding restored"}},
+		{name: "legacy removal, Matrix pending", removedReason: ptr(""), want: errMembershipPending, wantLog: []string{"Matrix membership pending"}, wantRetry: true},
+		{name: "legacy removal, left", removedReason: ptr(""), roster: []int64{2000, 4000}, want: errSourceAccessRemoved, wantReason: removalAbsentFromRoster},
+		{name: "legacy removal, refused", removedReason: ptr(""), chatInfoErr: client.StatusError{Command: "CHATINFO", Status: -805}, want: errSourceAccessRemoved, wantReason: removalRejoinRefused},
+		{name: "legacy removal, unverifiable", removedReason: ptr(""), chatInfoErr: errors.New("synthetic timeout"), want: errSourceAccessRemoved, wantReason: removalRejoinUnverified, rereads: true},
+		{name: "evidence removal", removedReason: ptr(removalEvent), want: errSourceAccessRemoved, wantReason: removalEvent},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -260,7 +268,11 @@ func TestDiscoveryRevokesManagedGroupOnlyOnDeletionEvidence(t *testing.T) {
 				t.Fatal(err)
 			}
 			p.MXID = "!selected:test"
-			p.Metadata = &KakaoPortalMetadata{GroupMembershipManaged: true, MembershipRoster: []int64{1000, 2000, 4000}, SourceRemoved: tc.alreadyRemoved}
+			meta := &KakaoPortalMetadata{GroupMembershipManaged: true, MembershipRoster: []int64{1000, 2000, 4000}}
+			if tc.removedReason != nil {
+				meta.SourceRemoved, meta.SourceRemovalReason = true, *tc.removedReason
+			}
+			p.Metadata = meta
 			if err = p.Save(ctx); err != nil {
 				t.Fatal(err)
 			}
@@ -281,14 +293,39 @@ func TestDiscoveryRevokesManagedGroupOnlyOnDeletionEvidence(t *testing.T) {
 					t.Fatalf("log %q lacks %s", logs.String(), want)
 				}
 			}
-			if !tc.wantBlocked && strings.Contains(logs.String(), "source_removal_reason") {
-				t.Fatalf("log %q records a removal", logs.String())
-			}
 			kc.sourceBlocked = nil
-			err = kc.checkSourceAccess(ctx, 5000)
-			if tc.wantBlocked != errors.Is(err, errSourceAccessRemoved) || !tc.wantBlocked && err != nil {
-				t.Fatalf("source access after reload = %v, want blocked=%t", err, tc.wantBlocked)
+			if err = kc.checkSourceAccess(ctx, 5000); !errors.Is(err, tc.want) || tc.want == nil && err != nil {
+				t.Fatalf("source access after reload = %v, want %v", err, tc.want)
+			}
+			kc.metadataRefresh.mu.Lock()
+			_, retry := kc.metadataRefresh.pending[metadataRefreshTask{kind: retryMembership, chatID: 5000}.key()]
+			kc.metadataRefresh.mu.Unlock()
+			if retry != tc.wantRetry {
+				t.Fatalf("membership retry queued = %t, want %t", retry, tc.wantRetry)
+			}
+			saved, err := kc.store.portalByKey(ctx, makePortalKey(5000, kc.login.ID))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := saved.Metadata.(*KakaoPortalMetadata).SourceRemovalReason; got != tc.wantReason {
+				t.Fatalf("persisted reason = %q, want %q", got, tc.wantReason)
+			}
+			// The next login no longer carries the deletion; only reasons
+			// without departure evidence may read the source again.
+			backend.mu.Lock()
+			backend.metadataCalls, backend.deletedChats = nil, nil
+			backend.mu.Unlock()
+			if err = kc.discoverGroups(ctx, backend); err != nil {
+				t.Fatalf("second discovery failed: %v", err)
+			}
+			backend.mu.Lock()
+			reads := len(backend.metadataCalls) != 0
+			backend.mu.Unlock()
+			if reads != tc.rereads {
+				t.Fatalf("second discovery source reads = %t, want %t", reads, tc.rereads)
 			}
 		})
 	}
 }
+
+func ptr[T any](v T) *T { return &v }

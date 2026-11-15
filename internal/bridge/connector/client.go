@@ -514,7 +514,7 @@ func (kc *KakaoClient) removedChatOf(evt events.Event) int64 {
 // before anything else about the event is handled.
 func (kc *KakaoClient) beginSourceRemoval(ctx context.Context, chatID int64) bool {
 	kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupAccessRemoved})
-	return kc.recordSourceRemoval(ctx, chatID, "removal_event") == nil
+	return kc.recordSourceRemoval(ctx, chatID, removalEvent) == nil
 }
 
 // applyRemovedSource applies the account's departure from a chat. The
