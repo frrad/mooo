@@ -136,7 +136,7 @@ func (kc *KakaoClient) reconcileMissingGroups(ctx context.Context, seen map[int6
 		if _, present := seen[chatID]; present {
 			continue
 		}
-		if err = kc.recordSourceRemoval(ctx, chatID); err != nil {
+		if err = kc.recordSourceRemoval(ctx, chatID, "missing_from_chat_inventory"); err != nil {
 			return err
 		}
 		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupAccessRemoved})
@@ -147,7 +147,10 @@ func (kc *KakaoClient) reconcileMissingGroups(ctx context.Context, seen map[int6
 	return nil
 }
 
-func (kc *KakaoClient) recordSourceRemoval(ctx context.Context, chatID int64) error {
+// recordSourceRemoval blocks forwarding for chatID. reason names the evidence
+// that triggered the block; the log line is the only place an operator can
+// learn which chat the chat-agnostic bridge state refers to.
+func (kc *KakaoClient) recordSourceRemoval(ctx context.Context, chatID int64, reason string) error {
 	kc.cacheMu.Lock()
 	if kc.sourceBlocked == nil {
 		kc.sourceBlocked = map[int64]error{}
@@ -158,6 +161,11 @@ func (kc *KakaoClient) recordSourceRemoval(ctx context.Context, chatID int64) er
 	if err != nil {
 		return err
 	}
+	kc.log().Warn().
+		Int64("kakao_chat_id", chatID).
+		Stringer("portal_mxid", portal.MXID).
+		Str("source_removal_reason", reason).
+		Msg("Kakao account no longer in source chat; blocking forwarding until rejoin is verified")
 	return kc.savePortalMeta(ctx, portal, func(next *KakaoPortalMetadata) {
 		next.SourceRemoved = true
 	}, func(got *KakaoPortalMetadata) bool {

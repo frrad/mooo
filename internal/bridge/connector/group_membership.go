@@ -100,7 +100,7 @@ func (kc *KakaoClient) convergeGroupMembership(ctx context.Context, p *bridgev2.
 		expected[user] = true
 	}
 	if !expected[makeUserID(kc.userID)] {
-		if err = kc.recordSourceRemoval(ctx, chatID); err != nil {
+		if err = kc.recordSourceRemoval(ctx, chatID, "absent_from_source_roster"); err != nil {
 			return err
 		}
 		return errSourceAccessRemoved

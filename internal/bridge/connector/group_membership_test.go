@@ -1,9 +1,13 @@
 package connector
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
+
+	"github.com/rs/zerolog"
 
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/event"
@@ -114,7 +118,7 @@ func TestSourceRejoinClearsRemovalOnlyWithFreshRosterAndMatrixConvergence(t *tes
 	if err = p.Save(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err = kc.recordSourceRemoval(ctx, 5000); err != nil {
+	if err = kc.recordSourceRemoval(ctx, 5000, "test"); err != nil {
 		t.Fatal(err)
 	}
 	kc.queue = func(bridgev2.RemoteEvent) bridgev2.EventHandlingResult {
@@ -211,5 +215,30 @@ func TestPeerRemovalFrameworkFailureKeepsCheckpointPending(t *testing.T) {
 	}
 	if member := matrix.members["@kakao_4000:test"]; member == nil || member.Membership != event.MembershipLeave {
 		t.Fatal("departed ghost still joined")
+	}
+}
+
+// The bridge state for a source removal does not name the chat, so the log
+// line is the operator's only way to find which chat was blocked.
+func TestSourceRemovalLogsWhichChat(t *testing.T) {
+	ctx := context.Background()
+	kc, _, _ := newGroupCreationFramework(t)
+	var logs bytes.Buffer
+	kc.login.Log = zerolog.New(&logs)
+	p, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(5000, kc.login.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.MXID = "!selected:test"
+	if err = p.Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = kc.recordSourceRemoval(ctx, 5000, "missing_from_chat_inventory"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"level":"warn"`, `"kakao_chat_id":5000`, `"portal_mxid":"!selected:test"`, `"source_removal_reason":"missing_from_chat_inventory"`} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("log %q lacks %s", logs.String(), want)
+		}
 	}
 }
