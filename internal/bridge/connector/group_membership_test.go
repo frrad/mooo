@@ -158,7 +158,7 @@ func TestMissingManagedGroupPersistsRemovalBeforeVerifyingMatrixLeave(t *testing
 	}
 	matrix.members["@kakao_1000:test"] = &event.MemberEventContent{Membership: event.MembershipJoin}
 	matrix.failMember = "@kakao_1000:test"
-	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}, nil); !errors.Is(err, errMembershipPending) {
+	if err = kc.reconcileMissingGroups(ctx, nil, map[int64]struct{}{}, nil, map[int64]struct{}{5000: {}}); !errors.Is(err, errMembershipPending) {
 		t.Fatalf("unapplied leave: %v", err)
 	}
 	kc.sourceBlocked = nil
@@ -168,12 +168,12 @@ func TestMissingManagedGroupPersistsRemovalBeforeVerifyingMatrixLeave(t *testing
 	matrix.members[kc.login.UserMXID] = &event.MemberEventContent{Membership: event.MembershipJoin}
 	matrix.failMember = kc.login.UserMXID
 	matrix.members["@kakao_1000:test"] = &event.MemberEventContent{Membership: event.MembershipLeave}
-	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}, nil); !errors.Is(err, errMembershipPending) {
+	if err = kc.reconcileMissingGroups(ctx, nil, map[int64]struct{}{}, nil, map[int64]struct{}{5000: {}}); !errors.Is(err, errMembershipPending) {
 		t.Fatalf("associated Matrix user still joined: %v", err)
 	}
 	matrix.failMember = ""
 	matrix.members[kc.login.UserMXID] = &event.MemberEventContent{Membership: event.MembershipLeave}
-	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}, nil); err != nil {
+	if err = kc.reconcileMissingGroups(ctx, nil, map[int64]struct{}{}, nil, map[int64]struct{}{5000: {}}); err != nil {
 		t.Fatal(err)
 	}
 	if err = kc.checkSourceAccess(ctx, 5000); !errors.Is(err, errSourceAccessRemoved) {

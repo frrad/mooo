@@ -37,6 +37,19 @@ func (s *session) ListChats() ([]chatmeta.ChatData, error) {
 	return result, nil
 }
 
+// DeletedChats returns the chat IDs the completed full login inventory listed
+// as deleted (delChatIds), in page order. Absence from ListChats is not the
+// same evidence: the server omits unchanged chats the request declared in
+// chatIds/maxIds even at a zero list token.
+func (c *Client) DeletedChats(ctx context.Context) ([]int64, error) {
+	return withSession(c, ctx, func(session *session) ([]int64, error) {
+		if session == nil || !session.loginCursor.complete || !session.loginCursor.replaceInventory {
+			return nil, ErrChatListIncomplete
+		}
+		return append([]int64(nil), session.loginCursor.deleted...), nil
+	})
+}
+
 // PersonalMetaRevision returns this session's login-list personal-metadata
 // revision (mcmRevision). The official client fetches GETMCMETA only when it
 // exceeds the revision it last applied. ok is false when the server sent none.

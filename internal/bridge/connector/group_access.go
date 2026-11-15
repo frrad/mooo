@@ -115,11 +115,16 @@ func (kc *KakaoClient) applySourceLeave(ctx context.Context, chatID int64) error
 	return errors.Join(failures, kc.verifySourceLeave(ctx, chatID))
 }
 
-// Only a completed full inventory can revoke access based on absence. Unknown
-// legacy room types and unbound draft portals are not inferred to be groups.
-// excluded holds returned chats that were not ordinary groups; a managed group
-// found there is still revoked, but logged with the shape the server reported.
-func (kc *KakaoClient) reconcileMissingGroups(ctx context.Context, seen map[int64]struct{}, excluded map[int64]chatmeta.ChatData) error {
+// reconcileMissingGroups handles managed groups that are not ordinary groups
+// in a completed full inventory. Absence alone is not removal evidence: even
+// at a zero list token the server omits unchanged chats that LOGINLIST
+// declared in chatIds/maxIds, so a quiet group is routinely missing. Only an
+// explicit delChatIds entry revokes access here. A group already revoked by an
+// earlier absence-based reading is re-verified against a fresh source roster,
+// which restores forwarding only if the account is still a member; a failed
+// re-verification keeps the group blocked and does not stop startup.
+// excluded holds returned chats that were not ordinary groups, for diagnosis.
+func (kc *KakaoClient) reconcileMissingGroups(ctx context.Context, c kakaoClient, seen map[int64]struct{}, excluded map[int64]chatmeta.ChatData, deleted map[int64]struct{}) error {
 	portals, err := kc.store.portalsWithMXID(ctx)
 	if err != nil {
 		return err
@@ -139,24 +144,50 @@ func (kc *KakaoClient) reconcileMissingGroups(ctx context.Context, seen map[int6
 		if _, present := seen[chatID]; present {
 			continue
 		}
-		reason := "missing_from_chat_inventory"
 		if chat, returned := excluded[chatID]; returned {
-			reason = "excluded_from_chat_inventory"
 			kc.log().Warn().
 				Int64("kakao_chat_id", chatID).
 				Str("kakao_chat_type", chat.Type).
 				Int64("kakao_link_id", chat.LinkID).
 				Msg("Managed group returned in Kakao chat inventory, but not as an ordinary group")
 		}
-		if err = kc.recordSourceRemoval(ctx, chatID, reason); err != nil {
-			return err
+		if _, removed := deleted[chatID]; removed {
+			if err = kc.recordSourceRemoval(ctx, chatID, "deleted_in_chat_inventory"); err != nil {
+				return err
+			}
+			kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupAccessRemoved})
+			if err = kc.applySourceLeave(ctx, chatID); err != nil {
+				return errors.Join(errSourceAccessRemoved, errMembershipPending, err)
+			}
+			continue
 		}
-		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupAccessRemoved})
-		if err = kc.applySourceLeave(ctx, chatID); err != nil {
-			return errors.Join(errSourceAccessRemoved, errMembershipPending, err)
+		if !meta.SourceRemoved {
+			kc.log().Debug().Int64("kakao_chat_id", chatID).Msg("Managed group absent from Kakao chat inventory; absence is not removal evidence")
+			continue
+		}
+		if err = kc.reverifySourceRemoval(ctx, c, chatID); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// reverifySourceRemoval reads a fresh source roster for a revoked group that
+// the inventory did not list as deleted. Forwarding resumes only when the
+// roster contains the account and Matrix membership converges with it.
+func (kc *KakaoClient) reverifySourceRemoval(ctx context.Context, c kakaoClient, chatID int64) error {
+	err := kc.refreshGroupMembership(ctx, c, chatID, false)
+	if err == nil {
+		kc.log().Info().Int64("kakao_chat_id", chatID).Msg("Re-verified Kakao source chat membership; forwarding restored")
+		return nil
+	}
+	kc.log().Warn().Err(err).Int64("kakao_chat_id", chatID).Msg("Could not re-verify Kakao source chat membership; forwarding stays blocked")
+	if errors.Is(err, errSourceAccessRemoved) {
+		// convergeGroupMembership already recorded the removal.
+		return nil
+	}
+	// The refresh paused the group; restore the stronger removal block.
+	return kc.recordSourceRemoval(ctx, chatID, "rejoin_unverified")
 }
 
 // recordSourceRemoval blocks forwarding for chatID. reason names the evidence

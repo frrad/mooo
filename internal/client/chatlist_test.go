@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -139,5 +140,31 @@ func TestPersonalMetaRevisionFromLoginList(t *testing.T) {
 	c = &Client{session: &session{}}
 	if _, ok, err = c.PersonalMetaRevision(context.Background()); err != nil || ok {
 		t.Fatalf("absent revision reported: %t %v", ok, err)
+	}
+}
+
+// DeletedChats reports delChatIds from a completed full inventory only; a
+// delta or incomplete login cannot supply revocation evidence.
+func TestDeletedChatsRequiresCompleteFullInventory(t *testing.T) {
+	var cursor loginCursor
+	page, err := sessionlogin.DecodeLoginListPage(mustBSON(bson.D{{Key: "status", Value: int32(0)}, {Key: "eof", Value: true}, {Key: "delChatIds", Value: bson.A{int64(42), int64(43)}}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursor.apply(page)
+	for _, tc := range []struct {
+		complete, replace bool
+	}{{false, true}, {true, false}} {
+		cursor.complete, cursor.replaceInventory = tc.complete, tc.replace
+		c := &Client{session: &session{loginCursor: cursor}}
+		if _, err := c.DeletedChats(context.Background()); !errors.Is(err, ErrChatListIncomplete) {
+			t.Fatalf("complete=%t replace=%t: err = %v", tc.complete, tc.replace, err)
+		}
+	}
+	cursor.complete, cursor.replaceInventory = true, true
+	c := &Client{session: &session{loginCursor: cursor}}
+	got, err := c.DeletedChats(context.Background())
+	if err != nil || !slices.Equal(got, []int64{42, 43}) {
+		t.Fatalf("deleted = %v, %v", got, err)
 	}
 }

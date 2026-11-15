@@ -51,6 +51,7 @@ type sessionAPI interface {
 // chatMetaAPI reads chat inventory, metadata and rosters.
 type chatMetaAPI interface {
 	ListChats(ctx context.Context) ([]chatmeta.ChatData, error)
+	DeletedChats(ctx context.Context) ([]int64, error)
 	ChatInfo(ctx context.Context, chatID int64) (chatmeta.ChatInfoResponse, error)
 	GetMetas(ctx context.Context, chatIDs []int64) ([]chatmeta.ChatMetaSet, error)
 	PersonalMeta(ctx context.Context, chatID int64) (*chatmeta.RoomMeta, error)
