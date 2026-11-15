@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
@@ -116,7 +117,9 @@ func (kc *KakaoClient) applySourceLeave(ctx context.Context, chatID int64) error
 
 // Only a completed full inventory can revoke access based on absence. Unknown
 // legacy room types and unbound draft portals are not inferred to be groups.
-func (kc *KakaoClient) reconcileMissingGroups(ctx context.Context, seen map[int64]struct{}) error {
+// excluded holds returned chats that were not ordinary groups; a managed group
+// found there is still revoked, but logged with the shape the server reported.
+func (kc *KakaoClient) reconcileMissingGroups(ctx context.Context, seen map[int64]struct{}, excluded map[int64]chatmeta.ChatData) error {
 	portals, err := kc.store.portalsWithMXID(ctx)
 	if err != nil {
 		return err
@@ -136,7 +139,16 @@ func (kc *KakaoClient) reconcileMissingGroups(ctx context.Context, seen map[int6
 		if _, present := seen[chatID]; present {
 			continue
 		}
-		if err = kc.recordSourceRemoval(ctx, chatID, "missing_from_chat_inventory"); err != nil {
+		reason := "missing_from_chat_inventory"
+		if chat, returned := excluded[chatID]; returned {
+			reason = "excluded_from_chat_inventory"
+			kc.log().Warn().
+				Int64("kakao_chat_id", chatID).
+				Str("kakao_chat_type", chat.Type).
+				Int64("kakao_link_id", chat.LinkID).
+				Msg("Managed group returned in Kakao chat inventory, but not as an ordinary group")
+		}
+		if err = kc.recordSourceRemoval(ctx, chatID, reason); err != nil {
 			return err
 		}
 		kc.sendState(status.BridgeState{StateEvent: status.StateUnknownError, Error: stateGroupAccessRemoved})

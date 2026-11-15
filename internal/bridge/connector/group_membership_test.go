@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/rs/zerolog"
 
 	"maunium.net/go/mautrix/bridgev2"
@@ -158,7 +159,7 @@ func TestMissingManagedGroupPersistsRemovalBeforeVerifyingMatrixLeave(t *testing
 	}
 	matrix.members["@kakao_1000:test"] = &event.MemberEventContent{Membership: event.MembershipJoin}
 	matrix.failMember = "@kakao_1000:test"
-	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}); !errors.Is(err, errMembershipPending) {
+	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}, nil); !errors.Is(err, errMembershipPending) {
 		t.Fatalf("unapplied leave: %v", err)
 	}
 	kc.sourceBlocked = nil
@@ -168,12 +169,12 @@ func TestMissingManagedGroupPersistsRemovalBeforeVerifyingMatrixLeave(t *testing
 	matrix.members[kc.login.UserMXID] = &event.MemberEventContent{Membership: event.MembershipJoin}
 	matrix.failMember = kc.login.UserMXID
 	matrix.members["@kakao_1000:test"] = &event.MemberEventContent{Membership: event.MembershipLeave}
-	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}); !errors.Is(err, errMembershipPending) {
+	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}, nil); !errors.Is(err, errMembershipPending) {
 		t.Fatalf("associated Matrix user still joined: %v", err)
 	}
 	matrix.failMember = ""
 	matrix.members[kc.login.UserMXID] = &event.MemberEventContent{Membership: event.MembershipLeave}
-	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}); err != nil {
+	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err = kc.checkSourceAccess(ctx, 5000); !errors.Is(err, errSourceAccessRemoved) {
@@ -240,5 +241,35 @@ func TestSourceRemovalLogsWhichChat(t *testing.T) {
 		if !strings.Contains(logs.String(), want) {
 			t.Fatalf("log %q lacks %s", logs.String(), want)
 		}
+	}
+}
+
+// A managed group the inventory returned in another shape is logged with that
+// shape, so it is distinguishable from a group the server omitted.
+func TestMissingManagedGroupLogsExcludedInventoryShape(t *testing.T) {
+	ctx := context.Background()
+	kc, _, _ := newGroupCreationFramework(t)
+	var logs bytes.Buffer
+	kc.login.Log = zerolog.New(&logs)
+	p, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(5000, kc.login.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.MXID = "!selected:test"
+	p.Metadata = &KakaoPortalMetadata{GroupMembershipManaged: true}
+	if err = p.Save(ctx); err != nil {
+		t.Fatal(err)
+	}
+	excluded := map[int64]chatmeta.ChatData{5000: {ChatID: 5000, Type: "OM", LinkID: 77}}
+	if err = kc.reconcileMissingGroups(ctx, map[int64]struct{}{}, excluded); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"kakao_chat_type":"OM"`, `"kakao_link_id":77`, `"source_removal_reason":"excluded_from_chat_inventory"`} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("log %q lacks %s", logs.String(), want)
+		}
+	}
+	if err = kc.checkSourceAccess(ctx, 5000); !errors.Is(err, errSourceAccessRemoved) {
+		t.Fatalf("excluded group kept source access: %v", err)
 	}
 }
