@@ -1,16 +1,20 @@
 package connector
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/frrad/mooo/internal/client"
 	"github.com/frrad/mooo/internal/protocol/chatmeta"
 	"github.com/frrad/mooo/internal/protocol/events"
+	"github.com/rs/zerolog"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
@@ -210,6 +214,49 @@ func TestObservedGroupDiscoveryFixtureUsesProductionBootstrap(t *testing.T) {
 				if _, ok := info.Members.MemberMap[networkid.UserID(strconv.FormatInt(memberID, 10))]; !ok {
 					t.Fatalf("missing source identity %d", memberID)
 				}
+			}
+		})
+	}
+}
+
+// A managed group the inventory returned in another shape is logged with that
+// shape, distinguishable from one the server omitted. Both are still revoked.
+func TestDiscoveryClassifiesRevokedManagedGroup(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		inventory []chatmeta.ChatData
+		reason    string
+		shape     bool
+	}{
+		{"omitted", nil, "missing_from_chat_inventory", false},
+		{"linked", []chatmeta.ChatData{{ChatID: 5000, Type: "MultiChat", LinkID: 77}}, "excluded_from_chat_inventory", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			kc, _, _ := newGroupCreationFramework(t)
+			var logs bytes.Buffer
+			kc.login.Log = zerolog.New(&logs)
+			p, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(5000, kc.login.ID))
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.MXID = "!selected:test"
+			p.Metadata = &KakaoPortalMetadata{GroupMembershipManaged: true}
+			if err = p.Save(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if err = kc.discoverGroups(ctx, &fakeKakao{chatInventory: tc.inventory}); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(logs.String(), `"source_removal_reason":"`+tc.reason+`"`) {
+				t.Fatalf("log %q lacks reason %s", logs.String(), tc.reason)
+			}
+			hasShape := strings.Contains(logs.String(), `"kakao_link_id":77`) && strings.Contains(logs.String(), `"kakao_chat_type":"MultiChat"`)
+			if hasShape != tc.shape {
+				t.Fatalf("log %q: inventory shape logged = %t, want %t", logs.String(), hasShape, tc.shape)
+			}
+			if err = kc.checkSourceAccess(ctx, 5000); !errors.Is(err, errSourceAccessRemoved) {
+				t.Fatalf("revoked group kept source access: %v", err)
 			}
 		})
 	}
