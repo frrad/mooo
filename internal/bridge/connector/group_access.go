@@ -159,6 +159,10 @@ func (kc *KakaoClient) recordSourceRemoval(ctx context.Context, chatID int64, re
 	kc.cacheMu.Unlock()
 	portal, err := kc.login.Bridge.GetPortalByKey(ctx, makePortalKey(chatID, kc.login.ID))
 	if err != nil {
+		kc.log().Err(err).
+			Int64("kakao_chat_id", chatID).
+			Str("source_removal_reason", reason).
+			Msg("Kakao account no longer in source chat; blocked in memory but failed to load portal")
 		return err
 	}
 	kc.log().Warn().
