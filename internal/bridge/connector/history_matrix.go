@@ -64,10 +64,11 @@ func (h *historyMessage) ConvertMessage(ctx context.Context, p *bridgev2.Portal,
 		return nil, errors.New("connector: historical conversion has no stable identity")
 	}
 	if as, ok := intent.(*matrix.ASIntent); ok {
-		if as.Matrix == nil || as.Matrix.Client == nil || as.Matrix.Client.Client == nil {
+		mx := as.Matrix()
+		if mx == nil || mx.Client == nil || mx.Client.Client == nil {
 			return nil, errors.New("connector: historical Matrix client unavailable")
 		}
-		if _, ok := as.Matrix.Client.Client.Transport.(*historyTransport); !ok {
+		if _, ok := mx.Client.Client.Transport.(*historyTransport); !ok {
 			return nil, errors.New("connector: historical external Matrix intent is unsupported")
 		}
 	}
@@ -97,10 +98,11 @@ func markMatrixTransactions(p *bridgev2.Portal, intent bridgev2.MatrixAPI, messa
 		return errors.New("connector: Matrix conversion has no stable identity")
 	}
 	if as, ok := intent.(*matrix.ASIntent); ok {
-		if as.Matrix == nil || as.Matrix.Client == nil || as.Matrix.Client.Client == nil {
+		mx := as.Matrix()
+		if mx == nil || mx.Client == nil || mx.Client.Client == nil {
 			return errors.New("connector: Matrix client unavailable")
 		}
-		if _, ok := as.Matrix.Client.Client.Transport.(*historyTransport); !ok {
+		if _, ok := mx.Client.Client.Transport.(*historyTransport); !ok {
 			if required {
 				return errors.New("connector: external Matrix intent has no stable transaction adapter")
 			}

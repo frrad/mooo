@@ -136,7 +136,10 @@ func TestHistoricalMessageContextEndsWithOperatorCall(t *testing.T) {
 // SDK discard-megolm-session and set-pl use these concrete assertions;
 // changing either dynamic type makes the built-in command panic.
 func TestHistoryAdapterPreservesBuiltInSDKCommandTypes(t *testing.T) {
-	base := &matrix.Connector{AS: appservice.Create()}
+	as := appservice.Create()
+	as.HomeserverDomain = "test.invalid"
+	as.Registration = &appservice.Registration{SenderLocalpart: "bot"}
+	base := &matrix.Connector{AS: as, Bot: as.BotIntent()}
 	br := &bridgev2.Bridge{Matrix: base, Bot: base.BotIntent()}
 	installHistoryMatrix(br)
 	if _, ok := br.Matrix.(*matrix.Connector); !ok {
@@ -320,11 +323,8 @@ func TestExternalDoublePuppetLiveTextIsDeliveredWithoutStableTransaction(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	puppet := as.NewIntentAPI("custom")
-	puppet.Client = externalClient
-	puppet.UserID = "@owner:external.test"
-	puppet.IsCustomPuppet = true
-	external := &matrix.ASIntent{Connector: &matrix.Connector{AS: as}, Matrix: puppet}
+	puppet := as.NewDoublePuppetIntent("@owner:external.test", externalClient)
+	external := (&matrix.Connector{AS: as, Bot: puppet}).BotIntent()
 
 	remote := kc.remoteEventFor(events.TextMessage{ChatID: 5000, LogID: 103, AuthorID: 1000, Message: "synthetic own live text"}).(bridgev2.RemoteMessage)
 	ctx := remote.(bridgev2.RemoteEventWithContextMutation).MutateContext(t.Context())

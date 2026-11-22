@@ -51,6 +51,9 @@ type network struct {
 
 func (*network) Init(*bridgev2.Bridge)              {}
 func (*network) GetDBMetaTypes() database.MetaTypes { return database.MetaTypes{} }
+func (*network) GetCapabilities() *bridgev2.NetworkGeneralCapabilities {
+	return &bridgev2.NetworkGeneralCapabilities{}
+}
 func (n *network) LoadUserLogin(_ context.Context, l *bridgev2.UserLogin) error {
 	l.Client = n.s
 	return nil

@@ -286,7 +286,11 @@ func downloadMatrixImageBounded(ctx context.Context, intent bridgev2.MatrixAPI, 
 
 func downloadMatrixMediaBounded(ctx context.Context, intent bridgev2.MatrixAPI, uri id.ContentURIString, fileInfo *event.EncryptedFileInfo, limit int64) ([]byte, error) {
 	asIntent, ok := intent.(*bridgematrix.ASIntent)
-	if !ok || asIntent == nil || asIntent.Matrix == nil {
+	if !ok || asIntent == nil {
+		return nil, bridgev2.ErrFailedToGetIntent
+	}
+	mx := asIntent.Matrix()
+	if mx == nil || mx.Client == nil || mx.Client.Client == nil {
 		return nil, bridgev2.ErrFailedToGetIntent
 	}
 	if fileInfo != nil {
@@ -299,7 +303,7 @@ func downloadMatrixMediaBounded(ctx context.Context, intent bridgev2.MatrixAPI, 
 	if err != nil {
 		return nil, media.ErrInvalidImage
 	}
-	resp, err := asIntent.Matrix.Download(ctx, parsed)
+	resp, err := mx.Download(ctx, parsed)
 	if err != nil {
 		return nil, media.ErrInvalidImage
 	}
