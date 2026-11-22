@@ -326,7 +326,7 @@ func TestDownloadMatrixImageBoundedEncryptedVector(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(ciphertext) }))
 	defer server.Close()
 	base, _ := url.Parse(server.URL)
-	intent := &bridgematrix.ASIntent{Matrix: &appservice.IntentAPI{Client: &mautrix.Client{HomeserverURL: base, Client: server.Client()}}}
+	intent := (&bridgematrix.Connector{Bot: &appservice.IntentAPI{Client: &mautrix.Client{HomeserverURL: base, Client: server.Client()}}}).BotIntent()
 	file.URL = "mxc://example/media"
 	got, err := downloadMatrixImageBounded(context.Background(), intent, file.URL, file)
 	if err != nil || !bytes.Equal(got, plain) {
@@ -344,7 +344,7 @@ func TestDownloadMatrixImageBoundedRejectsOversizeResponse(t *testing.T) {
 	}))
 	defer server.Close()
 	base, _ := url.Parse(server.URL)
-	intent := &bridgematrix.ASIntent{Matrix: &appservice.IntentAPI{Client: &mautrix.Client{HomeserverURL: base, Client: server.Client()}}}
+	intent := (&bridgematrix.Connector{Bot: &appservice.IntentAPI{Client: &mautrix.Client{HomeserverURL: base, Client: server.Client()}}}).BotIntent()
 	if _, err := downloadMatrixImageBounded(context.Background(), intent, "mxc://example/media", nil); err == nil {
 		t.Fatal("oversize response unexpectedly accepted")
 	}
@@ -353,6 +353,15 @@ func TestDownloadMatrixImageBoundedRejectsOversizeResponse(t *testing.T) {
 func TestDownloadMatrixImageBoundedRejectsUnsupportedIntent(t *testing.T) {
 	if _, err := downloadMatrixImageBounded(context.Background(), &photoMatrixAPI{}, "mxc://example/media", nil); err == nil {
 		t.Fatal("unsupported Matrix intent unexpectedly accepted")
+	}
+}
+
+func TestDownloadMatrixImageBoundedRejectsUnavailableClient(t *testing.T) {
+	for _, client := range []*mautrix.Client{nil, {}} {
+		intent := (&bridgematrix.Connector{Bot: &appservice.IntentAPI{Client: client}}).BotIntent()
+		if _, err := downloadMatrixImageBounded(t.Context(), intent, "mxc://example/media", nil); !errors.Is(err, bridgev2.ErrFailedToGetIntent) {
+			t.Fatalf("unavailable client: got %v, want ErrFailedToGetIntent", err)
+		}
 	}
 }
 
