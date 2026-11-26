@@ -26,6 +26,14 @@ var quickReactionEmoji = map[string]string{
 	"1200509_003": "😢",
 }
 
+// miniReactionLabelEmoji maps exact Korean display labels for incoming mini
+// reactions to approximate Unicode emoji. Original mini item identities are
+// preserved and outbound support is not inferred from this table.
+var miniReactionLabelEmoji = map[string]string{
+	"웃픔":  "😂",
+	"엄지척": "👍",
+}
+
 // Mini attribution has no revision field. Require exact agreement with the
 // triggering aggregate before replacing any Matrix state. A racing snapshot
 // fails without advancing the durable revision; the next push can reconcile.
@@ -92,10 +100,10 @@ func addMiniReactionUsers(users map[networkid.UserID]*bridgev2.ReactionSyncUser,
 		if label == "" {
 			label = fmt.Sprintf("Kakao reaction %s", item.ID)
 		}
-		// Display approximation from paired Kakao/Matrix screenshots. The
-		// item ID is unverified; preserve it and do not infer outbound support.
-		if label == "웃픔" {
-			label = "😂"
+		// Display approximations for localized Korean mini-reaction labels.
+		// Preserve the original mini item identity and do not infer outbound support.
+		if mapped, ok := miniReactionLabelEmoji[label]; ok {
+			label = mapped
 		}
 		if !utf8.ValidString(label) || len(label) > 512 || strings.ContainsAny(label, "\x00\r\n") {
 			return errReactionUnsupported
