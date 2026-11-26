@@ -95,6 +95,31 @@ func TestMiniReactionLaughCryLabelUsesEmoji(t *testing.T) {
 	}
 }
 
+func TestMiniReactionThumbsUpLabelUsesEmoji(t *testing.T) {
+	// Item 1200281_009 was observed with Matrix label "엄지척"; the logs do
+	// not record which metadata field supplied the label.
+	for _, source := range []string{"ko", "en", "title"} {
+		t.Run(source, func(t *testing.T) {
+			item := events.ReactionItem{Kind: 2, ID: "1200281_009", Count: 1}
+			detail := reactions.Detail{Kind: 2, ReactionID: item.ID, UserIDs: []int64{testOtherID}}
+			if source == "title" {
+				detail.ItemMeta = &reactions.ItemMeta{Title: "엄지척"}
+			} else {
+				item.Alt = map[string]string{source: "엄지척"}
+			}
+			users := map[networkid.UserID]*bridgev2.ReactionSyncUser{}
+			err := addMiniReactionUsers(users, reactions.DetailsResponse{Details: []reactions.Detail{detail}}, events.ReactionChanged{Items: []events.ReactionItem{item}}, testSelfID, makeUserLoginID(testSelfID))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := users[makeUserID(testOtherID)].Reactions[0]
+			if got.Emoji != "👍" || got.EmojiID != "kakao:mini:1200281_009" {
+				t.Fatalf("reaction = %+v, want 👍 with original mini identity", got)
+			}
+		})
+	}
+}
+
 // Kakao keeps one legacy selection per user, but mini items are separate. A
 // Matrix reaction replaces only the sender's previous legacy reaction; the
 // same account's mini reaction (for example added on the phone) stays.

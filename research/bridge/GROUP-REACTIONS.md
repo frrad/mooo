@@ -99,6 +99,14 @@ Each change was preceded by a failing production-path test.
   the stored mini identity are unchanged. Previously bridged keys stay as-is.
   Sending or removing this mini reaction from Matrix remains unsupported;
   outbound mini mutations are tracked in `PLAN.md`.
+- **Thumbs-up display approximation (2026-11-26).** Bridge logs and database
+  state showed an incoming mini reaction (`1200281_009`) bridged to Matrix with
+  the Korean label `엄지척`. Incoming mini reactions whose selected alternative
+  label or metadata title is exactly `엄지척` now display as 👍 while preserving
+  their original `kakao:mini:<item>` identity. Because bridge logs redact raw
+  reaction payloads on success, the originating metadata field (`alt` vs
+  `itemMeta.title`) is not established from logs; tests cover both. Previously
+  bridged keys stay as-is, and outbound mini mutations remain unsupported.
 - **One-reaction limit across kinds.** The framework's one-reaction-per-sender
   limit made a Matrix reaction redact the same account's mini reaction (for
   example one added on the phone) although Kakao kept it. The limit is removed;
